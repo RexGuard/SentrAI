@@ -22,7 +22,7 @@ Small organizations already get security alerts. Breaches happen because nobody 
 
 ## Documentation
 
-📄 **[Full project plan](./Cybersecurity%20+%20AI.md)**: problem, data collection per layer, risk formula, Jev pipeline, hotpatch workflow, notifications, accountability reports, ethics, agent design, stack, I/O schemas and MVP demo script.
+📄 **[Full project plan](https://rexguard.github.io/cactai/Cybersecurity%20+%20AI.html)**: problem, data collection per layer, risk formula, Jev pipeline, hotpatch workflow, notifications, accountability reports, ethics, agent design, stack, I/O schemas and MVP demo script. ([Markdown source](https://github.com/RexGuard/cactai/blob/main/Cybersecurity%20%2B%20AI.md))
 
 ## Team
 
