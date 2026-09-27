@@ -1,3 +1,13 @@
 Cybersecurity + AI (original backup).md
 .obsidian/
 *.tmp
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+mvp/.demo_pids.json
+mvp/core/data/
+mvp/lab/logs/
+mvp/lab/data/
+mvp/lab/*.db
+mvp/lab/target_app/*.db

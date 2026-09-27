@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  {% if mode == "export" %}
+    <h2 style="margin-top:0;">Member export <span class="badge">{{ members|length }} records</span></h2>
+  {% else %}
+    <h2 style="margin-top:0;">Search results</h2>
+    <form method="get" action="/search">
+      <label for="q">Query</label>
+      <input type="search" id="q" name="q" value="{{ q or '' }}">
+      <button type="submit">Search</button>
+    </form>
+  {% endif %}
+  <table>
+    <thead><tr><th>Member No.</th><th>Name</th><th>Email</th><th>Program</th></tr></thead>
+    <tbody>
+      {% for m in members %}
+      <tr><td>{{ m.member_no }}</td><td>{{ m.name }}</td><td>{{ m.email }}</td><td>{{ m.program }}</td></tr>
+      {% else %}
+      <tr><td colspan="4" style="color:var(--muted);">No members matched.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <div class="nav" style="margin-top:16px;"><a href="/">← Back to sign in</a></div>
+</div>
+{% endblock %}

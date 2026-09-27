@@ -1,0 +1,501 @@
+"""Pure data-shaping helpers for the CactAI dashboard.
+
+Everything here is free of Streamlit so it can be unit tested.
+"""
+from __future__ import annotations
+
+import re
+from datetime import datetime
+from typing import Any, Iterable
+
+import pandas as pd
+import plotly.graph_objects as go
+
+# ---------------------------------------------------------------- bands
+
+# Contract bands: green 0-29, amber 30-59, red 60-79, critical 80-100.
+BANDS: list[tuple[str, int, int]] = [
+    ("green", 0, 29),
+    ("amber", 30, 59),
+    ("red", 60, 79),
+    ("critical", 80, 100),
+]
+
+# Status palette (good / warning / serious / critical). Always shown with a label.
+BAND_COLORS: dict[str, str] = {
+    "green": "#0ca30c",
+    "amber": "#fab219",
+    "red": "#ec835a",
+    "critical": "#d03b3b",
+}
+BAND_LABELS: dict[str, str] = {
+    "green": "GREEN · logged only",
+    "amber": "AMBER · operator notified",
+    "red": "RED · escalated",
+    "critical": "CRITICAL · autonomous containment",
+}
+UNKNOWN_COLOR = "#8a8f98"
+
+SURFACE = "#161a17"
+TEXT_PRIMARY = "#f2f4f1"
+TEXT_SECONDARY = "#b9bdb4"
+TEXT_MUTED = "#80867d"
+GRID = "rgba(255,255,255,0.07)"
+
+
+def band_for(index: float | int | None) -> str:
+    """Map a 0-100 risk index to its band name."""
+    if index is None:
+        return "unknown"
+    value = max(0, min(100, round(float(index))))
+    for name, lo, hi in BANDS:
+        if lo <= value <= hi:
+            return name
+    return "critical"
+
+
+def band_color(band_or_index: str | float | int | None) -> str:
+    """Color for a band name, or for a numeric index."""
+    if isinstance(band_or_index, (int, float)) and not isinstance(band_or_index, bool):
+        band_or_index = band_for(band_or_index)
+    return BAND_COLORS.get(str(band_or_index or "").lower(), UNKNOWN_COLOR)
+
+
+def resolve_band(risk: dict) -> str:
+    """Prefer the band the core reports; fall back to computing it."""
+    band = str(risk.get("band") or "").lower()
+    return band if band in BAND_COLORS else band_for(risk.get("risk_index"))
+
+
+# ---------------------------------------------------------------- text helpers
+
+CATEGORY_LABELS = {
+    "benign": "Benign",
+    "brute_force": "Brute force",
+    "sql_injection": "SQL injection",
+    "xss": "Cross-site scripting",
+    "port_scan": "Port scan",
+    "privilege_escalation": "Privilege escalation",
+    "data_exfiltration": "Data exfiltration",
+    "misconfiguration": "Misconfiguration",
+}
+
+STATUS_ICONS = {
+    "open": "🔴 open",
+    "acknowledged": "🟡 acknowledged",
+    "contained": "🛡️ contained",
+    "resolved": "✅ resolved",
+    "rejected": "⛔ rejected",
+}
+
+CLASSIFIER_LABELS = {"rules": "Rules", "jev": "Jev (AI)", "fallback": "Fallback"}
+
+
+def category_label(category: str | None) -> str:
+    if not category:
+        return "Unknown"
+    return CATEGORY_LABELS.get(category, category.replace("_", " ").capitalize())
+
+
+def status_label(status: str | None) -> str:
+    return STATUS_ICONS.get(str(status or ""), str(status or "unknown"))
+
+
+def parse_ts(value: Any) -> datetime | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, (int, float)):
+        return datetime.fromtimestamp(float(value))
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def short_time(value: Any) -> str:
+    ts = parse_ts(value)
+    return ts.strftime("%H:%M:%S") if ts else (str(value) if value else "-")
+
+
+def short_hash(value: str | None, n: int = 10) -> str:
+    if not value:
+        return "-"
+    return value[:n] + "…" if len(value) > n else value
+
+
+# ---------------------------------------------------------------- incidents
+
+INCIDENT_COLUMNS = [
+    "ID",
+    "Category",
+    "Severity",
+    "Confidence",
+    "Classified by",
+    "Status",
+    "Points",
+    "Inaction penalty",
+    "SLA breached",
+    "Source",
+]
+
+ACTIVE_STATUSES = ("open", "acknowledged")
+
+
+def build_incident_table(incidents: Iterable[dict]) -> pd.DataFrame:
+    """Shape /incidents into the queue table (newest first, open ones on top)."""
+    rows = []
+    for inc in incidents or []:
+        conf = inc.get("ai_confidence")
+        rows.append(
+            {
+                "ID": inc.get("id", "?"),
+                "Category": category_label(inc.get("category")),
+                "Severity": str(inc.get("severity") or "-").upper(),
+                "Confidence": float(conf) if isinstance(conf, (int, float)) else None,
+                "Classified by": CLASSIFIER_LABELS.get(
+                    str(inc.get("classified_by")), str(inc.get("classified_by") or "-")
+                ),
+                "Status": status_label(inc.get("status")),
+                "Points": round(float(inc.get("points") or 0), 1),
+                "Inaction penalty": int(round(float(inc.get("inaction_penalty") or 0))),
+                "SLA breached": bool(inc.get("sla_breached")),
+                "Source": inc.get("src_ip") or inc.get("user") or inc.get("host") or "-",
+                "_status": inc.get("status"),
+                "_opened": parse_ts(inc.get("opened_at")),
+            }
+        )
+    df = pd.DataFrame(rows, columns=INCIDENT_COLUMNS + ["_status", "_opened"])
+    if df.empty:
+        return df[INCIDENT_COLUMNS]
+    df["_active"] = df["_status"].isin(ACTIVE_STATUSES)
+    df["_sort_ts"] = df["_opened"].map(lambda t: t.timestamp() if t else 0.0)
+    df = df.sort_values(["_active", "_sort_ts"], ascending=[False, False])
+    return df[INCIDENT_COLUMNS].reset_index(drop=True)
+
+
+def pick_default_incident(incidents: list[dict]) -> str | None:
+    """Most urgent incident: active first, then highest points + penalty."""
+    if not incidents:
+        return None
+    priority = {"open": 0, "acknowledged": 1, "contained": 2, "rejected": 3, "resolved": 4}
+
+    def key(inc: dict) -> tuple:
+        weight = float(inc.get("points") or 0) + float(inc.get("inaction_penalty") or 0)
+        return (priority.get(str(inc.get("status")), 5), -weight)
+
+    return sorted(incidents, key=key)[0].get("id")
+
+
+def incident_contribution(inc: dict) -> float:
+    return round(float(inc.get("points") or 0) + float(inc.get("inaction_penalty") or 0), 1)
+
+
+def available_actions(inc: dict) -> dict[str, bool]:
+    """Which operator buttons are meaningful for this incident."""
+    status = str(inc.get("status") or "")
+    actions = inc.get("actions") or []
+    has_active = any(a.get("status") == "active" for a in actions if isinstance(a, dict))
+    return {
+        "decide": status in ACTIVE_STATUSES,
+        "ack": status == "open" and not inc.get("acked"),
+        "contain_controls": status == "contained" or has_active,
+    }
+
+
+def action_rows(inc: dict) -> pd.DataFrame:
+    rows = [
+        {
+            "Action": a.get("action_id", "-"),
+            "Type": str(a.get("type", "-")).replace("_", " "),
+            "Target": a.get("target", "-"),
+            "Mode": a.get("mode", "-"),
+            "Approved by": a.get("approved_by", "-"),
+            "Status": a.get("status", "-"),
+            "Expires": short_time(a.get("expires_at")),
+            "Snapshot": short_hash(a.get("snapshot_hash")),
+        }
+        for a in (inc.get("actions") or [])
+        if isinstance(a, dict)
+    ]
+    return pd.DataFrame(
+        rows, columns=["Action", "Type", "Target", "Mode", "Approved by", "Status", "Expires", "Snapshot"]
+    )
+
+
+# ---------------------------------------------------------------- containment
+
+def build_containment_rows(blocklist: dict | None, incidents: Iterable[dict]) -> pd.DataFrame:
+    """Active containment. /blocklist is authoritative; incidents add context."""
+    blocklist = blocklist or {}
+    context: dict[str, dict] = {}
+    for inc in incidents or []:
+        for a in inc.get("actions") or []:
+            if isinstance(a, dict) and a.get("status") in ("active", "permanent"):
+                context[str(a.get("target"))] = {**a, "incident": a.get("incident") or inc.get("id")}
+
+    rows: list[dict] = []
+    seen: set[str] = set()
+    for kind, key in (("IP", "ips"), ("User", "users")):
+        for target in blocklist.get(key) or []:
+            target = str(target)
+            seen.add(target)
+            a = context.get(target, {})
+            rows.append(
+                {
+                    "Kind": kind,
+                    "Target": target,
+                    "Action": str(a.get("type", "block_ip" if kind == "IP" else "lock_user")).replace("_", " "),
+                    "Incident": a.get("incident", "-"),
+                    "Mode": a.get("mode", "-"),
+                    "Approved by": a.get("approved_by", "-"),
+                    "Expires": "permanent" if a.get("status") == "permanent" else short_time(a.get("expires_at")),
+                }
+            )
+    # Non-blocklist containment (rate limits, WAF rules...) still worth showing.
+    for target, a in context.items():
+        if target in seen or a.get("status") != "active":
+            continue
+        rows.append(
+            {
+                "Kind": "Rule",
+                "Target": target,
+                "Action": str(a.get("type", "-")).replace("_", " "),
+                "Incident": a.get("incident", "-"),
+                "Mode": a.get("mode", "-"),
+                "Approved by": a.get("approved_by", "-"),
+                "Expires": short_time(a.get("expires_at")),
+            }
+        )
+    return pd.DataFrame(rows, columns=["Kind", "Target", "Action", "Incident", "Mode", "Approved by", "Expires"])
+
+
+# ---------------------------------------------------------------- audit / agents
+
+AGENTS = {
+    "Saguaro": ("🌵", "#3fb56a"),
+    "Needle": ("📍", "#e0a526"),
+    "Scribe": ("📜", "#8fa7ff"),
+    "Root": ("🌐", "#4fb3d9"),
+    "Spine-Net": ("📡", "#b88cf0"),
+    "Reservoir": ("🗄️", "#5bc0be"),
+    "Areole-Linux": ("🐧", "#e88a5a"),
+    "Areole-Win": ("🪟", "#e88a5a"),
+    "Watchdog": ("🐕", "#a0a39b"),
+    "Help Desk": ("💬", "#d98bb5"),
+    "Jev": ("🧠", "#c79bf2"),
+    "Operator": ("👤", "#f2f4f1"),
+}
+
+# Fallback mapping from audit record type to the agent that normally owns it.
+TYPE_TO_AGENT = {
+    "event": "Saguaro",
+    "incident_opened": "Saguaro",
+    "incident_updated": "Saguaro",
+    "classification": "Jev",
+    "risk_update": "Saguaro",
+    "threshold_crossed": "Saguaro",
+    "snapshot": "Areole-Linux",
+    "action_proposed": "Root",
+    "action_approved": "Needle",
+    "review": "Needle",
+    "action_applied": "Areole-Linux",
+    "containment": "Areole-Linux",
+    "action_expired": "Watchdog",
+    "notification_queued": "Scribe",
+    "notification_delivered": "Scribe",
+    "report_generated": "Scribe",
+    "reminder": "Watchdog",
+    "sla_breach": "Watchdog",
+}
+OPERATOR_TYPES = ("ack", "decision", "rollback", "permanent", "operator")
+
+
+def normalize_audit(payload: Any) -> tuple[list[dict], bool | None]:
+    """Accept either a bare list or {"records"/"chain"/"entries": [...], "chain_valid": bool}."""
+    if isinstance(payload, list):
+        return [r for r in payload if isinstance(r, dict)], None
+    if isinstance(payload, dict):
+        for key in ("records", "chain", "entries", "audit", "items"):
+            if isinstance(payload.get(key), list):
+                recs = [r for r in payload[key] if isinstance(r, dict)]
+                break
+        else:
+            recs = []
+        valid = payload.get("chain_valid")
+        return recs, (bool(valid) if valid is not None else None)
+    return [], None
+
+
+def agent_for(record: dict) -> str:
+    data = record.get("data") if isinstance(record.get("data"), dict) else {}
+    for key in ("agent", "actor", "by"):
+        name = data.get(key) or record.get(key)
+        if name:
+            if str(name).lower() == "operator" and data.get("operator"):
+                return f"Operator:{data['operator']}"
+            return str(name)
+    rtype = str(record.get("type") or "")
+    if any(rtype.startswith(t) for t in OPERATOR_TYPES):
+        op = data.get("operator") or data.get("acked_by")
+        return f"Operator:{op}" if op else "Operator"
+    return TYPE_TO_AGENT.get(rtype, "Scribe")
+
+
+def summarize_record(record: dict) -> str:
+    data = record.get("data") if isinstance(record.get("data"), dict) else {}
+    for key in ("summary", "message", "text", "detail", "explanation"):
+        if data.get(key):
+            return str(data[key])
+    parts = []
+    for key in ("incident", "incident_id", "id", "category", "decision", "target", "risk_index",
+                "channel", "status"):
+        if key in data and data[key] not in (None, ""):
+            parts.append(f"{key}={data[key]}")
+    return ", ".join(parts[:5]) or str(record.get("type") or "record")
+
+
+def build_activity_feed(records: list[dict], limit: int = 30) -> list[dict]:
+    """Newest-first feed entries for rendering."""
+    ordered = sorted(records, key=lambda r: (r.get("seq") is None, r.get("seq") or 0))
+    feed = []
+    for rec in reversed(ordered[-limit:]):
+        agent = agent_for(rec)
+        base = agent.split(":", 1)[0]
+        icon, color = AGENTS.get(base, ("🤖", TEXT_SECONDARY))
+        feed.append(
+            {
+                "seq": rec.get("seq"),
+                "time": short_time(rec.get("ts")),
+                "agent": agent.replace("Operator:", "Operator · "),
+                "icon": icon,
+                "color": color,
+                "type": str(rec.get("type") or "-").replace("_", " "),
+                "summary": summarize_record(rec),
+                "hash": short_hash(rec.get("hash"), 8),
+            }
+        )
+    return feed
+
+
+def verify_chain_links(records: list[dict]) -> bool:
+    """Client-side sanity check: each prev_hash equals the previous record's hash."""
+    ordered = sorted(records, key=lambda r: r.get("seq") or 0)
+    for prev, cur in zip(ordered, ordered[1:]):
+        if cur.get("prev_hash") != prev.get("hash"):
+            return False
+    return True
+
+
+# ---------------------------------------------------------------- charts
+
+def gauge_figure(risk_index: float | None, threshold: float = 80, band: str | None = None) -> go.Figure:
+    value = 0 if risk_index is None else max(0, min(100, float(risk_index)))
+    band = band or band_for(value)
+    color = band_color(band)
+    steps = [
+        {"range": [lo, hi + (1 if hi < 100 else 0)], "color": _fade(BAND_COLORS[name], 0.16)}
+        for name, lo, hi in BANDS
+    ]
+    fig = go.Figure(
+        go.Indicator(
+            mode="gauge+number",
+            value=value,
+            number={"font": {"size": 72, "color": color}, "valueformat": ".0f"},
+            gauge={
+                "shape": "angular",
+                "axis": {
+                    "range": [0, 100],
+                    "tickvals": [0, 30, 60, 80, 100],
+                    "tickcolor": TEXT_MUTED,
+                    "tickfont": {"color": TEXT_SECONDARY, "size": 12},
+                },
+                "bar": {"color": color, "thickness": 0.32},
+                "bgcolor": "rgba(0,0,0,0)",
+                "borderwidth": 0,
+                "steps": steps,
+                "threshold": {
+                    "line": {"color": TEXT_PRIMARY, "width": 4},
+                    "thickness": 0.9,
+                    "value": float(threshold),
+                },
+            },
+            domain={"x": [0, 1], "y": [0, 1]},
+        )
+    )
+    fig.update_layout(
+        height=290,
+        margin={"l": 28, "r": 28, "t": 18, "b": 0},
+        paper_bgcolor="rgba(0,0,0,0)",
+        font={"color": TEXT_PRIMARY, "family": "Inter, Segoe UI, sans-serif"},
+    )
+    return fig
+
+
+def history_frame(history: Iterable[dict] | None) -> pd.DataFrame:
+    rows = []
+    for point in history or []:
+        if not isinstance(point, dict):
+            continue
+        t = parse_ts(point.get("t"))
+        v = point.get("risk_index")
+        if t is None or not isinstance(v, (int, float)):
+            continue
+        rows.append({"t": t, "risk_index": float(v)})
+    df = pd.DataFrame(rows, columns=["t", "risk_index"])
+    if not df.empty:
+        df = df.sort_values("t").reset_index(drop=True)
+    return df
+
+
+def history_figure(df: pd.DataFrame, threshold: float = 80) -> go.Figure:
+    fig = go.Figure()
+    for name, lo, hi in BANDS:
+        fig.add_hrect(y0=lo, y1=hi + 1 if hi < 100 else 100, fillcolor=BAND_COLORS[name],
+                      opacity=0.06, line_width=0, layer="below")
+    if not df.empty:
+        last = df["risk_index"].iloc[-1]
+        color = band_color(last)
+        fig.add_trace(
+            go.Scatter(
+                x=df["t"], y=df["risk_index"], mode="lines", name="Risk index",
+                line={"color": color, "width": 2, "shape": "hv"},
+                fill="tozeroy", fillcolor=_fade(color, 0.12),
+                hovertemplate="%{x|%H:%M:%S}<br>Risk <b>%{y:.0f}</b>/100<extra></extra>",
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=[df["t"].iloc[-1]], y=[last], mode="markers", showlegend=False, hoverinfo="skip",
+                marker={"size": 10, "color": color, "line": {"color": SURFACE, "width": 2}},
+            )
+        )
+    fig.add_hline(
+        y=float(threshold), line={"color": TEXT_PRIMARY, "width": 1.5, "dash": "dash"},
+        annotation_text=f"Autonomous threshold {threshold:.0f}", annotation_position="top left",
+        annotation_font={"color": TEXT_SECONDARY, "size": 11},
+    )
+    fig.update_layout(
+        height=290,
+        margin={"l": 8, "r": 8, "t": 10, "b": 8},
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        showlegend=False,
+        hovermode="x unified",
+        font={"color": TEXT_SECONDARY, "family": "Inter, Segoe UI, sans-serif", "size": 11},
+        xaxis={"showgrid": False, "linecolor": GRID, "tickformat": "%H:%M:%S"},
+        yaxis={"range": [0, 100], "gridcolor": GRID, "tickvals": [0, 30, 60, 80, 100], "zeroline": False},
+    )
+    return fig
+
+
+def _fade(hex_color: str, alpha: float) -> str:
+    h = hex_color.lstrip("#")
+    r, g, b = (int(h[i : i + 2], 16) for i in (0, 2, 4))
+    return f"rgba({r},{g},{b},{alpha})"
+
+
+def demote_headings(md: str, by: int = 2) -> str:
+    """Render report headings smaller so they fit the panel (the download keeps the original)."""
+    return re.sub(r"^(#{1,4}) ", lambda m: "#" * min(6, len(m.group(1)) + by) + " ", md or "", flags=re.M)

@@ -6,7 +6,7 @@ An accountability-based security system that follows **CIANA** and gives CXOs pr
 
 > *"A cactus doesn't chase you. It just makes touching it a bad idea."*
 
-Items marked **[CHECK]** must be verified against a source before they go on a slide. Items marked **[FILL]** still need input.
+All factual claims were verified on 27 Sep 2026; sources are in `mvp/research/SOURCES.md`. Items marked **[FILL]** still need input.
 
 ---
 
@@ -18,9 +18,13 @@ Items marked **[CHECK]** must be verified against a source before they go on a s
 > Small organizations already get security alerts. The breach happens because nobody acts on them in time, and afterwards nobody can prove who knew what and when.
 
 **Why this target**
-- They are bound by the PDPA. Since Oct 2022 the maximum financial penalty is up to 10% of annual Singapore turnover (for organizations above S$10M turnover) or S$1 million. **[CHECK]** wording on the PDPC site.
+- They are bound by the PDPA. Since 1 Oct 2022, s48J lets the PDPC impose a financial penalty of up to S$1 million or 10% of annual Singapore turnover (where that turnover exceeds S$10M), whichever is higher. Source: PDPC Guide on Active Enforcement (Oct 2022), https://www.pdpc.gov.sg/-/media/files/pdpc/pdf-files/other-guides/active-enforcement/guide-on-active-enforcement_oct2022.pdf
 - They cannot afford a SOC, so alerts pile up (alert fatigue).
-- Many PDPC enforcement decisions involve basic misconfigurations left unfixed (public buckets, default passwords, unpatched servers). **[CHECK]** pick one real PDPC decision to open the video with.
+- Many PDPC enforcement decisions involve basic weaknesses left unfixed:
+  - **ChampionTutor (Oct 2021, S$10,000), the video's opening hook.** A Dec 2020 pentest found an SQL-injection hole that was never fixed. By Feb 2021, 4,625 students' data was being sold on the dark web, and the company only learned of it from the PDPC. https://www.pdpc.gov.sg/-/media/files/pdpc/pdf-files/commissions-decisions/decision--championtutor-inc-private-limited--10082021.pdf
+  - **PPLingo / LingoAce ([2023] SGPDPC 12, published May 2024, S$74,000).** Its admin password was "lingoace123", unchanged for 2+ years, with no MFA, and was brute-forced. 557,144 users were affected, 303,238 of them students. https://www.pdpc.gov.sg/-/media/files/pdpc/pdf-files/commissions-decisions/gd_pplingo-pte-ltd-(revised)_241023.pdf
+  - **North London Collegiate School (Singapore) (Feb 2022, S$10,000).** Applicants' passports, NRICs and birth certificates sat in a website folder that search engines indexed, protected only by robots.txt. https://www.pdpc.gov.sg/-/media/Files/PDPC/PDF-Files/Commissions-Decisions/Decision---NLCS---01122021.pdf
+- Alert fatigue: SOC teams receive ~4,484 alerts a day and ignore 67% of them (Vectra AI, 2023 State of Threat Detection, vendor survey of 2,000 SOC analysts). https://www.vectra.ai/resources/2023-state-of-threat-detection
 
 ## What if humans were not enough
 
@@ -48,7 +52,7 @@ To minimize the risk of human error, our team has formulated a plan that can be 
 | --- | --- | --- | --- |
 | **Erick Sientaro** | Developer | Docker lab, collectors, risk engine, Jev integration, hotpatch playbooks, dashboard, Telegram bot | Working demo |
 | **Ishmail** | CEO | Problem story, business case, pitch narration, final call on scope | Pitch script and video narration |
-| **Hozen** | Notetaker | Meeting notes, this document, verifying every **[CHECK]** claim, slide content, recording checklist | Slides and verified sources |
+| **Hozen** | Notetaker | Meeting notes, this document, keeping sources in `mvp/research/SOURCES.md` current, slide content, recording checklist | Slides and verified sources |
 
 Erick carries the whole build, so the MVP (section 13) is scoped to what one developer can finish in two days.
 
@@ -128,17 +132,23 @@ The inaction penalty is what makes the index climb while nobody acts. Slide grap
 **Questions asked to Jev in parallel over one event**
 
 ```python
+# pip install typesafe-sdk   ; set TYPESAFE_API_KEY in the environment
 from typesafe_sdk import Choice, Noul, TypeSafeClient
 
-state = {"event": {"layer": "web", "raw": 'POST /login 401 user=admin src=203.0.113.45'}}
+state = {"event": {"layer": "web", "raw": "POST /login 401 user=admin src=203.0.113.45"}}
 
 questions = {
     "category": Choice(
         instructions="What kind of activity does `event.raw` show?",
         criteria={
-            "benign": {}, "brute_force": {}, "sql_injection": {}, "xss": {},
-            "port_scan": {}, "privilege_escalation": {},
-            "data_exfiltration": {}, "misconfiguration": {},
+            "benign": "Normal user or system activity",
+            "brute_force": "Repeated login/password guessing",
+            "sql_injection": "SQL syntax injected into input",
+            "xss": "Script/HTML injected into input",
+            "port_scan": "Probing many ports or services",
+            "privilege_escalation": "Gaining higher rights than granted",
+            "data_exfiltration": "Unusual bulk data leaving the system",
+            "misconfiguration": "Insecure setting or exposed resource",
         },
     ),
     "malicious": Noul(
@@ -146,15 +156,19 @@ questions = {
     ),
 }
 
-client = TypeSafeClient()
-answer = client.system_one(state=state, questions=questions)
+with TypeSafeClient() as client:        # model defaults to jev-latest
+    answer = client.system_one(state=state, questions=questions)
+
+category = answer.choices["category"].choice
+ai_confidence = min(1.0, max(0.5, answer.choices["category"].probabilities[category]))
+p_malicious = answer.nouls["malicious"].noul   # P(yes), 0 to 1
 ```
 
 - `category` picks the base severity from the table in section 5.
 - The probability of the chosen category, clipped to 0.5 to 1.0, is the `ai_confidence`.
 - **Confidence-gated routing:** if Jev is uncertain (0.4 to 0.6), no automatic action is taken; the event goes to the operator as "needs review".
 
-**[CHECK]** exact SDK field names against `https://docs.typesafe.ai/sdk/python.md` and get a TypeSafe API key before building.
+SDK fields verified against https://docs.typesafe.ai/sdk/python.md and https://docs.typesafe.ai/api.md (27 Sep 2026). Install `typesafe-sdk`; auth via `TYPESAFE_API_KEY` (from https://console.typesafe.ai/). Choice answers expose `.choice`, `.probabilities` and `.confidence`; Noul answers expose `.noul` (P(yes)). Docs claim "about 100 ms" per query. **[FILL]** get a TypeSafe API key before building.
 
 ---
 
@@ -269,7 +283,7 @@ Every action taken is stored in a hash-chained audit log: each record carries th
 **Position: CactAI never attacks back. The spines stay on the cactus.**
 
 Why "hack back" is ruled out:
-- **Illegal:** accessing or disrupting the attacker's machine without authorization is an offence under Singapore's Computer Misuse Act, whatever the motive. **[CHECK]** cite the section.
+- **Illegal:** accessing or disrupting the attacker's machine without authorization is an offence under Singapore's Computer Misuse Act 1993, whatever the motive. Unauthorised access is s3 (up to S$5,000 and/or 2 years, first offence). Unauthorised modification is s5, and unauthorised obstruction/interference ("interferes with, or interrupts or obstructs") is s7 (each up to S$10,000 and/or 3 years). https://sso.agc.gov.sg/Act/CMA1993
 - **Wrong target:** attacks usually come through spoofed IPs, VPNs or hijacked innocent computers. Striking back hurts a victim.
 - **Escalation:** retaliation invites a bigger attack and exposes the company to liability.
 
@@ -386,7 +400,7 @@ Everything runs in `docker compose` on one laptop.
 2. "Attacker" runs `hydra` brute force on the login page → Jev tags *brute_force, confidence 0.94* → risk jumps to about 40 → Telegram alert with **[Approve & Patch] [Reject with Justification]**.
 3. Operator ignores it. Demo mode speeds time up (1 minute = 1 hour); the inaction penalty ticks the gauge upward.
 4. Attacker sends a SQL injection payload → risk crosses 80.
-5. CactAI takes a snapshot, Needle approves, the attacker IP is blocked with `iptables` (TTL 2 h) and the targeted account is locked.
+5. CactAI takes a snapshot, Needle approves, the attacker IP is blocked (TTL 2 h; in the MVP the target app enforces CactAI's blocklist and returns HTTP 403, no host firewall changes) and the targeted account is locked.
 6. The negligence report is generated with the hash-chained timeline and "Ack: none".
 7. Operator presses **Rollback** or **Make Permanent**, and it appears in the audit log.
 
@@ -402,5 +416,5 @@ Everything runs in `docker compose` on one laptop.
 2. **Erick:** Jev categorization, Telegram alert with buttons, negligence report.
 3. **Erick:** dashboard gauge.
 4. **Ishmail:** pitch script and narration, built around section 1 and the demo.
-5. **Hozen:** verify every **[CHECK]**, build slides: problem, cactus ethics, 0 to 100 index, architecture/agents, demo, roadmap.
+5. **Hozen:** finalize slides from `mvp/pitch/SLIDES.md` (sources in `mvp/research/SOURCES.md`): problem, cactus ethics, 0 to 100 index, architecture/agents, demo, roadmap.
 6. **All:** record the demo, with the replay script as backup.

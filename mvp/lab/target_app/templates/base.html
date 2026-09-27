@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Aegis Academy Student Portal{% endblock %}</title>
+  <style>
+    :root {
+      --green: #2e7d54; --green-dark: #1f5a3c; --sand: #f4f1e8;
+      --ink: #1c2b24; --muted: #5b6b62; --line: #d9d3c2; --danger: #b23b3b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: "Segoe UI", system-ui, sans-serif;
+      background: linear-gradient(160deg, #eef3ee, var(--sand));
+      color: var(--ink); min-height: 100vh;
+    }
+    .wrap { max-width: 880px; margin: 0 auto; padding: 32px 20px; }
+    .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+    .brand .logo { font-size: 34px; }
+    .brand h1 { font-size: 20px; margin: 0; letter-spacing: .3px; }
+    .brand small { color: var(--muted); }
+    .card {
+      background: #fff; border: 1px solid var(--line); border-radius: 14px;
+      padding: 26px; box-shadow: 0 8px 26px rgba(31,90,60,.08);
+    }
+    label { display: block; font-size: 13px; color: var(--muted); margin: 14px 0 4px; }
+    input[type=text], input[type=password], input[type=search] {
+      width: 100%; padding: 11px 12px; border: 1px solid var(--line);
+      border-radius: 9px; font-size: 15px; background: #fbfaf5;
+    }
+    button, .btn {
+      margin-top: 18px; background: var(--green); color: #fff; border: 0;
+      padding: 11px 18px; border-radius: 9px; font-size: 15px; cursor: pointer;
+      text-decoration: none; display: inline-block;
+    }
+    button:hover, .btn:hover { background: var(--green-dark); }
+    .err { color: var(--danger); font-size: 14px; margin-top: 12px; }
+    .nav a { color: var(--green-dark); margin-right: 16px; font-size: 14px; }
+    table { border-collapse: collapse; width: 100%; margin-top: 14px; font-size: 14px; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+    th { color: var(--muted); font-weight: 600; }
+    .foot { color: var(--muted); font-size: 12px; margin-top: 22px; }
+    .badge { background: #e6efe9; color: var(--green-dark); border-radius: 20px;
+             padding: 3px 10px; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="brand">
+      <span class="logo">🌵</span>
+      <div>
+        <h1>Aegis Academy — Student Portal</h1>
+        <small>Fictional institution · CactAI demo lab</small>
+      </div>
+    </div>
+    {% block content %}{% endblock %}
+    <p class="foot">Aegis Academy is a fictional organization used only for the CactAI
+      security demo. All member data is synthetic (Member 0001…, @example.com).</p>
+  </div>
+</body>
+</html>

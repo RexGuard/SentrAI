@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card" style="max-width: 420px;">
+  <h2 style="margin-top:0;">Sign in</h2>
+  <p style="color:var(--muted); font-size:14px;">Use your Aegis Academy staff account.</p>
+  <form method="post" action="/login">
+    <label for="user">Username</label>
+    <input type="text" id="user" name="user" autocomplete="username" value="">
+    <label for="password">Password</label>
+    <input type="password" id="password" name="password" autocomplete="current-password">
+    <button type="submit">Sign in</button>
+  </form>
+  {% if error %}<p class="err">{{ error }}</p>{% endif %}
+</div>
+{% endblock %}

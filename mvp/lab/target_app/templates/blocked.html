@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Blocked by CactAI{% endblock %}
+{% block content %}
+<div class="card" style="max-width: 520px; border-color: var(--danger);">
+  <h2 style="margin-top:0; color: var(--danger);">Blocked by CactAI 🌵 (temporary containment)</h2>
+  <p>Access from <strong>{{ ip }}</strong> is under temporary, reversible containment
+     while a security incident is reviewed.</p>
+  <p style="color:var(--muted); font-size:14px;">If you believe this is a mistake,
+     contact the Aegis Academy help desk. Containment lifts automatically when the
+     incident's time-to-live expires.</p>
+</div>
+{% endblock %}

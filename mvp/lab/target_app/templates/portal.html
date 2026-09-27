@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h2 style="margin-top:0;">Welcome, {{ user }} <span class="badge">staff</span></h2>
+  <p style="color:var(--muted);">Student records console.</p>
+  <div class="nav">
+    <a href="/search?q=Member">Search members</a>
+    <a href="/export">Export member list</a>
+  </div>
+</div>
+{% endblock %}
