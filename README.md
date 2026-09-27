@@ -31,6 +31,8 @@ The MVP runs on one Windows laptop: a fictional student portal gets attacked, Ca
 - 🛠️ **[MVP code and how to run it](https://github.com/RexGuard/cactai/tree/main/mvp)**: `run_demo.ps1` starts everything; 74 automated tests including an end-to-end run of the demo story.
 - 🎬 **[Video script](https://github.com/RexGuard/cactai/blob/main/mvp/pitch/VIDEO_SCRIPT.md)**, [slide outline](https://github.com/RexGuard/cactai/blob/main/mvp/pitch/SLIDES.md), [judge Q&A](https://github.com/RexGuard/cactai/blob/main/mvp/pitch/QA_PREP.md) and [sources](https://github.com/RexGuard/cactai/blob/main/mvp/research/SOURCES.md).
 
+- 🗺️ **[Roadmap](https://rexguard.github.io/cactai/ROADMAP.html)**: 9 phases from the MVP to a pilot, with effort, owners and done-when checks.
+
 ![CactAI architecture](mvp/pitch/architecture.svg)
 
 ## Team
