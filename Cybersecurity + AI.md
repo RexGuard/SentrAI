@@ -1,0 +1,406 @@
+# CactAI
+
+## Cybersecurity + AI
+
+An accountability-based security system that follows **CIANA** and gives CXOs proof, not just alerts.
+
+> *"A cactus doesn't chase you. It just makes touching it a bad idea."*
+
+Items marked **[CHECK]** must be verified against a source before they go on a slide. Items marked **[FILL]** still need input.
+
+---
+
+## 1. Problem & Target Organization
+
+**Target:** Singapore SMEs and private education institutions that hold large amounts of personal data but have only one or two IT staff and no 24/7 security team.
+
+**Problem statement**
+> Small organizations already get security alerts. The breach happens because nobody acts on them in time, and afterwards nobody can prove who knew what and when.
+
+**Why this target**
+- They are bound by the PDPA. Since Oct 2022 the maximum financial penalty is up to 10% of annual Singapore turnover (for organizations above S$10M turnover) or S$1 million. **[CHECK]** wording on the PDPC site.
+- They cannot afford a SOC, so alerts pile up (alert fatigue).
+- Many PDPC enforcement decisions involve basic misconfigurations left unfixed (public buckets, default passwords, unpatched servers). **[CHECK]** pick one real PDPC decision to open the video with.
+
+## What if humans were not enough
+
+Human errors are bound to happen. Humans stay in charge, but when the risk crosses the tolerance the organization itself set, CactAI applies a **temporary, reversible** fix and records exactly who was warned and when.
+
+## Accountability Based System
+
+To minimize the risk of human error, our team has formulated a plan that can be turned into a system: every alert, acknowledgement and action is recorded in a tamper-evident log, so responsibility is always provable.
+
+---
+
+## 2. Two Principles: CIA + NA
+
+| CIA | NA |
+| --- | --- |
+| **Confidentiality** | **Non-repudiation** |
+| **Integrity** | **Authentication** |
+| **Availability** | |
+
+---
+
+## 3. Team Members & Roles
+
+| Member | Role | Owns | Deliverable for the 29th |
+| --- | --- | --- | --- |
+| **Erick Sientaro** | Developer | Docker lab, collectors, risk engine, Jev integration, hotpatch playbooks, dashboard, Telegram bot | Working demo |
+| **Ishmail** | CEO | Problem story, business case, pitch narration, final call on scope | Pitch script and video narration |
+| **Hozen** | Notetaker | Meeting notes, this document, verifying every **[CHECK]** claim, slide content, recording checklist | Slides and verified sources |
+
+Erick carries the whole build, so the MVP (section 13) is scoped to what one developer can finish in two days.
+
+---
+
+## 4. How CactAI Gets the Data from Each System Layer
+
+Lightweight collector agents on each host read logs the system already produces. Nothing is installed inside the application code.
+
+| Layer | Data source | What we look for | How we collect it |
+| --- | --- | --- | --- |
+| Web application | Nginx/Apache access log, app auth log, ModSecurity WAF log | Failed logins, SQLi/XSS payloads, 4xx/5xx spikes | Python agent tails log files |
+| Database | PostgreSQL `pgaudit` / MySQL audit log | Bulk `SELECT`/`COPY` off-hours, new DB users, privilege grants | Tail audit log, poll `pg_stat_activity` |
+| OS (Linux) | `/var/log/auth.log`, `auditd`, `journald`, process list (`psutil`), open ports (`ss -tulpn`) | Web server spawning a shell, new SUID files, new listening ports | Python agent + `psutil` |
+| OS (Windows) | Windows Event Log (4625 failed logon, 4688 process creation, 4720 user created), Sysmon | Same as above | `pywin32` / `wevtutil` |
+| Network | Suricata or Zeek alerts, firewall drop logs | Port scans, brute force, beaconing | Read `eve.json` |
+| Cloud config | AWS API (S3 bucket ACLs, security groups, IAM) | Public buckets, port 22 open to 0.0.0.0/0 | `boto3` scheduled scan |
+
+**Flow:** Collector → normalize to one JSON event format (section 12) → Redis stream → Rules + Jev classifier → Risk Engine → Dashboard / Notifier / Responder.
+
+For the MVP only the **web, database and OS** layers are needed, all inside Docker.
+
+---
+
+## 5. Risk Level: How It Is Calculated
+
+### Base severity
+
+| Severity | Base Score | Example Anomalies |
+| --- | --- | --- |
+| Low | +5 to +10 | 5 failed logins on admin, SSL certificate expiring soon |
+| Medium | +15 to +25 | Port scan detected, unusual admin login time |
+| High | +30 to +45 | SQL injection payload detected, brute force on admin portal |
+| Critical | +50 to +70 | Web server spawned a shell, bulk database dump during off-hours |
+
+### Formula (0 to 100 index)
+
+A 0 to 100 index is appropriate: executives read it instantly and it maps cleanly to traffic-light bands. Plain addition can pass 100 (Critical +70 plus penalties), so the raw points are passed through a curve that can never exceed 100.
+
+```
+event_points  = base_severity × ai_confidence × asset_criticality
+raw_score     = Σ open event_points + inaction_penalty − resolved_decay
+risk_index    = round(100 × (1 − e^(−raw_score / 60)))
+```
+
+- `ai_confidence`: 0.5 to 1.0, from Jev (section 6).
+- `asset_criticality`: 1.0 normal, 1.5 holds PII, 2.0 crown jewels.
+- `inaction_penalty`: +5 per hour per unacknowledged incident, capped at +30 per incident.
+- `resolved_decay`: points of an incident are removed once it is fixed and verified.
+
+Examples: raw 35 → **44**, raw 70 → **69**, raw 97 → **80**, raw 140 → **90**.
+
+### Risk tolerance bands (threshold configurable per organization)
+
+| Index | Band | What happens |
+| --- | --- | --- |
+| 0 to 29 | Green | Logged only |
+| 30 to 59 | Amber | Operator notified, guided fix offered |
+| 60 to 79 | Red | Hourly reminders, supervisor copied |
+| 80 to 100 | Critical | Autonomous temporary containment + negligence report |
+
+### Risk Escalation Over Time
+
+The inaction penalty is what makes the index climb while nobody acts. Slide graphic: plot the index against time for the demo incident, marking when each alert was sent and when the 80 threshold was crossed.
+
+---
+
+## 6. AI Risk Categorization with Jev (TypeSafe System One)
+
+**Jev** is TypeSafe's System One model. It answers narrow, structured questions about text and returns typed answers with probabilities, in about 100 ms per query. Code keeps control of the workflow; Jev only makes the judgment calls. Python SDK: `typesafe_sdk`.
+
+**Three-stage pipeline**
+1. **Rules (microseconds, local):** signatures for obvious cases (`UNION SELECT`, 5 failed logins in 60 s). Confidence fixed at 1.0. Also groups raw log lines into events so Jev is not called on every line.
+2. **Jev (≈100 ms):** classifies every event the rules cannot settle. Its probability becomes the **AI Confidence Factor**.
+3. **Claude (seconds, off the hot path):** writes the plain-English explanation, recommended fix text and the negligence report. It never sets the score or runs commands.
+
+**Questions asked to Jev in parallel over one event**
+
+```python
+from typesafe_sdk import Choice, Noul, TypeSafeClient
+
+state = {"event": {"layer": "web", "raw": 'POST /login 401 user=admin src=203.0.113.45'}}
+
+questions = {
+    "category": Choice(
+        instructions="What kind of activity does `event.raw` show?",
+        criteria={
+            "benign": {}, "brute_force": {}, "sql_injection": {}, "xss": {},
+            "port_scan": {}, "privilege_escalation": {},
+            "data_exfiltration": {}, "misconfiguration": {},
+        },
+    ),
+    "malicious": Noul(
+        instructions="Is `event.raw` likely part of an attack rather than normal use?"
+    ),
+}
+
+client = TypeSafeClient()
+answer = client.system_one(state=state, questions=questions)
+```
+
+- `category` picks the base severity from the table in section 5.
+- The probability of the chosen category, clipped to 0.5 to 1.0, is the `ai_confidence`.
+- **Confidence-gated routing:** if Jev is uncertain (0.4 to 0.6), no automatic action is taken; the event goes to the operator as "needs review".
+
+**[CHECK]** exact SDK field names against `https://docs.typesafe.ai/sdk/python.md` and get a TypeSafe API key before building.
+
+---
+
+## 7. Main Features
+
+### Risk Tolerance Monitoring
+
+Monitors the current risk index against the organization's threshold. If the index crosses it, corrective action is taken (section 8).
+
+### Preventive Actions
+
+- **Proactive Scanning & Asset Monitoring:** daily scans of every monitored endpoint.
+- **Early-Warning Risk Scoring:** risk rises before an incident, not after.
+- **Guided Operator Mitigations:** AI-recommended one-click fixes offered before the threshold is reached.
+- **Baseline State Preservation:** signed backup/snapshot taken before any corrective action is needed.
+
+**Example incident card (vulnerability feed)**
+> **VULN-ID #2 · Critical · Exposure**
+> Unencrypted production database dump `db_prod_members_backup.sql` found on public bucket `s3://aegis-temp-dev-share` (ACL `public-read`).
+> Cause: an employee uploaded a manual dump to troubleshoot, bypassing standard IAM and encryption policy.
+> Records at risk: 1,240,000 PII · AI confidence: 99.8%
+> Recommended: remove the public ACL, enable default encryption, rotate DB credentials.
+
+Dashboard tile (mockup data): **Endpoints Monitored 1,482 · +10% daily coverage**
+
+> "Our Preventive Actions maintain continuous hygiene through daily scanning, enforce accountability by penalizing unaddressed risks with +5 points per hour, offer guided one-click operator fixes to cool down the risk gauge, and maintain cryptographically signed baseline backups before any threat can materialize."
+
+### Corrective Actions
+
+- **Emergency State Freeze:** captures a read-only snapshot of critical system components.
+- **Autonomous Containment & Temporary Fixes:** deploys defensive firewall rules, isolates compromised components and terminates malicious connections (section 8).
+- **Non-repudiation Report:** end-to-end audit report covering root cause, affected components, system modifications and incident timeline.
+- **Human Handoff & Rollback:** technical and incident reports go to the operator for review and recovery.
+
+---
+
+## 8. Temporary Hotpatch Workflow
+
+```
+Detect → Snapshot → Pick playbook → Apply with TTL → Verify → Notify → Human decides
+```
+
+1. **Detect:** risk index crosses the threshold, or the operator presses Approve & Patch.
+2. **Snapshot:** save current firewall rules, affected config files, account states and DB role grants. Hash and sign the snapshot.
+3. **Pick playbook:** only from a pre-approved allowlist, matched to the category:
+   - `brute_force` → block IP (`iptables`), lock account, enable rate limit
+   - `sql_injection` → add WAF rule, block IP
+   - `privilege_escalation` / shell spawned → kill process, isolate container/host from the network
+   - `data_exfiltration` → revoke the DB session, block outbound traffic to the destination
+   - `misconfiguration` (public S3 / open port 22) → remove the public ACL, restrict the security group to an allowlist
+4. **Apply with TTL:** every hotpatch expires (default 2 h) unless a human makes it permanent, so temporary fixes never silently become permanent config drift.
+5. **Verify:** re-run the check (retry the attack signature, re-scan the port). If the fix failed or broke a health check, roll back automatically from the snapshot.
+6. **Notify:** send what changed, with a one-click Rollback.
+7. **Human decides:** Make Permanent / Extend / Rollback, with a justification written to the audit log.
+
+---
+
+## 9. Notification to Operator
+
+**Channels:** dashboard (always) → Telegram bot (MVP) → email (backup). SMS/phone call on the roadmap.
+
+**Escalation ladder**
+
+| Trigger | Who is notified |
+| --- | --- |
+| Incident opened (Amber) | On-duty operator |
+| No acknowledgement after SLA (default 2 h) | Operator reminder + team lead |
+| Red band | Team lead + IT manager |
+| Critical / autonomous action | IT manager + CXO, negligence report attached |
+
+**Non-repudiation, stated honestly:** we can prove an alert was *delivered* (Telegram message ID and timestamp) and *acknowledged* (button press tied to the operator's account). If no button is pressed we cannot prove it was *read*, so the report says "Delivered 14:00, Ack: none" rather than "the admin saw it". Every notification and acknowledgement is appended to the hash chain.
+
+---
+
+## 10. Executive Escalation & Accountability Workflow
+
+### Metadata
+
+Every action taken is stored in a hash-chained audit log: each record carries the hash of the previous one, so any edit or deletion breaks the chain and is detectable.
+
+### "Higher-Ups" Negligence Report
+
+| Report Field | Prototype Data Example | Why Higher-Ups Need This |
+| --- | --- | --- |
+| Responsible Entity | Admin: John Doe (ID: SEC-409) / Shift Bravo | Identifies who was on duty during the inaction window |
+| SLA Violation | Overdue by 7 hrs 15 mins (Policy SLA: 2 hrs) | Clear metric proving operational neglect against company policy |
+| Timeline of Inaction | 14:00 anomaly detected (+25) · 16:00 reminder 1 (+10) · 21:00 critical limit breached (+45) | Proves progressive neglect, not a sudden incident |
+| Forced Action Taken | Autonomous override engaged: port 22 isolated | Shows the AI had to step in because no human responded |
+| Proof of Non-Repudiation | Delivered to operator @ 14:00 (Ack: none) | Hash-chained delivery receipt removes the "I was never notified" excuse |
+
+### Active Risk Registry Data Schema
+
+| Field | Example Value | Description |
+| --- | --- | --- |
+| Risk ID | RSK-2026-081 | Unique incident tracker |
+| Detected Anomaly | Unrestricted SSH port 22 open | Identified by breach scanner |
+| Base Risk Points | +20 pts | Initial severity weight |
+| Time Unaddressed | 3 hours | Time since alert without response |
+| Inaction Penalty | +15 pts | 3 hrs × 5 pts/hr |
+| Current Risk Contribution | 35 pts | Base + inaction penalty |
+| Recommended Preventive Action | Apply IP whitelist rule to port 22 | AI-suggested preventive fix |
+| Action Buttons | [Approve & Patch] or [Reject with Justification] | The only two ways to clear this risk |
+
+> "Most security platforms stop at alerting the administrator. Our system introduces true administrative accountability: if an operator neglects warnings and allows the risk score to breach the tolerance threshold, the system not only takes autonomous corrective action to protect the company, but it also compiles an immutable Executive Negligence Dossier for leadership, proving the timeline of inaction with non-repudiable audit receipts."
+
+---
+
+## 11. Ethics of the Cactus Response
+
+*Left alone, a cactus does no harm. Try to attack it, and it pricks you.*
+
+**Position: CactAI never attacks back. The spines stay on the cactus.**
+
+Why "hack back" is ruled out:
+- **Illegal:** accessing or disrupting the attacker's machine without authorization is an offence under Singapore's Computer Misuse Act, whatever the motive. **[CHECK]** cite the section.
+- **Wrong target:** attacks usually come through spoofed IPs, VPNs or hijacked innocent computers. Striking back hurts a victim.
+- **Escalation:** retaliation invites a bigger attack and exposes the company to liability.
+
+What the "prick" actually is (all inside our own perimeter):
+- **Block and isolate:** firewall rule, account lock, rate limit.
+- **Tarpit:** slow the attacker's connections so the attack becomes expensive.
+- **Deception:** honeypot login pages, honeytoken DB rows and credentials. Any touch is a near-certain alert.
+- **Evidence:** preserve logs and hand them to SingCERT or the police. The attacker is pricked by attribution and prosecution, not retaliation.
+
+---
+
+## 12. Agentic Multi-Agent Design
+
+Each agent specializes in one layer or OS, which gives a different approach for each computer system.
+
+| Agent | Equivalent in the reference team | Does | Can execute? |
+| --- | --- | --- | --- |
+| **Saguaro** (Lead / Orchestrator) | Dumbledore (CEO) | Receives incidents, delegates, merges findings, owns the risk index | No |
+| **Root** (Web layer) | Ron (CTO) | Reads web/WAF logs, proposes WAF rules | Propose only |
+| **Spine-Net** (Network / Scanner) | Fred + Scanner | Scans own assets, reads Suricata alerts | Propose only |
+| **Reservoir** (Database / Storage) | George (Storage) | DB audit log, backups, S3 checks | Propose only |
+| **Areole-Linux / Areole-Win** (OS agents) | Arthur Weasley (Security Engineer) | Linux: auditd/iptables. Windows: Event Log/`netsh advfirewall` | Runs allowlisted playbooks |
+| **Needle** (Reviewer) | Mad-Eye Moody | Must approve every autonomous action (two-key rule) | Approve/deny only |
+| **Watchdog** | Watchdog | Heartbeats; alerts if any agent or collector goes silent | No |
+| **Scribe** (Auditor) | (new) | Writes the hash-chained log and negligence report | Write-only log |
+| **Help Desk** | Help Desk | Answers operator questions in Telegram ("why was my IP blocked?") | No |
+
+**Safety rules**
+- No agent gets a free shell. Execution happens only through allowlisted playbooks with a TTL.
+- Every autonomous action needs Needle's approval.
+- Jev and Claude judge and explain; deterministic code scores and executes.
+
+**For the 29th:** implement as Python classes inside `cactai-core`, with the orchestrator calling them in turn. Show the full diagram as the architecture slide and mark the rest as roadmap.
+
+---
+
+## 13. Programming Language & Stack
+
+**Python for the whole MVP.**
+
+| Part | Tool |
+| --- | --- |
+| Collectors | Python (`psutil`, file tailing, `boto3`) |
+| AI categorization | Jev via `typesafe_sdk`; Claude for reports |
+| Core API | FastAPI |
+| Dashboard | Streamlit |
+| Notifications | `python-telegram-bot` |
+| Storage | SQLite + Redis streams |
+| Lab | Docker Compose |
+
+Roadmap: production collectors rewritten in Go or Rust for a small single-binary footprint.
+
+---
+
+## 14. Specific Inputs & Outputs
+
+**Input: normalized event (from any collector)**
+```json
+{
+  "event_id": "evt-20260929-000142",
+  "timestamp": "2026-09-29T14:00:03+08:00",
+  "host": "web-01",
+  "layer": "web",
+  "source": "nginx_access",
+  "src_ip": "203.0.113.45",
+  "user": "admin",
+  "raw": "POST /login 401 ...",
+  "asset_criticality": 1.5
+}
+```
+
+**Output 1: classification (Jev)**
+```json
+{ "event_id": "evt-20260929-000142", "category": "brute_force",
+  "severity": "high", "base_points": 30, "ai_confidence": 0.94, "points": 42.3 }
+```
+
+**Output 2: risk update (to dashboard)**
+```json
+{ "timestamp": "2026-09-29T14:00:04+08:00", "risk_index": 44, "band": "amber",
+  "open_incidents": ["RSK-2026-081"] }
+```
+
+**Output 3: operator alert (Telegram)**
+> ⚠️ RSK-2026-081 · Brute force on admin login (web-01) · Risk 44/100
+> Recommended: block 203.0.113.45 for 2 h and enforce a login rate limit.
+> [Approve & Patch] [Reject with Justification]
+
+**Output 4: containment action record**
+```json
+{ "action_id": "act-0007", "incident": "RSK-2026-081", "type": "block_ip",
+  "target": "203.0.113.45", "ttl_hours": 2, "mode": "autonomous",
+  "approved_by": "Needle", "prev_hash": "9f2c…", "hash": "b71a…" }
+```
+
+**Output 5: negligence / non-repudiation report** (PDF + JSON): incident timeline, alerts sent, acknowledgements, SLA breach, action taken, rollback status, hash-chain proof.
+
+---
+
+## 15. System Workflow & Minimum Viable Prototype
+
+Everything runs in `docker compose` on one laptop.
+
+**Containers**
+1. `target-web`: small Flask login app behind Nginx.
+2. `target-db`: PostgreSQL with `pgaudit`.
+3. `cactai-collector`: Python agent tailing web, DB and auth logs.
+4. `cactai-core`: FastAPI with rules, Jev client, risk engine, hotpatch playbooks, audit log.
+5. `cactai-dashboard`: Streamlit page with the 0 to 100 gauge, incident queue and timeline.
+6. Telegram bot for operator alerts with buttons.
+
+**Demo script (about 3 minutes of the video)**
+1. Dashboard shows risk 8, green.
+2. "Attacker" runs `hydra` brute force on the login page → Jev tags *brute_force, confidence 0.94* → risk jumps to about 40 → Telegram alert with **[Approve & Patch] [Reject with Justification]**.
+3. Operator ignores it. Demo mode speeds time up (1 minute = 1 hour); the inaction penalty ticks the gauge upward.
+4. Attacker sends a SQL injection payload → risk crosses 80.
+5. CactAI takes a snapshot, Needle approves, the attacker IP is blocked with `iptables` (TTL 2 h) and the targeted account is locked.
+6. The negligence report is generated with the hash-chained timeline and "Ack: none".
+7. Operator presses **Rollback** or **Make Permanent**, and it appears in the audit log.
+
+**Must have:** steps 1 to 6.
+**Nice to have:** Windows agent, cloud scan, separate agent processes.
+**Fallbacks:** if the Jev API is unavailable during recording, use the rules engine with a fixed confidence and say so. If the live attack is flaky, `simulate.py` replays recorded attack logs; say in the video that it is a replay.
+
+---
+
+## 16. Plan Until the 29th
+
+1. **Erick:** Docker lab + collector + risk engine + auto-block (the demo spine).
+2. **Erick:** Jev categorization, Telegram alert with buttons, negligence report.
+3. **Erick:** dashboard gauge.
+4. **Ishmail:** pitch script and narration, built around section 1 and the demo.
+5. **Hozen:** verify every **[CHECK]**, build slides: problem, cactus ethics, 0 to 100 index, architecture/agents, demo, roadmap.
+6. **All:** record the demo, with the replay script as backup.
