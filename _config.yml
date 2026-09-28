@@ -1,3 +1,24 @@
 theme: jekyll-theme-cayman
 title: CactAI
 description: Accountability-based cybersecurity + AI
+# index.html is the landing page; the README stays for GitHub only.
+exclude:
+  - README.md
+  - "**/.venv"
+  - "**/__pycache__"
+  - .pytest_cache
+defaults:
+  - scope:
+      path: ""
+      type: pages
+    values:
+      layout: default
+  - scope:
+      path: "Cybersecurity + AI.md"
+    values:
+      title: Project plan
+      nav: plan
+  - scope:
+      path: ROADMAP.md
+    values:
+      nav: roadmap

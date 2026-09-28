@@ -1,0 +1,15 @@
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="{{ '/' | relative_url }}"><span class="mark" aria-hidden="true">🌵</span> CactAI</a>
+    <button class="menu-btn" aria-expanded="false" aria-controls="nav">Menu</button>
+    <nav class="nav" id="nav" aria-label="Main">
+      <a href="{{ '/#how' | relative_url }}">How it works</a>
+      <a href="{{ '/#features' | relative_url }}">Features</a>
+      <a href="{{ '/#demo' | relative_url }}">Prototype</a>
+      <a href="{{ '/Cybersecurity%20+%20AI.html' | relative_url }}"{% if page.nav == 'plan' %} aria-current="page"{% endif %}>Plan</a>
+      <a href="{{ '/ROADMAP.html' | relative_url }}"{% if page.nav == 'roadmap' %} aria-current="page"{% endif %}>Roadmap</a>
+      <a class="gh" href="https://github.com/RexGuard/cactai">GitHub</a>
+    </nav>
+  </div>
+</header>
