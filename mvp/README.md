@@ -61,8 +61,7 @@ The dashboard opens on Configuration. Open **Review** for the gauge; the Collect
 
 On a new machine, `run_demo.ps1` (and the collector when started on its own) first runs a
 short setup wizard. It starts with a **security preset** (Strict, Moderate or Balanced), which
-sets the detection and response values; answer `y` to "set each value yourself" to change them
-one by one. Then one section per part: **collector** (logs directory and log file names),
+sets the detection and response values, or **Advanced** to set each of them yourself. Then one section per part: **collector** (logs directory and log file names),
 **classifier** (brute-force and bulk-export thresholds, TypeSafe key), **responder** (risk
 threshold, block expiry, SLA, IPs and accounts never to touch) and **notifications**
 (Telegram). Press Enter at every question to keep the demo defaults.
@@ -91,9 +90,11 @@ user folder. `run_demo.ps1` only clears old `.jsonl` logs when the logs director
 | AI confidence needed to act without a person (`NEEDLE_MIN_CONFIDENCE`) | 0.5 | 0.6 | 0.75 |
 
 Strict acts early and holds longer (more alerts, some false positives). Moderate is what the
-demo uses. Balanced puts day-to-day operations first. The settings file keeps the preset name
-(`CACTAI_PRESET`) and every value, so a value that differs from the preset is an override; the
-dashboard's Configuration page shows overrides in amber under **Advanced** and can reset them.
+demo uses. Balanced puts day-to-day operations first. Advanced sets each value by hand. The
+settings file keeps the choice (`CACTAI_PRESET`) and every value; values that no longer match
+their preset are saved as Advanced. On the dashboard's Configuration page, changing any value
+under **Advanced settings** switches the preset to Advanced, and every other section is folded
+behind an arrow.
 
 ### Variables
 
@@ -114,7 +115,7 @@ dashboard's Configuration page shows overrides in amber under **Advanced** and c
 | `BRUTE_FORCE_COUNT` / `BRUTE_FORCE_WINDOW_S` | 5 / 60 | core: failed logins that count as brute force |
 | `EXPORT_ROWS_THRESHOLD` | 100 | core: rows in one export that count as exfiltration |
 | `NEEDLE_MIN_CONFIDENCE` | 0.6 | core: AI confidence Needle needs before approving an autonomous action |
-| `CACTAI_PRESET` | `moderate` | wizard and dashboard: the security preset the values above came from |
+| `CACTAI_PRESET` | `moderate` | wizard and dashboard: `strict`, `moderate`, `balanced` or `advanced` |
 | `CACTAI_OPERATOR` | `operator` | notifier: name shown on approvals |
 | `CACTAI_CONFIG` | `~\.cactai\config.json` | all: where the setup wizard saves settings |
 

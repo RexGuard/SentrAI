@@ -351,34 +351,32 @@ def decision_controls(inc: dict) -> None:
 
 # ------------------------------------------------------------------ pages
 
-CONFIG_ICONS = {"preset": "verified_user", "collector": "input", "classifier": "category", "responder": "shield", "notifications": "notifications",
-                "ai": "auto_awesome"}
-
-
 def page_config() -> None:
     header("Configuration", f"Saved to {cfg.config_path()} · read by every part when it starts")
+    current = {f.env: f.default for f in cfg.FIELDS.values()} | cfg.read()
+    values = {}
+    preset = cfg.SECTIONS[0]
     with st.container(border=True):
-        section("Dashboard", "this browser session only", "desktop_windows")
+        section(preset.title, preset.about, "verified_user")
+        values |= preset_settings(current)
+
+    # Everything else is folded away; the arrow on each row opens it.
+    with st.expander("Dashboard"):  # no icon, so the row shows its arrow
+        st.caption("This browser session only.")
         c1, c2 = st.columns(2)
         # Own widget keys: Streamlit drops a widget's state when you leave the page.
         st.session_state.core_url = c1.text_input("Core API URL", value=st.session_state.core_url).strip()
         st.session_state.operator = c2.text_input("Operator name (recorded on your approvals)",
                                                   value=st.session_state.operator).strip() or "operator"
-
-    current = {f.env: f.default for f in cfg.FIELDS.values()} | cfg.read()
-    values = {}
-    for s in cfg.SECTIONS:
-        with st.container(border=True):
-            section(s.title, s.about, CONFIG_ICONS.get(s.key, "settings"))
+    for s in cfg.SECTIONS[1:]:
+        with st.expander(s.title):
+            st.caption(s.about)
             if s.key == "ai":
                 values |= ai_settings(current)
                 continue
-            if s.key == "preset":
-                values |= preset_settings(current)
-                continue
             fields = [f for f in s.fields if f.env not in cfg.PRESET_FIELDS]  # those live under the preset
             if len(fields) < len(s.fields):
-                st.caption("Detection and response values are set by the security preset above.")
+                st.caption("Detection and response values are set under Security preset.")
             cols = st.columns(2)
             for n, f in enumerate(fields):
                 values[f.env] = cols[n % 2].text_input(
@@ -399,41 +397,42 @@ def page_config() -> None:
 
 
 def preset_settings(current: dict[str, str]) -> dict[str, str]:
-    """The security preset: pick one, see what it sets, and open Advanced to change single values."""
+    """Strict, Moderate, Balanced or Advanced. Changing a value by hand switches to Advanced."""
+    pick = f"cfg_{cfg.PRESET_ENV}"
     keys = {env: f"cfg_{env}" for env in cfg.PRESET_FIELDS}
-    if current.get(cfg.PRESET_ENV) not in cfg.PRESETS:
-        current[cfg.PRESET_ENV] = cfg.DEFAULT_PRESET
-    st.session_state.setdefault(f"cfg_{cfg.PRESET_ENV}", current[cfg.PRESET_ENV])
+    st.session_state.setdefault(pick, current[cfg.PRESET_ENV])
     for env, key in keys.items():  # widgets take their start value from session state, so a preset can fill them
         st.session_state.setdefault(key, current[env])
 
     def fill() -> None:
-        for env, value in cfg.preset_values(st.session_state[f"cfg_{cfg.PRESET_ENV}"]).items():
-            st.session_state[keys[env]] = value
+        if st.session_state[pick] != cfg.ADVANCED:  # Advanced keeps the values as they are
+            for env, value in cfg.preset_values(st.session_state[pick]).items():
+                st.session_state[keys[env]] = value
 
-    name = st.segmented_control("Preset", tuple(cfg.PRESETS), key=f"cfg_{cfg.PRESET_ENV}", required=True,
-                                format_func=lambda p: cfg.PRESETS[p].label, on_change=fill,
-                                help="Environment variable CACTAI_PRESET. Picking a preset replaces the values "
-                                     "under Advanced with the preset's own.")
-    st.caption(cfg.PRESETS[name].about)
+    def to_advanced() -> None:
+        chosen = {cfg.PRESET_ENV: st.session_state[pick]} | {env: st.session_state[k] for env, k in keys.items()}
+        if cfg.overrides(chosen):
+            st.session_state[pick] = cfg.ADVANCED
+
+    name = st.segmented_control("Preset", cfg.PRESET_CHOICES, key=pick, required=True, on_change=fill,
+                                format_func=cfg.preset_label,
+                                help="Environment variable CACTAI_PRESET. A preset fills in the values below; "
+                                     "changing any of them by hand switches to Advanced.")
+    advanced = name == cfg.ADVANCED
+    st.caption(cfg.ADVANCED_ABOUT + " Pick a preset to go back to its values." if advanced
+               else cfg.PRESETS[name].about)
     values = {cfg.PRESET_ENV: name} | {env: st.session_state[key].strip() for env, key in keys.items()}
-    changed = cfg.overrides(values)
-    base = cfg.preset_values(name)
-    chips = [pill(text, sh.BAND_COLORS["amber"] if set(envs) & set(changed) else sh.BAND_COLORS["green"])
-             for text, envs in cfg.describe(values)]
-    st.markdown(f'<div class="chips">{"".join(chips)}</div>', unsafe_allow_html=True)
-    if changed:
-        st.caption(f"{cfg.PRESETS[name].label} with {len(changed)} value{'s' if len(changed) > 1 else ''} "
-                   "changed by hand (shown in amber).")
+    color = sh.BAND_COLORS["amber"] if advanced else sh.BAND_COLORS["green"]
+    chips = "".join(pill(text, color) for text, _ in cfg.describe(values))
+    st.markdown(f'<div class="chips">{chips}</div>', unsafe_allow_html=True)
 
-    with st.expander("Advanced: set each value yourself", icon=":material/tune:", expanded=bool(changed)):
+    with st.expander("Advanced settings", expanded=advanced):
         cols = st.columns(2)
         for n, env in enumerate(cfg.PRESET_FIELDS):
             f = cfg.FIELDS[env]
-            cols[n % 2].text_input(f.prompt, key=keys[env],
-                                   help=f"Environment variable {env}. {cfg.PRESETS[name].label} uses {base[env]}.")
-        st.button("Reset to preset", icon=":material/restart_alt:", on_click=fill, disabled=not changed,
-                  help=f"Put back the {cfg.PRESETS[name].label} values")
+            uses = ", ".join(f"{p.label} {p.values[env]}" for p in cfg.PRESETS.values())
+            cols[n % 2].text_input(f.prompt, key=keys[env], on_change=to_advanced,
+                                   help=f"Environment variable {env}. Presets: {uses}.")
     return values
 
 
@@ -798,9 +797,9 @@ def page_classifier() -> None:
 
     with st.container(border=True):
         section("Rules in use", "change them on the Configuration page", "rule")
-        preset = cfg.PRESETS.get(os.environ.get(cfg.PRESET_ENV, cfg.DEFAULT_PRESET), cfg.PRESETS[cfg.DEFAULT_PRESET])
+        preset = cfg.preset_label(os.environ.get(cfg.PRESET_ENV, cfg.DEFAULT_PRESET))
         st.markdown(
-            f"- Security preset: **{preset.label}**\n"
+            f"- Security preset: **{preset}**\n"
             f"- Brute force: **{os.environ.get('BRUTE_FORCE_COUNT', '5')}** failed logins within "
             f"**{os.environ.get('BRUTE_FORCE_WINDOW_S', '60')} s**\n"
             f"- Bulk exfiltration: **{os.environ.get('EXPORT_ROWS_THRESHOLD', '100')}** rows or more in one export\n"
