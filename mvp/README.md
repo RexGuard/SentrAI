@@ -76,12 +76,41 @@ Stop everything with `.\stop_demo.ps1`.
 
 Only the configured chat can press the buttons.
 
+## The three parts
+
+CactAI is a pipeline of three pluggable parts. Each part is one small base class with
+one job; to add a new one, subclass it and add it to the list shown.
+
+| Part | Base class | Implement | Built-in versions | Register in |
+| --- | --- | --- | --- | --- |
+| 1. Collector | `Source` in `lab/collector/collector.py` | `poll()` returns new events (build them with `make_event`) | `JsonLogSource`, `HeartbeatSource` | `default_sources()` |
+| 2. Classifier | `Classifier` in `core/app/classifier.py` | `classify(event, now)` returns a `Classification`, or `None` to pass | `RulesClassifier` → `JevClassifier` → `FallbackClassifier` | `default_chain()` |
+| 3. Responder | `Responder` in `core/app/responders.py` | `apply(action)` returns True when in force; `revert(action)` undoes it | `BlocklistResponder` (block_ip, lock_user), `SimulatedResponder` (the rest) | `Saguaro.__init__` |
+
+Events travel from part 1 to part 2 over `POST /events` as plain dicts (`CONTRACT.md`).
+Between parts 2 and 3 sit the risk engine and Needle: an action only reaches a responder
+after an operator approves it, or after Needle approves it above the risk threshold. The
+allowlist of action types is whatever the registered responders handle, and every action
+goes back through its responder when it expires or is rolled back.
+
+Example: a new classifier.
+
+```python
+class AttackToolClassifier(Classifier):
+    name = "user_agent"
+
+    def classify(self, event, now):
+        if "sqlmap" in str(event.get("raw", "")).lower():
+            return Classification("sql_injection", 0.9, 0.95, "known attack tool user agent")
+        return None  # not mine: next classifier decides
+```
+
 ## Tests
 
 | Suite | Command (from the component folder) | Result |
 | --- | --- | --- |
-| Core | `.venv\Scripts\python -m pytest -q` | 23 passed |
-| Lab | `.venv\Scripts\python -m pytest -q` | 30 passed |
+| Core | `.venv\Scripts\python -m pytest -q` | 27 passed |
+| Lab | `.venv\Scripts\python -m pytest -q` | 31 passed |
 | Dashboard | `.venv\Scripts\python -m pytest -q` | 12 passed |
 | Notifier | `.venv\Scripts\python -m pytest -q` | 8 passed |
 | End-to-end (real core + portal + collector + attacks) | from `integration`: `..\lab\.venv\Scripts\python -m pytest -q test_e2e.py` | 1 passed |
