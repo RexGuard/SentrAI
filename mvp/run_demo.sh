@@ -15,6 +15,7 @@
 #   ./run_demo.sh --demo-speed 600      faster inaction penalty (1 real minute = 10 demo hours)
 #   ./run_demo.sh --mode replay         no collector; use replay/simulate.py instead of live attacks
 #   ./run_demo.sh --no-dashboard --no-browser
+#   ./run_demo.sh --spines              portal gets the cactus spines (honeypot, honeytokens, tarpit)
 #
 # Needs python3 with the venv module (Debian/Ubuntu: sudo apt install python3-venv).
 set -euo pipefail
@@ -23,13 +24,15 @@ MODE=live
 DEMO_SPEED=60
 NO_DASHBOARD=0
 NO_BROWSER=0
+SPINES=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --mode) MODE="$2"; shift 2 ;;
         --demo-speed) DEMO_SPEED="$2"; shift 2 ;;
         --no-dashboard) NO_DASHBOARD=1; shift ;;
         --no-browser) NO_BROWSER=1; shift ;;
-        -h|--help) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        --spines) SPINES=1; shift ;;
+        -h|--help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "Unknown option: $1 (see --help)" >&2; exit 2 ;;
     esac
 done
@@ -100,6 +103,7 @@ PY_NOTIF="$ROOT/notifier/.venv/bin/python"
 
 export PYTHONUTF8=1 PYTHONIOENCODING=utf-8 PYTHONUNBUFFERED=1
 export DEMO_SPEED CACTAI_CORE_URL="http://127.0.0.1:8000"
+export CACTAI_SPINES="$SPINES"  # cactus spines: off unless --spines
 
 mkdir -p "$LOG_DIR"
 SETSID=""; command -v setsid >/dev/null 2>&1 && SETSID=setsid  # not on macOS; stop then kills the pid only
@@ -167,6 +171,7 @@ if [ "$MODE" = live ]; then
     echo "  .venv/bin/python -m attacks.benign"
     echo "  .venv/bin/python -m attacks.brute_force --count 8 --delay 0.3"
     echo "  .venv/bin/python -m attacks.sqli --count 3"
+    [ "$SPINES" = 1 ] && echo "  .venv/bin/python -m attacks.spines                  # honeypot + honeytokens (or scenario.py --spines)"
 else
     echo "  .venv/bin/python -m replay.simulate                  # scripted replay (say so on camera)"
 fi

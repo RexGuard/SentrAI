@@ -57,6 +57,15 @@ FAILED_LOGIN = [
     re.compile(r"\b(failed\s+login|login\s+failed|authentication\s+failure|failed\s+password)\b", re.I),
     re.compile(r"\b4625\b"),  # Windows failed logon
 ]
+# Cactus spines (lab portal spines.py, design doc section 11): decoys no real user touches,
+# so one touch is enough. kind -> (category, reason).
+SPINE = re.compile(r"^cactus-spine (\w+):")
+SPINE_KINDS: dict[str, tuple[str, str]] = {
+    "honeypot_page": ("port_scan", "reconnaissance: opened a decoy page that is only listed in robots.txt"),
+    "honeypot_login": ("brute_force", "sign-in attempted on a decoy login page no real user is sent to"),
+    "honeytoken_credential": ("brute_force", "used a planted credential that exists only in a decoy page"),
+    "honeytoken_row": ("data_exfiltration", "bait database rows were read (no legitimate query returns them)"),
+}
 EXPORT = re.compile(r"/export\b", re.I)
 ROWS = re.compile(r"\brows?\s*[=:]\s*(\d+)", re.I)
 BULK_DB = re.compile(r"\b(copy\s+\w+\s+to|select\s+\*\s+from\s+members)\b", re.I)
@@ -96,6 +105,9 @@ class RulesEngine:
 
         if source == "heartbeat":
             return RuleHit("benign", "collector heartbeat")
+        if source == "cactus_spine" and (m := SPINE.match(raw)) and m.group(1) in SPINE_KINDS:
+            category, why = SPINE_KINDS[m.group(1)]
+            return RuleHit(category, f"Cactus spine: {why}")
         if BLOCKED.search(text):
             return RuleHit("benign", "request already refused by CactAI blocklist (403)")
 

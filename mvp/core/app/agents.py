@@ -111,6 +111,12 @@ class LayerAgent(Agent):
 
     @staticmethod
     def explain(incident: dict[str, Any]) -> str:
+        reason = str(incident.get("classification_reason") or "")
+        if reason.startswith("Cactus spine:"):  # a decoy was touched: say so instead of the generic text
+            src = incident.get("src_ip") or "an unknown source"
+            return (f"{src} touched a decoy on {incident.get('host') or 'an unknown host'} "
+                    f"({reason.split(':', 1)[1].strip()}). No real user has a reason to be there, "
+                    "so this is a near-certain attack.")
         tmpl = EXPLAIN.get(incident["category"], "Suspicious activity on {host}.")
         return tmpl.format(
             n=len(incident.get("event_ids", [])),

@@ -64,6 +64,27 @@ def init_db(path: Path | None = None, count: int = 40) -> None:
         conn.close()
 
 
+def set_honeytokens(on: bool, path: Path | None = None) -> None:
+    """Add the cactus-spine bait rows (spines.py) when on, remove them when off."""
+    from .spines import HONEYTOKEN_IDS, HONEYTOKEN_ROWS
+
+    path = path or paths.db_path()
+    conn = _connect(path)
+    try:
+        if on:
+            conn.executemany(
+                "INSERT OR IGNORE INTO members (id, member_no, name, email, program) "
+                "VALUES (?, ?, ?, ?, ?)",
+                [(i, r["member_no"], r["name"], r["email"], r["program"])
+                 for i, r in zip(HONEYTOKEN_IDS, HONEYTOKEN_ROWS)],
+            )
+        else:
+            conn.executemany("DELETE FROM members WHERE id = ?", [(i,) for i in HONEYTOKEN_IDS])
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def search_members(term: str, path: Path | None = None) -> list[dict]:
     """Search members by name/email substring.
 

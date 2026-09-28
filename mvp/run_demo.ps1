@@ -15,12 +15,14 @@
   .\run_demo.ps1                     # live mode, 1 real minute = 1 demo hour
   .\run_demo.ps1 -DemoSpeed 600      # faster inaction penalty (1 real minute = 10 demo hours)
   .\run_demo.ps1 -Mode replay        # no collector; use replay\simulate.py instead of live attacks
+  .\run_demo.ps1 -Spines             # portal gets the cactus spines (honeypot, honeytokens, tarpit)
 #>
 param(
     [ValidateSet("live", "replay")] [string]$Mode = "live",
     [double]$DemoSpeed = 60,
     [switch]$NoDashboard,
-    [switch]$NoBrowser
+    [switch]$NoBrowser,
+    [switch]$Spines
 )
 
 $ErrorActionPreference = "Stop"
@@ -82,6 +84,7 @@ $env:PYTHONUTF8 = "1"
 $env:PYTHONIOENCODING = "utf-8"
 $env:DEMO_SPEED = "$DemoSpeed"
 $env:CACTAI_CORE_URL = "http://127.0.0.1:8000"
+$env:CACTAI_SPINES = if ($Spines) { "1" } else { "0" }  # off unless asked for
 
 $started = @()
 
@@ -146,6 +149,7 @@ if ($Mode -eq "live") {
     Write-Host "  .\.venv\Scripts\python.exe -m attacks.benign"
     Write-Host "  .\.venv\Scripts\python.exe -m attacks.brute_force --count 8 --delay 0.3"
     Write-Host "  .\.venv\Scripts\python.exe -m attacks.sqli --count 3"
+    if ($Spines) { Write-Host "  .\.venv\Scripts\python.exe -m attacks.spines                 # honeypot + honeytokens (or scenario.py --spines)" }
 } else {
     Write-Host "  .\.venv\Scripts\python.exe -m replay.simulate                  # scripted replay (say so on camera)"
 }

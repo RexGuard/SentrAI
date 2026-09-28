@@ -50,5 +50,6 @@ ACCESS_LOG = os.environ.get("CACTAI_LOG_ACCESS", "access.jsonl")
 AUTH_LOG = os.environ.get("CACTAI_LOG_AUTH", "auth.jsonl")
 DB_LOG = os.environ.get("CACTAI_LOG_DB", "db.jsonl")
 OS_LOG = os.environ.get("CACTAI_LOG_OS", "os.jsonl")
+DECEPTION_LOG = os.environ.get("CACTAI_LOG_DECEPTION", "deception.jsonl")  # cactus spines (spines.py)
 
-ALL_LOGS = (ACCESS_LOG, AUTH_LOG, DB_LOG, OS_LOG)
+ALL_LOGS = (ACCESS_LOG, AUTH_LOG, DB_LOG, OS_LOG, DECEPTION_LOG)

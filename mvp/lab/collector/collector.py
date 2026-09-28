@@ -52,6 +52,7 @@ SOURCE_MAP = {
     paths.AUTH_LOG: ("web", "flask_auth"),
     paths.DB_LOG: ("db", "db_query"),
     paths.OS_LOG: ("os", "os_process"),
+    paths.DECEPTION_LOG: ("web", "cactus_spine"),  # a spine sets its own layer ("db" for bait rows)
 }
 
 
@@ -91,6 +92,8 @@ def normalize(log_name: str, record: dict[str, Any]) -> dict[str, Any] | None:
     if mapping is None:
         return None
     layer, source = mapping
+    if source == "cactus_spine" and record.get("layer") in ("web", "db", "os", "network", "cloud"):
+        layer = record["layer"]
     return make_event(layer, source, record.get("raw", ""), src_ip=record.get("src_ip"), user=record.get("user"),
                       ts=record.get("ts"), criticality=criticality_for(layer, record))
 
