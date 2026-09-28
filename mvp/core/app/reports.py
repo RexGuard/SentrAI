@@ -1,10 +1,11 @@
-"""Scribe's Executive Negligence / Non-repudiation report (JSON + Markdown)."""
+"""Scribe's Security Evidence Report (JSON, Markdown and PDF)."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
 from .clock import fmt_demo_hours, fmt_offset
+from .pdfdoc import BOLD, MONO, Column, PdfDoc
 from .saguaro import public
 
 if TYPE_CHECKING:
@@ -85,9 +86,21 @@ def build_report(core: "Saguaro", iid: str) -> dict[str, Any]:
 
         chain_valid, bad_seq = core.audit.verify()
         records = [r for r in core.audit.records() if r["data"].get("incident") == iid]
+        # Approvals: Needle's review of each containment (two-key rule) and every operator decision.
+        approvals = []
+        for r in records:
+            if r["type"] == "needle_review":
+                d = r["data"]
+                approvals.append({"ts": r["ts"], "by": d.get("operator") or "Needle",
+                                  "decision": "approved" if d.get("approved") else "denied",
+                                  "note": d.get("reasoning") or ""})
+        for d in inc.get("decisions", []):
+            approvals.append({"ts": d.get("at"), "by": d.get("operator"), "decision": d.get("decision"),
+                              "note": d.get("justification") or ""})
+        approvals.sort(key=lambda a: a["ts"] or "")
         report = {
-            "report_id": f"NR-{iid}",
-            "title": "Executive Negligence & Non-Repudiation Report",
+            "report_id": f"ER-{iid}",
+            "title": "Security Evidence Report",
             "generated_at": clock.iso(now),
             "incident_id": iid,
             "incident": {k: inc[k] for k in (
@@ -103,6 +116,7 @@ def build_report(core: "Saguaro", iid: str) -> dict[str, Any]:
             },
             "timeline_of_inaction": timeline,
             "forced_action": forced,
+            "approvals": approvals,
             "non_repudiation": {
                 "acknowledged": inc["acked"],
                 "ack": ack_text,
@@ -158,7 +172,7 @@ def render_markdown(r: dict[str, Any]) -> str:
         f"points {inc['points']} (base {inc['base_points']}), inaction penalty +{inc['inaction_penalty']:g}",
         f"- Recommended action: {inc['recommended_action']}",
         "",
-        "## Timeline of inaction",
+        "## Incident timeline",
         "",
         "| Time | Demo time | Event | Points |",
         "| --- | --- | --- | --- |",
@@ -172,7 +186,14 @@ def render_markdown(r: dict[str, Any]) -> str:
             lines.append(f"- `{d['notification']}` ({d['kind']}): {d['line']}")
     else:
         lines.append("- No alerts were queued for this incident.")
-    lines += ["", f"> {r['non_repudiation']['statement']}", "", "## Containment actions", ""]
+    lines += ["", f"> {r['non_repudiation']['statement']}", "", "## Approvals", ""]
+    if r["approvals"]:
+        lines += ["| Time | By | Decision | Note |", "| --- | --- | --- | --- |"]
+        for a in r["approvals"]:
+            lines.append(f"| {a['ts']} | {a['by']} | {a['decision']} | {str(a['note']).replace('|', '/')} |")
+    else:
+        lines.append("None recorded.")
+    lines += ["", "## Containment actions", ""]
     if r["forced_action"]["actions"]:
         lines += ["| Action | Type | Target | Mode | Approved by | Status | Expires | Snapshot |", "| --- | --- | --- | --- | --- | --- | --- | --- |"]
         for a in r["forced_action"]["actions"]:
@@ -186,3 +207,91 @@ def render_markdown(r: dict[str, Any]) -> str:
     lines += ["", f"Chain valid: **{r['audit_proof']['chain_valid']}**. Head hash: `{r['audit_proof']['chain_head_hash']}`",
               "", f"_{r['demo_clock']['note']}_", ""]
     return "\n".join(lines)
+
+
+GREEN, RED = (0.12, 0.45, 0.25), (0.72, 0.13, 0.13)
+
+
+def _ts(ts: Any) -> str:
+    """'2026-09-28T13:54:04+00:00' -> '2026-09-28 13:54:04' so table columns stay narrow."""
+    return str(ts or "-").replace("T", " ")[:19]
+
+
+def render_pdf(r: dict[str, Any]) -> bytes:
+    """The same content as the Markdown report, laid out for printing and sharing."""
+    inc = r["incident"]
+    proof = r["audit_proof"]
+    doc = PdfDoc(title=f"{r['title']} {r['report_id']}",
+                 footer=f"CactAI  |  {r['report_id']}  |  generated {r['generated_at']}  |  chain head {proof['chain_head_hash'][:16]}...")
+
+    # Title band across the top of page 1
+    top = doc.y + 42
+    doc.rect(0, top - 88, 595.28, 88, (0.09, 0.27, 0.17))
+    doc.text(42, top - 46, r["title"], BOLD, 21, (1, 1, 1))
+    doc.text(42, top - 66, f"{r['report_id']}  |  incident {r['incident_id']} ({inc['category']}, {inc['severity']}, "
+                           f"status {inc['status']})  |  generated {r['generated_at']}", size=8.5, color=(0.85, 0.93, 0.87))
+    doc.y = top - 88 - 18
+
+    chain_ok = proof["chain_valid"]
+    chain_text = "VALID" if chain_ok else f"BROKEN at seq {proof['first_invalid_seq']}"
+    delivered = sum(d["delivered"] for d in r["non_repudiation"]["deliveries"])
+    doc.table([Column("Field", 1.1, BOLD), Column("Record", 3.4)], [
+        ["Responsible entity", r["responsible_entity"]],
+        ["SLA", r["sla"]["summary"]],
+        ["Containment", r["forced_action"]["summary"]],
+        ["Proof of delivery", f"{r['non_repudiation']['ack']}; {delivered} alert(s) delivered"],
+        ["Audit chain", f"{chain_text}, head {proof['chain_head_hash']}"],
+    ], size=9, colors=[None, RED if r["sla"]["breached"] else None, None,
+                       RED if not r["non_repudiation"]["acknowledged"] else None, GREEN if chain_ok else RED])
+
+    doc.heading("What happened")
+    doc.paragraph(inc["explanation"])
+    doc.bullet(f"Host: {inc['host']} ({inc['layer']}), source IP: {inc['src_ip'] or 'n/a'}, user: {inc['user'] or 'n/a'}")
+    doc.bullet(f"Classified by: {inc['classified_by']}, AI confidence {inc['ai_confidence']}, points {inc['points']} "
+               f"(base {inc['base_points']}), inaction penalty +{inc['inaction_penalty']:g}")
+    doc.bullet(f"Recommended action: {inc['recommended_action']}")
+
+    doc.heading("Incident timeline")
+    rows = []
+    for t in r["timeline_of_inaction"]:
+        pts = "" if t["points"] is None else (f"+{t['points']:g}" if t["points"] >= 0 else f"{t['points']:g}")
+        rows.append([_ts(t["ts"]), t["demo_time"], t["event"], pts])
+    doc.table([Column("Time", 1.2), Column("Demo time", 0.7), Column("Event", 3.75), Column("Points", 0.5)], rows)
+
+    doc.heading("Alerts and acknowledgement")
+    if r["non_repudiation"]["deliveries"]:
+        for d in r["non_repudiation"]["deliveries"]:
+            doc.bullet(f"{d['notification']} ({d['kind']}): {d['line']}")
+    else:
+        doc.bullet("No alerts were queued for this incident.")
+    doc.paragraph(r["non_repudiation"]["statement"], size=8.5, color=(0.4, 0.42, 0.4))
+
+    doc.heading("Approvals")
+    if r["approvals"]:
+        doc.table([Column("Time", 1.2), Column("By", 0.8), Column("Decision", 0.7), Column("Note", 3.3)],
+                  [[_ts(a["ts"]), a["by"], a["decision"], a["note"]] for a in r["approvals"]],
+                  colors=[RED if a["decision"] in ("denied", "reject") else None for a in r["approvals"]])
+    else:
+        doc.paragraph("None recorded.")
+
+    doc.heading("Containment actions")
+    acts = r["forced_action"]["actions"]
+    if acts:
+        doc.table([Column("Action", 0.9), Column("Type", 0.8), Column("Target", 1.0), Column("Mode", 0.8),
+                   Column("Approved by", 0.8), Column("Status", 0.65), Column("Expires", 1.25), Column("Snapshot", 0.85, MONO)],
+                  [[a["action_id"], a["type"], a["target"], a["mode"], a["approved_by"], a["status"],
+                    _ts(a["expires_at"]) if a["expires_at"] else "never", a["snapshot_hash"][:10]] for a in acts], size=8)
+    else:
+        doc.paragraph("None.")
+
+    doc.heading("Hash-chain proof")
+    doc.paragraph("Each audit record stores the hash of the one before it, so changing or deleting any record breaks "
+                  "every hash after it. Re-check at any time with GET /audit.", size=8.5, color=(0.4, 0.42, 0.4))
+    doc.table([Column("Seq", 0.4), Column("Time", 1.3), Column("Type", 1.1), Column("Agent", 0.75),
+               Column("Previous hash", 1.2, MONO), Column("Hash", 1.2, MONO)],
+              [[rec["seq"], _ts(rec["ts"]), rec["type"], rec["agent"], rec["prev_hash"][:16], rec["hash"][:16]]
+               for rec in proof["records"]], size=7.5)
+    doc.paragraph(f"Chain valid: {proof['chain_valid']}. Head hash: {proof['chain_head_hash']}", BOLD, 9,
+                  GREEN if chain_ok else RED)
+    doc.paragraph(r["demo_clock"]["note"], size=8, color=(0.4, 0.42, 0.4))
+    return doc.to_bytes()

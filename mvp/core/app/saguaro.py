@@ -489,7 +489,7 @@ class Saguaro(Agent):
                              f"Risk CRITICAL ({r['risk_index']}/100): IT manager + CXO",
                              f"Risk index is {r['risk_index']}/100 (critical, threshold {s.threshold}). "
                              f"Open incidents: {', '.join(open_ids) or 'none'}. Autonomous temporary containment "
-                             f"is engaged for unacknowledged incidents; negligence reports are available.", [])
+                             f"is engaged for unacknowledged incidents; evidence reports are available.", [])
         self._last_band = new
 
     def _sla_reminders(self, now: float, r: dict[str, Any]) -> None:
@@ -626,7 +626,7 @@ class Saguaro(Agent):
                          f"{inc['id']}: autonomous containment engaged",
                          f"\U0001f335 CactAI autonomous override on {inc['id']} (risk {risk_idx}/100 >= {s.threshold}, "
                          f"no acknowledgement). Approved by Needle. Applied for {s.ttl_hours:g} h: {summary}.\n"
-                         f"Negligence report: {s.public_url}/reports/{inc['id']}.md", BUTTONS_AFTER_ACTION)
+                         f"Evidence report: {s.public_url}/reports/{inc['id']}.md", BUTTONS_AFTER_ACTION)
         else:
             self._notify(now, "operator_action", inc["id"], [s.on_duty],
                          f"{inc['id']}: hotpatch applied by {approver}",

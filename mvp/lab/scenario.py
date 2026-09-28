@@ -57,7 +57,7 @@ def main() -> None:
     sqli.run(h, p, count=6, delay=0.4, src_ip="198.51.100.23")
 
     narrate("SCENARIO COMPLETE — check the dashboard for the incident queue, the "
-            "risk gauge, the negligence report and the audit chain.")
+            "risk gauge, the evidence report and the audit chain.")
 
 
 if __name__ == "__main__":

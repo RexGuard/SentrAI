@@ -8,7 +8,7 @@ component's own venv, then runs the lab attack scripts and checks the whole chai
   inaction       -> penalty grows (fast demo clock)
   SQL injection  -> risk crosses 80 -> Needle approves -> attacker blocked (HTTP 403)
   loopback       -> never blocked
-  report         -> negligence report with "Ack: none", audit chain valid
+  report         -> evidence report with "Ack: none", audit chain valid
   rollback       -> block removed
 
 Run from mvp\\lab's venv (it has requests + pytest):
@@ -174,7 +174,7 @@ def test_demo_story(stack):
     assert wait_for(attacker_status, 10), "target app did not return 403 for the blocked attacker"
     assert requests.get(f"{TARGET}/", timeout=3).status_code == 200, "loopback must never be blocked"
 
-    # 6. Negligence report and audit chain.
+    # 6. Evidence report and audit chain.
     md = requests.get(f"{CORE}/reports/{bf['id']}.md", timeout=3).text
     assert "Ack: none" in md and "Needle" in md
     audit = requests.get(f"{CORE}/audit", timeout=3).json()

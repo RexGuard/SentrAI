@@ -67,8 +67,9 @@ Core exposes a speed factor: `DEMO_SPEED` env var (default 60 → 1 real minute 
 | POST | `/incidents/{id}/permanent` | `{"operator", "justification"}` |
 | POST | `/incidents/{id}/ack` | `{"operator", "channel"}` records acknowledgement |
 | GET | `/audit` | hash-chained records `[{"seq","ts","type","data","prev_hash","hash"}]` + `{"chain_valid": bool}` |
-| GET | `/reports/{incident_id}` | negligence report JSON |
+| GET | `/reports/{incident_id}` | evidence report JSON |
 | GET | `/reports/{incident_id}.md` | same report as Markdown |
+| GET | `/reports/{incident_id}.pdf` | same report as a printable PDF (download) |
 | GET | `/blocklist` | `{"ips": [...], "users": [...]}` active (non-expired) containment, polled by target app |
 | GET | `/notifications/pending` | alerts not yet delivered (polled by notifier) |
 | POST | `/notifications/{id}/delivered` | `{"channel","message_id"}` |

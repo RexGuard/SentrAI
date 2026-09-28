@@ -12,7 +12,7 @@ Short answers first (say this), then backup detail (only if they push). Default 
 **[Hozen]** We monitor systems, not people's private lives. CactAI reads security logs the systems already produce: logins, queries, processes. It does not read email, chats or screens. The only person-level record is who was on duty, whether an alert was delivered, and whether they acknowledged it.
 *Backup:* The organisation should tell staff in its IT policy that security alerts and acknowledgements are logged. The audit log itself is personal data under the PDPA, so it gets access control and a retention period. [CHECK with PDPC employee-monitoring guidance before claiming specific compliance.]
 
-### 3. Is a "negligence report" fair to operators? Is it even legal?
+### 3. Is an "evidence report" fair to operators? Is it even legal?
 **[Ishmail]** It is a factual timeline, not a verdict. It says "alert delivered 14:00, acknowledgement: none, SLA 2 hours". It does not say "John ignored it", because we cannot prove someone read a message. Leadership decides what it means. Often the finding is "one person on shift is not enough", which is a management problem, not an operator problem.
 *Backup:* The report also records escalations to the team lead and CXO, so accountability goes up the chain, not just down. The operator can always reject an alert with a justification, which also goes in the record and protects them. We are not lawyers; an organisation should align the report with its HR policy before using it for discipline.
 

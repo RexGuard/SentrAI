@@ -22,7 +22,7 @@ From the working hackathon MVP (27 Sep 2026) to a product a Singapore SME or pri
 | Containment | IP block and account lock via the portal's blocklist (real 403), TTL, rollback, make permanent | Firewall, WAF, AD, DB, cloud actions are only recorded; no tarpit or honeytokens |
 | Agents | Saguaro, Root, Reservoir, Areole, Needle, Watchdog, Scribe, HelpDesk as Python classes in one process | Separate services, separate keys, LLM-assisted HelpDesk |
 | Notifications | Dashboard, console, Telegram code with buttons | Telegram untested live; no email, SMS, Teams/Slack |
-| Accountability | Hash-chained audit log, negligence report (Markdown/JSON) | PDF, signatures, fair-process features, board reporting |
+| Accountability | Hash-chained audit log, security evidence report (Markdown/JSON/PDF) | Signatures, fair-process features, board reporting |
 | Platform | Runs on one Windows laptop; in-memory state; no login | Persistence, auth, multi-tenant, installer, CI |
 
 ---
@@ -181,7 +181,7 @@ P0 ■
 
 | # | Feature | Detail | Days |
 | --- | --- | --- | --- |
-| 6.1 | Security Evidence Report (PDF) | Rename and restyle the negligence report; PDF export with the audit-chain proof. | 1.5 |
+| 6.1 | Security Evidence Report (PDF) | Done in the MVP: renamed from the old negligence report, PDF export with the audit-chain proof. | 1.5 |
 | 6.2 | Signed audit chain | Ed25519 signature on each chain head; periodic external timestamp (RFC 3161) so even an admin with DB access cannot rewrite history unnoticed. | 2 |
 | 6.3 | Fair-process features | Operator can add context before a report is final; report shows the operator's alert load at the time (so an overloaded person is not blamed for a staffing problem); HR-sensitive fields visible only to Executive/Auditor roles. | 2 |
 | 6.4 | Team metrics | Mean time to acknowledge and to resolve, SLA compliance, alerts per person, per week and per month. | 1.5 |

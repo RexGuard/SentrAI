@@ -969,12 +969,16 @@ def report_viewer(inc_id: str) -> None:
     if err or not md:
         empty("No report for this incident yet. Scribe writes one when autonomous containment fires.", "hourglass_empty")
         return
-    d1, d2 = st.columns(2)
-    d1.download_button("Download report (.md)", md, icon=":material/download:", file_name=f"{inc_id}-evidence-report.md",
+    d0, d1, d2 = st.columns(3)
+    pdf, perr = safe(lambda: client.report_pdf(inc_id))
+    if pdf and not perr:
+        d0.download_button("PDF", pdf, icon=":material/picture_as_pdf:", help="Download the evidence report as PDF", file_name=f"{inc_id}-evidence-report.pdf",
+                           mime="application/pdf", type="primary", width="stretch", key=f"dl_pdf_{inc_id}")
+    d1.download_button("Markdown", md, icon=":material/download:", file_name=f"{inc_id}-evidence-report.md",
                        mime="text/markdown", width="stretch", key=f"dl_md_{inc_id}")
     rep_json, jerr = safe(lambda: client.report_json(inc_id))
     if rep_json is not None and not jerr:
-        d2.download_button("Download report (.json)", json.dumps(rep_json, indent=2), icon=":material/data_object:", file_name=f"{inc_id}-evidence-report.json",
+        d2.download_button("JSON", json.dumps(rep_json, indent=2), icon=":material/data_object:", file_name=f"{inc_id}-evidence-report.json",
                            mime="application/json", width="stretch", key=f"dl_json_{inc_id}")
     with st.container(height=520, border=True):
         st.markdown(sh.demote_headings(md))
