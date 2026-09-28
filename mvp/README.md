@@ -191,7 +191,7 @@ class AttackToolClassifier(Classifier):
 
 ## Known limits
 
-- Incidents and notifications are kept in memory; only the audit chain persists across restarts.
+- Incidents, blocks and notifications are saved in SQLite next to the audit chain and restored when the core restarts. Blocks keep their original TTL; any that expired while the core was down are rolled back and audited on start. `run_demo` still starts clean (it calls `/demo/reset`) unless you pass `--keep-state` / `-KeepState`.
 - Only IP blocks and account locks have a real effect. Rate limit, WAF rule, kill process and revoke ACL are recorded as simulated.
 - Jev has not been called against the live TypeSafe API yet (no API key); without a key the fallback heuristic classifies what the rules cannot.
 - Telegram mode has not been tested with a real bot.

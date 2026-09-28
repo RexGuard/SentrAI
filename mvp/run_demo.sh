@@ -15,6 +15,7 @@
 #   ./run_demo.sh --demo-speed 600      faster inaction penalty (1 real minute = 10 demo hours)
 #   ./run_demo.sh --mode replay         no collector; use replay/simulate.py instead of live attacks
 #   ./run_demo.sh --no-dashboard --no-browser
+#   ./run_demo.sh --keep-state          keep incidents and blocks from the last run (default: start clean)
 #
 # Needs python3 with the venv module (Debian/Ubuntu: sudo apt install python3-venv).
 set -euo pipefail
@@ -23,13 +24,15 @@ MODE=live
 DEMO_SPEED=60
 NO_DASHBOARD=0
 NO_BROWSER=0
+KEEP_STATE=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --mode) MODE="$2"; shift 2 ;;
         --demo-speed) DEMO_SPEED="$2"; shift 2 ;;
         --no-dashboard) NO_DASHBOARD=1; shift ;;
         --no-browser) NO_BROWSER=1; shift ;;
-        -h|--help) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        --keep-state) KEEP_STATE=1; shift ;;
+        -h|--help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "Unknown option: $1 (see --help)" >&2; exit 2 ;;
     esac
 done
@@ -133,7 +136,8 @@ echo "CactAI demo  (mode: $MODE, DEMO_SPEED=$DEMO_SPEED -> 1 real minute = $(awk
 
 start_component core "$ROOT/core" "$PY_CORE" -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 wait_http "http://127.0.0.1:8000/health" || echo "Core did not come up on :8000. Check .demo_logs/core.log" >&2
-# Fresh audit chain and incident state for this take.
+# Fresh audit chain and incident state for this take (the core restores both on start otherwise).
+[ "$KEEP_STATE" = 1 ] && echo "  keeping incidents and blocks from the last run" || \
 "$PYTHON" -c "import urllib.request; urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8000/demo/reset', method='POST'), timeout=5)" 2>/dev/null || true
 
 LAB_DIR="$ROOT/lab"

@@ -24,6 +24,7 @@ plan arrives the incident carries the playbook recommendation.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 import os
@@ -171,6 +172,8 @@ class Cyanide(Saguaro):
         self._pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="cyanide")
         self._generation = 0  # bumped on reset so late plans for old incidents are ignored
         super().__init__(settings)
+
+    def _configure(self) -> None:
         # The profile can protect more assets; Needle enforces them deterministically.
         self.needle.protected_ips |= set(self.profile.get("protected_ips", []))
         self.needle.protected_users |= set(self.profile.get("protected_users", []))
@@ -290,6 +293,20 @@ class Cyanide(Saguaro):
                 text += f". Holds autonomous action: {plan.hold_reason}"
             self._timeline(inc, now, "cyanide_plan", text)
             self._evaluate(now)  # the plan may change what autonomous containment would do
+
+    # --------------------------------------------------------- persistence
+    def _encode_incident(self, inc: dict[str, Any]) -> dict[str, Any]:
+        data = super()._encode_incident(inc)
+        if isinstance(inc.get("_plan"), Plan):
+            data["_plan"] = dataclasses.asdict(inc["_plan"])
+        return data
+
+    def _decode_incident(self, data: dict[str, Any]) -> dict[str, Any]:
+        inc = super()._decode_incident(data)
+        p = inc.get("_plan")
+        if isinstance(p, dict):
+            inc["_plan"] = Plan(**{**p, "proposals": [Proposal(**x) for x in p.get("proposals", [])]})
+        return inc
 
     # --------------------------------------------------------- containment
     def _contain(self, inc: dict[str, Any], mode: str, approver: str, now: float, risk_idx: int,

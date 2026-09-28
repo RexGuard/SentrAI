@@ -15,12 +15,14 @@
   .\run_demo.ps1                     # live mode, 1 real minute = 1 demo hour
   .\run_demo.ps1 -DemoSpeed 600      # faster inaction penalty (1 real minute = 10 demo hours)
   .\run_demo.ps1 -Mode replay        # no collector; use replay\simulate.py instead of live attacks
+  .\run_demo.ps1 -KeepState          # keep incidents and blocks from the last run (default: start clean)
 #>
 param(
     [ValidateSet("live", "replay")] [string]$Mode = "live",
     [double]$DemoSpeed = 60,
     [switch]$NoDashboard,
-    [switch]$NoBrowser
+    [switch]$NoBrowser,
+    [switch]$KeepState
 )
 
 $ErrorActionPreference = "Stop"
@@ -111,8 +113,12 @@ $started += Start-Component "core" (Join-Path $Root "core") "& '$pyCore' -m uvic
 if (-not (Wait-Http "http://127.0.0.1:8000/health")) {
     Write-Host "Core did not come up on :8000. Check the 'CactAI - core' window." -ForegroundColor Red
 }
-# Fresh audit chain and incident state for this take.
-try { Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/demo/reset" -TimeoutSec 5 | Out-Null } catch { }
+# Fresh audit chain and incident state for this take (the core restores both on start otherwise).
+if ($KeepState) {
+    Write-Host "  keeping incidents and blocks from the last run"
+} else {
+    try { Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/demo/reset" -TimeoutSec 5 | Out-Null } catch { }
+}
 
 $labDir = Join-Path $Root "lab"
 $logsDir = (& $pyLab (Join-Path $Root "cactai_config.py") get CACTAI_LAB_LOGS)
