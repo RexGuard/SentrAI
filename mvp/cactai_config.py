@@ -126,12 +126,24 @@ def save(values: dict[str, str]) -> Path:
     return path
 
 
-def load() -> dict[str, str]:
-    """Copy saved values into os.environ, without overriding anything already set."""
+_LOADED: dict[str, str] = {}  # what load() put into os.environ, so a reload can replace it
+
+
+def load(refresh: bool = False) -> dict[str, str]:
+    """Copy saved values into os.environ, without overriding anything already set.
+
+    refresh=True first takes back the values an earlier load() copied in (unless something else
+    changed them since), so edits saved while CactAI runs win over the old saved values.
+    """
+    if refresh:
+        for name, value in _LOADED.items():
+            if os.environ.get(name) == value:
+                del os.environ[name]
+        _LOADED.clear()
     values = read()
     for name, value in values.items():
-        if value != "":
-            os.environ.setdefault(name, value)
+        if value != "" and name not in os.environ:
+            os.environ[name] = _LOADED[name] = value
     return values
 
 

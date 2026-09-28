@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict
 
 from .config import Settings
 from .reports import build_report, render_markdown
+from . import ai
 from .chat import OperatorChat, default_chat_provider
 from .cyanide import Cyanide, default_planner
 from .saguaro import BadRequestError, ConflictError, Saguaro
@@ -65,6 +66,13 @@ class ChatIn(BaseModel):
     incident: Optional[str] = None
 
 
+class AITestIn(BaseModel):
+    provider: str
+    api_key: str = ""
+    base_url: str = ""
+    model: str = ""
+
+
 class HeartbeatIn(BaseModel):
     collector: str
 
@@ -97,6 +105,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Operator chat: read-only tools plus suggestion buttons; answers from the core's own
     # explanations when no AI key is set (or when the fixed-playbook engine runs).
     chat = OperatorChat(core, default_chat_provider() if isinstance(core, Cyanide) else None)
+    chat.off_reason = core.ai_off_reason = ai.why_off()
 
     app = FastAPI(title="CactAI core", version="0.1.0", lifespan=lifespan)
     app.state.core = core
@@ -233,6 +242,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/chat/clear")
     def clear_chat() -> dict[str, Any]:
         return chat.clear()
+
+    @app.get("/ai")
+    def ai_status() -> dict[str, Any]:
+        return ai.status(core, chat)
+
+    @app.post("/ai/reload")
+    def ai_reload() -> dict[str, Any]:
+        return ai.reload(core, chat)
+
+    @app.post("/ai/test")
+    def ai_test(body: Optional[AITestIn] = None) -> dict[str, Any]:
+        return ai.test(core, chat, body.model_dump() if body else None)
 
     @app.post("/heartbeat")
     def post_heartbeat(body: HeartbeatIn) -> dict[str, Any]:

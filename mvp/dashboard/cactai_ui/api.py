@@ -7,6 +7,7 @@ import requests
 
 DEFAULT_TIMEOUT = 2.5
 CHAT_TIMEOUT = 90.0  # the orchestrator may call its AI model several times per answer
+AI_TEST_TIMEOUT = 45.0  # one real request to the AI provider
 
 
 class CoreError(Exception):
@@ -120,6 +121,17 @@ class CoreClient:
 
     def clear_chat(self) -> Any:
         return self.post_json("/chat/clear", {})
+
+    def ai_status(self) -> dict:
+        return self.get_json("/ai")
+
+    def ai_reload(self) -> dict:
+        """Make the running core read the saved AI settings again (no restart)."""
+        return self.post_json("/ai/reload", {})
+
+    def ai_test(self, settings: dict | None = None) -> dict:
+        """One real request to the AI provider: with settings, those; without, what Cyanide uses now."""
+        return self.post_json("/ai/test", settings, timeout=AI_TEST_TIMEOUT)
 
     def reset_demo(self) -> Any:
         return self.post_json("/demo/reset", {})

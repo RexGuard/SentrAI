@@ -35,11 +35,22 @@ if (Test-Path $PidFile) {
 function Ensure-Venv([string]$Component) {
     $dir = Join-Path $Root $Component
     $py = Join-Path $dir ".venv\Scripts\python.exe"
+    $req = Join-Path $dir "requirements.txt"
+    # Remembers which requirements.txt the venv was built from, so packages added later
+    # (for example the AI packages Cyanide needs) are installed on the next start.
+    $stamp = Join-Path $dir ".venv\requirements.installed"
     if (-not (Test-Path $py)) {
         Write-Host "Creating venv for $Component ..." -ForegroundColor Cyan
         & python -m venv (Join-Path $dir ".venv")
         & $py -m pip install -q --upgrade pip
-        & $py -m pip install -q -r (Join-Path $dir "requirements.txt")
+    }
+    $want = (Get-FileHash $req -Algorithm SHA256).Hash
+    $have = if (Test-Path $stamp) { (Get-Content $stamp -Raw).Trim() } else { "" }
+    if ($want -ne $have) {
+        Write-Host "Installing packages for $Component ..." -ForegroundColor Cyan
+        & $py -m pip install -q -r $req
+        if ($LASTEXITCODE -eq 0) { Set-Content -Path $stamp -Value $want -Encoding ASCII }
+        else { Write-Host "pip could not install everything for $Component (see above)." -ForegroundColor Yellow }
     }
     return $py
 }

@@ -165,6 +165,7 @@ class Cyanide(Saguaro):
     def __init__(self, settings: Settings | None = None, planner: Planner | None = None,
                  profile: dict[str, Any] | None = None, synchronous: bool = False) -> None:
         self.planner = planner
+        self.ai_off_reason: str | None = None  # why there is no planner (set by main.py and /ai/reload)
         self.profile = profile if profile is not None else load_profile(os.getenv("CYANIDE_PROFILE"))
         self.synchronous = synchronous  # tests: plan inline instead of on a worker thread
         self._pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="cyanide")
@@ -179,7 +180,9 @@ class Cyanide(Saguaro):
                 "profile": self.profile.get("organisation", "none")}
 
     def planner_status(self) -> str:
-        return self.planner.status if self.planner else "off (playbooks only)"
+        if self.planner:
+            return self.planner.status
+        return f"off ({self.ai_off_reason}); playbooks only" if self.ai_off_reason else "off (playbooks only)"
 
     # ------------------------------------------------------------ planning
     def _proposals(self, inc: dict[str, Any], agent: LayerAgent) -> list[Proposal]:

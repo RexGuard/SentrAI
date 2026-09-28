@@ -386,8 +386,12 @@ def page_config() -> None:
             st.error("Please enter a number for: " + "; ".join(bad))
         else:
             path = cfg.save(values)
-            st.success(f"Saved to {path}. Restart the demo (stop_demo.ps1, then run_demo.ps1) so the core, "
-                       "collector and notifier pick up the new settings.")
+            ai, err = safe(client.ai_reload)
+            if err:
+                st.success(f"Saved to {path}. Start the demo (run_demo.ps1) so the core picks them up.")
+            else:
+                st.success(f"Saved to {path}. Cyanide switched to the new AI settings ({ai.get('chat')}). "
+                           "Restart the demo (stop_demo.ps1, then run_demo.ps1) for the other settings.")
 
 
 def ai_settings(current: dict[str, str]) -> dict[str, str]:
@@ -435,7 +439,41 @@ def ai_settings(current: dict[str, str]) -> dict[str, str]:
 
         st.selectbox(f"Available models ({len(models)})", models, key="ai_model_pick", on_change=pick,
                      index=models.index(model) if model in models else None, placeholder="Pick a model")
+    ai_connection(ai)
     return ai
+
+
+def ai_connection(ai: dict[str, str]) -> None:
+    """What Cyanide uses right now, and a button that makes one real request with the values above."""
+    now, err = safe(client.ai_status)
+    t1, t2 = st.columns([3, 1], vertical_alignment="center")
+    if err:
+        t1.caption("Cyanide: core not running, so this can't show what it uses. Start the demo to test through it.")
+    elif now.get("online"):
+        t1.caption(f"Cyanide now: 🟢 online · {now.get('provider')} · {now.get('model')}"
+                   f" · key from {now.get('key_source') or 'unknown'}")
+    else:
+        t1.caption(f"Cyanide now: 🔴 offline · {now.get('off_reason') or now.get('chat')}")
+    body = {"provider": ai["CACTAI_LLM_PROVIDER"], "api_key": ai["CACTAI_LLM_API_KEY"],
+            "base_url": ai["CACTAI_LLM_BASE_URL"], "model": ai[cfg.MODEL_ENV]}
+    if t2.button("🔌 Test connection", width="stretch", disabled=bool(err),
+                 help="Send one short request to the provider with the settings above (saved or not), "
+                      "through the same code Cyanide uses"):
+        with st.spinner("Sending a test request to the provider..."):
+            result, test_err = safe(lambda: client.ai_test(body))
+        st.session_state.ai_test = (body, result if not test_err else {"ok": False, "error": test_err})
+    tested, result = st.session_state.get("ai_test") or (None, None)
+    if tested != body:  # the form changed since the test: that result no longer applies
+        result = None
+    if result and result.get("ok"):
+        st.success(f"Connected: {result.get('provider')} answered with model {result.get('model')} "
+                   f"in {result.get('ms')} ms.")
+        if not now or now.get("model") != result.get("model") or not now.get("online"):
+            st.info("These settings work. Press Save settings to switch Cyanide to them.")
+    elif result:
+        st.error(f"Connection failed: {result.get('error')}")
+        if result.get("hint"):
+            st.caption(result["hint"])
 
 
 @st.fragment(run_every=AUTO)
