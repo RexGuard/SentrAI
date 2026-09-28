@@ -163,6 +163,7 @@ if ($Mode -eq "live") {
     Write-Host "  .\.venv\Scripts\python.exe -m attacks.benign"
     Write-Host "  .\.venv\Scripts\python.exe -m attacks.brute_force --count 8 --delay 0.3"
     Write-Host "  .\.venv\Scripts\python.exe -m attacks.sqli --count 3"
+    if ($Spines) { Write-Host "  .\.venv\Scripts\python.exe -m attacks.spines                 # honeypot + honeytokens (or scenario.py --spines)" }
 } else {
     Write-Host "  .\.venv\Scripts\python.exe -m replay.simulate                  # scripted replay (say so on camera)"
 }

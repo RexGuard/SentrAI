@@ -357,6 +357,8 @@ class Saguaro(Agent):
             inc["malicious_probability"] = max(inc["malicious_probability"], cls.malicious)
             inc["_autonomous_denied"] = False
             changed = True
+        if cls.reason.startswith("Cactus spine:") and not str(inc.get("classification_reason")).startswith("Cactus spine:"):
+            inc["classification_reason"] = cls.reason  # a decoy touch is the strongest evidence: lead with it
         if changed:
             inc["points"] = round(inc["base_points"] * inc["ai_confidence"] * inc["asset_criticality"], 1)
         self._describe(inc, self._agent(inc["analyzed_by"]))

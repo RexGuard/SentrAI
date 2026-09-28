@@ -150,6 +150,7 @@ Containment is enforced by the target app polling `/blocklist` (real effect: blo
 ## Target app (owner: lab)
 - Flask on :5000: `/` , `/login` (POST form user/password), `/search?q=` (deliberately naive, logs SQLi-looking queries; uses SQLite with a fake `members` table of synthetic data), `/export` (bulk export, triggers data_exfiltration events), `/admin/run?cmd=` simulated command endpoint that NEVER executes anything, only logs "shell spawned" style event.
 - Writes JSON-lines logs to `mvp/lab/logs/*.jsonl`. Honors core `/blocklist` (poll every 2 s; if core down, allow).
+- Cactus spines (off unless `CACTAI_SPINES=1`): honeypot `/admin-legacy`, a planted credential, bait `members` rows and a tarpit. Each touch goes to `mvp/lab/logs/deception.jsonl`; the collector sends it with `"source": "cactus_spine"` and a raw text starting `cactus-spine <kind>:`, and core rules turn it into an incident at confidence 1.0 (only for that source).
 - Because clients are local, the attacker IP is taken from header `X-Demo-Src-IP` when present (demo spoofing so different "attackers" can be shown), else remote_addr.
 
 ## Rules for all agents

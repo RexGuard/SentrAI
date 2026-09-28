@@ -74,6 +74,32 @@ The demo "attacker" IP is sent in the `X-Demo-Src-IP` header (brute
 .\.venv\Scripts\python.exe scenario.py            # benign -> brute -> pause -> sqli
 ```
 
+## Cactus spines: honeypot, honeytokens, tarpit (off by default)
+
+Design doc section 11. Everything stays inside the portal; nothing is ever sent to the
+attacker. Turn on with `run_demo.ps1 -Spines` / `run_demo.sh --spines` (or set
+`CACTAI_SPINES=1` before `python -m target_app`).
+
+| Spine | What it is | Touch becomes |
+| --- | --- | --- |
+| Honeypot page | `/admin-legacy`, listed only in `robots.txt` as Disallow | `port_scan` (reconnaissance) |
+| Honeypot login | posting to that page; never signs anyone in | `brute_force` (IP only, no real account is locked) |
+| Honeytoken credential | `svc_backup` planted in an HTML comment on the decoy page, used on the real `/login` | `brute_force` |
+| Honeytoken rows | `STF-0007` and `STF-0012` in `members`; staff searches never match them, `/export` does | `data_exfiltration` |
+| Tarpit | decoy pages, and every request from an IP after its first touch, wait `CACTAI_TARPIT_S` seconds (default 3, max 30) | slows the attack |
+
+Each touch is written to `logs/deception.jsonl` (source `cactus_spine`) and the core
+rules classify it with confidence 1.0.
+
+```powershell
+.\.venv\Scripts\python.exe -m attacks.spines        # intruder walks into every spine (prints each wait)
+.\.venv\Scripts\python.exe scenario.py --spines     # the full story plus a phase 5 for the spines
+```
+
+In the full scenario the risk is already high by phase 5, so the first decoy touch gets
+203.0.113.99 blocked within seconds and the later steps are refused with 403. Run
+`attacks.spines` on its own (fresh start) to show every spine.
+
 ## Replay fallback (if the live attack is flaky on camera)
 
 ```powershell
@@ -133,7 +159,8 @@ temp dir and hit no network.
 
 - `/admin/run?cmd=` **never executes** anything — it only logs a simulated
   `web server spawned shell: <cmd>` OS-layer event.
-- All member data is synthetic (`Member 0001`…, `@example.com`).
+- All member data is synthetic (`Member 0001`…, `@example.com`); the bait rows
+  use `@aegis-academy.example` and are removed again when spines are off.
 - Attack scripts refuse any host other than `127.0.0.1` / `localhost` / `::1`.
 - If core is unreachable the target app **fails open** (allows traffic).
 ```

@@ -191,6 +191,7 @@ if [ "$MODE" = live ]; then
     echo "  .venv/bin/python -m attacks.benign"
     echo "  .venv/bin/python -m attacks.brute_force --count 8 --delay 0.3"
     echo "  .venv/bin/python -m attacks.sqli --count 3"
+    [ "$SPINES" = 1 ] && echo "  .venv/bin/python -m attacks.spines                  # honeypot + honeytokens (or scenario.py --spines)"
 else
     echo "  .venv/bin/python -m replay.simulate                  # scripted replay (say so on camera)"
 fi
