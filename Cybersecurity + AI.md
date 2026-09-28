@@ -8,6 +8,11 @@ An accountability-based security system that follows **CIANA** and gives CXOs pr
 
 All factual claims were verified on 27 Sep 2026; sources are in `mvp/research/SOURCES.md`. Items marked **[FILL]** still need input.
 
+**How this document is organized**
+- **Sections 1 to 3:** the problem, our principles and the team.
+- **Part A, Final product (sections 4 to 14):** the full design we are building toward.
+- **Part B, MVP product (sections 15 and 16):** what we built for the 29 Sep pitch and what the demo shows.
+
 ---
 
 ## 1. Problem & Target Organization
@@ -25,6 +30,14 @@ All factual claims were verified on 27 Sep 2026; sources are in `mvp/research/SO
   - **PPLingo / LingoAce ([2023] SGPDPC 12, published May 2024, S$74,000).** Its admin password was "lingoace123", unchanged for 2+ years, with no MFA, and was brute-forced. 557,144 users were affected, 303,238 of them students. https://www.pdpc.gov.sg/-/media/files/pdpc/pdf-files/commissions-decisions/gd_pplingo-pte-ltd-(revised)_241023.pdf
   - **North London Collegiate School (Singapore) (Feb 2022, S$10,000).** Applicants' passports, NRICs and birth certificates sat in a website folder that search engines indexed, protected only by robots.txt. https://www.pdpc.gov.sg/-/media/Files/PDPC/PDF-Files/Commissions-Decisions/Decision---NLCS---01122021.pdf
 - Alert fatigue: SOC teams receive ~4,484 alerts a day and ignore 67% of them (Vectra AI, 2023 State of Threat Detection, vendor survey of 2,000 SOC analysts). https://www.vectra.ai/resources/2023-state-of-threat-detection
+
+**Customer hypothesis (not yet validated)**
+> We have not tested this positioning with a real customer. Treat it as a working assumption for the pitch, not a validated finding.
+
+- **Initial wedge:** small Singapore tuition and private education businesses with limited IT support. Other Singapore SMEs remain future customers once the wedge is proven.
+- **Everyday user:** the IT administrator or outsourced IT provider who watches the alerts.
+- **Buyer:** the business owner or operations head who signs off on spend.
+- **Central promise:** help small teams act on security warnings before they become prolonged incidents, with a clear record of the response.
 
 ## What if humans were not enough
 
@@ -50,13 +63,17 @@ To minimize the risk of human error, our team has formulated a plan that can be 
 
 | Member | Role | Owns | Deliverable for the 29th |
 | --- | --- | --- | --- |
-| **Erick Sientaro** | Developer | Docker lab, collectors, risk engine, Jev integration, hotpatch playbooks, dashboard, Telegram bot | Working demo |
+| **Erick Sientaro** | Developer | Demo lab, collectors, risk engine, Jev integration, hotpatch playbooks, dashboard, Telegram bot | Working demo |
 | **Ishmail** | CEO | Problem story, business case, pitch narration, final call on scope | Pitch script and video narration |
 | **Hozen** | Notetaker | Meeting notes, this document, keeping sources in `mvp/research/SOURCES.md` current, slide content, recording checklist | Slides and verified sources |
 
-Erick carries the whole build, so the MVP (section 13) is scoped to what one developer can finish in two days.
+Erick carries the whole build, so the MVP (section 15) is scoped to what one developer can finish in two days.
 
 ---
+
+# Part A: Final Product
+
+The full design CactAI is built toward. Part B (section 15) says which pieces the MVP already runs.
 
 ## 4. How CactAI Gets the Data from Each System Layer
 
@@ -71,9 +88,9 @@ Lightweight collector agents on each host read logs the system already produces.
 | Network | Suricata or Zeek alerts, firewall drop logs | Port scans, brute force, beaconing | Read `eve.json` |
 | Cloud config | AWS API (S3 bucket ACLs, security groups, IAM) | Public buckets, port 22 open to 0.0.0.0/0 | `boto3` scheduled scan |
 
-**Flow:** Collector → normalize to one JSON event format (section 12) → Redis stream → Rules + Jev classifier → Risk Engine → Dashboard / Notifier / Responder.
+**Flow:** Collector → normalize to one JSON event format (section 14) → Redis stream → Rules + Jev classifier → Risk Engine → Dashboard / Notifier / Responder.
 
-For the MVP only the **web, database and OS** layers are needed, all inside Docker.
+The MVP covers only the **web, database and OS** layers, read from the demo portal's log files (section 15).
 
 ---
 
@@ -112,7 +129,7 @@ Examples: raw 35 → **44**, raw 70 → **69**, raw 97 → **80**, raw 140 → *
 | 0 to 29 | Green | Logged only |
 | 30 to 59 | Amber | Operator notified, guided fix offered |
 | 60 to 79 | Red | Hourly reminders, supervisor copied |
-| 80 to 100 | Critical | Autonomous temporary containment + negligence report |
+| 80 to 100 | Critical | Autonomous temporary containment + evidence report |
 
 ### Risk Escalation Over Time
 
@@ -127,7 +144,7 @@ The inaction penalty is what makes the index climb while nobody acts. Slide grap
 **Three-stage pipeline**
 1. **Rules (microseconds, local):** signatures for obvious cases (`UNION SELECT`, 5 failed logins in 60 s). Confidence fixed at 1.0. Also groups raw log lines into events so Jev is not called on every line.
 2. **Jev (≈100 ms):** classifies every event the rules cannot settle. Its probability becomes the **AI Confidence Factor**.
-3. **Claude (seconds, off the hot path):** writes the plain-English explanation, recommended fix text and the negligence report. It never sets the score or runs commands.
+3. **Claude (seconds, off the hot path):** writes the plain-English explanation, recommended fix text and the evidence report. It never sets the score or runs commands.
 
 **Questions asked to Jev in parallel over one event**
 
@@ -237,7 +254,7 @@ Detect → Snapshot → Pick playbook → Apply with TTL → Verify → Notify �
 | Incident opened (Amber) | On-duty operator |
 | No acknowledgement after SLA (default 2 h) | Operator reminder + team lead |
 | Red band | Team lead + IT manager |
-| Critical / autonomous action | IT manager + CXO, negligence report attached |
+| Critical / autonomous action | IT manager + CXO, evidence report attached |
 
 **Non-repudiation, stated honestly:** we can prove an alert was *delivered* (Telegram message ID and timestamp) and *acknowledged* (button press tied to the operator's account). If no button is pressed we cannot prove it was *read*, so the report says "Delivered 14:00, Ack: none" rather than "the admin saw it". Every notification and acknowledgement is appended to the hash chain.
 
@@ -249,7 +266,7 @@ Detect → Snapshot → Pick playbook → Apply with TTL → Verify → Notify �
 
 Every action taken is stored in a hash-chained audit log: each record carries the hash of the previous one, so any edit or deletion breaks the chain and is detectable.
 
-### "Higher-Ups" Negligence Report
+### "Higher-Ups" Evidence Report
 
 | Report Field | Prototype Data Example | Why Higher-Ups Need This |
 | --- | --- | --- |
@@ -272,7 +289,7 @@ Every action taken is stored in a hash-chained audit log: each record carries th
 | Recommended Preventive Action | Apply IP whitelist rule to port 22 | AI-suggested preventive fix |
 | Action Buttons | [Approve & Patch] or [Reject with Justification] | The only two ways to clear this risk |
 
-> "Most security platforms stop at alerting the administrator. Our system introduces true administrative accountability: if an operator neglects warnings and allows the risk score to breach the tolerance threshold, the system not only takes autonomous corrective action to protect the company, but it also compiles an immutable Executive Negligence Dossier for leadership, proving the timeline of inaction with non-repudiable audit receipts."
+> "Most security platforms stop at alerting the administrator. Our system introduces true administrative accountability: if an operator neglects warnings and allows the risk score to breach the tolerance threshold, the system not only takes autonomous corrective action to protect the company, but it also compiles an immutable Executive Evidence Report for leadership, proving the timeline of inaction with non-repudiable audit receipts."
 
 ---
 
@@ -308,7 +325,7 @@ Each agent specializes in one layer or OS, which gives a different approach for 
 | **Areole-Linux / Areole-Win** (OS agents) | Arthur Weasley (Security Engineer) | Linux: auditd/iptables. Windows: Event Log/`netsh advfirewall` | Runs allowlisted playbooks |
 | **Needle** (Reviewer) | Mad-Eye Moody | Must approve every autonomous action (two-key rule) | Approve/deny only |
 | **Watchdog** | Watchdog | Heartbeats; alerts if any agent or collector goes silent | No |
-| **Scribe** (Auditor) | (new) | Writes the hash-chained log and negligence report | Write-only log |
+| **Scribe** (Auditor) | (new) | Writes the hash-chained log and evidence report | Write-only log |
 | **Help Desk** | Help Desk | Answers operator questions in Telegram ("why was my IP blocked?") | No |
 
 **Safety rules**
@@ -316,13 +333,13 @@ Each agent specializes in one layer or OS, which gives a different approach for 
 - Every autonomous action needs Needle's approval.
 - Jev and Claude judge and explain; deterministic code scores and executes.
 
-**For the 29th:** implement as Python classes inside `cactai-core`, with the orchestrator calling them in turn. Show the full diagram as the architecture slide and mark the rest as roadmap.
+**In the MVP:** the agents are Python classes inside the core, with Saguaro calling them in turn (section 15). Separate agent services are on the roadmap.
 
 ---
 
 ## 13. Programming Language & Stack
 
-**Python for the whole MVP.**
+**Target stack.** The MVP (section 15) uses Python throughout, stores state in memory plus the audit chain, and needs no Redis or Docker.
 
 | Part | Tool |
 | --- | --- |
@@ -379,42 +396,78 @@ Roadmap: production collectors rewritten in Go or Rust for a small single-binary
   "approved_by": "Needle", "prev_hash": "9f2c…", "hash": "b71a…" }
 ```
 
-**Output 5: negligence / non-repudiation report** (PDF + JSON): incident timeline, alerts sent, acknowledgements, SLA breach, action taken, rollback status, hash-chain proof.
+**Output 5: evidence / non-repudiation report** (PDF + JSON): incident timeline, alerts sent, acknowledgements, SLA breach, action taken, rollback status, hash-chain proof.
 
 ---
 
+# Part B: MVP Product
+
+What we built for the 29 Sep pitch and what the demo video shows. The code is in `mvp/` of the repo; `mvp/README.md` has the full run instructions.
+
 ## 15. System Workflow & Minimum Viable Prototype
 
-Everything runs in `docker compose` on one laptop.
+Everything runs natively on one Windows laptop (Python, no Docker, no Redis). One command, `run_demo.ps1`, starts every component in its own window.
 
-**Containers**
-1. `target-web`: small Flask login app behind Nginx.
-2. `target-db`: PostgreSQL with `pgaudit`.
-3. `cactai-collector`: Python agent tailing web, DB and auth logs.
-4. `cactai-core`: FastAPI with rules, Jev client, risk engine, hotpatch playbooks, audit log.
-5. `cactai-dashboard`: Streamlit page with the 0 to 100 gauge, incident queue and timeline.
-6. Telegram bot for operator alerts with buttons.
+**Components**
+1. **Target app** (`lab/target_app/`, port 5000): the fictional "Aegis Academy Student Portal". It writes web, login, database and OS logs, and it enforces CactAI's blocklist by answering blocked IPs and accounts with HTTP 403 "Blocked by CactAI".
+2. **Core** (`core/`, port 8000): FastAPI with the risk engine, the agents (Saguaro, Root, Spine-Net, Reservoir, Areole, Needle, Watchdog, Scribe, Help Desk) as Python classes in one process, TTL hotpatches, the hash-chained audit log and the evidence reports. The generated report is still titled "Executive Negligence & Non-Repudiation Report" in the MVP code; renaming it there is a follow-up.
+3. **Dashboard** (`dashboard/`, port 8501): Streamlit console (see below).
+4. **Notifier** (`notifier/`): Telegram bot with Approve / Reject buttons, or console output when no bot token is set.
+5. **Attack and replay scripts** (`lab/attacks/`, `lab/replay/`): benign traffic, brute force, SQL injection, bulk export and a simulated shell. They refuse any target other than localhost:5000.
 
-**Demo script (about 3 minutes of the video)**
-1. Dashboard shows risk 8, green.
-2. "Attacker" runs `hydra` brute force on the login page → Jev tags *brute_force, confidence 0.94* → risk jumps to about 40 → Telegram alert with **[Approve & Patch] [Reject with Justification]**.
-3. Operator ignores it. Demo mode speeds time up (1 minute = 1 hour); the inaction penalty ticks the gauge upward.
-4. Attacker sends a SQL injection payload → risk crosses 80.
-5. CactAI takes a snapshot, Needle approves, the attacker IP is blocked (TTL 2 h; in the MVP the target app enforces CactAI's blocklist and returns HTTP 403, no host firewall changes) and the targeted account is locked.
-6. The negligence report is generated with the hash-chained timeline and "Ack: none".
-7. Operator presses **Rollback** or **Make Permanent**, and it appears in the audit log.
+**The three pluggable parts**
 
-**Must have:** steps 1 to 6.
-**Nice to have:** Windows agent, cloud scan, separate agent processes.
-**Fallbacks:** if the Jev API is unavailable during recording, use the rules engine with a fixed confidence and say so. If the live attack is flaky, `simulate.py` replays recorded attack logs; say in the video that it is a replay.
+CactAI is a pipeline of three parts. Each is one small base class with one job, so a new log source, detector or fix can be added without touching the rest.
+
+| Part | What it does | Base class | Built-in versions |
+| --- | --- | --- | --- |
+| 1. Collector | Reads logs and turns them into events for the core (`POST /events`) | `Source` | `JsonLogSource` (tails the portal's logs), `HeartbeatSource` |
+| 2. Classifier | Decides what each event is; the first classifier that answers wins | `Classifier` | `RulesClassifier` → `JevClassifier` → `FallbackClassifier` |
+| 3. Action taker (responder) | Applies a temporary fix and undoes it on expiry or rollback | `Responder` | `BlocklistResponder` (block IP, lock account), `SimulatedResponder` (the rest) |
+
+Between parts 2 and 3 sit the risk engine and Needle: an action only reaches a responder after an operator approves it, or after Needle approves it once risk crosses the threshold. This also prepares us for the surprise features at the 2 to 3 Nov hackathon, which can slot in as a new source, classifier or responder.
+
+**First-run setup wizard**
+
+On a new machine, `run_demo.ps1` first asks a few questions, one section per part:
+1. **Collector:** logs directory and log file names.
+2. **Classifier:** brute-force and bulk-export thresholds, TypeSafe (Jev) API key.
+3. **Responder:** risk threshold, block expiry, SLA, and IPs and accounts that must never be touched.
+4. **Notifications:** Telegram bot token and chat ID.
+
+Pressing Enter keeps the demo defaults. Answers are saved to `%USERPROFILE%\.cactai\config.json` and read by every component on start. Change them later with `python cactai_config.py setup` or on the dashboard's Configuration page.
+
+**Dashboard**
+
+A sidebar menu, opening on Configuration:
+- **Decide:** Approvals (requests waiting on a person, with Approve, Reject, Rollback and Make Permanent).
+- **Pipeline:** Collector, Classifier and Action taker, one page per part. A red bubble on each button counts the new malicious activity that reached that part since it was last opened.
+- **Oversight:** Review (0 to 100 gauge, threshold and risk accumulated), Reports (one evidence report per incident) and Audit trail (every step, hash-chained, with a "chain valid" check).
+
+**Demo script (about 1 minute of video at `-DemoSpeed 600`, run by `lab/scenario.py`)**
+1. Benign staff traffic: no incidents, gauge green.
+2. Brute force from `203.0.113.45`: incident `RSK-2026-081`, risk about 39 (amber), operator alert on Telegram or in the notifier window, Collector and Classifier bubbles light up.
+3. Nobody acknowledges: demo time runs fast (1 real minute = 10 demo hours) and the inaction penalty adds +5 per demo hour. The script's default 6-second pause is only about 1 demo hour, under the 2-hour SLA, so no SLA reminder fires; run `scenario.py --pause 15` (about 2.5 demo hours) to show one on camera.
+4. SQL injection from `198.51.100.23`: risk crosses 80, Needle approves, both attacker IPs are blocked and `admin` is locked for 2 demo hours. The portal returns "Blocked by CactAI" (403). The demo machine itself (127.0.0.1) is never blocked.
+5. The evidence report shows the timeline of inaction, "Ack: none" and the audit chain hash.
+6. The operator presses **Rollback** or **Make Permanent** on the Approvals page, and it appears in the audit trail.
+
+**Real vs simulated in the MVP**
+- Real: log collection, rules classification, risk index and inaction penalty, IP blocks and account locks (enforced by the portal), TTL expiry, audit chain, evidence reports, dashboard.
+- Simulated: rate limit, WAF rule, kill process and revoke ACL are recorded but have no effect. No firewall, OS or network setting is ever changed.
+- Not yet tested live: Jev (no TypeSafe API key yet; the fallback heuristic classifies what the rules cannot) and a real Telegram bot.
+
+**Fallbacks:** if Jev is unavailable during recording, the chain still runs the rules first and then a keyword fallback classifier (its confidence depends on what matched, and unmatched events count as benign), and we say so. If the live attack is flaky, `lab/replay/simulate.py` posts a scripted incident (benign, brute force, SQL injection, simulated shell) straight to the core, and we say in the video that it is a replay.
+
+**Tests:** core 27, lab 36, dashboard 25, notifier 8 and one end-to-end story test, all passing.
 
 ---
 
 ## 16. Plan Until the 29th
 
-1. **Erick:** Docker lab + collector + risk engine + auto-block (the demo spine).
-2. **Erick:** Jev categorization, Telegram alert with buttons, negligence report.
-3. **Erick:** dashboard gauge.
+1. ~~**Erick:** lab + collector + risk engine + auto-block (the demo spine).~~ Done 27 Sep.
+2. ~~**Erick:** three pluggable parts, setup wizard, sidebar dashboard.~~ Done 28 Sep.
+3. **Erick:** live Jev test once the TypeSafe API key arrives; real Telegram alerts once a bot token is set. Neither is needed for the video.
 4. **Ishmail:** pitch script and narration, built around section 1 and the demo.
-5. **Hozen:** finalize slides from `mvp/pitch/SLIDES.md` (sources in `mvp/research/SOURCES.md`): problem, cactus ethics, 0 to 100 index, architecture/agents, demo, roadmap.
+5. **Hozen:** finalize slides from `mvp/pitch/SLIDES.md` (sources in `mvp/research/SOURCES.md`): problem, cactus ethics, 0 to 100 index, architecture and the three parts, demo, roadmap.
 6. **All:** record the demo, with the replay script as backup.
