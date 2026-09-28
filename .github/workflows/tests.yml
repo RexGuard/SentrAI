@@ -1,0 +1,72 @@
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+        working-directory: mvp
+    env:
+      # No secrets in CI: AI features fall back to playbooks / fake planners.
+      ANTHROPIC_API_KEY: ""
+      OPENAI_API_KEY: ""
+      TYPESAFE_API_KEY: ""
+      PYTHONUTF8: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: mvp/*/requirements.txt
+
+      # One venv per part, at <part>/.venv, the same layout the demo scripts and
+      # the notifier tests (which borrow the dashboard venv's fake core) expect.
+      - name: Install
+        run: |
+          for part in core lab dashboard notifier; do
+            python -m venv "$part/.venv"
+            if [ "$RUNNER_OS" = "Windows" ]; then py="$part/.venv/Scripts/python.exe"; else py="$part/.venv/bin/python"; fi
+            "$py" -m pip install -q -r "$part/requirements.txt"
+          done
+
+      - name: Core tests
+        working-directory: mvp/core
+        run: .venv/${{ runner.os == 'Windows' && 'Scripts/python.exe' || 'bin/python' }} -m pytest -q
+
+      - name: Lab tests
+        if: ${{ !cancelled() }}
+        working-directory: mvp/lab
+        run: .venv/${{ runner.os == 'Windows' && 'Scripts/python.exe' || 'bin/python' }} -m pytest -q
+
+      - name: Dashboard tests
+        if: ${{ !cancelled() }}
+        working-directory: mvp/dashboard
+        run: .venv/${{ runner.os == 'Windows' && 'Scripts/python.exe' || 'bin/python' }} -m pytest -q
+
+      - name: Notifier tests
+        if: ${{ !cancelled() }}
+        working-directory: mvp/notifier
+        run: .venv/${{ runner.os == 'Windows' && 'Scripts/python.exe' || 'bin/python' }} -m pytest -q

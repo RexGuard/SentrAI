@@ -203,6 +203,8 @@ class AttackToolClassifier(Classifier):
 
 ## Tests
 
+GitHub Actions (`.github/workflows/tests.yml`) runs the core, lab, dashboard and notifier suites on Windows and Linux for every pull request and every push to `main`. It needs no API keys.
+
 | Suite | Command (from the component folder) | Result |
 | --- | --- | --- |
 | Core | `.venv\Scripts\python -m pytest -q` | 27 passed |
