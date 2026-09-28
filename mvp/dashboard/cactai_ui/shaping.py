@@ -75,7 +75,7 @@ CATEGORY_LABELS = {
     "brute_force": "Brute force",
     "sql_injection": "SQL injection",
     "xss": "Cross-site scripting",
-    "port_scan": "Port scan",
+    "port_scan": "Port or web scan",
     "privilege_escalation": "Privilege escalation",
     "data_exfiltration": "Data exfiltration",
     "misconfiguration": "Misconfiguration",
