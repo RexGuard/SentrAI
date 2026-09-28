@@ -10,7 +10,7 @@ This is the FastAPI service on `http://127.0.0.1:8000`. It implements every Core
 - the hotpatch workflow
 - the notifications queue
 - the hash-chained audit log
-- negligence reports
+- evidence reports (Markdown, JSON, PDF)
 
 ## Setup and run (PowerShell)
 

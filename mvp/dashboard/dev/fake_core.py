@@ -4,7 +4,7 @@ NOT the real core. In-memory, single process, plays a scripted demo scenario:
   t≈4 s   brute_force incident opens (risk ≈ 40, amber) + notification
   ...     nobody acks -> inaction penalty climbs (fast demo clock)
   t≈40 s  sql_injection incident opens -> risk crosses 80 -> Needle approves
-          autonomous containment (block IP, lock user) + negligence report
+          autonomous containment (block IP, lock user) + evidence report
 Run:  .venv\\Scripts\\python dev\\fake_core.py   (serves http://127.0.0.1:8900)
 Env:  FAKE_CORE_PORT (8900, so it never collides with the real core on 8000), FAKE_DEMO_SPEED (120 = 30 real s per demo hour),
       FAKE_TTL_SECONDS (300 real s before containment expires),
@@ -178,13 +178,13 @@ def make_report(inc: dict) -> None:
         "actions": inc["actions"], "chain_head": S.audit[-1]["hash"] if S.audit else None,
     }
     S.reports[inc["id"]] = rep
-    audit("report_generated", "Scribe", incident=inc["id"], summary=f"Negligence report for {inc['id']}")
+    audit("report_generated", "Scribe", incident=inc["id"], summary=f"Evidence report for {inc['id']}")
 
 
 def report_md(rep: dict) -> str:
     inc = S.incidents[rep["incident_id"]]
     lines = [
-        f"# Negligence Report · {inc['id']}",
+        f"# Security Evidence Report · {inc['id']}",
         "",
         "> FAKE CORE output for UI development. Not evidence.",
         "",

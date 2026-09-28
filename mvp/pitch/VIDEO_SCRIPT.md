@@ -67,7 +67,7 @@ Erick narrates. Screen layout: dashboard (left, large), Telegram on phone mirror
 | 3:02 | Erick | "CactAI takes a snapshot, picks a pre-approved playbook, and asks Needle, our reviewer agent, to approve. Two keys, always." | Audit feed: `snapshot`, `playbook_selected`, `needle_approved`. |
 | 3:10 | Erick | "The attacker IP is blocked for two hours. Not forever. Two hours." | Blocklist panel: IP, TTL 2h, expires_at. |
 | 3:14 | Erick | "The attacker tries again. Forbidden." | Attacker terminal: HTTP 403. |
-| 3:18 | Erick | "And here is the negligence report. Alert delivered at {14:00}. Acknowledged: none. SLA overdue. Action taken. Every line is hash-chained, and the chain is valid." | Report page: timeline, "Ack: none", SLA breach, action, `chain_valid: true`. |
+| 3:18 | Erick | "And here is the evidence report. Alert delivered at {14:00}. Acknowledged: none. SLA overdue. Action taken. Every line is hash-chained, and the chain is valid." | Report page: timeline, "Ack: none", SLA breach, action, `chain_valid: true`. |
 | 3:28 | Erick | "Now the human decides. Roll back, or make it permanent, with a written reason. That decision goes into the chain too." | Click Rollback or Make Permanent, type justification; audit log shows new record with hash. |
 | 3:36 | Erick | "Nothing was hidden, and nothing was permanent without a human." | Audit log view, last records highlighted. |
 

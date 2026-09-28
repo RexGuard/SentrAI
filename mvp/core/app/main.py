@@ -232,7 +232,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"chain_valid": valid, "first_invalid_seq": bad, "count": total,
                 "head_hash": core.audit.head_hash(), "records": records}
 
-    # The .md route must be registered before the JSON route.
+    # The .md and .pdf routes must be registered before the JSON route.
+    @app.get("/reports/{iid}.pdf")
+    def get_report_pdf(iid: str) -> Response:
+        try:
+            return Response(render_pdf(build_report(core, iid)), media_type="application/pdf",
+                            headers={"Content-Disposition": f'attachment; filename="{iid}-evidence-report.pdf"'})
+        except KeyError:
+            raise not_found(iid)
+
     @app.get("/reports/{iid}.md", response_class=PlainTextResponse)
     def get_report_md(iid: str) -> PlainTextResponse:
         try:

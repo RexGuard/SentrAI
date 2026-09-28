@@ -4,7 +4,7 @@ A working prototype of CactAI that runs natively on one Windows laptop or Linux 
 
 | Component | Folder | What it does | URL |
 | --- | --- | --- | --- |
-| Core | `core/` | FastAPI risk engine, rules + Jev classifier, agents (Saguaro, Root, Reservoir, Areole, Needle, Watchdog, Scribe, HelpDesk), TTL hotpatches, hash-chained audit log, negligence reports | http://127.0.0.1:8000 |
+| Core | `core/` | FastAPI risk engine, rules + Jev classifier, agents (Saguaro, Root, Reservoir, Areole, Needle, Watchdog, Scribe, HelpDesk), TTL hotpatches, hash-chained audit log, evidence reports (Markdown/JSON/PDF) | http://127.0.0.1:8000 |
 | Target app | `lab/target_app/` | Fictional "Aegis Academy Student Portal" that writes logs and enforces CactAI's blocklist (HTTP 403) | http://127.0.0.1:5000 |
 | Collector | `lab/collector/` | Tails the portal's web, DB and OS logs and sends normalized events to core | |
 | Attacks / replay | `lab/attacks/`, `lab/replay/` | Localhost-only attack scripts and a scripted replay for backup recordings | |

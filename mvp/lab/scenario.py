@@ -66,7 +66,7 @@ def main() -> None:
         spines.run(h, p, delay=0.3, src_ip="203.0.113.99")
 
     narrate("SCENARIO COMPLETE — check the dashboard for the incident queue, the "
-            "risk gauge, the negligence report and the audit chain.")
+            "risk gauge, the evidence report and the audit chain.")
 
 
 if __name__ == "__main__":

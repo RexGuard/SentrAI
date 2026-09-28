@@ -22,7 +22,7 @@ KIND_HEADERS = {
     "escalation": ("📣", "Escalation"),
     "autonomous_action": ("🌵", "Autonomous containment applied"),
     "containment": ("🌵", "Containment applied"),
-    "report": ("📄", "Negligence report ready"),
+    "report": ("📄", "Evidence report ready"),
 }
 
 # Callback data: "<verb>:<incident_id>" (Telegram limits callback_data to 64 bytes).

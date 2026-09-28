@@ -11,7 +11,7 @@
 - Hotpatch workflow with snapshot, TTL, verify, rollback and permanent. Operator approve and reject work.
 - Notifications with escalation, SLA reminders and delivery receipts.
 - SQLite hash-chained audit log. Append-only triggers are in place, and tampering is detected.
-- Negligence report as JSON and Markdown. `/demo/reset` archives the old chain.
+- Security evidence report as JSON, Markdown and PDF. `/demo/reset` archives the old chain.
 
 ## Last test result
 - `.venv\Scripts\python -m pytest -q`: **19 passed** in about 3 s.

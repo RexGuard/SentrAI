@@ -5,7 +5,7 @@ Saguaro (orchestrator) lives in saguaro.py and calls these in turn:
   Needle   -> two-key reviewer for every autonomous action
   Areole*  -> the only agents that execute, through the responders in responders.py
   Watchdog -> collector heartbeats
-  Scribe   -> hash-chained audit + negligence reports
+  Scribe   -> hash-chained audit + evidence reports
   HelpDesk -> answers "why" questions from incident data
 """
 
@@ -287,7 +287,7 @@ class Watchdog(Agent):
 
 class Scribe(Agent):
     name = "Scribe"
-    role = "auditor: hash-chained log and negligence reports (write-only log)"
+    role = "auditor: hash-chained log and evidence reports (write-only log)"
 
     def __init__(self, audit: AuditLog, clock: DemoClock) -> None:
         self.audit = audit

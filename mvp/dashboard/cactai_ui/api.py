@@ -95,6 +95,9 @@ class CoreClient:
     def report_json(self, incident_id: str) -> Any:
         return self.get_json(f"/reports/{incident_id}")
 
+    def report_pdf(self, incident_id: str) -> bytes:
+        return self._request("GET", f"/reports/{incident_id}.pdf").content
+
     def decision(self, incident_id: str, operator: str, decision: str, justification: str = "") -> Any:
         return self.post_json(
             f"/incidents/{incident_id}/decision",

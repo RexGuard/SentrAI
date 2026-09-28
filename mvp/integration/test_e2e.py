@@ -8,7 +8,7 @@ component's own venv, then runs the lab attack scripts and checks the whole chai
   inaction       -> penalty grows (fast demo clock)
   SQL injection  -> risk crosses 80 -> Needle approves -> attacker blocked (HTTP 403)
   loopback       -> never blocked
-  report         -> negligence report with "Ack: none", audit chain valid
+  report         -> evidence report with "Ack: none", audit chain valid
   rollback       -> block removed
 
 Run from mvp\\lab's venv (it has requests + pytest):
