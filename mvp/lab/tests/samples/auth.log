@@ -1,0 +1,25 @@
+Sep 28 14:01:55 vps-test sshd[4100]: Accepted publickey for deploy from 192.0.2.10 port 50022 ssh2: ED25519 SHA256:AAAAexampleexampleexampleexampleexample
+Sep 28 14:01:55 vps-test sshd[4100]: pam_unix(sshd:session): session opened for user deploy(uid=1000) by (uid=0)
+Sep 28 14:02:01 vps-test sshd[4201]: Invalid user oracle from 203.0.113.50 port 51234
+Sep 28 14:02:03 vps-test sshd[4201]: pam_unix(sshd:auth): check pass; user unknown
+Sep 28 14:02:03 vps-test sshd[4201]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.50
+Sep 28 14:02:05 vps-test sshd[4201]: Failed password for invalid user oracle from 203.0.113.50 port 51234 ssh2
+Sep 28 14:02:06 vps-test sshd[4201]: Connection closed by invalid user oracle 203.0.113.50 port 51234 [preauth]
+Sep 28 14:02:07 vps-test sshd[4202]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.50  user=root
+Sep 28 14:02:09 vps-test sshd[4202]: Failed password for root from 203.0.113.50 port 51240 ssh2
+Sep 28 14:02:12 vps-test sshd[4202]: Failed password for root from 203.0.113.50 port 51240 ssh2
+Sep 28 14:02:14 vps-test sshd[4202]: error: maximum authentication attempts exceeded for root from 203.0.113.50 port 51240 ssh2 [preauth]
+Sep 28 14:02:14 vps-test sshd[4202]: Disconnecting authenticating user root 203.0.113.50 port 51240: Too many authentication failures [preauth]
+Sep 28 14:02:14 vps-test sshd[4202]: PAM 2 more authentication failures; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.50  user=root
+Sep 28 14:02:20 vps-test sshd[4203]: Invalid user  from 203.0.113.51 port 40002
+Sep 28 14:02:21 vps-test sshd[4203]: Disconnected from invalid user  203.0.113.51 port 40002 [preauth]
+Sep 28 14:02:22 vps-test sshd[4204]: Received disconnect from 203.0.113.52 port 40100:11: Bye Bye [preauth]
+Sep 28 14:02:23 vps-test sshd[4205]: Connection reset by authenticating user admin 203.0.113.53 port 40200 [preauth]
+Sep 28 14:02:24 vps-test sshd[4206]: banner exchange: Connection from 203.0.113.54 port 40300: invalid format
+Sep 28 14:02:25 vps-test sshd[4207]: Unable to negotiate with 203.0.113.55 port 40400: no matching key exchange method found. Their offer: diffie-hellman-group14-sha1 [preauth]
+Sep 28 14:02:26 vps-test sshd[4208]: Did not receive identification string from 203.0.113.56 port 40500
+Sep 28 14:02:27 vps-test sshd[4209]: error: kex_exchange_identification: Connection closed by remote host
+Sep 28 14:02:28 vps-test sshd[4210]: Connection closed by authenticating user ubuntu 2001:db8::77 port 40600 [preauth]
+Sep 28 14:03:00 vps-test sshd[4100]: Disconnected from user deploy 192.0.2.10 port 50022
+Sep 28 14:03:00 vps-test sshd[4100]: pam_unix(sshd:session): session closed for user deploy
+Sep 28 14:05:01 vps-test CRON[4300]: pam_unix(cron:session): session opened for user root(uid=0) by (uid=0)

@@ -112,11 +112,76 @@ def test_find_command_saves_confirmed_sources_and_trail(box, tmp_path, monkeypat
     monkeypatch.setattr("scout.trails.Trail.__init__.__defaults__", (trails,))
     answers = iter(["y", "n", "that is a test server"])
     monkeypatch.setattr("builtins.input", lambda *_: next(answers))
+    monkeypatch.setattr("scout.__main__.has_terminal", lambda: True)
     main(["find", "--root", str(box), "--who", "novice", "where are the logs?"])
     saved = sources.load()
     assert [s["path"] for s in saved] == [auth] and saved[0]["confirmed_by"] == "novice"
+    assert sources.load_pending() == []  # both answered, nothing left waiting
     text = lessons(trails)
     assert "chose" in text and "auth.log" in text and "not " + access in text
+
+
+def _headless_scout(box, tmp_path, monkeypatch, turns):
+    fake = FakeClaude(turns)
+    trails = tmp_path / "trails"
+    monkeypatch.setattr("scout.agent.TRAILS_DIR", trails)
+    monkeypatch.setattr("scout.trails.TRAILS_DIR", trails)
+    monkeypatch.setattr("scout.agent.cactai_llm.from_env", lambda **_: cactai_llm.AnthropicProvider(client=fake))
+    monkeypatch.setattr("scout.trails.Trail.__init__.__defaults__", (trails,))
+    monkeypatch.setattr("scout.__main__.has_terminal", lambda: False)
+
+    def no_keyboard(*_):
+        raise AssertionError("Scout waited for the keyboard with no terminal")
+
+    monkeypatch.setattr("builtins.input", no_keyboard)
+    return fake, trails
+
+
+def test_find_without_a_terminal_never_waits_and_leaves_proposals_pending(box, tmp_path, monkeypatch):
+    auth = str(box / "var/log/auth.log")
+    fake, trails = _headless_scout(box, tmp_path, monkeypatch, [
+        ([tool_use(1, "ask_technician", question="Is this the portal server?")], "tool_use"),
+        ([tool_use(2, "propose_source", path=auth, layer="os", format="text", why="logins")], "tool_use"),
+        ([NS(type="text", text="Done.")], "end_turn"),
+    ])
+    main(["find", "--root", str(box), "--who", "cron", "where are the login logs?"])
+    answer = fake.calls[1]["messages"][2]["content"][0]["content"]
+    assert "No technician" in answer
+    assert sources.load() == []  # nothing is watched without a person's yes
+    waiting = sources.load_pending()
+    assert [(p["path"], p["id"], p["goal"]) for p in waiting] == [
+        (auth, sources.proposal_id(auth), "where are the login logs?")]
+
+    # Approved later from the terminal (the dashboard does the same through the core).
+    main(["approve", waiting[0]["id"], "--who", "erick"])
+    assert [(s["path"], s["confirmed_by"], s["found_by"]) for s in sources.load()] == [(auth, "erick", "Scout")]
+    assert sources.load_pending() == []
+    assert "auth.log as os because logins" in lessons(trails)
+
+
+def test_proposals_survive_scout_being_stopped_part_way(box, tmp_path, monkeypatch):
+    auth = str(box / "var/log/auth.log")
+    _headless_scout(box, tmp_path, monkeypatch, [
+        ([tool_use(1, "propose_source", path=auth, layer="os", format="text", why="logins")], "tool_use"),
+        ([tool_use(2, "list_dir", path=str(box))], "tool_use"),
+        # no more turns: the provider fails, like a Ctrl+C or a stopped service mid-search
+    ])
+    main(["find", "--root", str(box), "--no-input", "where are the logs?"])
+    assert [p["path"] for p in sources.load_pending()] == [auth]
+
+
+def test_reject_drops_the_proposal_and_teaches(box, tmp_path, monkeypatch):
+    access = str(box / "var/log/nginx/access.log")
+    trails = tmp_path / "trails"
+    monkeypatch.setattr("scout.trails.TRAILS_DIR", trails)
+    monkeypatch.setattr("scout.trails.Trail.__init__.__defaults__", (trails,))
+    sources.propose({"path": access, "layer": "web", "format": "text", "why": "web"}, "Scout", "find web logs")
+    main(["reject", access, "--why", "test server"])
+    assert sources.load_pending() == [] and sources.load() == []
+    with pytest.raises(SystemExit):
+        main(["approve", "p0000000000"])
+    sources.add({"path": access, "layer": "web", "format": "text"}, "t")
+    assert sources.propose({"path": access, "layer": "web", "format": "text"}, "Scout") is None  # already watched
 
 
 def test_collector_watches_approved_files(box):
@@ -142,6 +207,7 @@ def test_jsonl_fields_win_over_text_guesses(tmp_path):
 def _clean_sources():
     yield
     Path(sources.sources_file()).unlink(missing_ok=True)
+    Path(sources.pending_file()).unlink(missing_ok=True)
 
 
 def test_running_collector_picks_up_newly_approved_files_from_their_end(box, tmp_path):

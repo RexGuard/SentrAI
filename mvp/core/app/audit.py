@@ -36,6 +36,8 @@ class AuditLog:
     def _open(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(str(self.path), check_same_thread=False)
+        # WAL: readers never block the writer, and a crash mid-write cannot corrupt the file.
+        conn.execute("PRAGMA journal_mode=WAL")
         conn.execute(
             "CREATE TABLE IF NOT EXISTS audit (seq INTEGER PRIMARY KEY, ts TEXT NOT NULL, type TEXT NOT NULL,"
             " data TEXT NOT NULL, prev_hash TEXT NOT NULL, hash TEXT NOT NULL)"
@@ -50,6 +52,16 @@ class AuditLog:
         )
         conn.commit()
         self._conn = conn
+
+    @property
+    def lock(self) -> threading.RLock:
+        return self._lock
+
+    @property
+    def conn(self) -> sqlite3.Connection:
+        """The open connection, shared with the state store (see state.py)."""
+        assert self._conn is not None
+        return self._conn
 
     def close(self) -> None:
         with self._lock:

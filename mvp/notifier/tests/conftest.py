@@ -11,6 +11,7 @@ import requests
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 os.environ["CACTAI_CONFIG"] = str(ROOT / "tests" / "no-config.json")  # ignore this machine's saved settings
+os.environ["CACTAI_API_TOKEN"] = "test-token"  # never generate (and save) a real token from tests
 FAKE = ROOT.parent / "dashboard" / "dev" / "fake_core.py"
 # fake_core needs fastapi/uvicorn, which live in the dashboard venv (not the notifier's).
 FAKE_PY = ROOT.parent / "dashboard" / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")

@@ -1,0 +1,2 @@
+2026/09/28 14:02:11 [error] 1234#1234: *5 open() "/var/www/html/.env" failed (2: No such file or directory), client: 203.0.113.9, server: _, request: "GET /.env HTTP/1.1", host: "198.51.100.1"
+2026/09/28 14:02:13 [crit] 1234#1234: *7 SSL_do_handshake() failed (SSL: error:0A00006C:SSL routines::bad key share) while SSL handshaking, client: 198.51.100.4, server: 0.0.0.0:443

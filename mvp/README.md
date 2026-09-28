@@ -4,7 +4,7 @@ A working prototype of CactAI that runs natively on one Windows laptop or Linux 
 
 | Component | Folder | What it does | URL |
 | --- | --- | --- | --- |
-| Core | `core/` | FastAPI risk engine, rules + Jev classifier, agents (Saguaro, Root, Reservoir, Areole, Needle, Watchdog, Scribe, HelpDesk), TTL hotpatches, hash-chained audit log, negligence reports | http://127.0.0.1:8000 |
+| Core | `core/` | FastAPI risk engine, rules + Jev classifier, agents (Saguaro, Root, Reservoir, Areole, Needle, Watchdog, Scribe, HelpDesk), TTL hotpatches, hash-chained audit log, evidence reports (Markdown/JSON/PDF) | http://127.0.0.1:8000 |
 | Target app | `lab/target_app/` | Fictional "Aegis Academy Student Portal" that writes logs and enforces CactAI's blocklist (HTTP 403) | http://127.0.0.1:5000 |
 | Collector | `lab/collector/` | Tails the portal's web, DB and OS logs and sends normalized events to core | |
 | Attacks / replay | `lab/attacks/`, `lab/replay/` | Localhost-only attack scripts and a scripted replay for backup recordings | |
@@ -55,6 +55,15 @@ cd .. && ./stop_demo.sh
 ```
 
 The attack commands above work the same with `.venv/bin/python` in place of `.\.venv\Scripts\python.exe`.
+
+If port 8000 or 8501 is taken, pick others: `./run_demo.sh --core-port 8100 --dashboard-port 8601`
+(`.\run_demo.ps1 -CorePort 8100 -DashboardPort 8601` on Windows, or set `CACTAI_CORE_PORT` /
+`CACTAI_DASHBOARD_PORT`). The portal stays on 5000, the only port the attack scripts accept.
+
+### On a server (systemd services)
+
+To keep CactAI running on a Linux server, install it as services instead of running the demo:
+`sudo ./deploy/install.sh --protect <your admin IP>`. See [deploy/README.md](deploy/README.md).
 
 ### What you should see
 
@@ -120,8 +129,10 @@ behind an arrow.
 | `RISK_THRESHOLD` | 80 | core |
 | `SLA_HOURS` / `HOTPATCH_TTL_HOURS` | 2 / 2 | core |
 | `ON_DUTY`, `TEAM_LEAD`, `IT_MANAGER`, `CXO` | sample names | core (reports, escalation) |
-| `PROTECTED_IPS` | `127.0.0.1,::1,localhost` | core: never auto-blocked |
+| `PROTECTED_IPS` | `127.0.0.1,::1,localhost` | core: never auto-blocked (portal or firewall); add your admin IP here before enabling `CACTAI_FIREWALL` |
 | `PROTECTED_USERS` | empty | core: never auto-locked |
+| `CACTAI_FIREWALL` | `off` | core: also block IPs in the host firewall (`auto`, `nftables`, `iptables`, `netsh`); `off` keeps portal-only blocking |
+| `CACTAI_FIREWALL_ENFORCE` | `0` | core: `0` is a dry run that only logs the firewall command; `1` really runs it (needs admin/root) |
 | `TYPESAFE_API_KEY` | unset | core: enables Jev (TypeSafe System One); otherwise rules + fallback heuristic |
 | `JEV_TIMEOUT_S` / `JEV_BUDGET_S` | 3 / 2 | core: per-call timeout and per-request time budget for Jev |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | unset | notifier: console mode when unset |
@@ -139,6 +150,24 @@ behind an arrow.
 | `CACTAI_PRESET` | `moderate` | wizard and dashboard: `strict`, `moderate`, `balanced` or `advanced` |
 | `CACTAI_OPERATOR` | `operator` | notifier: name shown on approvals |
 | `CACTAI_CONFIG` | `~\.cactai\config.json` | all: where the setup wizard saves settings |
+| `CACTAI_API_TOKEN` | generated | all: the token the core API requires (`python cactai_config.py token` prints it) |
+| `CACTAI_DASHBOARD_PASSWORD` | blank | dashboard: asks for this password first; blank opens without a login |
+
+### Access
+
+The core API refuses every request without its token, except `/health` and `/blocklist` (the
+fake portal reads that one). The token is generated on first run, saved in the settings file,
+and passed to the collector, dashboard and Telegram bot by `run_demo.ps1` / `run_demo.sh`, so
+nothing changes when you record. The report link in a Telegram alert is signed for that one report,
+so it opens in a browser without the token. To call the API by hand:
+
+```powershell
+$t = python cactai_config.py token
+Invoke-RestMethod http://127.0.0.1:8000/incidents -Headers @{ Authorization = "Bearer $t" }
+```
+
+Set a dashboard password in section 6 of `python cactai_config.py setup` to put a login screen in
+front of the dashboard. Leave it blank for the recording if you do not want to type it on camera.
 
 ### Telegram setup (optional)
 
@@ -190,6 +219,8 @@ class AttackToolClassifier(Classifier):
 
 ## Tests
 
+GitHub Actions (`.github/workflows/tests.yml`) runs the core, lab, dashboard and notifier suites on Windows and Linux for every pull request and every push to `main`. It needs no API keys.
+
 | Suite | Command (from the component folder) | Result |
 | --- | --- | --- |
 | Core | `.venv\Scripts\python -m pytest -q` | 27 passed |
@@ -207,7 +238,7 @@ class AttackToolClassifier(Classifier):
 
 ## Known limits
 
-- Incidents and notifications are kept in memory; only the audit chain persists across restarts.
+- Incidents, blocks and notifications are saved in SQLite next to the audit chain and restored when the core restarts. Blocks keep their original TTL; any that expired while the core was down are rolled back and audited on start. `run_demo` still starts clean (it calls `/demo/reset`) unless you pass `--keep-state` / `-KeepState`.
 - Only IP blocks and account locks have a real effect. Rate limit, WAF rule, kill process and revoke ACL are recorded as simulated.
 - Jev has not been called against the live TypeSafe API yet (no API key); without a key the fallback heuristic classifies what the rules cannot.
 - Telegram mode has not been tested with a real bot.

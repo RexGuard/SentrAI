@@ -270,6 +270,7 @@ class OperatorChat:
     def _overview(self) -> dict[str, Any]:
         r = self.core.risk(history=0)
         return {"risk_index": r["risk_index"], "band": r["band"], "threshold": r["threshold"],
+                "monitor_only": r.get("monitor_only", False),
                 "incidents": [{k: i.get(k) for k in ("id", "category", "severity", "status", "acked", "src_ip",
                                                       "user", "recommended_action", "sla_breached")}
                               for i in self.core.list_incidents()]}
@@ -307,6 +308,9 @@ class OperatorChat:
             active = [i for i in o["incidents"] if i["status"] in ("open", "acknowledged", "contained")]
             lines = [f"Risk index is {o['risk_index']} of 100 ({o['band']}); autonomous containment starts at "
                      f"{o['threshold']:.0f}."]
+            if o["monitor_only"]:
+                lines.append("Protection is off (monitor-only mode): CactAI is scoring but will not contain anything, "
+                             "autonomous or approved, until it is turned back on on the Configuration page.")
             if not active:
                 lines.append("There are no active incidents.")
             for i in active[:8]:

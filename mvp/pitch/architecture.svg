@@ -143,7 +143,7 @@
   <rect x="880" y="490" width="220" height="80" rx="10" class="core"/>
   <text x="990" y="516" class="h" text-anchor="middle">Scribe (auditor)</text>
   <text x="990" y="536" class="s" text-anchor="middle">write-only hash chain,</text>
-  <text x="990" y="553" class="s" text-anchor="middle">negligence report</text>
+  <text x="990" y="553" class="s" text-anchor="middle">evidence report</text>
 
   <!-- Help Desk -->
   <rect x="1140" y="490" width="210" height="80" rx="10" class="box"/>
@@ -214,7 +214,7 @@
   <line x1="810" y1="832" x2="856" y2="832" class="flow" marker-end="url(#arrow)"/>
   <text x="1100" y="822" class="s">GET /audit returns</text>
   <text x="1100" y="840" class="t" font-weight="700" fill="#1F5E3B">chain_valid: true</text>
-  <text x="1100" y="858" class="s">and feeds the negligence report</text>
+  <text x="1100" y="858" class="s">and feeds the evidence report</text>
 
   <!-- Scribe -> audit -->
   <path d="M990,570 L990,598 L1020,598 L1020,778" class="dash" marker-end="url(#arrow)"/>

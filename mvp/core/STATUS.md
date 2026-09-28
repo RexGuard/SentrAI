@@ -11,7 +11,7 @@
 - Hotpatch workflow with snapshot, TTL, verify, rollback and permanent. Operator approve and reject work.
 - Notifications with escalation, SLA reminders and delivery receipts.
 - SQLite hash-chained audit log. Append-only triggers are in place, and tampering is detected.
-- Negligence report as JSON and Markdown. `/demo/reset` archives the old chain.
+- Security evidence report as JSON, Markdown and PDF. `/demo/reset` archives the old chain.
 
 ## Last test result
 - `.venv\Scripts\python -m pytest -q`: **19 passed** in about 3 s.
@@ -25,7 +25,7 @@
 ## Not done / caveats
 - Port 8000 was occupied by someone else's `fake_core.py` (PID 1856), so the real core has not been run on port 8000 yet. Stop fake_core before starting core.
 - My first smoke attempt accidentally sent `/demo/reset` and a few test events to that fake_core.
-- State is in memory only; only the audit chain persists.
+- Incidents, blocks and notifications survive a restart (saved in SQLite with the audit chain).
 - Containment has a real effect only for `block_ip` and `lock_user`. The other playbooks are recorded as simulated.
 - No Claude-written text; explanations come from templates.
 

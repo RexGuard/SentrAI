@@ -310,6 +310,8 @@ What the "prick" actually is (all inside our own perimeter):
 - **Deception:** honeypot login pages, honeytoken DB rows and credentials. Any touch is a near-certain alert.
 - **Evidence:** preserve logs and hand them to SingCERT or the police. The attacker is pricked by attribution and prosecution, not retaliation.
 
+**In the MVP:** the demo portal has a honeypot login page, a planted credential, bait member rows and a tarpit, all off by default (`run_demo -Spines`). Any touch becomes a confidence 1.0 incident (see `mvp/lab/README.md`).
+
 ---
 
 ## 12. Agentic Multi-Agent Design
@@ -410,7 +412,7 @@ Everything runs natively on one Windows laptop (Python, no Docker, no Redis). On
 
 **Components**
 1. **Target app** (`lab/target_app/`, port 5000): the fictional "Aegis Academy Student Portal". It writes web, login, database and OS logs, and it enforces CactAI's blocklist by answering blocked IPs and accounts with HTTP 403 "Blocked by CactAI".
-2. **Core** (`core/`, port 8000): FastAPI with the risk engine, the agents (Saguaro, Root, Spine-Net, Reservoir, Areole, Needle, Watchdog, Scribe, Help Desk) as Python classes in one process, TTL hotpatches, the hash-chained audit log and the evidence reports. The generated report is still titled "Executive Negligence & Non-Repudiation Report" in the MVP code; renaming it there is a follow-up.
+2. **Core** (`core/`, port 8000): FastAPI with the risk engine, the agents (Saguaro, Root, Spine-Net, Reservoir, Areole, Needle, Watchdog, Scribe, Help Desk) as Python classes in one process, TTL hotpatches, the hash-chained audit log and the evidence reports. The generated report is titled "Security Evidence Report" and downloads as Markdown, JSON or PDF.
 3. **Dashboard** (`dashboard/`, port 8501): Streamlit console (see below).
 4. **Notifier** (`notifier/`): Telegram bot with Approve / Reject buttons, or console output when no bot token is set.
 5. **Attack and replay scripts** (`lab/attacks/`, `lab/replay/`): benign traffic, brute force, SQL injection, bulk export and a simulated shell. They refuse any target other than localhost:5000.
