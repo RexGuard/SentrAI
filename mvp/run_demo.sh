@@ -98,6 +98,12 @@ PY_NOTIF="$ROOT/notifier/.venv/bin/python"
 # First run on this machine: ask for the settings (logs, rules, responder, alerts) once.
 "$PY_LAB" "$ROOT/cactai_config.py"
 
+# The core API token (made and saved on first use). Every component gets the same one, and the
+# scripts you run later (scenario.py, replay) read it from the settings file.
+CACTAI_API_TOKEN="$("$PY_LAB" "$ROOT/cactai_config.py" token | tail -n 1)"
+[ -n "$CACTAI_API_TOKEN" ] || { echo "Could not read the API token (python cactai_config.py token)." >&2; exit 1; }
+export CACTAI_API_TOKEN
+
 export PYTHONUTF8=1 PYTHONIOENCODING=utf-8 PYTHONUNBUFFERED=1
 export DEMO_SPEED CACTAI_CORE_URL="http://127.0.0.1:8000"
 
@@ -134,7 +140,7 @@ echo "CactAI demo  (mode: $MODE, DEMO_SPEED=$DEMO_SPEED -> 1 real minute = $(awk
 start_component core "$ROOT/core" "$PY_CORE" -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 wait_http "http://127.0.0.1:8000/health" || echo "Core did not come up on :8000. Check .demo_logs/core.log" >&2
 # Fresh audit chain and incident state for this take.
-"$PYTHON" -c "import urllib.request; urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8000/demo/reset', method='POST'), timeout=5)" 2>/dev/null || true
+"$PYTHON" -c "import os, urllib.request; urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8000/demo/reset', method='POST', headers={'Authorization': 'Bearer ' + os.environ['CACTAI_API_TOKEN']}), timeout=5)" 2>/dev/null || true
 
 LAB_DIR="$ROOT/lab"
 LOGS_DIR="$("$PY_LAB" "$ROOT/cactai_config.py" get CACTAI_LAB_LOGS)"

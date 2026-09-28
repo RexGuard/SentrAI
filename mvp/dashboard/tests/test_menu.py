@@ -220,3 +220,23 @@ def test_preset_fills_the_values_and_a_change_by_hand_switches_to_advanced(fake_
 
     at.button_group(key="cfg_CACTAI_PRESET").set_value("balanced").run()
     assert at.text_input(key="cfg_SLA_HOURS").value == cfg.preset_values("balanced")["SLA_HOURS"]
+
+
+def test_login_asks_for_the_dashboard_password(fake_core, tmp_path, monkeypatch):
+    from streamlit.testing.v1 import AppTest
+
+    monkeypatch.setenv("CACTAI_CONFIG", str(tmp_path / "config.json"))
+    monkeypatch.setenv(cfg.PASSWORD_ENV, "cactus")
+    at = AppTest.from_file(APP, default_timeout=20)
+    at.session_state["core_url"] = fake_core
+    at.session_state["auto_refresh"] = False
+    at.run()
+    assert not at.sidebar.button  # nothing but the login form
+    at.text_input[0].input("wrong")
+    at.button[0].click().run()
+    assert "Wrong password." in [e.value for e in at.error]
+    at.text_input[0].input("cactus")
+    at.button[0].click().run()
+    assert not at.exception, at.exception
+    assert any("Collector" in b.label for b in at.sidebar.button)
+    assert any(b.label == "Sign out" for b in at.sidebar.button)

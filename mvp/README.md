@@ -134,6 +134,23 @@ behind an arrow.
 | `CACTAI_PRESET` | `moderate` | wizard and dashboard: `strict`, `moderate`, `balanced` or `advanced` |
 | `CACTAI_OPERATOR` | `operator` | notifier: name shown on approvals |
 | `CACTAI_CONFIG` | `~\.cactai\config.json` | all: where the setup wizard saves settings |
+| `CACTAI_API_TOKEN` | generated | all: the token the core API requires (`python cactai_config.py token` prints it) |
+| `CACTAI_DASHBOARD_PASSWORD` | blank | dashboard: asks for this password first; blank opens without a login |
+
+### Access
+
+The core API refuses every request without its token, except `/health` and `/blocklist` (the
+fake portal reads that one). The token is generated on first run, saved in the settings file,
+and passed to the collector, dashboard and Telegram bot by `run_demo.ps1` / `run_demo.sh`, so
+nothing changes when you record. To call the API by hand:
+
+```powershell
+$t = python cactai_config.py token
+Invoke-RestMethod http://127.0.0.1:8000/incidents -Headers @{ Authorization = "Bearer $t" }
+```
+
+Set a dashboard password in section 6 of `python cactai_config.py setup` to put a login screen in
+front of the dashboard. Leave it blank for the recording if you do not want to type it on camera.
 
 ### Telegram setup (optional)
 

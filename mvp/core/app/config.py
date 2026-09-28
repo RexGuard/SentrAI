@@ -66,3 +66,5 @@ class Settings:
     jev_budget_s: float = field(default_factory=lambda: _f("JEV_BUDGET_S", 2.0))
     public_url: str = field(default_factory=lambda: os.getenv("CACTAI_PUBLIC_URL", "http://127.0.0.1:8000").rstrip("/"))
     background: bool = field(default_factory=lambda: os.getenv("CACTAI_BACKGROUND", "1") != "0")
+    # Every endpoint but /health and /blocklist needs it (see main.py). Made and saved on first use.
+    api_token: str = field(default_factory=cactai_config.api_token, repr=False)
