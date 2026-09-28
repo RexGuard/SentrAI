@@ -63,6 +63,11 @@ class Settings:
     protected_users: set[str] = field(
         default_factory=lambda: {x.strip() for x in os.getenv("PROTECTED_USERS", "").split(",") if x.strip()}
     )
+    # Host firewall for block_ip (app/firewall.py): off keeps blocking portal-only; enforce=False is a dry run.
+    firewall: str = field(default_factory=lambda: os.getenv("CACTAI_FIREWALL", "off"))
+    firewall_enforce: bool = field(
+        default_factory=lambda: os.getenv("CACTAI_FIREWALL_ENFORCE", "0").strip().lower() in ("1", "true", "yes", "on")
+    )
     jev_budget_s: float = field(default_factory=lambda: _f("JEV_BUDGET_S", 2.0))
     public_url: str = field(default_factory=lambda: os.getenv("CACTAI_PUBLIC_URL", "http://127.0.0.1:8000").rstrip("/"))
     background: bool = field(default_factory=lambda: os.getenv("CACTAI_BACKGROUND", "1") != "0")

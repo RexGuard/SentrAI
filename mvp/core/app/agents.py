@@ -140,7 +140,8 @@ class SpineNet(LayerAgent):
 
 class Areole(LayerAgent):
     """OS agents. The only executors: they build the action record and hand it to the
-    responder for its type (responders.py). NO firewall, shell or OS changes are ever made."""
+    responder for its type (responders.py). No firewall, shell or OS changes are made unless
+    the operator opts in to real firewall blocking (firewall.py, dry run by default)."""
 
     layers = ("os",)
     can_execute = True

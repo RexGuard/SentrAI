@@ -27,12 +27,13 @@ from .agents import (
     SpineNet,
     Watchdog,
 )
+from . import firewall
 from .audit import AuditLog
 from .classifier import Classification, default_chain
 from .clock import DemoClock, fmt_demo_hours
 from .config import Settings
 from .jev_client import JevClient
-from .responders import BlocklistResponder, Responders, SimulatedResponder
+from .responders import Responders, SimulatedResponder
 from .risk import SEVERITY, band, band_rank, inaction_penalty, risk_index
 from .rules import RulesEngine
 
@@ -92,7 +93,7 @@ class Saguaro(Agent):
         # The three parts: events arrive from collectors via POST /events, the classifier
         # chain labels them, and the responders carry out approved containment.
         self.classifier, self.jev_step = default_chain(self.rules, self.jev)
-        self.blocklist_responder = BlocklistResponder()
+        self.blocklist_responder = firewall.from_settings(s.firewall, s.firewall_enforce, s.protected_ips)
         self.responders = Responders(self.blocklist_responder, SimulatedResponder())
         self.root = Root(self.classifier)
         self.reservoir = Reservoir(self.classifier)
@@ -142,6 +143,7 @@ class Saguaro(Agent):
             "ttl_hours": s.ttl_hours,
             "on_duty": s.on_duty,
             "jev": self.jev.status,
+            "block_ip_enforcement": self.blocklist_responder.enforcement,
         }
 
     def layer_agents(self) -> list[LayerAgent]:
