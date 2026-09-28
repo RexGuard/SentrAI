@@ -1,0 +1,25 @@
+[Unit]
+Description=CactAI core (risk engine, agents, API)
+PartOf=cactai.target
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=@PREFIX@/mvp/core
+ExecStart=@PREFIX@/mvp/core/.venv/bin/python -m uvicorn app.main:app --host ${CACTAI_CORE_HOST} --port ${CACTAI_CORE_PORT}
+User=@USER@
+Group=@USER@
+EnvironmentFile=/etc/cactai/cactai.env
+Environment=HOME=/var/lib/cactai PYTHONUNBUFFERED=1 PYTHONUTF8=1 PYTHONIOENCODING=utf-8
+Restart=on-failure
+RestartSec=5
+# Reads logs and /proc, writes only its own state folder.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/cactai
+
+[Install]
+WantedBy=cactai.target
