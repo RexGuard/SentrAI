@@ -1,6 +1,6 @@
 # CactAI MVP
 
-A working prototype of CactAI that runs natively on one Windows laptop (no Docker).
+A working prototype of CactAI that runs natively on one Windows laptop or Linux machine (no Docker).
 
 | Component | Folder | What it does | URL |
 | --- | --- | --- | --- |
@@ -15,7 +15,7 @@ The interface between components is defined in [`CONTRACT.md`](CONTRACT.md).
 
 ## Run the demo
 
-Requirements: Windows 10/11, Python 3.12 on PATH. Each component gets its own `.venv`, created automatically on first run.
+Requirements (Windows): Windows 10/11, Python 3.12 on PATH. Each component gets its own `.venv`, created automatically on first run.
 
 ```powershell
 cd mvp
@@ -39,6 +39,22 @@ Or step by step:
 ```
 
 Stop everything with `.\stop_demo.ps1`.
+
+### On Linux (or macOS)
+
+Requirements: Python 3.11+ with the `venv` module (Debian/Ubuntu: `sudo apt install python3-venv`).
+`run_demo.sh` does the same as `run_demo.ps1`, but runs each component in the background and
+writes its output to `mvp/.demo_logs/<name>.log` instead of opening a window.
+
+```bash
+cd mvp
+./run_demo.sh --demo-speed 600          # also: --mode replay, --no-dashboard, --no-browser
+cd lab && .venv/bin/python scenario.py  # in another terminal
+tail -f ../.demo_logs/core.log          # to watch a component
+cd .. && ./stop_demo.sh
+```
+
+The attack commands above work the same with `.venv/bin/python` in place of `.\.venv\Scripts\python.exe`.
 
 ### What you should see
 
