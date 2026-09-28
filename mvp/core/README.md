@@ -45,9 +45,10 @@ Tests:
 | `WATCHDOG_SILENCE_S` | `30` | Watchdog flags a collector after this many seconds of silence. |
 | `PROTECTED_IPS` | empty | Comma-separated IPs that Needle will never approve blocking. |
 | `CACTAI_ENGINE` | `cyanide` | Orchestrator. `cyanide` plans with Claude when a key is set; `saguaro` keeps the fixed playbooks only. |
-| `ANTHROPIC_API_KEY` | unset | Turns on Cyanide's planner (Claude). Without it Cyanide behaves exactly like Saguaro. |
+| `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `DEEPSEEK_API_KEY` | unset | Turns on Cyanide's planner with that provider. With none set, Cyanide behaves exactly like Saguaro. |
+| `CACTAI_LLM_PROVIDER` | `auto` | `auto` uses the first key set (Anthropic, then OpenAI, then DeepSeek). Or `anthropic`, `openai`, `deepseek`, or `compatible` (any OpenAI-compatible API: set `CACTAI_LLM_API_KEY`, `CACTAI_LLM_BASE_URL` and `CACTAI_LLM_MODEL`). |
 | `CYANIDE_PROFILE` | unset | Path to the system profile JSON, e.g. `profiles\tuition_centre.json`. |
-| `CYANIDE_MODEL` / `CYANIDE_EFFORT` / `CYANIDE_TIMEOUT_S` | `claude-opus-5` / `low` / `20` | Model, effort level and per-call timeout for planning. |
+| `CYANIDE_MODEL` / `CYANIDE_EFFORT` / `CYANIDE_TIMEOUT_S` | provider default / `low` / `20` | Model, effort level (Anthropic only) and per-call timeout for planning. Defaults: `claude-opus-5`, `gpt-5`, `deepseek-chat`. |
 | `CYANIDE_ENABLED` | `1` | Set to `0` to switch the planner off without removing the key (tests do this). |
 | `CACTAI_BACKGROUND` | `1` | Set to `0` to turn off the 1 s background tick (tests do this). |
 
@@ -55,7 +56,7 @@ Tests:
 
 Cyanide (`app/cyanide.py`) replaces Saguaro's fixed judgement with Claude, and keeps everything that must stay predictable.
 
-- **What Claude decides.** When an incident opens, Cyanide sends Claude the system profile, the incident, its log lines and the list of installed actions. Claude answers with an assessment in plain words, the containment steps that fit this system, and whether CactAI may act alone or must wait for a human.
+- **What the model decides.** Claude by default; OpenAI, DeepSeek or any OpenAI-compatible API also work (`mvp/cactai_llm.py`, keys in `python cactai_config.py setup`, section 5). When an incident opens, Cyanide sends the model the system profile, the incident, its log lines and the list of installed actions. The model answers with an assessment in plain words, the containment steps that fit this system, and whether CactAI may act alone or must wait for a human.
 - **What stays fixed.** The risk index, SLA, inaction penalty, notifications, TTLs and the audit chain are Saguaro's code, unchanged. Needle still reviews every autonomous action.
 - **Guardrails.** Claude can only pick installed action types. IP, account and host targets must appear in the incident's own events; anything else is dropped and logged. Accounts and IPs listed as protected in the profile go to Needle, which refuses them. A plan can make CactAI more careful ("hold: exam week, the admin account is shared") but never bypass the threshold or the TTL.
 - **Fallback.** No key, a timeout or a bad answer means the default playbook is used, and the timeline says so.

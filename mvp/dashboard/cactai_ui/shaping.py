@@ -276,7 +276,7 @@ def build_containment_rows(blocklist: dict | None, incidents: Iterable[dict]) ->
 AGENTS = {
     "Saguaro": ("🌵", "#3fb56a"),
     "Cyanide": ("🧪", "#3fb56a"),
-    "Claude": ("✳️", "#d97757"),
+    "Planner": ("✳️", "#d97757"),
     "Needle": ("📍", "#e0a526"),
     "Scribe": ("📜", "#8fa7ff"),
     "Root": ("🌐", "#4fb3d9"),

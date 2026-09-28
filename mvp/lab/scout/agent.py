@@ -1,4 +1,6 @@
-"""Scout: Claude walks the folders of an unfamiliar system to find its security logs.
+"""Scout: an AI model walks the folders of an unfamiliar system to find its security logs.
+
+Any provider in mvp/cactai_llm.py works (Claude by default; OpenAI, DeepSeek or a compatible API).
 
 Made for a novice technician. They ask in plain words ("where are the login logs on this
 server?"); Scout browses with read-only tools, says what it is doing and why, asks the
@@ -12,10 +14,14 @@ from __future__ import annotations
 
 import os
 import platform
+import sys
 from pathlib import Path
 from typing import Any, Callable
 
 from .tools import SafeFS
+
+sys.path.append(str(Path(__file__).resolve().parents[2]))  # mvp/, for cactai_llm
+import cactai_llm  # noqa: E402
 from .trails import LAYERS, TRAILS_DIR, lessons
 
 MAX_STEPS = 30
@@ -61,20 +67,18 @@ TOOLS: list[dict[str, Any]] = [
          "why": {"type": "string"}},
          "required": ["path", "layer", "format", "why"], "additionalProperties": False}},
 ]
-for _t in TOOLS:
-    _t["strict"] = True
 
 
 class Scout:
-    def __init__(self, fs: SafeFS, client: Any = None, model: str | None = None,
+    def __init__(self, fs: SafeFS, provider: cactai_llm.Provider | None = None,
                  trails_dir: Path = TRAILS_DIR, ask: Callable[[str], str] = input,
                  say: Callable[[str], None] = print, max_steps: int = MAX_STEPS) -> None:
-        if client is None:
-            import anthropic
-
-            client = anthropic.Anthropic(timeout=120, max_retries=2)
-        self.client = client
-        self.model = model or os.getenv("SCOUT_MODEL", "claude-opus-5")
+        if provider is None:
+            provider = cactai_llm.from_env(effort=os.getenv("SCOUT_EFFORT", "medium"))
+            if provider is None:
+                raise cactai_llm.LLMError("no AI key set: add one with `python cactai_config.py setup` (section 5)")
+            provider.model = os.getenv("SCOUT_MODEL") or provider.model
+        self.provider = provider
         self.fs, self.trails_dir, self.ask, self.say, self.max_steps = fs, trails_dir, ask, say, max_steps
         self.proposals: list[dict[str, str]] = []
         self.steps: list[dict[str, str]] = []  # the route, saved as a trail afterwards
@@ -86,32 +90,24 @@ class Scout:
                 f"You may look in: {roots}.\n\nPast trails (how people found logs before, newest first):\n{past}")
 
     def run(self, question: str) -> list[dict[str, str]]:
-        messages: list[dict[str, Any]] = [{"role": "user", "content": question}]
-        system = self.system_prompt()
+        convo = self.provider.conversation(self.system_prompt(), TOOLS)
+        turn = convo.send_user(question)
         for _ in range(self.max_steps):
-            response = self.client.messages.create(
-                model=self.model, max_tokens=16000, system=system, tools=TOOLS, messages=messages,
-                output_config={"effort": os.getenv("SCOUT_EFFORT", "medium")})
-            messages.append({"role": "assistant", "content": response.content})  # keep thinking blocks as-is
-            for block in response.content:
-                if block.type == "text" and block.text.strip():
-                    self.say(block.text.strip())
-            if response.stop_reason != "tool_use":
-                if response.stop_reason not in ("end_turn", "stop_sequence"):
-                    self.say(f"(Scout stopped early: {response.stop_reason})")
+            for text in turn.texts:
+                self.say(text)
+            if turn.stop != "tool_use":
+                if turn.stop != "end":
+                    self.say(f"(Scout stopped early: {turn.stop})")
                 return self.proposals
-            results = [self._run_tool(b) for b in response.content if b.type == "tool_use"]
-            messages.append({"role": "user", "content": results})
+            turn = convo.send_tool_results([self._run_tool(c) for c in turn.tool_calls])
         self.say("(Scout reached its step limit; here is what it found so far.)")
         return self.proposals
 
-    def _run_tool(self, block: Any) -> dict[str, Any]:
-        args = block.input
+    def _run_tool(self, call: cactai_llm.ToolCall) -> tuple[str, str, bool]:
         try:
-            out = self._dispatch(block.name, args)
-            return {"type": "tool_result", "tool_use_id": block.id, "content": out}
-        except (PermissionError, ValueError, OSError, KeyError) as e:
-            return {"type": "tool_result", "tool_use_id": block.id, "content": str(e), "is_error": True}
+            return call.id, self._dispatch(call.name, call.input), False
+        except (PermissionError, ValueError, OSError, KeyError, TypeError) as e:
+            return call.id, str(e) or type(e).__name__, True
 
     def _dispatch(self, name: str, a: dict[str, Any]) -> str:
         if name == "list_dir":

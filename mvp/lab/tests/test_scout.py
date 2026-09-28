@@ -10,6 +10,7 @@ import pytest
 from collector.collector import DiscoveredLogSource, default_sources
 from scout import sources
 from scout.__main__ import main
+import cactai_llm
 from scout.agent import Scout
 from scout.tools import SafeFS
 from scout.trails import lessons, record
@@ -84,7 +85,7 @@ def test_scout_browses_asks_and_proposes(box, tmp_path):
         ([NS(type="text", text="Done: I proposed auth.log.")], "end_turn"),
     ])
     said = []
-    scout = Scout(fs, client=fake, trails_dir=tmp_path / "trails", ask=lambda q: "yes", say=said.append)
+    scout = Scout(fs, provider=cactai_llm.AnthropicProvider(client=fake), trails_dir=tmp_path / "trails", ask=lambda q: "yes", say=said.append)
     found = scout.run("where are the login logs?")
     assert found == [{"path": auth, "layer": "os", "format": "text", "why": "shows password guessing"}]
     assert said[0].startswith("Linux keeps logs")
@@ -107,8 +108,7 @@ def test_find_command_saves_confirmed_sources_and_trail(box, tmp_path, monkeypat
     trails = tmp_path / "trails"
     monkeypatch.setattr("scout.agent.TRAILS_DIR", trails)
     monkeypatch.setattr("scout.trails.TRAILS_DIR", trails)
-    monkeypatch.setattr("scout.agent.Scout.__init__.__defaults__",
-                        (fake, None, trails, input, print, 30))
+    monkeypatch.setattr("scout.agent.cactai_llm.from_env", lambda **_: cactai_llm.AnthropicProvider(client=fake))
     monkeypatch.setattr("scout.trails.Trail.__init__.__defaults__", (trails,))
     answers = iter(["y", "n", "that is a test server"])
     monkeypatch.setattr("builtins.input", lambda *_: next(answers))

@@ -1,7 +1,7 @@
 """Scout command line (run from mvp/lab).
 
   python -m scout record --root C:\\ "find the IIS web logs"     an expert shows the way (saved as a trail)
-  python -m scout find --root C:\\ "where are the login logs?"   Claude finds them for a novice
+  python -m scout find --root C:\\ "where are the login logs?"   the AI finds them for a novice
   python -m scout list                                          the log files the collector will watch
 """
 from __future__ import annotations
@@ -35,9 +35,12 @@ def main(argv: list[str] | None = None) -> None:
         record(fs, args.goal, actor=args.who)
         return
 
-    from .agent import Scout  # needs the anthropic package and a key
+    from .agent import Scout  # needs an AI key (python cactai_config.py setup, section 5)
 
-    scout = Scout(fs)
+    try:
+        scout = Scout(fs)
+    except Exception as e:  # no key, or the provider's package is missing
+        sys.exit(f"Scout cannot start: {e}")
     proposals = scout.run(args.goal)
     trail = Trail(args.goal, "scout")
     for step in scout.steps:

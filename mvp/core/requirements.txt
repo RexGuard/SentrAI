@@ -7,3 +7,5 @@ httpx>=0.27
 typesafe-sdk>=0.7
 # Optional: Cyanide's planner (Claude). Without it, or without ANTHROPIC_API_KEY, Cyanide uses Saguaro's playbooks.
 anthropic>=1.0
+# Optional: Cyanide's planner with OpenAI, DeepSeek or another OpenAI-compatible API.
+openai>=1.0

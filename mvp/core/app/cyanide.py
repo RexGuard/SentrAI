@@ -3,7 +3,7 @@
 Cyanide keeps everything in Saguaro that must be deterministic: the risk index, the SLA
 and inaction penalty, notifications, TTLs, the audit chain and Needle's two-key review.
 What it replaces is the fixed judgement: instead of one hard-coded playbook per category,
-Claude reads each incident together with a *system profile* (what this organisation runs,
+an AI model (Claude by default; OpenAI or DeepSeek also work) reads each incident together with a *system profile* (what this organisation runs,
 what matters most, what must never be touched) and decides:
 
   * which containment steps fit this system, chosen from whatever responders are installed
@@ -34,8 +34,10 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from .agents import ACTION_TEXT, LayerAgent, Proposal
-from .config import Settings
+from .config import Settings  # also puts mvp/ on sys.path, for cactai_llm
 from .saguaro import BUTTONS_DECIDE, Saguaro
+
+import cactai_llm  # noqa: E402
 
 log = logging.getLogger("cactai.cyanide")
 
@@ -108,17 +110,12 @@ class Planner(Protocol):
     def plan(self, context: dict[str, Any]) -> dict[str, Any] | None: ...
 
 
-class ClaudePlanner:
-    """Asks Claude for a plan, using structured output so the answer always parses."""
+class LLMPlanner:
+    """Asks the configured model (see mvp/cactai_llm.py) for a plan as JSON matching PLAN_SCHEMA."""
 
-    def __init__(self, model: str, timeout_s: float, effort: str = "low") -> None:
-        import anthropic  # imported here so the core runs without the SDK installed
-
-        self._anthropic = anthropic
-        self.client = anthropic.Anthropic(timeout=timeout_s, max_retries=1)
-        self.model = model
-        self.effort = effort
-        self.status = "online"
+    def __init__(self, provider: cactai_llm.Provider) -> None:
+        self.provider = provider
+        self.status = f"online ({provider.label})"
         self.calls = 0
         self.failures = 0
         self.last_error: str | None = None
@@ -126,31 +123,12 @@ class ClaudePlanner:
     def plan(self, context: dict[str, Any]) -> dict[str, Any] | None:
         self.calls += 1
         try:
-            response = self.client.messages.create(
-                model=self.model,
-                max_tokens=4000,
-                system=SYSTEM_PROMPT,
-                output_config={"effort": self.effort, "format": {"type": "json_schema", "schema": PLAN_SCHEMA}},
-                messages=[{"role": "user", "content": json.dumps(context, indent=1, sort_keys=True)}],
-            )
-        except self._anthropic.AuthenticationError as e:
-            self.status = "offline (API key rejected)"
-            return self._fail(e)
-        except self._anthropic.APIError as e:
-            return self._fail(e)
-        if response.stop_reason != "end_turn":
-            return self._fail(RuntimeError(f"stop_reason {response.stop_reason}"))
-        text = next((b.text for b in response.content if b.type == "text"), "")
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError as e:
-            return self._fail(e)
-
-    def _fail(self, e: Exception) -> None:
-        self.failures += 1
-        self.last_error = f"{type(e).__name__}: {e}"[:300]
-        log.warning("Cyanide planner failed: %s", self.last_error)
-        return None
+            return self.provider.complete_json(SYSTEM_PROMPT, json.dumps(context, indent=1, sort_keys=True), PLAN_SCHEMA)
+        except cactai_llm.LLMError as e:
+            self.failures += 1
+            self.last_error = str(e)[:300]
+            log.warning("Cyanide planner failed: %s", self.last_error)
+            return None
 
 
 def load_profile(path: str | None) -> dict[str, Any]:
@@ -165,18 +143,19 @@ def load_profile(path: str | None) -> dict[str, Any]:
 
 
 def default_planner() -> Planner | None:
-    """Claude when credentials are configured, else None (pure Saguaro behaviour)."""
+    """The configured model (Anthropic, OpenAI, DeepSeek...), or None: pure Saguaro behaviour."""
     if os.getenv("CYANIDE_ENABLED", "1") == "0":
         return None
-    if not (os.getenv("ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_AUTH_TOKEN")):
-        return None
     try:
-        return ClaudePlanner(os.getenv("CYANIDE_MODEL", "claude-opus-5"),
-                             float(os.getenv("CYANIDE_TIMEOUT_S", "20")),
-                             os.getenv("CYANIDE_EFFORT", "low"))
-    except ImportError:
-        log.warning("anthropic SDK not installed; Cyanide runs on playbooks only")
+        provider = cactai_llm.from_env(effort=os.getenv("CYANIDE_EFFORT", "low"),
+                                       timeout_s=float(os.getenv("CYANIDE_TIMEOUT_S", "20")))
+    except (ImportError, cactai_llm.LLMError) as e:
+        log.warning("Cyanide runs on playbooks only: %s", e)
         return None
+    if provider is None:
+        return None
+    provider.model = os.getenv("CYANIDE_MODEL") or provider.model
+    return LLMPlanner(provider)
 
 
 class Cyanide(Saguaro):
@@ -331,7 +310,7 @@ class Cyanide(Saguaro):
     def agents_status(self) -> list[dict[str, Any]]:
         out = super().agents_status()
         p = self.planner
-        out.append({"name": "Claude", "role": "Cyanide's planner (system-aware containment plans)",
+        out.append({"name": "Planner", "role": "Cyanide's AI model (system-aware containment plans)",
                     "status": self.planner_status(), "calls": getattr(p, "calls", 0),
                     "failures": getattr(p, "failures", 0), "last_error": getattr(p, "last_error", None),
                     "profile": self.profile.get("organisation", "none")})

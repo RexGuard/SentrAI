@@ -105,8 +105,8 @@ def test_no_planner_behaves_like_saguaro(make):
     core = make(None)
     attack(core)
     assert core.blocklist() == {"ips": ["203.0.113.45"], "users": ["admin"]}
-    claude = next(a for a in core.agents_status() if a["name"] == "Claude")
-    assert claude["status"] == "off (playbooks only)"
+    planner = next(a for a in core.agents_status() if a["name"] == "Planner")
+    assert planner["status"] == "off (playbooks only)"
 
 
 def test_profile_protected_account_is_enforced_by_needle(make):
