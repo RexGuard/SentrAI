@@ -11,6 +11,9 @@ every 10 seconds so Watchdog can tell the collector is alive.
 Run:  python -m collector.collector           (from mvp/lab)
    or python collector/collector.py
 
+On a new machine (no settings file yet) it first runs the setup wizard in
+``mvp/cactai_config.py``; the logs directory and file names come from there.
+
 Handles file creation (logs may not exist yet) and rotation/truncation.
 """
 from __future__ import annotations
@@ -30,6 +33,12 @@ import requests
 
 # Allow running both as ``python -m collector.collector`` and as a script.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.append(str(Path(__file__).resolve().parents[2]))
+import cactai_config  # noqa: E402
+
+if __name__ == "__main__":
+    # First run on this machine: ask for the settings before any path or log name is read.
+    cactai_config.ensure()
 from target_app import paths  # noqa: E402
 
 HOST = "web-01"

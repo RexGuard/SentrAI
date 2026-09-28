@@ -6,6 +6,7 @@ from pathlib import Path
 _TMP = Path(tempfile.mkdtemp(prefix="cactai-test-"))
 os.environ["CACTAI_DB"] = str(_TMP / "import.db")
 os.environ["CACTAI_BACKGROUND"] = "0"
+os.environ["CACTAI_CONFIG"] = str(Path(_TMP) / "no-config.json")  # ignore this machine's saved settings
 os.environ.pop("TYPESAFE_API_KEY", None)
 
 import pytest  # noqa: E402

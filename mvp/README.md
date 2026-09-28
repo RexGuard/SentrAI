@@ -55,6 +55,28 @@ Stop everything with `.\stop_demo.ps1`.
 
 ## Configuration
 
+### First-run setup
+
+On a new machine, `run_demo.ps1` (and the collector when started on its own) first runs a
+short setup wizard, one section per part: **collector** (logs directory and log file names),
+**classifier** (brute-force and bulk-export thresholds, TypeSafe key), **responder** (risk
+threshold, block expiry, SLA, IPs and accounts never to touch) and **notifications**
+(Telegram). Press Enter at every question to keep the demo defaults.
+
+The answers are saved to `%USERPROFILE%\.cactai\config.json` (or the path in `CACTAI_CONFIG`)
+and every component reads that file on start. A variable set in the environment still wins.
+
+```powershell
+python cactai_config.py            # show the current settings (runs the wizard on a new machine)
+python cactai_config.py setup      # change them
+```
+
+The file holds the TypeSafe key and Telegram token in plain text, so keep it in your own
+user folder. `run_demo.ps1` only clears old `.jsonl` logs when the logs directory is inside
+`mvp\lab`, so pointing it at real logs never deletes them.
+
+### Variables
+
 | Variable | Default | Used by |
 | --- | --- | --- |
 | `DEMO_SPEED` | 60 | core |
@@ -67,12 +89,18 @@ Stop everything with `.\stop_demo.ps1`.
 | `JEV_TIMEOUT_S` / `JEV_BUDGET_S` | 3 / 2 | core: per-call timeout and per-request time budget for Jev |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | unset | notifier: console mode when unset |
 | `CACTAI_CORE_URL` | `http://127.0.0.1:8000` | lab, dashboard, notifier |
+| `CACTAI_LAB_LOGS` | `mvp\lab\logs` | lab: portal writes and collector tails logs here |
+| `CACTAI_LOG_ACCESS`, `_AUTH`, `_DB`, `_OS` | `access.jsonl`, `auth.jsonl`, `db.jsonl`, `os.jsonl` | lab: log file names |
+| `BRUTE_FORCE_COUNT` / `BRUTE_FORCE_WINDOW_S` | 5 / 60 | core: failed logins that count as brute force |
+| `EXPORT_ROWS_THRESHOLD` | 100 | core: rows in one export that count as exfiltration |
+| `CACTAI_OPERATOR` | `operator` | notifier: name shown on approvals |
+| `CACTAI_CONFIG` | `~\.cactai\config.json` | all: where the setup wizard saves settings |
 
 ### Telegram setup (optional)
 
 1. In Telegram, message **@BotFather**, send `/newbot`, and copy the token.
 2. Send any message to your new bot, then open `https://api.telegram.org/bot<TOKEN>/getUpdates` and copy `chat.id`.
-3. Before `run_demo.ps1`: `$env:TELEGRAM_BOT_TOKEN = "<token>"; $env:TELEGRAM_CHAT_ID = "<chat id>"`.
+3. Enter both in `python cactai_config.py setup`, or before `run_demo.ps1`: `$env:TELEGRAM_BOT_TOKEN = "<token>"; $env:TELEGRAM_CHAT_ID = "<chat id>"`.
 
 Only the configured chat can press the buttons.
 
@@ -110,7 +138,7 @@ class AttackToolClassifier(Classifier):
 | Suite | Command (from the component folder) | Result |
 | --- | --- | --- |
 | Core | `.venv\Scripts\python -m pytest -q` | 27 passed |
-| Lab | `.venv\Scripts\python -m pytest -q` | 31 passed |
+| Lab | `.venv\Scripts\python -m pytest -q` | 36 passed |
 | Dashboard | `.venv\Scripts\python -m pytest -q` | 12 passed |
 | Notifier | `.venv\Scripts\python -m pytest -q` | 8 passed |
 | End-to-end (real core + portal + collector + attacks) | from `integration`: `..\lab\.venv\Scripts\python -m pytest -q test_e2e.py` | 1 passed |
