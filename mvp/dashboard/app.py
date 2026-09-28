@@ -34,80 +34,39 @@ REFRESH_SECONDS = 2
 st.set_page_config(page_title="CactAI · Risk Console", page_icon="🌵", layout="wide",
                    initial_sidebar_state="expanded")
 
-CSS = """
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap');
-html, body, [class*="css"], .stMarkdown, .stText { font-family: 'Inter', 'Segoe UI', sans-serif; }
-.stApp { background: radial-gradient(1200px 600px at 10% -10%, rgba(63,181,106,0.10), transparent 60%),
-                      radial-gradient(900px 500px at 110% 0%, rgba(208,59,59,0.07), transparent 60%), #0f1210; }
-.block-container { padding-top: 1.4rem; padding-bottom: 2rem; max-width: 1500px; }
-section[data-testid="stSidebar"] { background: #121613; border-right: 1px solid rgba(255,255,255,0.06); }
-.cact-head { display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap; margin-bottom:.6rem; }
-.cact-brand { display:flex; align-items:center; gap:.7rem; }
-.cact-logo { font-size:2.6rem; line-height:1; filter: drop-shadow(0 0 12px rgba(63,181,106,.45)); }
-.cact-name { font-size:2rem; font-weight:800; letter-spacing:-.02em; color:#f2f4f1; line-height:1; }
-.cact-name span { color:#3fb56a; }
-.cact-tag { color:#9aa096; font-size:.85rem; margin-top:.25rem; }
-.pill { display:inline-flex; align-items:center; gap:.4rem; padding:.28rem .7rem; border-radius:999px;
-        font-size:.78rem; font-weight:700; letter-spacing:.04em; border:1px solid rgba(255,255,255,.12); }
-.pill .dot { width:.55rem; height:.55rem; border-radius:50%; display:inline-block; }
-.cact-card { background: rgba(24,29,25,.82); border:1px solid rgba(255,255,255,.07); border-radius:14px;
-             padding: .9rem 1.1rem; }
-.kpi-label { color:#9aa096; font-size:.72rem; text-transform:uppercase; letter-spacing:.09em; font-weight:600; }
-.kpi-value { color:#f2f4f1; font-size:1.9rem; font-weight:800; line-height:1.15; }
-.kpi-sub { color:#80867d; font-size:.75rem; }
-.sec-title { color:#f2f4f1; font-weight:700; font-size:1.05rem; margin:.2rem 0 .5rem 0; display:flex; gap:.5rem; align-items:center; }
-.sec-title small { color:#80867d; font-weight:500; font-size:.78rem; }
-.feed { display:flex; flex-direction:column; gap:.35rem; max-height: 640px; overflow-y:auto; padding-right:.3rem; }
-.feed-row { display:grid; grid-template-columns: 4.6rem 7.8rem 1fr; gap:.5rem; align-items:start;
-            padding:.4rem .55rem; border-radius:9px; background:rgba(255,255,255,.025); font-size:.82rem; }
-.feed-time { color:#80867d; font-family:'JetBrains Mono', monospace; font-size:.75rem; padding-top:.1rem; }
-.agent { font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.feed-type { color:#dfe3dc; font-weight:600; }
-.feed-sum { color:#9aa096; }
-.feed-hash { color:#5f665c; font-family:'JetBrains Mono', monospace; font-size:.7rem; }
-.detail-grid { display:grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap:.6rem; margin:.4rem 0 .8rem 0; }
-.detail-grid div { background:rgba(255,255,255,.03); border-radius:10px; padding:.5rem .7rem; }
-.detail-grid b { display:block; color:#f2f4f1; font-size:1rem; }
-.detail-grid span { color:#80867d; font-size:.7rem; text-transform:uppercase; letter-spacing:.08em; }
-.reco { border-left:3px solid #3fb56a; background:rgba(63,181,106,.08); padding:.7rem .9rem; border-radius:8px; color:#e8ece5; }
-.reco b { color:#3fb56a; font-size:.72rem; letter-spacing:.09em; text-transform:uppercase; display:block; margin-bottom:.2rem; }
-.offline { border:1px solid rgba(208,59,59,.5); background:rgba(208,59,59,.1); border-radius:14px; padding:1.2rem 1.4rem; color:#f2d6d6; }
-div[data-testid="stForm"] { border:1px solid rgba(255,255,255,.08); border-radius:12px; }
-section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] { gap:.25rem; }
-section[data-testid="stSidebar"] .stButton button { justify-content:flex-start; border:none; background:transparent;
-        color:#dfe3dc; padding:.4rem .7rem; min-height:2.3rem; }
-section[data-testid="stSidebar"] .stButton button > div { justify-content:flex-start; width:100%; }
-section[data-testid="stSidebar"] .cact-brand { margin-bottom:.8rem; }
-section[data-testid="stSidebar"] .stButton button:hover { background:rgba(63,181,106,.10); color:#f2f4f1; }
-section[data-testid="stSidebar"] .stButton button[kind="primary"] { background:rgba(63,181,106,.18); color:#f2f4f1;
-        border-left:3px solid #3fb56a; border-radius:6px; }
-.nav-group { color:#6f766c; font-size:.68rem; text-transform:uppercase; letter-spacing:.12em; font-weight:700;
-             margin:1rem 0 .5rem .7rem; }
-@media (max-width: 900px) { .detail-grid { grid-template-columns: repeat(2, minmax(0,1fr)); } }
-</style>
-"""
-st.markdown(CSS, unsafe_allow_html=True)
+CSS = (Path(__file__).parent / "cactai_ui" / "console.css").read_text(encoding="utf-8")
+st.markdown(f"<style>{CSS}</style>", unsafe_allow_html=True)
 
 
 # ------------------------------------------------------------------ helpers
 
-def pill(text: str, color: str) -> str:
-    return (f'<span class="pill" style="color:{color};border-color:{color}55;background:{color}14">'
-            f'<span class="dot" style="background:{color}"></span>{html.escape(text)}</span>')
+def icon(name: str) -> str:
+    """A Material Symbols icon (the font ships with Streamlit, so it works offline)."""
+    return f'<span class="mi">{name}</span>'
 
 
-def kpi(label: str, value: str, sub: str = "", color: str = "#f2f4f1") -> None:
+def pill(text: str, color: str, pulse: bool = False) -> str:
+    return (f'<span class="chip" style="color:{color};border-color:{color}55;background:{color}14">'
+            f'<span class="dot{" pulse" if pulse else ""}" style="background:{color}"></span>{html.escape(text)}</span>')
+
+
+def kpi(label: str, value: str, sub: str = "", color: str | None = None, ico: str = "") -> None:
+    accent = f"--accent:{color};" if color else ""
     st.markdown(
-        f'<div class="cact-card"><div class="kpi-label">{html.escape(label)}</div>'
-        f'<div class="kpi-value" style="color:{color}">{html.escape(value)}</div>'
+        f'<div class="kpi" style="{accent}"><div class="kpi-label">{icon(ico) if ico else ""}{html.escape(label)}</div>'
+        f'<div class="kpi-value" style="color:{color or "var(--ink)"}">{html.escape(value)}</div>'
         f'<div class="kpi-sub">{html.escape(sub) or "&nbsp;"}</div></div>',
         unsafe_allow_html=True,
     )
 
 
-def section(title: str, note: str = "") -> None:
-    st.markdown(f'<div class="sec-title">{title} <small>{html.escape(note)}</small></div>',
+def section(title: str, note: str = "", ico: str = "") -> None:
+    st.markdown(f'<div class="sec-title">{icon(ico) if ico else ""}{title} <small>{html.escape(note)}</small></div>',
+                unsafe_allow_html=True)
+
+
+def empty(text: str, ico: str = "inbox", good: bool = False) -> None:
+    st.markdown(f'<div class="empty{" good" if good else ""}">{icon(ico)}<span>{html.escape(text)}</span></div>',
                 unsafe_allow_html=True)
 
 
@@ -171,22 +130,48 @@ def audit_records() -> tuple[list[dict], bool | None, str | None]:
 
 # ------------------------------------------------------------------ menu
 
-PAGES = {  # key: (icon, label, menu group)
-    "config": ("⚙️", "Configuration", ""),
-    "approvals": ("✋", "Approvals", "Decide"),
-    "chat": ("💬", "Chat", "Decide"),
-    "collector": ("📥", "Collector", "Pipeline"),
-    "classifier": ("🧠", "Classifier", "Pipeline"),
-    "responder": ("🛡️", "Action taker", "Pipeline"),
-    "review": ("📈", "Review", "Oversight"),
-    "reports": ("📄", "Reports", "Oversight"),
-    "audit": ("📜", "Audit trail", "Oversight"),
+PAGES = {  # key: (Material icon, label, menu group)
+    "config": ("tune", "Configuration", ""),
+    "approvals": ("approval_delegation", "Approvals", "Decide"),
+    "chat": ("forum", "Chat", "Decide"),
+    "collector": ("input", "Collector", "Pipeline"),
+    "classifier": ("category", "Classifier", "Pipeline"),
+    "responder": ("shield", "Action taker", "Pipeline"),
+    "review": ("speed", "Review", "Oversight"),
+    "reports": ("description", "Reports", "Oversight"),
+    "audit": ("link", "Audit trail", "Oversight"),
 }
 
 
 def go(page: str) -> None:
     st.session_state.page = page
     st.rerun()
+
+
+def side_risk() -> None:
+    """Live risk index and chain state, visible from every page."""
+    risk, err = fetch("risk")
+    if err or not isinstance(risk, dict):
+        st.markdown(f'<div class="side-risk"><div class="lbl">Core</div>'
+                    f'<div class="num" style="color:{sh.BAND_COLORS["critical"]}">Offline</div>'
+                    f'<div class="foot"><span>retrying every {REFRESH_SECONDS} s</span></div></div>',
+                    unsafe_allow_html=True)
+        return
+    band, idx = sh.resolve_band(risk), risk.get("risk_index")
+    color, threshold = sh.band_color(band), float(risk.get("threshold") or 80)
+    _, valid, _ = audit_records()
+    chain = ("chain valid", sh.BAND_COLORS["green"]) if valid else ("chain broken", sh.BAND_COLORS["critical"]) \
+        if valid is False else ("chain unknown", sh.UNKNOWN_COLOR)
+    pct = max(0.0, min(100.0, float(idx or 0)))
+    st.markdown(
+        f'<div class="side-risk"><div class="row"><span class="lbl">Risk index</span>'
+        f'<span class="lbl" style="color:{color}">{html.escape(band.upper())}</span></div>'
+        f'<div class="num" style="color:{color}">{idx if idx is not None else "-"}<small> / 100</small></div>'
+        f'<div class="bar"><i style="width:{pct:.0f}%;background:{color}"></i><b style="left:{threshold:.0f}%"></b></div>'
+        f'<div class="foot"><span>threshold {threshold:.0f}</span>'
+        f'<span style="color:{chain[1]}">{icon("link")} {chain[0]}</span></div></div>',
+        unsafe_allow_html=True,
+    )
 
 
 @st.fragment(run_every=AUTO)
@@ -198,15 +183,17 @@ def menu() -> None:
         seen[page] = sh.head_seq(records)
     bubbles = {**sh.unseen_counts(records, seen), "approvals": len(sh.pending_approvals(incidents or []))}
 
+    side_risk()
     group = None
-    for key, (icon, label, grp) in PAGES.items():
+    for key, (ico, label, grp) in PAGES.items():
         if grp != group:
             group = grp
             if grp:
                 st.markdown(f'<div class="nav-group">{grp}</div>', unsafe_allow_html=True)
         n = bubbles.get(key, 0)
-        text = f"{icon}  {label}" + (f"  :red-badge[{n}]" if n else "")
-        if st.button(text, key=f"nav_{key}", width="stretch", type="primary" if key == page else "secondary"):
+        text = label + (f"  :red-badge[{n}]" if n else "")
+        if st.button(text, key=f"nav_{key}", icon=f":material/{ico}:", width="stretch",
+                     type="primary" if key == page else "secondary"):
             if key in sh.ALERT_TYPES:
                 seen[key] = sh.head_seq(records)
             go(key)
@@ -214,71 +201,77 @@ def menu() -> None:
 
 with st.sidebar:
     st.markdown(
-        '<div class="cact-brand"><div class="cact-logo">🌵</div><div>'
-        '<div class="cact-name">Cact<span>AI</span></div>'
-        '<div class="cact-tag">Proof, not just alerts.</div></div></div>',
+        '<div class="brand"><div class="brand-mark">🌵</div><div>'
+        '<div class="brand-name">Cact<span>AI</span></div>'
+        '<div class="brand-tag">Risk Console</div></div></div>',
         unsafe_allow_html=True,
     )
     menu()
-    st.divider()
+    st.markdown('<div class="side-sep"></div>', unsafe_allow_html=True)
     st.toggle(f"Auto-refresh every {REFRESH_SECONDS} s", key="auto_refresh")
-    if st.button("🔄 Reset demo", width="stretch", help="POST /demo/reset: clears state for a fresh take"):
+    if st.button("Reset demo", icon=":material/restart_alt:", width="stretch",
+                 help="POST /demo/reset: clears state for a fresh take"):
         run_action("Demo reset", lambda: client.reset_demo(), rerun=False)
         st.session_state.seen = {}
-    st.caption("A cactus doesn't chase you. It just makes touching it a bad idea.")
+    st.markdown('<div class="side-foot">A cactus doesn\'t chase you. It just makes touching it a bad idea.</div>',
+                unsafe_allow_html=True)
 
 
 # ------------------------------------------------------------------ shared page parts
 
 def header(title: str, note: str = "") -> dict | None:
-    """Page title plus the live status pills. Returns /risk, or None when the core is offline."""
+    """Page title plus the live status chips. Returns /risk, or None when the core is offline."""
     risk, err = fetch("risk")
     now_s = datetime.now().strftime("%H:%M:%S")
-    icon = PAGES[st.session_state.page][0]
+    ico, _, group = PAGES[st.session_state.page]
     if err or not isinstance(risk, dict):
-        pills = pill("CORE OFFLINE", sh.BAND_COLORS["critical"])
+        chips = pill("Core offline", sh.BAND_COLORS["critical"])
     else:
         band = sh.resolve_band(risk)
         _, valid, _ = audit_records()
-        pills = (pill(f"RISK {risk.get('risk_index', '-')} · {sh.BAND_LABELS.get(band, band).upper()}", sh.band_color(band))
-                 + (pill("CHAIN VALID ✅", sh.BAND_COLORS["green"]) if valid
-                    else pill("CHAIN BROKEN ❌", sh.BAND_COLORS["critical"]) if valid is False
-                    else pill("CHAIN UNKNOWN", sh.UNKNOWN_COLOR)))
-    pills += pill(f"LIVE · {now_s}" if AUTO else f"PAUSED · {now_s}", "#3fb56a" if AUTO else sh.UNKNOWN_COLOR)
+        chips = (pill(f"Risk {risk.get('risk_index', '-')} · {sh.BAND_LABELS.get(band, band)}", sh.band_color(band))
+                 + (pill("Chain valid", sh.BAND_COLORS["green"]) if valid
+                    else pill("Chain broken", sh.BAND_COLORS["critical"]) if valid is False
+                    else pill("Chain unknown", sh.UNKNOWN_COLOR)))
+    chips += pill(f"Live · {now_s}" if AUTO else f"Paused · {now_s}", sh.BAND_COLORS["green"] if AUTO else sh.UNKNOWN_COLOR,
+                  pulse=bool(AUTO))
     st.markdown(
-        f'<div class="cact-head"><div><div class="cact-name" style="font-size:1.6rem">{icon} {html.escape(title)}</div>'
-        f'<div class="cact-tag">{html.escape(note)}</div></div>'
-        f'<div style="display:flex;gap:.5rem;flex-wrap:wrap">{pills}</div></div>',
+        f'<div class="page-head"><div class="page-title"><div class="page-icon">{icon(ico)}</div><div>'
+        f'<div class="eyebrow">{html.escape(group or "Settings")}</div><h1>{html.escape(title)}</h1>'
+        f'<div class="page-note">{html.escape(note)}</div></div></div>'
+        f'<div class="chips">{chips}</div></div>',
         unsafe_allow_html=True,
     )
     if err or not isinstance(risk, dict):
         st.markdown(
-            f'<div class="offline"><b>Core API unreachable</b><br>'
-            f'<span style="color:#b9a5a5">{html.escape(err or "unexpected /risk payload")}</span><br><br>'
+            f'<div class="offline">{icon("cloud_off")}<div><b>Core API unreachable</b><br>'
+            f'<small>{html.escape(err or "unexpected /risk payload")}</small><br><br>'
             f'Retrying every {REFRESH_SECONDS} s. Start the core (or <code>dev/fake_core.py</code>) '
-            f'and check the Core URL on the Configuration page.</div>',
+            f'and check the Core URL on the Configuration page.</div></div>',
             unsafe_allow_html=True,
         )
         return None
     return risk
 
 
-def table(df, empty: str, **kwargs) -> None:
+def table(df, empty_text: str, **kwargs) -> None:
     if df.empty:
-        st.caption(empty)
+        if empty_text:
+            empty(empty_text)
     else:
         st.dataframe(df, hide_index=True, width="stretch", **kwargs)
 
 
 def incident_summary(inc: dict) -> None:
     inc_id = str(inc.get("id"))
-    sev_color = {"low": "#0ca30c", "medium": "#fab219", "high": "#ec835a", "critical": "#d03b3b"}.get(
+    sev_color = {"low": sh.BAND_COLORS["green"], "medium": sh.BAND_COLORS["amber"], "high": sh.BAND_COLORS["red"],
+                 "critical": sh.BAND_COLORS["critical"]}.get(
         str(inc.get("severity")), sh.UNKNOWN_COLOR)
     st.markdown(
-        f'<div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">'
-        f'<span style="font-size:1.25rem;font-weight:800;color:#f2f4f1">{html.escape(inc_id)}</span>'
+        f'<div class="inc-head">'
+        f'<span class="inc-id">{html.escape(inc_id)}</span>'
         f'{pill(str(inc.get("severity", "?")).upper(), sev_color)}'
-        f'{pill(sh.status_label(inc.get("status")), "#b9bdb4")}'
+        f'{pill(sh.status_label(inc.get("status")), sh.TEXT_SECONDARY)}'
         + (pill("SLA BREACHED", sh.BAND_COLORS["critical"]) if inc.get("sla_breached") else "")
         + (pill(f"ACK · {inc.get('acked_by')}", sh.BAND_COLORS["green"]) if inc.get("acked")
            else pill("ACK · NONE", sh.BAND_COLORS["amber"]))
@@ -300,8 +293,9 @@ def incident_summary(inc: dict) -> None:
         unsafe_allow_html=True,
     )
     if inc.get("explanation"):
-        st.markdown(f"_{inc['explanation']}_")
-    st.markdown(f'<div class="reco"><b>Recommended action</b>{html.escape(str(inc.get("recommended_action") or "-"))}</div>',
+        st.markdown(f'<p class="explain">{html.escape(str(inc["explanation"]))}</p>', unsafe_allow_html=True)
+    st.markdown(f'<div class="reco">{icon("tips_and_updates")}<div><b>Recommended action</b>'
+                f'{html.escape(str(inc.get("recommended_action") or "-"))}</div></div>',
                 unsafe_allow_html=True)
     st.write("")
 
@@ -322,15 +316,15 @@ def decision_controls(inc: dict) -> None:
         return _run
 
     if can["decide"]:
-        if can["ack"] and st.button("👁️ Acknowledge", key=f"ack_{inc_id}",
+        if can["ack"] and st.button("Acknowledge", icon=":material/visibility:", key=f"ack_{inc_id}",
                                     help="Records that you have seen this alert (POST /ack)"):
             run_action(f"Acknowledged {inc_id}", lambda: client.ack(inc_id, op))
         with st.form(key=f"decide_{inc_id}", clear_on_submit=True, border=True):
             just = st.text_area("Justification (required to reject, written to the audit log)", key=f"just_{inc_id}",
                                 height=80, placeholder="e.g. False positive: this IP is our penetration tester")
             c1, c2 = st.columns(2)
-            approve = c1.form_submit_button("✅ Approve & Patch", type="primary", width="stretch")
-            reject = c2.form_submit_button("⛔ Reject with Justification", width="stretch")
+            approve = c1.form_submit_button("Approve & Patch", icon=":material/check:", type="primary", width="stretch")
+            reject = c2.form_submit_button("Reject with Justification", icon=":material/block:", width="stretch")
         if approve:
             run_action(f"Approved & patched {inc_id}", ack_then("approve", just.strip()))
         elif reject:
@@ -343,8 +337,8 @@ def decision_controls(inc: dict) -> None:
             just = st.text_area("Justification (written to the audit log)", key=f"cjust_{inc_id}", height=70,
                                 placeholder="e.g. Verified attacker; keep the block")
             c1, c2 = st.columns(2)
-            rb = c1.form_submit_button("↩️ Rollback", width="stretch")
-            perm = c2.form_submit_button("📌 Make Permanent", type="primary", width="stretch")
+            rb = c1.form_submit_button("Rollback", icon=":material/undo:", width="stretch")
+            perm = c2.form_submit_button("Make Permanent", icon=":material/push_pin:", type="primary", width="stretch")
         if rb:
             run_action(f"Rolled back {inc_id}",
                        lambda: client.rollback(inc_id, op, just.strip() or "Rolled back by operator from dashboard"))
@@ -357,10 +351,14 @@ def decision_controls(inc: dict) -> None:
 
 # ------------------------------------------------------------------ pages
 
+CONFIG_ICONS = {"collector": "input", "classifier": "category", "responder": "shield", "notifications": "notifications",
+                "ai": "auto_awesome"}
+
+
 def page_config() -> None:
     header("Configuration", f"Saved to {cfg.config_path()} · read by every part when it starts")
     with st.container(border=True):
-        section("🖥️ Dashboard", "this browser session only")
+        section("Dashboard", "this browser session only", "desktop_windows")
         c1, c2 = st.columns(2)
         # Own widget keys: Streamlit drops a widget's state when you leave the page.
         st.session_state.core_url = c1.text_input("Core API URL", value=st.session_state.core_url).strip()
@@ -371,7 +369,7 @@ def page_config() -> None:
     values = {}
     for s in cfg.SECTIONS:
         with st.container(border=True):
-            section(s.title, s.about)
+            section(s.title, s.about, CONFIG_ICONS.get(s.key, "settings"))
             if s.key == "ai":
                 values |= ai_settings(current)
                 continue
@@ -380,7 +378,7 @@ def page_config() -> None:
                 values[f.env] = cols[n % 2].text_input(
                     f.prompt, value=current[f.env], key=f"cfg_{f.env}", help=f"Environment variable {f.env}",
                     type="password" if f.secret else "default").strip()
-    if st.button("💾 Save settings", type="primary"):
+    if st.button("Save settings", icon=":material/save:", type="primary"):
         bad = [f.prompt for f in cfg.FIELDS.values() if not cfg.valid(f, values[f.env])]
         if bad:
             st.error("Please enter a number for: " + "; ".join(bad))
@@ -416,7 +414,7 @@ def ai_settings(current: dict[str, str]) -> dict[str, str]:
                                "before CactAI starts wins over this one.").strip()
     ai = {"CACTAI_LLM_PROVIDER": provider, "CACTAI_LLM_API_KEY": api_key, "CACTAI_LLM_BASE_URL": base_url,
           cfg.MODEL_ENV: model}
-    if m2.button("🔄 Fetch models", width="stretch", disabled=not api_key,
+    if m2.button("Fetch models", icon=":material/refresh:", width="stretch", disabled=not api_key,
                  help="Ask the provider which models this key can use"):
         with st.spinner("Asking the provider for its models..."):
             try:
@@ -448,7 +446,7 @@ def page_approvals() -> None:
         st.warning(f"Could not load incidents: {err}")
     waiting = sh.pending_approvals(incidents or [])
     if not waiting:
-        st.success("🌵 Nothing waiting for a decision.")
+        empty("Nothing waiting for a decision. The desert is quiet.", "check_circle", good=True)
         return
     for n, inc in enumerate(waiting):
         can = sh.available_actions(inc)
@@ -487,7 +485,7 @@ def page_chat() -> None:
                          else "The whole operation")
     c2.caption(f"{assistant} · {hist.get('model') or 'model unknown'} · read-only: every action still needs "
                "your click and goes through the normal approval checks")
-    if c3.button("🧹 Clear chat", width="stretch", disabled=not messages):
+    if c3.button("Clear chat", icon=":material/delete_sweep:", width="stretch", disabled=not messages):
         safe(client.clear_chat)
         st.rerun()
 
@@ -586,17 +584,17 @@ def page_collector() -> None:
         kpi("Events analysed", str(sum(int(a.get("analyzed") or 0) for a in layer)), "by the layer agents")
     with k2:
         kpi("Malicious events", str(len(malicious)), "attached to incidents",
-            sh.BAND_COLORS["critical"] if malicious else "#f2f4f1")
+            sh.BAND_COLORS["critical"] if malicious else None)
     with k3:
         kpi("Collectors", str(len(collectors)), "sending heartbeats")
     with k4:
         kpi("Silent alerts", str(len(silent)), "collector stopped reporting",
-            sh.BAND_COLORS["amber"] if silent else "#f2f4f1")
+            sh.BAND_COLORS["amber"] if silent else None)
     st.write("")
 
     left, right = st.columns(2)
     with left, st.container(border=True):
-        section("📂 Log sources", "from the settings file")
+        section("Log sources", "from the settings file", "folder_open")
         logs_dir = Path(os.environ.get("CACTAI_LAB_LOGS") or cfg.FIELDS["CACTAI_LAB_LOGS"].default)
         st.caption(f"Folder: {logs_dir}")
         rows = []
@@ -606,16 +604,16 @@ def page_collector() -> None:
                          "Size": f"{path.stat().st_size / 1024:.1f} KB" if path.exists() else "not created yet"})
         table(sh.pd.DataFrame(rows), "")
     with right, st.container(border=True):
-        section("📡 Heartbeats", "Watchdog flags a collector that goes quiet")
+        section("Heartbeats", "Watchdog flags a collector that goes quiet", "monitor_heart")
         table(sh.pd.DataFrame([{"Collector": c.get("collector", "-"), "State": "⚠️ silent" if c.get("silent") else "✅ alive",
                                 "Last seen": datetime.fromtimestamp(float(c["last_seen_ts"])).strftime("%H:%M:%S")
                                 if c.get("last_seen_ts") else "-"} for c in collectors]),
               "No heartbeat received yet. Start the collector.")
-        section("🧭 Events per layer agent")
+        section("Events per layer agent", "", "hub")
         table(sh.pd.DataFrame([{"Agent": a.get("name"), "Events analysed": a.get("analyzed", 0)} for a in layer]),
               "No agent data.")
     with st.container(border=True):
-        section("🚨 Malicious events collected", "newest first")
+        section("Malicious events collected", "newest first", "warning")
         table(sh.classification_rows(records)[["Time", "Event", "Category", "Layer agent", "Incident", "Raw log line"]],
               "No malicious events yet.")
 
@@ -632,7 +630,7 @@ def page_classifier() -> None:
 
     k1, k2, k3, k4 = st.columns(4)
     with k1:
-        kpi("Attacks identified", str(len(opened)), "incidents opened", sh.BAND_COLORS["critical"] if opened else "#f2f4f1")
+        kpi("Attacks identified", str(len(opened)), "incidents opened", sh.BAND_COLORS["critical"] if opened else None)
     with k2:
         kpi("Malicious events", str(len(rows)), "classified as an attack")
     with k3:
@@ -644,14 +642,14 @@ def page_classifier() -> None:
     st.write("")
 
     with st.container(border=True):
-        section("🧪 Rules in use", "change them on the Configuration page")
+        section("Rules in use", "change them on the Configuration page", "rule")
         st.markdown(
             f"- Brute force: **{os.environ.get('BRUTE_FORCE_COUNT', '5')}** failed logins within "
             f"**{os.environ.get('BRUTE_FORCE_WINDOW_S', '60')} s**\n"
             f"- Bulk exfiltration: **{os.environ.get('EXPORT_ROWS_THRESHOLD', '100')}** rows or more in one export\n"
             "- Signatures: SQL injection, XSS, privilege escalation, port scans, misconfiguration")
     with st.container(border=True):
-        section("🏷️ Classifications", "newest first · 0.4-0.6 malicious means needs review, never auto-contained")
+        section("Classifications", "newest first · 0.4-0.6 malicious means needs review, never auto-contained", "label")
         table(rows, "No malicious classifications yet.", column_config={
             "Confidence": st.column_config.ProgressColumn("Confidence", min_value=0, max_value=1, format="%.2f"),
             "Malicious": st.column_config.ProgressColumn("Malicious", min_value=0, max_value=1, format="%.2f")})
@@ -670,7 +668,7 @@ def page_responder() -> None:
 
     k1, k2, k3, k4 = st.columns(4)
     with k1:
-        kpi("Active containment", str(len(containment)), "in force now", sh.BAND_COLORS["amber"] if len(containment) else "#f2f4f1")
+        kpi("Active containment", str(len(containment)), "in force now", sh.BAND_COLORS["amber"] if len(containment) else None)
     with k2:
         kpi("Blocked IPs", str(len((blocklist or {}).get("ips") or [])), "via GET /blocklist")
     with k3:
@@ -680,16 +678,16 @@ def page_responder() -> None:
     st.write("")
 
     with st.container(border=True):
-        section("🛡️ Active containment", "enforced via /blocklist")
+        section("Active containment", "enforced via /blocklist", "block")
         if bl_err:
             st.warning(f"Could not load blocklist: {bl_err}")
         table(containment, "Nothing contained right now.")
     left, right = st.columns([7, 5])
     with left, st.container(border=True):
-        section("🗂️ Action history", "every action is reversible and expires unless a person keeps it")
+        section("Action history", "every action is reversible and expires unless a person keeps it", "history")
         table(history, "No actions taken yet.")
     with right, st.container(border=True):
-        section("📍 Needle reviews", "two-key check before any autonomous action")
+        section("Needle reviews", "two-key check before any autonomous action", "key")
         render_feed(sh.build_activity_feed(sh.records_of(records, "needle_review", "action_applied",
                                                          "auto_rollback", "action_rolled_back"), limit=15))
 
@@ -714,34 +712,34 @@ def page_review() -> None:
     with k3:
         gap = threshold - float(idx or 0)
         kpi("Headroom", f"{gap:.0f}" if gap > 0 else "over", "points until the threshold",
-            sh.BAND_COLORS["critical"] if gap <= 0 else "#f2f4f1")
+            sh.BAND_COLORS["critical"] if gap <= 0 else None)
     with k4:
         kpi("Open incidents", str(len(active)), f"{len(incidents)} total")
     with k5:
         kpi("Inaction penalty", f"+{penalty:.0f}", "+5 per demo-hour unacknowledged",
-            sh.BAND_COLORS["amber"] if penalty else "#f2f4f1")
+            sh.BAND_COLORS["amber"] if penalty else None)
     st.write("")
 
     g, h = st.columns([5, 7])
     with g, st.container(border=True):
-        section("Risk gauge", f"threshold {threshold:.0f} · white line")
+        section("Risk gauge", f"threshold {threshold:.0f} · white line", "speed")
         st.plotly_chart(sh.gauge_figure(idx, threshold, band), width="stretch", config={"displayModeBar": False}, key="gauge")
         st.markdown(f'<div style="text-align:center;margin-top:-.4rem">{pill(sh.BAND_LABELS.get(band, band), color)}</div>',
                     unsafe_allow_html=True)
     with h, st.container(border=True):
-        section("Risk over time", "step line · bands green / amber / red / critical")
+        section("Risk over time", "step line · bands green / amber / red / critical", "show_chart")
         hist = sh.history_frame(risk.get("history"))
         if hist.empty:
-            st.info("No history yet. The core will append a point on every risk change.")
+            empty("No history yet. The core adds a point on every risk change.", "show_chart")
         else:
             st.plotly_chart(sh.history_figure(hist, threshold), width="stretch", config={"displayModeBar": False}, key="history")
 
     with st.container(border=True):
-        section("🧮 Risk accumulated", "points = base × confidence × criticality, plus the inaction penalty; "
-                "index = 100·(1−e^(−raw/60))")
+        section("Risk accumulated", "points = base × confidence × criticality, plus the inaction penalty; "
+                "index = 100·(1−e^(−raw/60))", "calculate")
         if inc_err:
             st.warning(f"Could not load incidents: {inc_err}")
-        table(sh.risk_breakdown(incidents), "🌵 Quiet desert. No incidents.", column_config={
+        table(sh.risk_breakdown(incidents), "Quiet desert. No incidents.", column_config={
             "Confidence": st.column_config.ProgressColumn("Confidence", min_value=0, max_value=1, format="%.2f"),
             "Inaction penalty": st.column_config.NumberColumn("Inaction penalty", format="+%.0f pts")})
 
@@ -754,7 +752,7 @@ def page_reports() -> None:
     with_report = {str((r.get("data") or {}).get("incident")) for r in sh.records_of(records, "report_generated")}
     by_id = {str(i.get("id")): i for i in incidents or [] if i.get("id")}
     if err or not by_id:
-        st.caption("No incidents yet, so no reports.")
+        empty("No incidents yet, so no reports.", "description")
         return
     newest = sorted(by_id, key=lambda i: str(by_id[i].get("opened_at") or ""), reverse=True)
     ids = sorted(newest, key=lambda i: i not in with_report)  # ready reports first
@@ -762,7 +760,7 @@ def page_reports() -> None:
              "Report": "✅ ready" if i in with_report else "-"} for i in ids]
     left, right = st.columns([4, 8])
     with left, st.container(border=True):
-        section("🗃️ All incidents", f"{len(with_report & set(by_id))} reports ready")
+        section("All incidents", f"{len(with_report & set(by_id))} reports ready", "inventory_2")
         table(sh.pd.DataFrame(rows), "")
     with right, st.container(border=True):
         inc_id = st.selectbox("Open report for", ids, key="report_inc", format_func=lambda i: f"{i} · {sh.category_label(by_id[i].get('category'))}")
@@ -777,15 +775,15 @@ def page_audit() -> None:
     agents, _ = fetch("agents", [])
     left, right = st.columns([7, 5])
     with left, st.container(border=True):
-        badge = ('<span style="color:#0ca30c">Chain valid ✅</span>' if valid
-                 else '<span style="color:#d03b3b">Chain BROKEN ❌</span>' if valid is False
-                 else '<span style="color:#8a8f98">Chain status unknown</span>')
-        section(f"🤖 Agent activity &nbsp;{badge}", f"latest {len(records)} hash-chained records")
+        badge = (pill("Chain valid", sh.BAND_COLORS["green"]) if valid
+                 else pill("Chain broken", sh.BAND_COLORS["critical"]) if valid is False
+                 else pill("Chain unknown", sh.UNKNOWN_COLOR))
+        section(f"Agent activity &nbsp;{badge}", f"latest {len(records)} hash-chained records", "timeline")
         if err:
             st.warning(f"Could not load audit log: {err}")
         render_feed(sh.build_activity_feed(records, limit=60))
     with right, st.container(border=True):
-        section("👥 Agents", "who does what")
+        section("Agents", "who does what", "groups")
         table(sh.pd.DataFrame([{"Agent": a.get("name"), "Role": a.get("role"),
                                 "Can act": "yes" if a.get("can_execute") else "no"} for a in agents or []]),
               "Agent list unavailable.")
@@ -793,15 +791,16 @@ def page_audit() -> None:
 
 def render_feed(feed: list[dict]) -> None:
     if not feed:
-        st.caption("No audit records yet.")
+        empty("No audit records yet.", "receipt_long")
         return
     rows = []
     for e in feed:
         rows.append(
             f'<div class="feed-row"><div class="feed-time">{html.escape(e["time"])}<br>'
             f'<span class="feed-hash">#{e["seq"] if e["seq"] is not None else "-"}</span></div>'
-            f'<div class="agent" style="color:{e["color"]}">{e["icon"]} {html.escape(e["agent"])}</div>'
-            f'<div><span class="feed-type">{html.escape(e["type"])}</span><br>'
+            f'<div class="feed-rail"><i style="background:{e["color"]}"></i></div>'
+            f'<div class="feed-body"><span class="agent" style="color:{e["color"]}">{e["icon"]} {html.escape(e["agent"])}</span>'
+            f' · <span class="feed-type">{html.escape(e["type"])}</span><br>'
             f'<span class="feed-sum">{html.escape(e["summary"])}</span> '
             f'<span class="feed-hash">{html.escape(e["hash"])}</span></div></div>'
         )
@@ -809,17 +808,17 @@ def render_feed(feed: list[dict]) -> None:
 
 
 def report_viewer(inc_id: str) -> None:
-    section("📄 Evidence report", f"GET /reports/{inc_id}.md")
+    section("Evidence report", f"GET /reports/{inc_id}.md", "verified")
     md, err = safe(lambda: client.report_md(inc_id))
     if err or not md:
-        st.caption("No report for this incident yet. Scribe writes one when autonomous containment fires.")
+        empty("No report for this incident yet. Scribe writes one when autonomous containment fires.", "hourglass_empty")
         return
     d1, d2 = st.columns(2)
-    d1.download_button("⬇️ Download report (.md)", md, file_name=f"{inc_id}-evidence-report.md",
+    d1.download_button("Download report (.md)", md, icon=":material/download:", file_name=f"{inc_id}-evidence-report.md",
                        mime="text/markdown", width="stretch", key=f"dl_md_{inc_id}")
     rep_json, jerr = safe(lambda: client.report_json(inc_id))
     if rep_json is not None and not jerr:
-        d2.download_button("⬇️ Download report (.json)", json.dumps(rep_json, indent=2), file_name=f"{inc_id}-evidence-report.json",
+        d2.download_button("Download report (.json)", json.dumps(rep_json, indent=2), icon=":material/data_object:", file_name=f"{inc_id}-evidence-report.json",
                            mime="application/json", width="stretch", key=f"dl_json_{inc_id}")
     with st.container(height=520, border=True):
         st.markdown(sh.demote_headings(md))

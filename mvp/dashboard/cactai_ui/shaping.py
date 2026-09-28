@@ -23,10 +23,10 @@ BANDS: list[tuple[str, int, int]] = [
 
 # Status palette (good / warning / serious / critical). Always shown with a label.
 BAND_COLORS: dict[str, str] = {
-    "green": "#0ca30c",
-    "amber": "#fab219",
+    "green": "#4fb67c",
+    "amber": "#e8b34a",
     "red": "#ec835a",
-    "critical": "#d03b3b",
+    "critical": "#e5484d",
 }
 BAND_LABELS: dict[str, str] = {
     "green": "GREEN · logged only",
@@ -34,12 +34,13 @@ BAND_LABELS: dict[str, str] = {
     "red": "RED · escalated",
     "critical": "CRITICAL · autonomous containment",
 }
-UNKNOWN_COLOR = "#8a8f98"
+UNKNOWN_COLOR = "#8a978e"
 
-SURFACE = "#161a17"
-TEXT_PRIMARY = "#f2f4f1"
-TEXT_SECONDARY = "#b9bdb4"
-TEXT_MUTED = "#80867d"
+SURFACE = "#16201a"
+TEXT_PRIMARY = "#e6efe8"
+TEXT_SECONDARY = "#a3b5a8"
+TEXT_MUTED = "#6f8175"
+FONT = "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif"
 GRID = "rgba(255,255,255,0.07)"
 
 
@@ -290,8 +291,8 @@ def build_containment_rows(blocklist: dict | None, incidents: Iterable[dict]) ->
 # ---------------------------------------------------------------- audit / agents
 
 AGENTS = {
-    "Saguaro": ("🌵", "#3fb56a"),
-    "Cyanide": ("🧪", "#3fb56a"),
+    "Saguaro": ("🌵", "#6fcf97"),
+    "Cyanide": ("🧪", "#6fcf97"),
     "Planner": ("✳️", "#d97757"),
     "Needle": ("📍", "#e0a526"),
     "Scribe": ("📜", "#8fa7ff"),
@@ -303,7 +304,7 @@ AGENTS = {
     "Watchdog": ("🐕", "#a0a39b"),
     "Help Desk": ("💬", "#d98bb5"),
     "Jev": ("🧠", "#c79bf2"),
-    "Operator": ("👤", "#f2f4f1"),
+    "Operator": ("👤", "#e6efe8"),
 }
 
 # Fallback mapping from audit record type to the agent that normally owns it.
@@ -446,7 +447,7 @@ def gauge_figure(risk_index: float | None, threshold: float = 80, band: str | No
         height=290,
         margin={"l": 28, "r": 28, "t": 18, "b": 0},
         paper_bgcolor="rgba(0,0,0,0)",
-        font={"color": TEXT_PRIMARY, "family": "Inter, Segoe UI, sans-serif"},
+        font={"color": TEXT_PRIMARY, "family": FONT},
     )
     return fig
 
@@ -501,7 +502,7 @@ def history_figure(df: pd.DataFrame, threshold: float = 80) -> go.Figure:
         plot_bgcolor="rgba(0,0,0,0)",
         showlegend=False,
         hovermode="x unified",
-        font={"color": TEXT_SECONDARY, "family": "Inter, Segoe UI, sans-serif", "size": 11},
+        font={"color": TEXT_SECONDARY, "family": FONT, "size": 11},
         xaxis={"showgrid": False, "linecolor": GRID, "tickformat": "%H:%M:%S"},
         yaxis={"range": [0, 100], "gridcolor": GRID, "tickvals": [0, 30, 60, 80, 100], "zeroline": False},
     )
