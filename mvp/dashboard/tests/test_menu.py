@@ -1,10 +1,14 @@
 """Sidebar menu bubbles, the part views, and a smoke test of every page."""
+import sys
 from pathlib import Path
 
 import pytest
 import requests
 
 from cactai_ui import shaping as sh
+
+sys.path.append(str(Path(__file__).resolve().parents[2]))
+import cactai_config as cfg  # noqa: E402
 
 RECORDS = [
     {"seq": 1, "type": "core_started", "data": {}},
@@ -160,3 +164,34 @@ def test_ai_settings_fetch_the_models_and_save_the_pick(fake_core, models_api, t
     at.text_input(key="cfg_CACTAI_LLM_API_KEY").set_value("wrong").run()
     next(b for b in at.button if "Fetch models" in b.label).click().run()
     assert any("rejected this API key" in w.value for w in at.warning)
+
+
+def test_preset_fills_the_advanced_values_and_saves_the_overrides(fake_core, tmp_path, monkeypatch):
+    import json
+
+    from streamlit.testing.v1 import AppTest
+
+    path = tmp_path / "config.json"
+    monkeypatch.setenv("CACTAI_CONFIG", str(path))
+    at = AppTest.from_file(APP, default_timeout=20)
+    at.session_state["core_url"] = fake_core
+    at.session_state["auto_refresh"] = False
+    at.session_state["page"] = "config"
+    at.run()
+    assert at.button_group(key="cfg_CACTAI_PRESET").value == "moderate"
+    at.button_group(key="cfg_CACTAI_PRESET").set_value("strict").run()
+    assert not at.exception, at.exception
+    assert at.text_input(key="cfg_RISK_THRESHOLD").value == cfg.preset_values("strict")["RISK_THRESHOLD"]
+
+    at.text_input(key="cfg_SLA_HOURS").set_value("3").run()
+    assert any("1 value changed by hand" in c.value for c in at.caption)
+    next(b for b in at.button if "Save settings" in b.label).click().run()
+    assert not at.exception, at.exception
+    saved = json.loads(path.read_text())
+    assert saved["preset"] == {"CACTAI_PRESET": "strict"}
+    values = cfg.read()
+    assert values["BRUTE_FORCE_COUNT"] == cfg.preset_values("strict")["BRUTE_FORCE_COUNT"]
+    assert cfg.overrides(values) == {"SLA_HOURS": "3"}
+
+    next(b for b in at.button if "Reset to preset" in b.label).click().run()
+    assert at.text_input(key="cfg_SLA_HOURS").value == cfg.preset_values("strict")["SLA_HOURS"]

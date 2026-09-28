@@ -55,7 +55,7 @@ class Settings:
     id_start: int = field(default_factory=lambda: _i("ID_START", 81))
     history_len: int = 3600
     jev_timeout_s: float = field(default_factory=lambda: _f("JEV_TIMEOUT_S", 3.0))
-    needle_min_confidence: float = 0.6
+    needle_min_confidence: float = field(default_factory=lambda: _f("NEEDLE_MIN_CONFIDENCE", 0.6))
     # Never auto-block the demo machine itself (loopback) or protected accounts.
     protected_ips: set[str] = field(
         default_factory=lambda: {x.strip() for x in os.getenv("PROTECTED_IPS", "127.0.0.1,::1,localhost").split(",") if x.strip()}
