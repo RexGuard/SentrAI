@@ -9,6 +9,7 @@ Providers:
   anthropic  ANTHROPIC_API_KEY  Claude, through the ``anthropic`` package
   openai     OPENAI_API_KEY     OpenAI, through the ``openai`` package
   deepseek   DEEPSEEK_API_KEY   DeepSeek's OpenAI-compatible API (``openai`` package)
+  commandcode COMMANDCODE_API_KEY  Command Code's OpenAI-compatible API (needs CACTAI_LLM_MODEL)
   compatible CACTAI_LLM_API_KEY + CACTAI_LLM_BASE_URL: any other OpenAI-compatible service
 
 CACTAI_LLM_PROVIDER picks one; "auto" (the default) takes the first provider whose key is
@@ -21,11 +22,12 @@ import os
 from dataclasses import dataclass, field
 from typing import Any
 
-PROVIDERS = ("anthropic", "openai", "deepseek", "compatible")
+PROVIDERS = ("anthropic", "openai", "deepseek", "commandcode", "compatible")
 KEY_ENV = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY", "deepseek": "DEEPSEEK_API_KEY",
-           "compatible": "CACTAI_LLM_API_KEY"}
-DEFAULT_MODEL = {"anthropic": "claude-opus-5", "openai": "gpt-5", "deepseek": "deepseek-chat", "compatible": ""}
-BASE_URL = {"deepseek": "https://api.deepseek.com"}
+           "commandcode": "COMMANDCODE_API_KEY", "compatible": "CACTAI_LLM_API_KEY"}
+DEFAULT_MODEL = {"anthropic": "claude-opus-5", "openai": "gpt-5", "deepseek": "deepseek-chat", "commandcode": "",
+                 "compatible": ""}
+BASE_URL = {"deepseek": "https://api.deepseek.com", "commandcode": "https://api.commandcode.ai/provider/v1"}
 
 
 class LLMError(Exception):
@@ -64,8 +66,8 @@ def from_env(effort: str = "medium", timeout_s: float = 120.0) -> "Provider | No
     if name == "anthropic":
         return AnthropicProvider(model=model, effort=effort, timeout_s=timeout_s)
     base_url = os.getenv("CACTAI_LLM_BASE_URL") or BASE_URL.get(name)
-    if name == "compatible" and not (base_url and model):
-        raise LLMError("the compatible provider needs CACTAI_LLM_BASE_URL and CACTAI_LLM_MODEL")
+    if not model or (name == "compatible" and not base_url):
+        raise LLMError(f"the {name} provider needs CACTAI_LLM_MODEL" + (" and CACTAI_LLM_BASE_URL" if name == "compatible" else ""))
     return OpenAIProvider(name=name, model=model, api_key=os.getenv(KEY_ENV[name]), base_url=base_url,
                           timeout_s=timeout_s)
 

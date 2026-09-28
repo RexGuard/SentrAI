@@ -9,7 +9,7 @@ import cactai_llm
 from cactai_llm import AnthropicProvider, OpenAIProvider
 
 KEYS = ("CACTAI_LLM_PROVIDER", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "DEEPSEEK_API_KEY",
-        "CACTAI_LLM_API_KEY", "CACTAI_LLM_BASE_URL", "CACTAI_LLM_MODEL")
+        "COMMANDCODE_API_KEY", "CACTAI_LLM_API_KEY", "CACTAI_LLM_BASE_URL", "CACTAI_LLM_MODEL")
 SCHEMA = {"type": "object", "properties": {"ok": {"type": "boolean"}}, "required": ["ok"], "additionalProperties": False}
 TOOLS = [{"name": "list_dir", "description": "List a folder",
           "input_schema": {"type": "object", "properties": {"path": {"type": "string"}},
@@ -40,6 +40,14 @@ def test_from_env_builds_each_provider(monkeypatch):
     monkeypatch.setenv("DEEPSEEK_API_KEY", "d")
     p = cactai_llm.from_env()
     assert (p.name, p.model, str(p.client.base_url).rstrip("/")) == ("deepseek", "deepseek-chat", "https://api.deepseek.com")
+    monkeypatch.setenv("CACTAI_LLM_PROVIDER", "commandcode")
+    monkeypatch.setenv("COMMANDCODE_API_KEY", "cc")
+    with pytest.raises(cactai_llm.LLMError):
+        cactai_llm.from_env()  # no default model: the name must be set
+    monkeypatch.setenv("CACTAI_LLM_MODEL", "cc-model")
+    p = cactai_llm.from_env()
+    assert (p.name, str(p.client.base_url).rstrip("/")) == ("commandcode", "https://api.commandcode.ai/provider/v1")
+    monkeypatch.delenv("CACTAI_LLM_MODEL")
     monkeypatch.setenv("CACTAI_LLM_PROVIDER", "compatible")
     monkeypatch.setenv("CACTAI_LLM_API_KEY", "c")
     with pytest.raises(cactai_llm.LLMError):
