@@ -1,6 +1,12 @@
 theme: jekyll-theme-cayman
 title: CactAI
 description: Accountability-based cybersecurity + AI
+baseurl: /cactai
+# Pages turns these on by default; listed so the plan (no front matter) always renders.
+plugins:
+  - jekyll-optional-front-matter
+  - jekyll-titles-from-headings
+  - jekyll-relative-links
 # index.html is the landing page; the README stays for GitHub only.
 exclude:
   - README.md
