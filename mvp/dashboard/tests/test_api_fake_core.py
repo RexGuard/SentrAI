@@ -35,3 +35,30 @@ def test_full_operator_flow(fake_core):
     assert any(r["type"] == "permanent" for r in audit["records"])
     c.reset_demo()
     assert c.incidents() == []
+
+
+def test_protection_switch(fake_core):
+    c = CoreClient(fake_core)
+    c.reset_demo()
+    assert c.protection()["protection"] == "on" and c.risk()["monitor_only"] is False
+    try:
+        c.set_protection(False, "erick", "")
+    except CoreError as exc:
+        assert exc.status == 400
+    else:
+        raise AssertionError("turning protection off without a reason must fail")
+    p = c.set_protection(False, "erick", "testing on the live server")
+    assert p["monitor_only"] is True and p["changed_by"] == "erick"
+    assert c.risk()["monitor_only"] is True
+    iid = requests.post(f"{fake_core}/dev/trigger/brute_force", timeout=3).json()["id"]
+    try:
+        c.decision(iid, "erick", "approve", "")
+    except CoreError as exc:
+        assert exc.status == 409
+    else:
+        raise AssertionError("approve must be refused while protection is off")
+    assert c.blocklist()["ips"] == []
+    c.set_protection(True, "erick")
+    assert c.protection()["protection"] == "on"
+    assert any(r["type"] == "protection_changed" for r in c.audit()["records"])
+    c.reset_demo()

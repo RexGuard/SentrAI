@@ -58,6 +58,12 @@ class DeliveredIn(BaseModel):
     message_id: Optional[Union[str, int]] = None
 
 
+class ProtectionIn(BaseModel):
+    operator: str
+    on: bool
+    reason: Optional[str] = None
+
+
 class AdvanceIn(BaseModel):
     demo_hours: float = 1.0
 
@@ -248,6 +254,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return build_report(core, iid)
         except KeyError:
             raise not_found(iid)
+
+    @app.get("/protection")
+    def get_protection() -> dict[str, Any]:
+        return core.protection()
+
+    @app.post("/protection")
+    def post_protection(body: ProtectionIn) -> dict[str, Any]:
+        try:
+            return core.set_protection(body.on, body.operator, body.reason)
+        except BadRequestError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
 
     @app.get("/blocklist")
     def get_blocklist() -> dict[str, list[str]]:
