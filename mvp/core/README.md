@@ -155,10 +155,10 @@ Additions that do not change the contract:
 | `rollback` | Rolls back active actions. The incident becomes `acknowledged`, so its points count again but it will not be auto-contained. Returns 409 if nothing is active. |
 | `permanent` | Makes active or expired actions permanent (no expiry). The incident becomes `resolved`. |
 | `ack` | Records who acknowledged, when and on which channel. Freezes the inaction penalty. Idempotent. |
-| `/demo/reset` | Moves the audit DB to `data/archive/` (the old chain is kept, not destroyed), clears all in-memory state, and starts a new chain. |
+| `/demo/reset` | Moves the audit DB to `data/archive/` (the old chain is kept, not destroyed), clears all state (the saved incident state lives in the same file), and starts a new chain. |
 
 ## Limitations
 
-- State is in memory. Incidents, notifications and actions are lost on restart; only the audit chain persists.
+- Incidents, actions (blocks) and notifications are saved to `state_*` tables in the audit database (WAL mode) after every change, and restored on startup (`app/state.py`). Blocks still in force are put back with their original expiry; blocks whose TTL ran out while the core was down are rolled back, logged as `action_expired` with `while_core_down: true`, and summarised in a `state_restored` audit record. Rules-engine windows, the watchdog, the risk chart history and the chat history are not saved.
 - The only containment with a real effect is `block_ip` and `lock_user`, through `/blocklist`. `rate_limit`, `waf_rule`, `kill_process` and `revoke_public_acl` are recorded and reported as "recorded (simulated)".
 - Claude-written explanations are not used. Explanations and reports come from deterministic templates.

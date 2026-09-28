@@ -1,6 +1,7 @@
 """Saguaro: lead orchestrator. Owns incidents, the risk index, notifications and the hotpatch workflow.
 
-All state is in memory (fresh per process / per /demo/reset); the audit chain is in SQLite.
+Incidents, actions (blocks) and notifications are saved to SQLite next to the audit chain after
+every change and restored on startup (state.py), so a restart keeps them. POST /demo/reset clears both.
 """
 
 from __future__ import annotations
@@ -38,6 +39,7 @@ from .netlogs import enrich
 from .responders import BlocklistResponder, Responders, SimulatedResponder
 from .risk import SEVERITY, band, band_rank, inaction_penalty, risk_index
 from .rules import RulesEngine
+from .state import StateStore
 
 RISK_STATUSES = ("open", "acknowledged")  # count toward raw score
 MERGE_STATUSES = ("open", "acknowledged", "contained")  # new events attach to these
@@ -112,7 +114,12 @@ class Saguaro(Agent):
         self._protection_file = s.db_path.parent / "protection.json"
         self._load_protection()
         self._init_state()
+        self._configure()
         self.scribe.record(self.name, "core_started", self._config_summary())
+        self._restore()
+
+    def _configure(self) -> None:
+        """Subclass hook, run before saved state is restored (restoring can trigger containment)."""
 
     # ------------------------------------------------------------------ state
     def _init_state(self) -> None:
@@ -443,6 +450,7 @@ class Saguaro(Agent):
                 self._band_changes(now, r)
         if r["risk_index"] < self.settings.threshold:
             self._above_threshold = False
+        self._save()
 
     # -------------------------------------------------------------- protection
     def _load_protection(self) -> None:
@@ -640,6 +648,7 @@ class Saguaro(Agent):
             if n["incident"] in self.incidents:
                 self._timeline(self.incidents[n["incident"]], now, "delivered",
                                f"{nid} delivered via {channel} (message_id {message_id})")
+            self._save()
             return public(n)
 
     # --------------------------------------------------------- hotpatch / TTL
@@ -736,15 +745,18 @@ class Saguaro(Agent):
                          BUTTONS_AFTER_ACTION)
         return True
 
-    def _expire_actions(self, now: float) -> None:
+    def _expire_actions(self, now: float, while_down: bool = False) -> None:
         for a in self.actions:
             if a["status"] == "active" and a["_expires_ts"] <= now:
                 self._end_action(a, "expired")
-                self.scribe.record(a["executed_by"], "action_expired", {"incident": a["incident"], "action_id": a["action_id"],
-                                                                       "type": a["type"], "target": a["target"]})
+                data = {"incident": a["incident"], "action_id": a["action_id"], "type": a["type"], "target": a["target"]}
+                if while_down:
+                    data.update(while_core_down=True, expired_at=a["expires_at"])
+                self.scribe.record(a["executed_by"], "action_expired", data)
                 inc = self.incidents.get(a["incident"])
                 if inc:
-                    self._timeline(inc, now, "expired", f"TTL expired: {a['type']} {a['target']} ({a['action_id']})")
+                    when = f" at {a['expires_at']} while the core was down; rolled back on restart" if while_down else ""
+                    self._timeline(inc, now, "expired", f"TTL expired{when}: {a['type']} {a['target']} ({a['action_id']})")
                     if not any(x["status"] == "active" for x in inc["actions"]):
                         self._notify(now, "action_expired", inc["id"], [self.settings.on_duty],
                                      f"{inc['id']}: temporary hotpatch expired",
@@ -979,6 +991,7 @@ class Saguaro(Agent):
             self.responders.reset()
             self.watchdog.reset()
             self.clock._offset = 0.0
+            self.store.forget()
             self._init_state()
             self.scribe.record(self.name, "demo_reset", {"archived_chain": str(archived) if archived else None,
                                                          **self._config_summary()})
