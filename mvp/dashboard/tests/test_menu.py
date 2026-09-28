@@ -191,7 +191,7 @@ def test_collector_page_scans_and_watches_a_log(fake_core, tmp_path, monkeypatch
     assert len([b for b in at.button if b.label == "Watch"]) == 1
 
 
-def test_preset_fills_the_advanced_values_and_saves_the_overrides(fake_core, tmp_path, monkeypatch):
+def test_preset_fills_the_values_and_a_change_by_hand_switches_to_advanced(fake_core, tmp_path, monkeypatch):
     import json
 
     from streamlit.testing.v1 import AppTest
@@ -203,20 +203,20 @@ def test_preset_fills_the_advanced_values_and_saves_the_overrides(fake_core, tmp
     at.session_state["auto_refresh"] = False
     at.session_state["page"] = "config"
     at.run()
-    assert at.button_group(key="cfg_CACTAI_PRESET").value == "moderate"
-    at.button_group(key="cfg_CACTAI_PRESET").set_value("strict").run()
+    preset = at.button_group(key="cfg_CACTAI_PRESET")
+    assert preset.value == "moderate" and preset.options[-1] == "Advanced"
+    preset.set_value("strict").run()
     assert not at.exception, at.exception
     assert at.text_input(key="cfg_RISK_THRESHOLD").value == cfg.preset_values("strict")["RISK_THRESHOLD"]
 
     at.text_input(key="cfg_SLA_HOURS").set_value("3").run()
-    assert any("1 value changed by hand" in c.value for c in at.caption)
+    assert at.button_group(key="cfg_CACTAI_PRESET").value == "advanced"
     next(b for b in at.button if "Save settings" in b.label).click().run()
     assert not at.exception, at.exception
-    saved = json.loads(path.read_text())
-    assert saved["preset"] == {"CACTAI_PRESET": "strict"}
+    assert json.loads(path.read_text())["preset"] == {"CACTAI_PRESET": "advanced"}
     values = cfg.read()
     assert values["BRUTE_FORCE_COUNT"] == cfg.preset_values("strict")["BRUTE_FORCE_COUNT"]
-    assert cfg.overrides(values) == {"SLA_HOURS": "3"}
+    assert values["SLA_HOURS"] == "3"
 
-    next(b for b in at.button if "Reset to preset" in b.label).click().run()
-    assert at.text_input(key="cfg_SLA_HOURS").value == cfg.preset_values("strict")["SLA_HOURS"]
+    at.button_group(key="cfg_CACTAI_PRESET").set_value("balanced").run()
+    assert at.text_input(key="cfg_SLA_HOURS").value == cfg.preset_values("balanced")["SLA_HOURS"]

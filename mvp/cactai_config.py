@@ -9,8 +9,9 @@ through one short section per part of the pipeline (collector, classifier, respo
 notifications). Pressing Enter keeps the default, which is exactly what the demo uses.
 
 The security values (when an event counts as an attack, when CactAI acts, for how long) come
-from a preset: Strict, Moderate or Balanced. The saved file keeps the preset's name and every
-value, so any value set by hand is an override of that preset (see `overrides()`).
+from a preset: Strict, Moderate or Balanced, or Advanced to set each value yourself. The saved
+file keeps the preset's name and every value. Values that no longer match their preset are saved
+as Advanced (see `settle_preset()`).
 
 Run (any venv, stdlib only):
     python cactai_config.py              set up if this is a new machine, then show settings
@@ -81,10 +82,13 @@ PRESETS = {
         "RISK_THRESHOLD": "90", "HOTPATCH_TTL_HOURS": "1", "SLA_HOURS": "4", "NEEDLE_MIN_CONFIDENCE": "0.75"}),
 }
 PRESET_FIELDS = tuple(PRESETS[DEFAULT_PRESET].values)
+ADVANCED = "advanced"  # not a preset: every value is set by hand
+ADVANCED_ABOUT = "Set each detection and response value yourself."
+PRESET_CHOICES = (*PRESETS, ADVANCED)
 
 SECTIONS = (
     Section("preset", "Security preset", "One choice sets the detection and response values below.", (
-        Field(PRESET_ENV, "Preset", DEFAULT_PRESET, choices=tuple(PRESETS)),
+        Field(PRESET_ENV, "Preset", DEFAULT_PRESET, choices=PRESET_CHOICES),
     )),
     Section("collector", "1. Collector", "Where the logs are and where to send events.", (
         Field("CACTAI_LAB_LOGS", "Logs directory", str(MVP_DIR / "lab" / "logs")),
@@ -156,10 +160,26 @@ def _same(a: str, b: str) -> bool:
         return a.strip() == b.strip()
 
 
+def preset_label(name: str) -> str:
+    return PRESETS[name].label if name in PRESETS else "Advanced"
+
+
 def overrides(values: dict[str, str]) -> dict[str, str]:
-    """The preset-controlled values that differ from the chosen preset, i.e. the ones set by hand."""
-    base = preset_values(values.get(PRESET_ENV, DEFAULT_PRESET))
+    """The preset-controlled values that differ from the chosen preset ({} for Advanced, which has none)."""
+    name = values.get(PRESET_ENV, DEFAULT_PRESET)
+    if name == ADVANCED:
+        return {}
+    base = preset_values(name)
     return {env: values[env] for env in PRESET_FIELDS if env in values and not _same(values[env], base[env])}
+
+
+def settle_preset(values: dict[str, str]) -> dict[str, str]:
+    """Name the preset Advanced when its values were changed by hand (or were saved before presets existed)."""
+    if values.get(PRESET_ENV) not in PRESET_CHOICES:
+        values[PRESET_ENV] = DEFAULT_PRESET
+    if overrides(values):
+        values[PRESET_ENV] = ADVANCED
+    return values
 
 
 def describe(values: dict[str, str]) -> list[tuple[str, tuple[str, ...]]]:
@@ -183,12 +203,13 @@ def read() -> dict[str, str]:
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
     values = {k: str(v) for section in data.values() if isinstance(section, dict) for k, v in section.items()}
-    return _one_ai_key(values) if values else values
+    return settle_preset(_one_ai_key(values)) if values else values
 
 
 def save(values: dict[str, str]) -> Path:
     path = config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
+    values = settle_preset(dict(values))
     data = {s.key: {f.env: values.get(f.env, f.default) for f in s.fields} for s in SECTIONS}
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     return path
@@ -240,8 +261,8 @@ def wizard(ask: Callable[[str], str] | None = None, ask_secret: Callable[[str], 
     A field with choices shows a numbered list; the model question takes "?" to list the
     models the key can use. `models` is replaceable for tests.
 
-    After the preset, one question decides whether to set its values one by one (advanced).
-    If not, the preset's values are used as they are.
+    A preset fills the detection and response values without asking them; Advanced asks each
+    one, offering the values in use now.
     """
     ask, ask_secret = ask or input, ask_secret or getpass.getpass
     current = {f.env: f.default for f in FIELDS.values()} | read()
@@ -259,7 +280,7 @@ def wizard(ask: Callable[[str], str] | None = None, ask_secret: Callable[[str], 
             if f.choices:
                 for n, choice in enumerate(f.choices, 1):
                     if f.env == PRESET_ENV:
-                        say(f"    {n}. {PRESETS[choice].label}: {PRESETS[choice].about}")
+                        say(f"    {n}. {preset_label(choice)}: {PRESETS[choice].about if choice in PRESETS else ADVANCED_ABOUT}")
                     else:
                         say(f"    {n}. {cactai_llm.LABEL.get(choice, choice)}")
                 prompt += " (number)"
@@ -288,24 +309,11 @@ def wizard(ask: Callable[[str], str] | None = None, ask_secret: Callable[[str], 
                 say("    Please pick one of the numbers above." if f.choices else "    Please enter a number.")
             values[f.env] = answer
             if f.env == PRESET_ENV:
-                preset, advanced = _pick_preset(answer, current, ask, say)
+                advanced = answer == ADVANCED
+                if not advanced:
+                    preset = preset_values(answer)
+                    say("    " + "; ".join(text for text, _ in describe(preset)) + ".")
     return values
-
-
-def _pick_preset(name: str, current: dict[str, str], ask: Callable[[str], str],
-                 say: Callable[[str], None]) -> tuple[dict[str, str], bool]:
-    """The chosen preset's values and whether to ask for each one (keeping earlier overrides as defaults)."""
-    preset = preset_values(name)
-    say("    " + "; ".join(text for text, _ in describe(preset)) + ".")
-    kept = overrides(current) if current.get(PRESET_ENV) == name else {}
-    if kept:
-        say(f"    You changed {len(kept)} of these by hand before: " + ", ".join(kept) + ".")
-    hint = "Y/n" if kept else "y/N"
-    answer = ask(f"  Set each value yourself (advanced)? [{hint}]: ").strip().lower()
-    advanced = answer.startswith("y") if answer else bool(kept)
-    if advanced:  # the questions below then offer the preset's values, or your earlier changes
-        current.update(preset | kept)
-    return preset, advanced
 
 
 def ensure(interactive: bool | None = None) -> dict[str, str]:
