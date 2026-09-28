@@ -13,3 +13,4 @@ mvp/lab/*.db
 mvp/lab/target_app/*.db
 .sass-cache/
 _site/
+mvp/.demo_logs/
