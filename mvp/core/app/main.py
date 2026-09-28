@@ -4,15 +4,16 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hmac
 import logging
 import os
 from typing import Any, Optional, Union
 
-from fastapi import Body, FastAPI, HTTPException, Query
+from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, ConfigDict
 
-from .config import Settings
+from .config import Settings, sign
 from .reports import build_report, render_markdown
 from . import ai
 from .chat import OperatorChat, default_chat_provider
@@ -77,6 +78,13 @@ class LogSourceIn(BaseModel):
     layer: Optional[str] = None
 
 
+class PendingDecisionIn(BaseModel):
+    operator: str
+    approve: bool
+    layer: Optional[str] = None
+    reason: str = ""
+
+
 class AITestIn(BaseModel):
     provider: str
     api_key: str = ""
@@ -86,6 +94,13 @@ class AITestIn(BaseModel):
 
 class HeartbeatIn(BaseModel):
     collector: str
+
+
+# Open without a token: the launchers' readiness check, and the list the fake portal enforces
+# (it holds no personal data). A report opens with the signed link from its alert (?sig=). Every other endpoint needs "Authorization: Bearer <token>" or
+# the X-CactAI-Token header; the token is CACTAI_API_TOKEN from the setup wizard.
+OPEN_PATHS = frozenset({"/health", "/blocklist", "/docs", "/openapi.json"})
+TOKEN_HEADER = "x-cactai-token"
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -119,7 +134,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     chat = OperatorChat(core, default_chat_provider() if isinstance(core, Cyanide) else None, discovery)
     chat.off_reason = core.ai_off_reason = ai.why_off()
 
-    app = FastAPI(title="CactAI core", version="0.1.0", lifespan=lifespan)
+    def require_token(request: Request) -> None:
+        path = request.url.path
+        if path in OPEN_PATHS:
+            return
+        sig = request.query_params.get("sig", "")
+        if sig and request.method == "GET" and path.startswith("/reports/") and path.endswith(".md") \
+                and hmac.compare_digest(sig, sign(core.settings.api_token, path)):
+            return  # the signed report link from an alert
+        auth = request.headers.get("authorization", "")
+        sent = auth[7:].strip() if auth[:7].lower() == "bearer " else request.headers.get(TOKEN_HEADER, "")
+        if not (sent and hmac.compare_digest(sent.encode(), core.settings.api_token.encode())):
+            raise HTTPException(status_code=401, detail="missing or wrong API token "
+                                "(python cactai_config.py token shows it)",
+                                headers={"WWW-Authenticate": "Bearer"})
+
+    app = FastAPI(title="CactAI core", version="0.1.0", lifespan=lifespan, dependencies=[Depends(require_token)])
     app.state.core = core
     app.state.chat = chat
     app.state.discovery = discovery
@@ -273,6 +303,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def post_log_source(body: LogSourceIn) -> dict[str, Any]:
         try:
             return discovery.approve(body.file_id, body.operator, body.layer)
+        except KeyError as e:
+            raise HTTPException(404, str(e).strip("'\""))
+        except ValueError as e:
+            raise HTTPException(409, str(e))
+
+    # Scout proposals (python -m scout find) wait here until an operator approves or rejects them.
+    @app.get("/log-sources/pending")
+    def get_pending_sources() -> list[dict[str, Any]]:
+        return discovery.pending()
+
+    @app.post("/log-sources/pending/{pid}")
+    def decide_pending_source(pid: str, body: PendingDecisionIn) -> dict[str, Any]:
+        try:
+            return discovery.decide_pending(pid, body.operator, body.approve, body.layer, body.reason)
         except KeyError as e:
             raise HTTPException(404, str(e).strip("'\""))
         except ValueError as e:

@@ -1,0 +1,25 @@
+[Unit]
+Description=CactAI notifier (Telegram alerts, or the journal when no bot is set)
+PartOf=cactai.target
+After=cactai-core.service
+Wants=cactai-core.service
+
+[Service]
+Type=simple
+WorkingDirectory=@PREFIX@/mvp/notifier
+ExecStart=@PREFIX@/mvp/notifier/.venv/bin/python notifier.py
+User=@USER@
+Group=@USER@
+EnvironmentFile=/etc/cactai/cactai.env
+Environment=HOME=/var/lib/cactai PYTHONUNBUFFERED=1 PYTHONUTF8=1 PYTHONIOENCODING=utf-8
+Restart=on-failure
+RestartSec=5
+# Reads logs and /proc, writes only its own state folder.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/cactai
+
+[Install]
+WantedBy=cactai.target

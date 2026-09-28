@@ -47,7 +47,7 @@ EXPLAIN = {
     "brute_force": "{n} failed logins from {src} against account '{user}' on {host}: a password-guessing (brute force) pattern.",
     "sql_injection": "A request from {src} to {host} carried SQL injection syntax (e.g. ' OR 1=1 / UNION SELECT), an attempt to read or alter the database.",
     "xss": "A request from {src} to {host} carried script markup (cross-site scripting), an attempt to run code in other users' browsers.",
-    "port_scan": "{src} probed many ports on {host} (port scan), usually reconnaissance before an attack.",
+    "port_scan": "{src} scanned {host}: probing ports, services or web paths (such as /.env or /wp-login.php), usually reconnaissance before an attack.",
     "privilege_escalation": "The application on {host} reported a shell being spawned (request from {src}). The endpoint is simulated and executed nothing, but in production this means remote code execution.",
     "data_exfiltration": "A bulk export of member data was requested from {host} by {src} (user '{user}'), possible data theft of PII.",
     "misconfiguration": "An insecure configuration was found on {host} (public access / open admin port / default password).",
@@ -96,6 +96,10 @@ class LayerAgent(Agent):
     def propose(self, incident: dict[str, Any], ttl_hours: float) -> list[Proposal]:
         out: list[Proposal] = []
         for atype, spec in PLAYBOOKS.get(incident["category"], []):
+            if incident["category"] == "brute_force" and incident.get("layer") == "os" and atype != "block_ip":
+                # SSH guessing: locking the targeted account (often root) would lock out the admin,
+                # and /login is a web path. Blocking the guesser is enough.
+                continue
             target = incident.get(spec[1:]) if spec.startswith("@") else spec
             if target:
                 out.append(Proposal(atype, str(target), self.name))
@@ -146,7 +150,8 @@ class SpineNet(LayerAgent):
 
 class Areole(LayerAgent):
     """OS agents. The only executors: they build the action record and hand it to the
-    responder for its type (responders.py). NO firewall, shell or OS changes are ever made."""
+    responder for its type (responders.py). No firewall, shell or OS changes are made unless
+    the operator opts in to real firewall blocking (firewall.py, dry run by default)."""
 
     layers = ("os",)
     can_execute = True

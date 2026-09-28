@@ -1,0 +1,354 @@
+Sep 28 00:01:00 srv-demo sshd[13894]: Failed password for root from 203.0.113.54 port 44000 ssh2
+Sep 28 00:02:00 srv-demo sshd[812]: Server listening on 0.0.0.0 port 22.
+Sep 28 00:02:00 srv-demo sshd[812]: Server listening on :: port 22.
+2026-09-28T00:03:00.501090+00:00 srv-demo sshd[94118]: Accepted publickey for deploy from 192.0.2.40 port 52000 ssh2: ED25519 SHA256:ciKeyFingerprint000000000000000000000
+2026-09-28T00:03:20.603563+00:00 srv-demo sshd[94118]: Disconnected from user deploy 192.0.2.40 port 52000
+Sep 28 00:06:00 srv-demo sshd[82862]: Failed password for root from 203.0.113.54 port 44001 ssh2
+Sep 28 00:08:00 srv-demo sshd[83387]: Did not receive identification string from 198.51.100.60 port 46000
+Sep 28 00:08:20 srv-demo sshd[37332]: banner exchange: Connection from 198.51.100.60 port 46001: invalid format
+Sep 28 00:08:40 srv-demo sshd[13155]: Unable to negotiate with 198.51.100.60 port 46002: no matching key exchange method found. Their offer: diffie-hellman-group1-sha1,diffie-hellman-group14-sha1 [preauth]
+Sep 28 00:09:00 srv-demo sshd[34558]: Connection closed by 198.51.100.60 port 46003 [preauth]
+Sep 28 00:10:00 srv-demo sshd[86666]: Accepted publickey for opsadmin from 192.0.2.5 port 50000 ssh2: ED25519 SHA256:demoKeyFingerprint0000000000000000000
+Sep 28 00:10:00 srv-demo sshd[86666]: pam_unix(sshd:session): session opened for user opsadmin(uid=1000) by opsadmin(uid=0)
+Sep 28 00:11:00 srv-demo sshd[94968]: Failed password for root from 203.0.113.54 port 44002 ssh2
+2026-09-28T00:13:00.452280+00:00 srv-demo sshd[27529]: Accepted publickey for deploy from 192.0.2.40 port 52001 ssh2: ED25519 SHA256:ciKeyFingerprint000000000000000000000
+2026-09-28T00:13:20.476021+00:00 srv-demo sshd[27529]: Disconnected from user deploy 192.0.2.40 port 52001
+Sep 28 00:15:00 srv-demo sshd[48827]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.50  user=root
+Sep 28 00:15:02 srv-demo sshd[48827]: Failed password for root from 203.0.113.50 port 40000 ssh2
+Sep 28 00:15:02 srv-demo sshd[48827]: Received disconnect from 203.0.113.50 port 40000:11: Bye Bye [preauth]
+Sep 28 00:15:02 srv-demo sshd[48827]: Disconnected from authenticating user root 203.0.113.50 port 40000 [preauth]
+Sep 28 00:15:08 srv-demo sshd[13003]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.50  user=root
+Sep 28 00:15:09 srv-demo sshd[12067]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.50  user=root
+Sep 28 00:15:10 srv-demo sshd[13003]: Failed password for root from 203.0.113.50 port 40001 ssh2
+Sep 28 00:15:10 srv-demo sshd[13003]: Received disconnect from 203.0.113.50 port 40001:11: Bye Bye [preauth]
+Sep 28 00:15:10 srv-demo sshd[13003]: Disconnected from authenticating user root 203.0.113.50 port 40001 [preauth]
+Sep 28 00:15:11 srv-demo sshd[12067]: Failed password for root from 203.0.113.50 port 40003 ssh2
+Sep 28 00:15:11 srv-demo sshd[12067]: Received disconnect from 203.0.113.50 port 40003:11: Bye Bye [preauth]
+Sep 28 00:15:11 srv-demo sshd[12067]: Disconnected from authenticating user root 203.0.113.50 port 40003 [preauth]
+Sep 28 00:15:15 srv-demo sshd[64776]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.50  user=root
+Sep 28 00:15:16 srv-demo sshd[90361]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.50  user=root
+Sep 28 00:15:16 srv-demo sshd[56387]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.50  user=root
+Sep 28 00:15:17 srv-demo sshd[64776]: Failed password for root from 203.0.113.50 port 40005 ssh2
+Sep 28 00:15:17 srv-demo sshd[64776]: Received disconnect from 203.0.113.50 port 40005:11: Bye Bye [preauth]
+Sep 28 00:15:17 srv-demo sshd[64776]: Disconnected from authenticating user root 203.0.113.50 port 40005 [preauth]
+Sep 28 00:15:18 srv-demo sshd[90361]: Failed password for root from 203.0.113.50 port 40002 ssh2
+Sep 28 00:15:18 srv-demo sshd[90361]: Received disconnect from 203.0.113.50 port 40002:11: Bye Bye [preauth]
+Sep 28 00:15:18 srv-demo sshd[90361]: Disconnected from authenticating user root 203.0.113.50 port 40002 [preauth]
+Sep 28 00:15:18 srv-demo sshd[56387]: Failed password for root from 203.0.113.50 port 40004 ssh2
+Sep 28 00:15:18 srv-demo sshd[56387]: Received disconnect from 203.0.113.50 port 40004:11: Bye Bye [preauth]
+Sep 28 00:15:18 srv-demo sshd[56387]: Disconnected from authenticating user root 203.0.113.50 port 40004 [preauth]
+Sep 28 00:15:39 srv-demo sshd[23796]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.50  user=root
+Sep 28 00:15:41 srv-demo sshd[23796]: Failed password for root from 203.0.113.50 port 40013 ssh2
+Sep 28 00:15:41 srv-demo sshd[23796]: Received disconnect from 203.0.113.50 port 40013:11: Bye Bye [preauth]
+Sep 28 00:15:41 srv-demo sshd[23796]: Disconnected from authenticating user root 203.0.113.50 port 40013 [preauth]
+Sep 28 00:15:48 srv-demo sshd[94092]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.50  user=root
+Sep 28 00:15:49 srv-demo sshd[92600]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.50  user=root
+Sep 28 00:15:50 srv-demo sshd[94092]: Failed password for root from 203.0.113.50 port 40006 ssh2
+Sep 28 00:15:50 srv-demo sshd[94092]: Received disconnect from 203.0.113.50 port 40006:11: Bye Bye [preauth]
+Sep 28 00:15:50 srv-demo sshd[94092]: Disconnected from authenticating user root 203.0.113.50 port 40006 [preauth]
+Sep 28 00:15:51 srv-demo sshd[92600]: Failed password for root from 203.0.113.50 port 40007 ssh2
+Sep 28 00:15:51 srv-demo sshd[92600]: Received disconnect from 203.0.113.50 port 40007:11: Bye Bye [preauth]
+Sep 28 00:15:51 srv-demo sshd[92600]: Disconnected from authenticating user root 203.0.113.50 port 40007 [preauth]
+Sep 28 00:15:51 srv-demo sshd[69645]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.50  user=root
+Sep 28 00:15:53 srv-demo sshd[69645]: Failed password for root from 203.0.113.50 port 40017 ssh2
+Sep 28 00:15:53 srv-demo sshd[69645]: Received disconnect from 203.0.113.50 port 40017:11: Bye Bye [preauth]
+Sep 28 00:15:53 srv-demo sshd[69645]: Disconnected from authenticating user root 203.0.113.50 port 40017 [preauth]
+Sep 28 00:15:54 srv-demo sshd[54949]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.50  user=root
+Sep 28 00:15:55 srv-demo sshd[92867]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.50  user=root
+Sep 28 00:15:56 srv-demo sshd[44575]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.50  user=root
+Sep 28 00:15:56 srv-demo sshd[54949]: Failed password for root from 203.0.113.50 port 40018 ssh2
+Sep 28 00:15:56 srv-demo sshd[54949]: Received disconnect from 203.0.113.50 port 40018:11: Bye Bye [preauth]
+Sep 28 00:15:56 srv-demo sshd[54949]: Disconnected from authenticating user root 203.0.113.50 port 40018 [preauth]
+Sep 28 00:15:57 srv-demo sshd[92867]: Failed password for root from 203.0.113.50 port 40011 ssh2
+Sep 28 00:15:57 srv-demo sshd[92867]: Received disconnect from 203.0.113.50 port 40011:11: Bye Bye [preauth]
+Sep 28 00:15:57 srv-demo sshd[92867]: Disconnected from authenticating user root 203.0.113.50 port 40011 [preauth]
+Sep 28 00:15:58 srv-demo sshd[44575]: Failed password for root from 203.0.113.50 port 40008 ssh2
+Sep 28 00:15:58 srv-demo sshd[44575]: Received disconnect from 203.0.113.50 port 40008:11: Bye Bye [preauth]
+Sep 28 00:15:58 srv-demo sshd[44575]: Disconnected from authenticating user root 203.0.113.50 port 40008 [preauth]
+Sep 28 00:16:00 srv-demo sshd[86666]: Received disconnect from 192.0.2.5 port 50000:11: disconnected by user
+Sep 28 00:16:00 srv-demo sshd[86666]: Disconnected from user opsadmin 192.0.2.5 port 50000
+Sep 28 00:16:00 srv-demo sshd[86666]: pam_unix(sshd:session): session closed for user opsadmin
+Sep 28 00:16:00 srv-demo sshd[56473]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.50  user=root
+Sep 28 00:16:00 srv-demo sshd[21222]: Failed password for root from 203.0.113.54 port 44003 ssh2
+Sep 28 00:16:02 srv-demo sshd[56473]: Failed password for root from 203.0.113.50 port 40012 ssh2
+Sep 28 00:16:02 srv-demo sshd[56473]: Received disconnect from 203.0.113.50 port 40012:11: Bye Bye [preauth]
+Sep 28 00:16:02 srv-demo sshd[56473]: Disconnected from authenticating user root 203.0.113.50 port 40012 [preauth]
+Sep 28 00:16:09 srv-demo sshd[26818]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.50  user=root
+Sep 28 00:16:10 srv-demo sshd[31449]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.50  user=root
+Sep 28 00:16:11 srv-demo sshd[26818]: Failed password for root from 203.0.113.50 port 40023 ssh2
+Sep 28 00:16:11 srv-demo sshd[26818]: Received disconnect from 203.0.113.50 port 40023:11: Bye Bye [preauth]
+Sep 28 00:16:11 srv-demo sshd[26818]: Disconnected from authenticating user root 203.0.113.50 port 40023 [preauth]
+Sep 28 00:16:12 srv-demo sshd[56580]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.50  user=root
+Sep 28 00:16:12 srv-demo sshd[31449]: Failed password for root from 203.0.113.50 port 40010 ssh2
+Sep 28 00:16:12 srv-demo sshd[31449]: Received disconnect from 203.0.113.50 port 40010:11: Bye Bye [preauth]
+Sep 28 00:16:12 srv-demo sshd[31449]: Disconnected from authenticating user root 203.0.113.50 port 40010 [preauth]
+Sep 28 00:16:14 srv-demo sshd[56580]: Failed password for root from 203.0.113.50 port 40009 ssh2
+Sep 28 00:16:14 srv-demo sshd[56580]: Received disconnect from 203.0.113.50 port 40009:11: Bye Bye [preauth]
+Sep 28 00:16:14 srv-demo sshd[56580]: Disconnected from authenticating user root 203.0.113.50 port 40009 [preauth]
+Sep 28 00:16:24 srv-demo sshd[96026]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.50  user=root
+Sep 28 00:16:26 srv-demo sshd[96026]: Failed password for root from 203.0.113.50 port 40028 ssh2
+Sep 28 00:16:26 srv-demo sshd[96026]: Received disconnect from 203.0.113.50 port 40028:11: Bye Bye [preauth]
+Sep 28 00:16:26 srv-demo sshd[96026]: Disconnected from authenticating user root 203.0.113.50 port 40028 [preauth]
+Sep 28 00:16:30 srv-demo sshd[56564]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.50  user=root
+Sep 28 00:16:32 srv-demo sshd[56564]: Failed password for root from 203.0.113.50 port 40015 ssh2
+Sep 28 00:16:32 srv-demo sshd[56564]: Received disconnect from 203.0.113.50 port 40015:11: Bye Bye [preauth]
+Sep 28 00:16:32 srv-demo sshd[56564]: Disconnected from authenticating user root 203.0.113.50 port 40015 [preauth]
+Sep 28 00:16:35 srv-demo sshd[30168]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.50  user=root
+Sep 28 00:16:37 srv-demo sshd[30168]: Failed password for root from 203.0.113.50 port 40019 ssh2
+Sep 28 00:16:37 srv-demo sshd[30168]: Received disconnect from 203.0.113.50 port 40019:11: Bye Bye [preauth]
+Sep 28 00:16:37 srv-demo sshd[30168]: Disconnected from authenticating user root 203.0.113.50 port 40019 [preauth]
+Sep 28 00:16:44 srv-demo sshd[60974]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.50  user=root
+Sep 28 00:16:45 srv-demo sshd[20845]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.50  user=root
+Sep 28 00:16:46 srv-demo sshd[60974]: Failed password for root from 203.0.113.50 port 40026 ssh2
+Sep 28 00:16:46 srv-demo sshd[60974]: Received disconnect from 203.0.113.50 port 40026:11: Bye Bye [preauth]
+Sep 28 00:16:46 srv-demo sshd[60974]: Disconnected from authenticating user root 203.0.113.50 port 40026 [preauth]
+Sep 28 00:16:47 srv-demo sshd[20845]: Failed password for root from 203.0.113.50 port 40021 ssh2
+Sep 28 00:16:47 srv-demo sshd[20845]: Received disconnect from 203.0.113.50 port 40021:11: Bye Bye [preauth]
+Sep 28 00:16:47 srv-demo sshd[20845]: Disconnected from authenticating user root 203.0.113.50 port 40021 [preauth]
+Sep 28 00:16:52 srv-demo sshd[32960]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.50  user=root
+Sep 28 00:16:54 srv-demo sshd[32960]: Failed password for root from 203.0.113.50 port 40014 ssh2
+Sep 28 00:16:54 srv-demo sshd[32960]: Received disconnect from 203.0.113.50 port 40014:11: Bye Bye [preauth]
+Sep 28 00:16:54 srv-demo sshd[32960]: Disconnected from authenticating user root 203.0.113.50 port 40014 [preauth]
+Sep 28 00:17:00 srv-demo sshd[71769]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.50  user=root
+Sep 28 00:17:02 srv-demo sshd[71769]: Failed password for root from 203.0.113.50 port 40020 ssh2
+Sep 28 00:17:02 srv-demo sshd[71769]: Received disconnect from 203.0.113.50 port 40020:11: Bye Bye [preauth]
+Sep 28 00:17:02 srv-demo sshd[71769]: Disconnected from authenticating user root 203.0.113.50 port 40020 [preauth]
+Sep 28 00:17:08 srv-demo sshd[13851]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.50  user=root
+Sep 28 00:17:10 srv-demo sshd[13851]: Failed password for root from 203.0.113.50 port 40016 ssh2
+Sep 28 00:17:10 srv-demo sshd[13851]: Received disconnect from 203.0.113.50 port 40016:11: Bye Bye [preauth]
+Sep 28 00:17:10 srv-demo sshd[13851]: Disconnected from authenticating user root 203.0.113.50 port 40016 [preauth]
+Sep 28 00:17:12 srv-demo sshd[51749]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.50  user=root
+Sep 28 00:17:14 srv-demo sshd[51749]: Failed password for root from 203.0.113.50 port 40022 ssh2
+Sep 28 00:17:14 srv-demo sshd[51749]: Received disconnect from 203.0.113.50 port 40022:11: Bye Bye [preauth]
+Sep 28 00:17:14 srv-demo sshd[51749]: Disconnected from authenticating user root 203.0.113.50 port 40022 [preauth]
+Sep 28 00:17:15 srv-demo sshd[56375]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.50  user=root
+Sep 28 00:17:17 srv-demo sshd[56375]: Failed password for root from 203.0.113.50 port 40027 ssh2
+Sep 28 00:17:17 srv-demo sshd[56375]: Received disconnect from 203.0.113.50 port 40027:11: Bye Bye [preauth]
+Sep 28 00:17:17 srv-demo sshd[56375]: Disconnected from authenticating user root 203.0.113.50 port 40027 [preauth]
+Sep 28 00:17:48 srv-demo sshd[79245]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.50  user=root
+Sep 28 00:17:50 srv-demo sshd[79245]: Failed password for root from 203.0.113.50 port 40024 ssh2
+Sep 28 00:17:50 srv-demo sshd[79245]: Received disconnect from 203.0.113.50 port 40024:11: Bye Bye [preauth]
+Sep 28 00:17:50 srv-demo sshd[79245]: Disconnected from authenticating user root 203.0.113.50 port 40024 [preauth]
+Sep 28 00:17:55 srv-demo sshd[42930]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.50  user=root
+Sep 28 00:17:57 srv-demo sshd[42930]: Failed password for root from 203.0.113.50 port 40025 ssh2
+Sep 28 00:17:57 srv-demo sshd[42930]: Received disconnect from 203.0.113.50 port 40025:11: Bye Bye [preauth]
+Sep 28 00:17:57 srv-demo sshd[42930]: Disconnected from authenticating user root 203.0.113.50 port 40025 [preauth]
+Sep 28 00:18:52 srv-demo sshd[35308]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.50  user=root
+Sep 28 00:18:54 srv-demo sshd[35308]: Failed password for root from 203.0.113.50 port 40029 ssh2
+Sep 28 00:18:54 srv-demo sshd[35308]: Received disconnect from 203.0.113.50 port 40029:11: Bye Bye [preauth]
+Sep 28 00:18:54 srv-demo sshd[35308]: Disconnected from authenticating user root 203.0.113.50 port 40029 [preauth]
+Sep 28 00:21:00 srv-demo sshd[75860]: Failed password for root from 203.0.113.54 port 44004 ssh2
+2026-09-28T00:23:00.923154+00:00 srv-demo sshd[99478]: Accepted publickey for deploy from 192.0.2.40 port 52002 ssh2: ED25519 SHA256:ciKeyFingerprint000000000000000000000
+2026-09-28T00:23:20.742823+00:00 srv-demo sshd[99478]: Disconnected from user deploy 192.0.2.40 port 52002
+2026-09-28T00:25:00.850972+00:00 srv-demo sshd[76454]: banner exchange: Connection from 198.51.100.61 port 46000: invalid format
+2026-09-28T00:25:20.218898+00:00 srv-demo sshd[70029]: Unable to negotiate with 198.51.100.61 port 46001: no matching key exchange method found. Their offer: diffie-hellman-group1-sha1,diffie-hellman-group14-sha1 [preauth]
+2026-09-28T00:25:40.742528+00:00 srv-demo sshd[26010]: Connection closed by 198.51.100.61 port 46002 [preauth]
+Sep 28 00:26:00 srv-demo sshd[83613]: Failed password for root from 203.0.113.54 port 44005 ssh2
+Sep 28 00:31:00 srv-demo sshd[91244]: Failed password for root from 203.0.113.54 port 44006 ssh2
+2026-09-28T00:33:00.476738+00:00 srv-demo sshd[90960]: Accepted publickey for deploy from 192.0.2.40 port 52003 ssh2: ED25519 SHA256:ciKeyFingerprint000000000000000000000
+2026-09-28T00:33:20.200001+00:00 srv-demo sshd[90960]: Disconnected from user deploy 192.0.2.40 port 52003
+Sep 28 00:35:00 srv-demo sshd[62447]: Accepted publickey for opsadmin from 192.0.2.5 port 50001 ssh2: ED25519 SHA256:demoKeyFingerprint0000000000000000000
+Sep 28 00:35:00 srv-demo sshd[62447]: pam_unix(sshd:session): session opened for user opsadmin(uid=1000) by opsadmin(uid=0)
+Sep 28 00:36:00 srv-demo sshd[90321]: Failed password for root from 203.0.113.54 port 44007 ssh2
+Sep 28 00:41:00 srv-demo sshd[87930]: Failed password for root from 203.0.113.54 port 44008 ssh2
+Sep 28 00:42:00 srv-demo sshd[95204]: Unable to negotiate with 198.51.100.62 port 46000: no matching key exchange method found. Their offer: diffie-hellman-group1-sha1,diffie-hellman-group14-sha1 [preauth]
+2026-09-28T00:43:00.645592+00:00 srv-demo sshd[54784]: Accepted publickey for deploy from 192.0.2.40 port 52004 ssh2: ED25519 SHA256:ciKeyFingerprint000000000000000000000
+2026-09-28T00:43:20.199139+00:00 srv-demo sshd[54784]: Disconnected from user deploy 192.0.2.40 port 52004
+Sep 28 00:46:00 srv-demo sshd[80450]: Failed password for root from 203.0.113.54 port 44009 ssh2
+2026-09-28T00:47:00.689780+00:00 srv-demo sshd[53178]: Failed password for teacher1 from 192.0.2.6 port 51515 ssh2
+2026-09-28T00:47:00.263983+00:00 srv-demo sshd[53178]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=192.0.2.6  user=teacher1
+2026-09-28T00:47:06.074849+00:00 srv-demo sshd[53178]: Accepted password for teacher1 from 192.0.2.6 port 51515 ssh2
+Sep 28 00:50:00 srv-demo sshd[62447]: Received disconnect from 192.0.2.5 port 50001:11: disconnected by user
+Sep 28 00:50:00 srv-demo sshd[62447]: Disconnected from user opsadmin 192.0.2.5 port 50001
+Sep 28 00:50:00 srv-demo sshd[62447]: pam_unix(sshd:session): session closed for user opsadmin
+Sep 28 00:51:00 srv-demo sshd[20174]: Failed password for root from 203.0.113.54 port 44010 ssh2
+2026-09-28T00:53:00.422447+00:00 srv-demo sshd[24664]: Accepted publickey for deploy from 192.0.2.40 port 52005 ssh2: ED25519 SHA256:ciKeyFingerprint000000000000000000000
+2026-09-28T00:53:20.173610+00:00 srv-demo sshd[24664]: Disconnected from user deploy 192.0.2.40 port 52005
+Sep 28 00:56:00 srv-demo sshd[17109]: Failed password for root from 203.0.113.54 port 44011 ssh2
+2026-09-28T00:59:00.704359+00:00 srv-demo sshd[37149]: Connection closed by 198.51.100.63 port 46000 [preauth]
+2026-09-28T00:59:20.115763+00:00 srv-demo sshd[66236]: Did not receive identification string from 198.51.100.63 port 46001
+Sep 28 01:00:00 srv-demo sshd[77120]: Accepted publickey for opsadmin from 192.0.2.5 port 50002 ssh2: ED25519 SHA256:demoKeyFingerprint0000000000000000000
+Sep 28 01:00:00 srv-demo sshd[77120]: pam_unix(sshd:session): session opened for user opsadmin(uid=1000) by opsadmin(uid=0)
+2026-09-28T01:02:00.991232+00:00 srv-demo sshd[46478]: Invalid user admin from 203.0.113.51 port 41000
+2026-09-28T01:02:00.854556+00:00 srv-demo sshd[46478]: pam_unix(sshd:auth): check pass; user unknown
+2026-09-28T01:02:00.544198+00:00 srv-demo sshd[46478]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.51
+2026-09-28T01:02:02.457962+00:00 srv-demo sshd[46478]: Failed password for invalid user admin from 203.0.113.51 port 41000 ssh2
+2026-09-28T01:02:02.812032+00:00 srv-demo sshd[46478]: Received disconnect from 203.0.113.51 port 41000:11: Bye Bye [preauth]
+2026-09-28T01:02:02.767987+00:00 srv-demo sshd[46478]: Disconnected from invalid user admin 203.0.113.51 port 41000 [preauth]
+2026-09-28T01:02:11.168773+00:00 srv-demo sshd[60351]: Invalid user test from 203.0.113.51 port 41001
+2026-09-28T01:02:11.851306+00:00 srv-demo sshd[60351]: pam_unix(sshd:auth): check pass; user unknown
+2026-09-28T01:02:11.939915+00:00 srv-demo sshd[60351]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.51
+2026-09-28T01:02:13.882243+00:00 srv-demo sshd[60351]: Failed password for invalid user test from 203.0.113.51 port 41001 ssh2
+2026-09-28T01:02:13.457891+00:00 srv-demo sshd[60351]: Received disconnect from 203.0.113.51 port 41001:11: Bye Bye [preauth]
+2026-09-28T01:02:13.140330+00:00 srv-demo sshd[60351]: Disconnected from invalid user test 203.0.113.51 port 41001 [preauth]
+2026-09-28T01:02:22.013501+00:00 srv-demo sshd[28129]: Invalid user oracle from 203.0.113.51 port 41002
+2026-09-28T01:02:22.116527+00:00 srv-demo sshd[28129]: pam_unix(sshd:auth): check pass; user unknown
+2026-09-28T01:02:22.224425+00:00 srv-demo sshd[28129]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.51
+2026-09-28T01:02:24.763240+00:00 srv-demo sshd[28129]: Failed password for invalid user oracle from 203.0.113.51 port 41002 ssh2
+2026-09-28T01:02:24.613780+00:00 srv-demo sshd[28129]: Received disconnect from 203.0.113.51 port 41002:11: Bye Bye [preauth]
+2026-09-28T01:02:24.557072+00:00 srv-demo sshd[28129]: Disconnected from invalid user oracle 203.0.113.51 port 41002 [preauth]
+2026-09-28T01:02:33.028944+00:00 srv-demo sshd[59664]: Invalid user ubuntu from 203.0.113.51 port 41003
+2026-09-28T01:02:33.009567+00:00 srv-demo sshd[59664]: pam_unix(sshd:auth): check pass; user unknown
+2026-09-28T01:02:33.852704+00:00 srv-demo sshd[59664]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.51
+2026-09-28T01:02:35.870645+00:00 srv-demo sshd[59664]: Failed password for invalid user ubuntu from 203.0.113.51 port 41003 ssh2
+2026-09-28T01:02:35.824225+00:00 srv-demo sshd[59664]: Received disconnect from 203.0.113.51 port 41003:11: Bye Bye [preauth]
+2026-09-28T01:02:35.090224+00:00 srv-demo sshd[59664]: Disconnected from invalid user ubuntu 203.0.113.51 port 41003 [preauth]
+2026-09-28T01:02:44.818275+00:00 srv-demo sshd[70779]: Invalid user postgres from 203.0.113.51 port 41004
+2026-09-28T01:02:44.045351+00:00 srv-demo sshd[70779]: pam_unix(sshd:auth): check pass; user unknown
+2026-09-28T01:02:44.213866+00:00 srv-demo sshd[70779]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.51
+2026-09-28T01:02:46.932205+00:00 srv-demo sshd[70779]: Failed password for invalid user postgres from 203.0.113.51 port 41004 ssh2
+2026-09-28T01:02:46.600660+00:00 srv-demo sshd[70779]: Received disconnect from 203.0.113.51 port 41004:11: Bye Bye [preauth]
+2026-09-28T01:02:46.560131+00:00 srv-demo sshd[70779]: Disconnected from invalid user postgres 203.0.113.51 port 41004 [preauth]
+2026-09-28T01:02:55.900221+00:00 srv-demo sshd[19303]: Invalid user user from 203.0.113.51 port 41005
+2026-09-28T01:02:55.339073+00:00 srv-demo sshd[19303]: pam_unix(sshd:auth): check pass; user unknown
+2026-09-28T01:02:55.354890+00:00 srv-demo sshd[19303]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.51
+2026-09-28T01:02:57.654920+00:00 srv-demo sshd[19303]: Failed password for invalid user user from 203.0.113.51 port 41005 ssh2
+2026-09-28T01:02:57.586766+00:00 srv-demo sshd[19303]: Received disconnect from 203.0.113.51 port 41005:11: Bye Bye [preauth]
+2026-09-28T01:02:57.928318+00:00 srv-demo sshd[19303]: Disconnected from invalid user user 203.0.113.51 port 41005 [preauth]
+2026-09-28T01:03:00.796452+00:00 srv-demo sshd[47038]: Accepted publickey for deploy from 192.0.2.40 port 52006 ssh2: ED25519 SHA256:ciKeyFingerprint000000000000000000000
+2026-09-28T01:03:06.508064+00:00 srv-demo sshd[70524]: Invalid user git from 203.0.113.51 port 41006
+2026-09-28T01:03:06.806283+00:00 srv-demo sshd[70524]: pam_unix(sshd:auth): check pass; user unknown
+2026-09-28T01:03:06.670530+00:00 srv-demo sshd[70524]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.51
+2026-09-28T01:03:08.947971+00:00 srv-demo sshd[70524]: Failed password for invalid user git from 203.0.113.51 port 41006 ssh2
+2026-09-28T01:03:08.215713+00:00 srv-demo sshd[70524]: Received disconnect from 203.0.113.51 port 41006:11: Bye Bye [preauth]
+2026-09-28T01:03:08.007693+00:00 srv-demo sshd[70524]: Disconnected from invalid user git 203.0.113.51 port 41006 [preauth]
+2026-09-28T01:03:17.214374+00:00 srv-demo sshd[41904]: Invalid user ftpuser from 203.0.113.51 port 41007
+2026-09-28T01:03:17.949795+00:00 srv-demo sshd[41904]: pam_unix(sshd:auth): check pass; user unknown
+2026-09-28T01:03:17.371815+00:00 srv-demo sshd[41904]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.51
+2026-09-28T01:03:19.401196+00:00 srv-demo sshd[41904]: Failed password for invalid user ftpuser from 203.0.113.51 port 41007 ssh2
+2026-09-28T01:03:19.923372+00:00 srv-demo sshd[41904]: Received disconnect from 203.0.113.51 port 41007:11: Bye Bye [preauth]
+2026-09-28T01:03:19.109070+00:00 srv-demo sshd[41904]: Disconnected from invalid user ftpuser 203.0.113.51 port 41007 [preauth]
+2026-09-28T01:03:20.203641+00:00 srv-demo sshd[47038]: Disconnected from user deploy 192.0.2.40 port 52006
+2026-09-28T01:03:28.619940+00:00 srv-demo sshd[22852]: Invalid user guest from 203.0.113.51 port 41008
+2026-09-28T01:03:28.920231+00:00 srv-demo sshd[22852]: pam_unix(sshd:auth): check pass; user unknown
+2026-09-28T01:03:28.132373+00:00 srv-demo sshd[22852]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.51
+2026-09-28T01:03:30.990716+00:00 srv-demo sshd[22852]: Failed password for invalid user guest from 203.0.113.51 port 41008 ssh2
+2026-09-28T01:03:30.209615+00:00 srv-demo sshd[22852]: Received disconnect from 203.0.113.51 port 41008:11: Bye Bye [preauth]
+2026-09-28T01:03:30.461412+00:00 srv-demo sshd[22852]: Disconnected from invalid user guest 203.0.113.51 port 41008 [preauth]
+2026-09-28T01:03:39.599845+00:00 srv-demo sshd[69822]: Invalid user support from 203.0.113.51 port 41009
+2026-09-28T01:03:39.613980+00:00 srv-demo sshd[69822]: pam_unix(sshd:auth): check pass; user unknown
+2026-09-28T01:03:39.965186+00:00 srv-demo sshd[69822]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.51
+2026-09-28T01:03:41.667291+00:00 srv-demo sshd[69822]: Failed password for invalid user support from 203.0.113.51 port 41009 ssh2
+2026-09-28T01:03:41.718658+00:00 srv-demo sshd[69822]: Received disconnect from 203.0.113.51 port 41009:11: Bye Bye [preauth]
+2026-09-28T01:03:41.741328+00:00 srv-demo sshd[69822]: Disconnected from invalid user support 203.0.113.51 port 41009 [preauth]
+2026-09-28T01:03:50.798690+00:00 srv-demo sshd[67623]: Invalid user deploy1 from 203.0.113.51 port 41010
+2026-09-28T01:03:50.070839+00:00 srv-demo sshd[67623]: pam_unix(sshd:auth): check pass; user unknown
+2026-09-28T01:03:50.597856+00:00 srv-demo sshd[67623]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.51
+2026-09-28T01:03:52.759669+00:00 srv-demo sshd[67623]: Failed password for invalid user deploy1 from 203.0.113.51 port 41010 ssh2
+2026-09-28T01:03:52.754122+00:00 srv-demo sshd[67623]: Received disconnect from 203.0.113.51 port 41010:11: Bye Bye [preauth]
+2026-09-28T01:03:52.056378+00:00 srv-demo sshd[67623]: Disconnected from invalid user deploy1 203.0.113.51 port 41010 [preauth]
+2026-09-28T01:04:01.177181+00:00 srv-demo sshd[71690]: Invalid user minecraft from 203.0.113.51 port 41011
+2026-09-28T01:04:01.419656+00:00 srv-demo sshd[71690]: pam_unix(sshd:auth): check pass; user unknown
+2026-09-28T01:04:01.683569+00:00 srv-demo sshd[71690]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.51
+2026-09-28T01:04:03.705582+00:00 srv-demo sshd[71690]: Failed password for invalid user minecraft from 203.0.113.51 port 41011 ssh2
+2026-09-28T01:04:03.903756+00:00 srv-demo sshd[71690]: Received disconnect from 203.0.113.51 port 41011:11: Bye Bye [preauth]
+2026-09-28T01:04:03.748408+00:00 srv-demo sshd[71690]: Disconnected from invalid user minecraft 203.0.113.51 port 41011 [preauth]
+2026-09-28T01:04:12.751648+00:00 srv-demo sshd[41429]: Invalid user jenkins from 203.0.113.51 port 41012
+2026-09-28T01:04:12.681089+00:00 srv-demo sshd[41429]: pam_unix(sshd:auth): check pass; user unknown
+2026-09-28T01:04:12.492375+00:00 srv-demo sshd[41429]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.51
+2026-09-28T01:04:14.725648+00:00 srv-demo sshd[41429]: Failed password for invalid user jenkins from 203.0.113.51 port 41012 ssh2
+2026-09-28T01:04:14.923401+00:00 srv-demo sshd[41429]: Received disconnect from 203.0.113.51 port 41012:11: Bye Bye [preauth]
+2026-09-28T01:04:14.494627+00:00 srv-demo sshd[41429]: Disconnected from invalid user jenkins 203.0.113.51 port 41012 [preauth]
+2026-09-28T01:04:23.148662+00:00 srv-demo sshd[89415]: Invalid user hadoop from 203.0.113.51 port 41013
+2026-09-28T01:04:23.124142+00:00 srv-demo sshd[89415]: pam_unix(sshd:auth): check pass; user unknown
+2026-09-28T01:04:23.953183+00:00 srv-demo sshd[89415]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.51
+2026-09-28T01:04:25.522160+00:00 srv-demo sshd[89415]: Failed password for invalid user hadoop from 203.0.113.51 port 41013 ssh2
+2026-09-28T01:04:25.628172+00:00 srv-demo sshd[89415]: Received disconnect from 203.0.113.51 port 41013:11: Bye Bye [preauth]
+2026-09-28T01:04:25.400235+00:00 srv-demo sshd[89415]: Disconnected from invalid user hadoop 203.0.113.51 port 41013 [preauth]
+2026-09-28T01:04:34.733725+00:00 srv-demo sshd[18223]: Invalid user pi from 203.0.113.51 port 41014
+2026-09-28T01:04:34.250191+00:00 srv-demo sshd[18223]: pam_unix(sshd:auth): check pass; user unknown
+2026-09-28T01:04:34.838838+00:00 srv-demo sshd[18223]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.51
+2026-09-28T01:04:36.932401+00:00 srv-demo sshd[18223]: Failed password for invalid user pi from 203.0.113.51 port 41014 ssh2
+2026-09-28T01:04:36.239829+00:00 srv-demo sshd[18223]: Received disconnect from 203.0.113.51 port 41014:11: Bye Bye [preauth]
+2026-09-28T01:04:36.005137+00:00 srv-demo sshd[18223]: Disconnected from invalid user pi 203.0.113.51 port 41014 [preauth]
+2026-09-28T01:04:45.593577+00:00 srv-demo sshd[61420]: Invalid user debian from 203.0.113.51 port 41015
+2026-09-28T01:04:45.826333+00:00 srv-demo sshd[61420]: pam_unix(sshd:auth): check pass; user unknown
+2026-09-28T01:04:45.781426+00:00 srv-demo sshd[61420]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.51
+2026-09-28T01:04:47.863840+00:00 srv-demo sshd[61420]: Failed password for invalid user debian from 203.0.113.51 port 41015 ssh2
+2026-09-28T01:04:47.235067+00:00 srv-demo sshd[61420]: Received disconnect from 203.0.113.51 port 41015:11: Bye Bye [preauth]
+2026-09-28T01:04:47.664690+00:00 srv-demo sshd[61420]: Disconnected from invalid user debian 203.0.113.51 port 41015 [preauth]
+2026-09-28T01:04:56.040150+00:00 srv-demo sshd[94905]: Invalid user centos from 203.0.113.51 port 41016
+2026-09-28T01:04:56.254407+00:00 srv-demo sshd[94905]: pam_unix(sshd:auth): check pass; user unknown
+2026-09-28T01:04:56.098353+00:00 srv-demo sshd[94905]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.51
+2026-09-28T01:04:58.952100+00:00 srv-demo sshd[94905]: Failed password for invalid user centos from 203.0.113.51 port 41016 ssh2
+2026-09-28T01:04:58.209854+00:00 srv-demo sshd[94905]: Received disconnect from 203.0.113.51 port 41016:11: Bye Bye [preauth]
+2026-09-28T01:04:58.841713+00:00 srv-demo sshd[94905]: Disconnected from invalid user centos 203.0.113.51 port 41016 [preauth]
+2026-09-28T01:05:07.039914+00:00 srv-demo sshd[10123]: Invalid user mysql from 203.0.113.51 port 41017
+2026-09-28T01:05:07.489196+00:00 srv-demo sshd[10123]: pam_unix(sshd:auth): check pass; user unknown
+2026-09-28T01:05:07.051045+00:00 srv-demo sshd[10123]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.51
+2026-09-28T01:05:09.421509+00:00 srv-demo sshd[10123]: Failed password for invalid user mysql from 203.0.113.51 port 41017 ssh2
+2026-09-28T01:05:09.252130+00:00 srv-demo sshd[10123]: Received disconnect from 203.0.113.51 port 41017:11: Bye Bye [preauth]
+2026-09-28T01:05:09.986885+00:00 srv-demo sshd[10123]: Disconnected from invalid user mysql 203.0.113.51 port 41017 [preauth]
+2026-09-28T01:05:18.813001+00:00 srv-demo sshd[38782]: Invalid user tomcat from 203.0.113.51 port 41018
+2026-09-28T01:05:18.704517+00:00 srv-demo sshd[38782]: pam_unix(sshd:auth): check pass; user unknown
+2026-09-28T01:05:18.046375+00:00 srv-demo sshd[38782]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.51
+2026-09-28T01:05:20.975547+00:00 srv-demo sshd[38782]: Failed password for invalid user tomcat from 203.0.113.51 port 41018 ssh2
+2026-09-28T01:05:20.583203+00:00 srv-demo sshd[38782]: Received disconnect from 203.0.113.51 port 41018:11: Bye Bye [preauth]
+2026-09-28T01:05:20.669661+00:00 srv-demo sshd[38782]: Disconnected from invalid user tomcat 203.0.113.51 port 41018 [preauth]
+2026-09-28T01:05:29.963934+00:00 srv-demo sshd[85767]: Invalid user www from 203.0.113.51 port 41019
+2026-09-28T01:05:29.433836+00:00 srv-demo sshd[85767]: pam_unix(sshd:auth): check pass; user unknown
+2026-09-28T01:05:29.275728+00:00 srv-demo sshd[85767]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.51
+2026-09-28T01:05:31.043330+00:00 srv-demo sshd[85767]: Failed password for invalid user www from 203.0.113.51 port 41019 ssh2
+2026-09-28T01:05:31.160864+00:00 srv-demo sshd[85767]: Received disconnect from 203.0.113.51 port 41019:11: Bye Bye [preauth]
+2026-09-28T01:05:31.490644+00:00 srv-demo sshd[85767]: Disconnected from invalid user www 203.0.113.51 port 41019 [preauth]
+2026-09-28T01:13:00.771745+00:00 srv-demo sshd[20020]: Accepted publickey for deploy from 192.0.2.40 port 52007 ssh2: ED25519 SHA256:ciKeyFingerprint000000000000000000000
+2026-09-28T01:13:20.941006+00:00 srv-demo sshd[20020]: Disconnected from user deploy 192.0.2.40 port 52007
+Sep 28 01:16:00 srv-demo sshd[77120]: Received disconnect from 192.0.2.5 port 50002:11: disconnected by user
+Sep 28 01:16:00 srv-demo sshd[77120]: Disconnected from user opsadmin 192.0.2.5 port 50002
+Sep 28 01:16:00 srv-demo sshd[77120]: pam_unix(sshd:session): session closed for user opsadmin
+Sep 28 01:16:00 srv-demo sshd[90305]: Did not receive identification string from 198.51.100.64 port 46000
+Sep 28 01:16:20 srv-demo sshd[21318]: banner exchange: Connection from 198.51.100.64 port 46001: invalid format
+Sep 28 01:16:40 srv-demo sshd[81580]: Unable to negotiate with 198.51.100.64 port 46002: no matching key exchange method found. Their offer: diffie-hellman-group1-sha1,diffie-hellman-group14-sha1 [preauth]
+Sep 28 01:17:00 srv-demo sshd[78114]: Connection closed by 198.51.100.64 port 46003 [preauth]
+Sep 28 01:17:20 srv-demo sshd[56206]: Did not receive identification string from 198.51.100.64 port 46004
+2026-09-28T01:23:00.017333+00:00 srv-demo sshd[77660]: Accepted publickey for deploy from 192.0.2.40 port 52008 ssh2: ED25519 SHA256:ciKeyFingerprint000000000000000000000
+2026-09-28T01:23:20.459920+00:00 srv-demo sshd[77660]: Disconnected from user deploy 192.0.2.40 port 52008
+Sep 28 01:25:00 srv-demo sshd[39659]: Accepted publickey for opsadmin from 192.0.2.5 port 50003 ssh2: ED25519 SHA256:demoKeyFingerprint0000000000000000000
+Sep 28 01:25:00 srv-demo sshd[39659]: pam_unix(sshd:session): session opened for user opsadmin(uid=1000) by opsadmin(uid=0)
+Sep 28 01:29:00 srv-demo sshd[39659]: Received disconnect from 192.0.2.5 port 50003:11: disconnected by user
+Sep 28 01:29:00 srv-demo sshd[39659]: Disconnected from user opsadmin 192.0.2.5 port 50003
+Sep 28 01:29:00 srv-demo sshd[39659]: pam_unix(sshd:session): session closed for user opsadmin
+Sep 28 01:30:00 srv-demo sshd[12388]: Invalid user admin from 203.0.113.52 port 42000
+Sep 28 01:30:01 srv-demo sshd[12388]: Connection closed by invalid user admin 203.0.113.52 port 42000 [preauth]
+Sep 28 01:30:07 srv-demo sshd[72763]: Invalid user test from 203.0.113.52 port 42001
+Sep 28 01:30:08 srv-demo sshd[72763]: Connection closed by invalid user test 203.0.113.52 port 42001 [preauth]
+Sep 28 01:30:14 srv-demo sshd[23607]: Invalid user user from 203.0.113.52 port 42002
+Sep 28 01:30:15 srv-demo sshd[23607]: Connection closed by invalid user user 203.0.113.52 port 42002 [preauth]
+Sep 28 01:30:21 srv-demo sshd[22658]: Invalid user ubuntu from 203.0.113.52 port 42003
+Sep 28 01:30:22 srv-demo sshd[22658]: Connection closed by invalid user ubuntu 203.0.113.52 port 42003 [preauth]
+Sep 28 01:30:28 srv-demo sshd[34502]: Invalid user oracle from 203.0.113.52 port 42004
+Sep 28 01:30:29 srv-demo sshd[34502]: Connection closed by invalid user oracle 203.0.113.52 port 42004 [preauth]
+Sep 28 01:30:35 srv-demo sshd[28776]: Invalid user git from 203.0.113.52 port 42005
+Sep 28 01:30:36 srv-demo sshd[28776]: Connection closed by invalid user git 203.0.113.52 port 42005 [preauth]
+Sep 28 01:30:42 srv-demo sshd[79350]: Invalid user postgres from 203.0.113.52 port 42006
+Sep 28 01:30:43 srv-demo sshd[79350]: Connection closed by invalid user postgres 203.0.113.52 port 42006 [preauth]
+Sep 28 01:30:49 srv-demo sshd[31340]: Invalid user ftp from 203.0.113.52 port 42007
+Sep 28 01:30:50 srv-demo sshd[31340]: Connection closed by invalid user ftp 203.0.113.52 port 42007 [preauth]
+2026-09-28T01:33:00.828624+00:00 srv-demo sshd[35913]: Accepted publickey for deploy from 192.0.2.40 port 52009 ssh2: ED25519 SHA256:ciKeyFingerprint000000000000000000000
+2026-09-28T01:33:20.737921+00:00 srv-demo sshd[35913]: Disconnected from user deploy 192.0.2.40 port 52009
+Sep 28 01:35:00 srv-demo sshd[90727]: Connection closed by authenticating user root 203.0.113.53 port 43000 [preauth]
+Sep 28 01:35:09 srv-demo sshd[77125]: Connection closed by authenticating user root 203.0.113.53 port 43001 [preauth]
+Sep 28 01:35:18 srv-demo sshd[52372]: Connection closed by authenticating user root 203.0.113.53 port 43002 [preauth]
+Sep 28 01:35:27 srv-demo sshd[23866]: Connection closed by authenticating user root 203.0.113.53 port 43003 [preauth]
+Sep 28 01:35:36 srv-demo sshd[76821]: Connection closed by authenticating user root 203.0.113.53 port 43004 [preauth]
+Sep 28 01:35:45 srv-demo sshd[60019]: Connection closed by authenticating user root 203.0.113.53 port 43005 [preauth]
+Sep 28 01:35:54 srv-demo sshd[10296]: Connection closed by authenticating user root 203.0.113.53 port 43006 [preauth]
+Sep 28 01:36:03 srv-demo sshd[19455]: Connection closed by authenticating user root 203.0.113.53 port 43007 [preauth]
+Sep 28 01:40:00 srv-demo sshd[96697]: Failed password for deploy from 203.0.113.55 port 45000 ssh2
+Sep 28 01:40:05 srv-demo sshd[81495]: Failed password for deploy from 203.0.113.55 port 45001 ssh2
+Sep 28 01:40:10 srv-demo sshd[90620]: Failed password for deploy from 203.0.113.55 port 45002 ssh2
+Sep 28 01:40:15 srv-demo sshd[48137]: Failed password for deploy from 203.0.113.55 port 45003 ssh2
+Sep 28 01:40:20 srv-demo sshd[69910]: Failed password for deploy from 203.0.113.55 port 45004 ssh2
+Sep 28 01:40:25 srv-demo sshd[62030]: Failed password for deploy from 203.0.113.55 port 45005 ssh2
+Sep 28 01:40:30 srv-demo sshd[97910]: Failed password for deploy from 203.0.113.55 port 45006 ssh2
+Sep 28 01:40:40 srv-demo sshd[11000]: Accepted password for deploy from 203.0.113.55 port 45007 ssh2
+Sep 28 01:40:40 srv-demo sshd[11000]: pam_unix(sshd:session): session opened for user deploy(uid=1001) by deploy(uid=0)
+2026-09-28T01:43:00.810881+00:00 srv-demo sshd[35786]: Accepted publickey for deploy from 192.0.2.40 port 52010 ssh2: ED25519 SHA256:ciKeyFingerprint000000000000000000000
+2026-09-28T01:43:20.278509+00:00 srv-demo sshd[35786]: Disconnected from user deploy 192.0.2.40 port 52010
+Sep 28 01:50:00 srv-demo sshd[58673]: Accepted publickey for opsadmin from 192.0.2.5 port 50004 ssh2: ED25519 SHA256:demoKeyFingerprint0000000000000000000
+Sep 28 01:50:00 srv-demo sshd[58673]: pam_unix(sshd:session): session opened for user opsadmin(uid=1000) by opsadmin(uid=0)
+2026-09-28T01:53:00.587482+00:00 srv-demo sshd[36368]: Accepted publickey for deploy from 192.0.2.40 port 52011 ssh2: ED25519 SHA256:ciKeyFingerprint000000000000000000000
+2026-09-28T01:53:20.792246+00:00 srv-demo sshd[36368]: Disconnected from user deploy 192.0.2.40 port 52011
+Sep 28 02:10:00 srv-demo sshd[58673]: Received disconnect from 192.0.2.5 port 50004:11: disconnected by user
+Sep 28 02:10:00 srv-demo sshd[58673]: Disconnected from user opsadmin 192.0.2.5 port 50004
+Sep 28 02:10:00 srv-demo sshd[58673]: pam_unix(sshd:session): session closed for user opsadmin

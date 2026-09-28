@@ -25,7 +25,9 @@ def scripted(answers):
 
 def test_enter_everywhere_keeps_the_demo_defaults(config_file):
     values = cfg.wizard(ask=scripted([]), ask_secret=scripted([]), say=lambda _: None)
-    assert values == {f.env: f.default for f in cfg.FIELDS.values()}
+    token = values.pop(cfg.TOKEN_ENV)
+    assert len(token) >= 40  # generated, never asked
+    assert values == {f.env: f.default for f in cfg.FIELDS.values() if f.env != cfg.TOKEN_ENV}
 
 
 def test_answers_are_saved_per_part_and_loaded_as_env_defaults(config_file, monkeypatch):
@@ -38,7 +40,7 @@ def test_answers_are_saved_per_part_and_loaded_as_env_defaults(config_file, monk
     cfg.save(values)
 
     saved = json.loads(config_file.read_text())
-    assert set(saved) == {"preset", "collector", "classifier", "responder", "notifications", "ai"}
+    assert set(saved) == {"preset", "collector", "classifier", "responder", "notifications", "ai", "access"}
     assert saved["preset"]["CACTAI_PRESET"] == "advanced"
     assert saved["collector"]["CACTAI_LAB_LOGS"] == "/var/log/portal"
     assert saved["classifier"]["BRUTE_FORCE_COUNT"] == "3"
@@ -78,7 +80,7 @@ def test_new_machine_runs_wizard_only_when_interactive(config_file, monkeypatch)
     cfg.ensure(interactive=True)
 
 
-BEFORE_AI = [f for s in cfg.SECTIONS if s.key != "ai" for f in s.fields]
+BEFORE_AI = [f for s in cfg.SECTIONS[:[s.key for s in cfg.SECTIONS].index("ai")] for f in s.fields]
 # With a preset (not Advanced), the preset's fields are not asked.
 PLAIN_BEFORE_AI = [""] * sum(not f.secret and f.env not in cfg.PRESET_FIELDS for f in BEFORE_AI)
 SECRET_BEFORE_AI = [""] * sum(f.secret for f in BEFORE_AI)
@@ -166,3 +168,22 @@ def test_settings_saved_before_presets_read_as_advanced_when_changed(config_file
     assert cfg.read()["CACTAI_PRESET"] == "advanced"
     config_file.write_text(json.dumps({"responder": {"RISK_THRESHOLD": "80"}}))
     assert cfg.read()["CACTAI_PRESET"] == "moderate"
+
+
+def test_api_token_is_made_once_and_kept(config_file, monkeypatch):
+    monkeypatch.delenv(cfg.TOKEN_ENV, raising=False)
+    first = cfg.api_token()
+    assert first and json.loads(config_file.read_text())["access"][cfg.TOKEN_ENV] == first
+    assert cfg.api_token() == first
+    # the wizard and a settings form that leaves the token out both keep it
+    assert cfg.wizard(ask=scripted([]), ask_secret=scripted([]), say=lambda _: None)[cfg.TOKEN_ENV] == first
+    cfg.save({"CACTAI_PRESET": "strict"})
+    assert cfg.api_token() == first
+    monkeypatch.setenv(cfg.TOKEN_ENV, "from-env")  # an explicit env var wins
+    assert cfg.api_token() == "from-env"
+
+
+def test_token_command_prints_it(config_file, monkeypatch, capsys):
+    monkeypatch.delenv(cfg.TOKEN_ENV, raising=False)
+    assert cfg.main(["token"]) == 0
+    assert capsys.readouterr().out.strip() == cfg.api_token()

@@ -11,10 +11,12 @@ class CoreError(Exception):
 
 
 class Core:
-    def __init__(self, base_url: str, timeout: float = 3.0) -> None:
+    def __init__(self, base_url: str, timeout: float = 3.0, token: str = "") -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.session = requests.Session()
+        if token:  # the core's API token (cactai_config.api_token())
+            self.session.headers["Authorization"] = f"Bearer {token}"
 
     def _req(self, method: str, path: str, body: Any | None = None) -> Any:
         try:
