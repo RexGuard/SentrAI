@@ -45,8 +45,8 @@ Tests:
 | `WATCHDOG_SILENCE_S` | `30` | Watchdog flags a collector after this many seconds of silence. |
 | `PROTECTED_IPS` | empty | Comma-separated IPs that Needle will never approve blocking. |
 | `CACTAI_ENGINE` | `cyanide` | Orchestrator. `cyanide` plans with Claude when a key is set; `saguaro` keeps the fixed playbooks only. |
-| `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `DEEPSEEK_API_KEY` / `COMMANDCODE_API_KEY` | unset | Turns on Cyanide's planner with that provider. With none set, Cyanide behaves exactly like Saguaro. |
-| `CACTAI_LLM_PROVIDER` | `auto` | `auto` uses the first key set (Anthropic, OpenAI, DeepSeek, Command Code). Or `anthropic`, `openai`, `deepseek`, `commandcode` (also set `CACTAI_LLM_MODEL`), or `compatible` (any OpenAI-compatible API: set `CACTAI_LLM_API_KEY`, `CACTAI_LLM_BASE_URL` and `CACTAI_LLM_MODEL`). |
+| `CACTAI_LLM_API_KEY` | unset | The one AI key the setup wizard saves; used by whichever provider `CACTAI_LLM_PROVIDER` names. With no key, Cyanide behaves exactly like Saguaro. A provider's own variable (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, `COMMANDCODE_API_KEY`) still works and wins when set. |
+| `CACTAI_LLM_PROVIDER` | `auto` | `anthropic`, `openai`, `deepseek`, `commandcode` (also set `CACTAI_LLM_MODEL`), or `compatible` (any OpenAI-compatible API: also set `CACTAI_LLM_BASE_URL` and `CACTAI_LLM_MODEL`). `auto` uses the first provider-specific key set. The dashboard's Configuration page has a Fetch models button that lists the models your key can use. |
 | `CYANIDE_PROFILE` | unset | Path to the system profile JSON, e.g. `profiles\tuition_centre.json`. |
 | `CYANIDE_MODEL` / `CYANIDE_EFFORT` / `CYANIDE_TIMEOUT_S` | provider default / `low` / `20` | Model, effort level (Anthropic only) and per-call timeout for planning. Defaults: `claude-opus-5`, `gpt-5`, `deepseek-chat`. |
 | `CYANIDE_ENABLED` | `1` | Set to `0` to switch the planner off without removing the key (tests do this). |

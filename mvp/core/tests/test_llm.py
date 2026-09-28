@@ -124,3 +124,83 @@ def test_cyanide_planner_uses_whichever_provider_is_set(monkeypatch):
     assert p.plan({"incident": {}})["hold_reason"] == "y"
     p.provider.client = FakeOpenAI([reply("not json")])
     assert p.plan({}) is None and p.failures == 1
+
+
+def test_one_shared_key_serves_whichever_provider_is_chosen(monkeypatch):
+    monkeypatch.setenv("CACTAI_LLM_API_KEY", "shared")
+    monkeypatch.setenv("CACTAI_LLM_PROVIDER", "deepseek")
+    p = cactai_llm.from_env()
+    assert (p.name, p.client.api_key) == ("deepseek", "shared")
+    monkeypatch.setenv("CACTAI_LLM_PROVIDER", "anthropic")
+    p = cactai_llm.from_env()
+    assert (p.name, p.client.api_key) == ("anthropic", "shared")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "own")  # a provider's own variable still wins
+    assert cactai_llm.from_env().client.api_key == "own"
+
+
+def test_auto_reads_a_claude_key_in_the_shared_field_as_anthropic(monkeypatch):
+    monkeypatch.setenv("CACTAI_LLM_API_KEY", "sk-ant-api03-x")
+    assert cactai_llm.provider_name() == "anthropic"
+    monkeypatch.setenv("CACTAI_LLM_BASE_URL", "https://llm.example.com/v1")
+    assert cactai_llm.provider_name() == "compatible"
+
+
+@pytest.fixture
+def models_api():
+    """A local stand-in for the providers' model-list endpoints. Key "bad" is rejected."""
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    seen = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            seen.append((self.path, self.headers))
+            if "bad" in (self.headers.get("x-api-key", "") + self.headers.get("Authorization", "")):
+                return self._send(401, {"error": "invalid key"})
+            if self.path.startswith("/v1/models"):  # Anthropic: paged, newest first
+                if "after_id=m2" in self.path:
+                    return self._send(200, {"data": [{"id": "claude-old"}], "has_more": False, "last_id": "claude-old"})
+                return self._send(200, {"data": [{"id": "claude-new"}, {"id": "claude-mid"}], "has_more": True,
+                                        "last_id": "m2"})
+            if self.path == "/openai/models":
+                return self._send(200, {"data": [{"id": "gpt-5"}, {"id": "text-embedding-3-small"}, {"id": "gpt-4.1"}]})
+            self._send(404, {"error": "not found"})
+
+        def _send(self, code, body):
+            data = json.dumps(body).encode()
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def log_message(self, *args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{server.server_port}", seen
+    server.shutdown()
+
+
+def test_list_models_reads_every_page_and_keeps_chat_models(models_api):
+    base, seen = models_api
+    assert cactai_llm.list_models("anthropic", "k", base) == ["claude-new", "claude-mid", "claude-old"]
+    assert seen[0][1]["x-api-key"] == "k"
+    assert cactai_llm.list_models("openai", "k", base + "/openai") == ["gpt-4.1", "gpt-5"]
+    assert seen[-1][1]["Authorization"] == "Bearer k"
+
+
+def test_list_models_explains_what_went_wrong(models_api):
+    base, _ = models_api
+    with pytest.raises(cactai_llm.LLMError, match="rejected this API key"):
+        cactai_llm.list_models("openai", "bad", base + "/openai")
+    with pytest.raises(cactai_llm.LLMError, match="does not list its models"):
+        cactai_llm.list_models("compatible", "k", base + "/nothing-here")
+    with pytest.raises(cactai_llm.LLMError, match="base URL"):
+        cactai_llm.list_models("compatible", "k")
+    with pytest.raises(cactai_llm.LLMError, match="API key first"):
+        cactai_llm.list_models("openai", "")
+    with pytest.raises(cactai_llm.LLMError, match="could not reach"):
+        cactai_llm.list_models("openai", "k", "http://127.0.0.1:9")

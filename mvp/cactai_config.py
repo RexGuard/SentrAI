@@ -23,6 +23,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+import cactai_llm
+
 MVP_DIR = Path(__file__).resolve().parent
 
 
@@ -37,6 +39,7 @@ class Field:
     default: str = ""
     kind: type = str  # str, int or float; used only to validate the answer
     secret: bool = False
+    choices: tuple[str, ...] = ()  # when set, the answer must be one of these
 
 
 @dataclass(frozen=True)
@@ -75,18 +78,34 @@ SECTIONS = (
         Field("TELEGRAM_CHAT_ID", "Telegram chat id"),
         Field("CACTAI_OPERATOR", "Your name, as shown on approvals", "operator"),
     )),
-    Section("ai", "5. AI model", "Cyanide and Scout. Set at least one key; leave all blank to run on fixed playbooks.", (
-        Field("CACTAI_LLM_PROVIDER", "Provider: auto, anthropic, openai, deepseek, commandcode or compatible", "auto"),
-        Field("ANTHROPIC_API_KEY", "Anthropic (Claude) API key", secret=True),
-        Field("OPENAI_API_KEY", "OpenAI API key", secret=True),
-        Field("DEEPSEEK_API_KEY", "DeepSeek API key", secret=True),
-        Field("COMMANDCODE_API_KEY", "Command Code API key (also set the model name below)", secret=True),
-        Field("CACTAI_LLM_API_KEY", "Other OpenAI-compatible service: API key", secret=True),
-        Field("CACTAI_LLM_BASE_URL", "Other OpenAI-compatible service: base URL"),
+    Section("ai", "5. AI model", "Cyanide and Scout. Pick a provider and paste its key; "
+            "leave the key blank to run on fixed playbooks.", (
+        Field("CACTAI_LLM_PROVIDER", "Provider", "anthropic", choices=cactai_llm.PROVIDERS),
+        Field("CACTAI_LLM_API_KEY", "API key", secret=True),
+        Field("CACTAI_LLM_BASE_URL", "Base URL (only for another OpenAI-compatible service)"),
         Field("CACTAI_LLM_MODEL", "Model name, blank for the provider's default"),
     )),
 )
 FIELDS = {f.env: f for s in SECTIONS for f in s.fields}
+MODEL_ENV = "CACTAI_LLM_MODEL"
+
+
+def _one_ai_key(values: dict[str, str]) -> dict[str, str]:
+    """Settings saved before the AI section had one key field: keep the key of the provider in use."""
+    legacy = {p: values.pop(env) for p, env in cactai_llm.KEY_ENV.items()
+              if env != cactai_llm.GENERIC_KEY_ENV and env in values}
+    legacy = {p: k for p, k in legacy.items() if k}
+    provider = values.get("CACTAI_LLM_PROVIDER", "")
+    if provider in cactai_llm.PROVIDERS and provider != "compatible" and provider in legacy:
+        values[cactai_llm.GENERIC_KEY_ENV] = legacy[provider]
+    elif provider in ("", "auto"):
+        if legacy:  # what "auto" used to pick: the first provider with a key
+            provider = next(iter(legacy))
+            values[cactai_llm.GENERIC_KEY_ENV] = legacy[provider]
+        elif values.get(cactai_llm.GENERIC_KEY_ENV):
+            provider = "compatible"
+        values["CACTAI_LLM_PROVIDER"] = provider if provider != "auto" else FIELDS["CACTAI_LLM_PROVIDER"].default
+    return values
 
 
 def read() -> dict[str, str]:
@@ -95,7 +114,8 @@ def read() -> dict[str, str]:
         data = json.loads(config_path().read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
-    return {k: str(v) for section in data.values() if isinstance(section, dict) for k, v in section.items()}
+    values = {k: str(v) for section in data.values() if isinstance(section, dict) for k, v in section.items()}
+    return _one_ai_key(values) if values else values
 
 
 def save(values: dict[str, str]) -> Path:
@@ -116,7 +136,9 @@ def load() -> dict[str, str]:
 
 
 def valid(field: Field, answer: str) -> bool:
-    """True when the answer parses as the field's type (always true for text)."""
+    """True when the answer parses as the field's type and is one of its choices, if it has any."""
+    if field.choices and answer not in field.choices:
+        return False
     try:
         field.kind(answer)
         return True
@@ -124,9 +146,20 @@ def valid(field: Field, answer: str) -> bool:
         return False
 
 
+def fetch_models(values: dict[str, str]) -> list[str]:
+    """The models the chosen provider offers for the key in these settings (raises LLMError)."""
+    return cactai_llm.list_models(values.get("CACTAI_LLM_PROVIDER", ""), values.get(cactai_llm.GENERIC_KEY_ENV, ""),
+                                  values.get("CACTAI_LLM_BASE_URL") or None)
+
+
 def wizard(ask: Callable[[str], str] | None = None, ask_secret: Callable[[str], str] | None = None,
-           say: Callable[[str], None] = print) -> dict[str, str]:
-    """Ask for every setting, one section per part. Enter keeps the value shown in brackets."""
+           say: Callable[[str], None] = print, models: Callable[[dict[str, str]], list[str]] = fetch_models,
+           ) -> dict[str, str]:
+    """Ask for every setting, one section per part. Enter keeps the value shown in brackets.
+
+    A field with choices shows a numbered list; the model question takes "?" to list the
+    models the key can use. `models` is replaceable for tests.
+    """
     ask, ask_secret = ask or input, ask_secret or getpass.getpass
     current = {f.env: f.default for f in FIELDS.values()} | read()
     say("\nCactAI setup. Press Enter to keep the value in [brackets].")
@@ -135,12 +168,34 @@ def wizard(ask: Callable[[str], str] | None = None, ask_secret: Callable[[str], 
         say(f"\n{section.title}: {section.about}")
         for f in section.fields:
             shown = ("set" if current[f.env] else "not set") if f.secret else current[f.env]
+            prompt = f.prompt
+            if f.choices:
+                for n, choice in enumerate(f.choices, 1):
+                    say(f"    {n}. {cactai_llm.LABEL.get(choice, choice)}")
+                prompt += " (number)"
+            listed: list[str] = []
+            if f.env == MODEL_ENV:
+                prompt += ", or ? to list the available models"
             while True:
-                answer = (ask_secret if f.secret else ask)(f"  {f.prompt} [{shown}]: ").strip()
+                answer = (ask_secret if f.secret else ask)(f"  {prompt} [{shown}]: ").strip()
+                if f.env == MODEL_ENV and answer == "?":
+                    try:
+                        listed = models(values)
+                    except cactai_llm.LLMError as e:
+                        say(f"    Could not list the models: {e}.")
+                        continue
+                    for n, name in enumerate(listed, 1):
+                        say(f"    {n}. {name}")
+                    if not listed:
+                        say("    The service listed no models; type the model name.")
+                    continue
                 answer = answer or current[f.env]
+                options = f.choices or tuple(listed)
+                if answer.isdigit() and options and 1 <= int(answer) <= len(options):
+                    answer = options[int(answer) - 1]
                 if valid(f, answer):
                     break
-                say("    Please enter a number.")
+                say("    Please pick one of the numbers above." if f.choices else "    Please enter a number.")
             values[f.env] = answer
     return values
 
