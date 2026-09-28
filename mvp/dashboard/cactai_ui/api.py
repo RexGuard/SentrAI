@@ -6,6 +6,7 @@ from typing import Any
 import requests
 
 DEFAULT_TIMEOUT = 2.5
+CHAT_TIMEOUT = 90.0  # the orchestrator may call its AI model several times per answer
 
 
 class CoreError(Exception):
@@ -25,9 +26,10 @@ class CoreClient:
     def _url(self, path: str) -> str:
         return f"{self.base_url}/{path.lstrip('/')}"
 
-    def _request(self, method: str, path: str, body: Any | None = None) -> requests.Response:
+    def _request(self, method: str, path: str, body: Any | None = None,
+                 timeout: float | None = None) -> requests.Response:
         try:
-            resp = self.session.request(method, self._url(path), json=body, timeout=(0.8, self.timeout))
+            resp = self.session.request(method, self._url(path), json=body, timeout=(0.8, timeout or self.timeout))
         except requests.RequestException as exc:
             raise CoreError(f"Core unreachable at {self.base_url} ({exc.__class__.__name__})") from exc
         if resp.status_code >= 400:
@@ -51,8 +53,8 @@ class CoreClient:
     def get_text(self, path: str) -> str:
         return self._request("GET", path).text
 
-    def post_json(self, path: str, body: Any | None = None) -> Any:
-        resp = self._request("POST", path, body if body is not None else {})
+    def post_json(self, path: str, body: Any | None = None, timeout: float | None = None) -> Any:
+        resp = self._request("POST", path, body if body is not None else {}, timeout)
         try:
             return resp.json()
         except ValueError:
@@ -107,6 +109,17 @@ class CoreClient:
         return self.post_json(
             f"/incidents/{incident_id}/permanent", {"operator": operator, "justification": justification}
         )
+
+    def chat_history(self) -> dict:
+        data = self.get_json("/chat")
+        return data if isinstance(data, dict) else {"messages": list(data or [])}
+
+    def chat(self, operator: str, message: str, incident: str | None = None) -> dict:
+        return self.post_json("/chat", {"operator": operator, "message": message, "incident": incident},
+                              timeout=CHAT_TIMEOUT)
+
+    def clear_chat(self) -> Any:
+        return self.post_json("/chat/clear", {})
 
     def reset_demo(self) -> Any:
         return self.post_json("/demo/reset", {})

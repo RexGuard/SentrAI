@@ -72,6 +72,9 @@ Core exposes a speed factor: `DEMO_SPEED` env var (default 60 → 1 real minute 
 | GET | `/blocklist` | `{"ips": [...], "users": [...]}` active (non-expired) containment, polled by target app |
 | GET | `/notifications/pending` | alerts not yet delivered (polled by notifier) |
 | POST | `/notifications/{id}/delivered` | `{"channel","message_id"}` |
+| GET | `/chat` | `{"assistant", "model", "messages": [{"id","role": "operator" \| "assistant","text","ts","incident", ...}]}` |
+| POST | `/chat` | `{"operator", "message", "incident": id or null}` → the assistant message, with `"looked_at": [...]` and `"suggestions": [{"incident","decision","label","reason","status"}]`. Read-only: a suggestion changes nothing until the operator confirms it through the decision/rollback/permanent/ack endpoints above. Logged to the audit trail as `operator_chat`. |
+| POST | `/chat/clear` | empties the chat history (also cleared by `/demo/reset`) |
 | POST | `/demo/reset` | clears state for a fresh take |
 
 ### Incident
