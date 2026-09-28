@@ -379,6 +379,11 @@ def page_config() -> None:
                 st.caption("Detection and response values are set under Security preset.")
             cols = st.columns(2)
             for n, f in enumerate(fields):
+                if f.choices:
+                    pick = current[f.env] if current[f.env] in f.choices else f.default
+                    values[f.env] = cols[n % 2].selectbox(f.prompt, f.choices, index=f.choices.index(pick),
+                                                          key=f"cfg_{f.env}", help=f"Environment variable {f.env}")
+                    continue
                 values[f.env] = cols[n % 2].text_input(
                     f.prompt, value=current[f.env], key=f"cfg_{f.env}", help=f"Environment variable {f.env}",
                     type="password" if f.secret else "default").strip()

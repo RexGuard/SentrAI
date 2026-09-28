@@ -125,6 +125,11 @@ behind an arrow.
 | `TYPESAFE_API_KEY` | unset | core: enables Jev (TypeSafe System One); otherwise rules + fallback heuristic |
 | `JEV_TIMEOUT_S` / `JEV_BUDGET_S` | 3 / 2 | core: per-call timeout and per-request time budget for Jev |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | unset | notifier: console mode when unset |
+| `SMTP_HOST`, `ALERT_EMAIL_TO` | unset | notifier: email alerts off when either is unset |
+| `SMTP_PORT` / `SMTP_SECURITY` | 587 / `starttls` | notifier: `starttls`, `ssl` (port 465) or `none` |
+| `SMTP_USER`, `SMTP_PASSWORD`, `ALERT_EMAIL_FROM` | unset | notifier: SMTP login and sender (sender defaults to the login) |
+| `CACTAI_EMAIL_MODE` | `backup` | notifier: `backup` emails only when Telegram fails; `always` emails every alert too |
+| `CACTAI_DASHBOARD_URL` | `http://127.0.0.1:8501` | notifier: link in email alerts |
 | `CACTAI_CORE_URL` | `http://127.0.0.1:8000` | lab, dashboard, notifier |
 | `CACTAI_LAB_LOGS` | `mvp\lab\logs` | lab: portal writes and collector tails logs here |
 | `CACTAI_LOG_ACCESS`, `_AUTH`, `_DB`, `_OS` | `access.jsonl`, `auth.jsonl`, `db.jsonl`, `os.jsonl` | lab: log file names |
@@ -142,6 +147,17 @@ behind an arrow.
 3. Enter both in `python cactai_config.py setup`, or before `run_demo.ps1`: `$env:TELEGRAM_BOT_TOKEN = "<token>"; $env:TELEGRAM_CHAT_ID = "<chat id>"`.
 
 Only the configured chat can press the buttons.
+
+### Email alerts (optional backup)
+
+Email carries the same alert content as Telegram, including SLA reminders and escalations,
+and links to the dashboard for the buttons. Set the SMTP server and recipients in
+`python cactai_config.py setup` (section 4) or on the dashboard's Configuration page.
+With `CACTAI_EMAIL_MODE=backup` an alert is emailed only when Telegram cannot deliver it;
+with `always` every alert is emailed too. In console mode (no Telegram) alerts are emailed as
+well as printed. With no SMTP settings, nothing is emailed. For Gmail use `smtp.gmail.com`,
+port 587, and an app password. The audit log records the channel used (`telegram`, `email`,
+`telegram+email`, `console+email`).
 
 ## The three parts
 

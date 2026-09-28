@@ -80,8 +80,9 @@ def test_new_machine_runs_wizard_only_when_interactive(config_file, monkeypatch)
 
 BEFORE_AI = [f for s in cfg.SECTIONS if s.key != "ai" for f in s.fields]
 # With a preset (not Advanced), the preset's fields are not asked.
-PLAIN_BEFORE_AI = [""] * sum(not f.secret and f.env not in cfg.PRESET_FIELDS for f in BEFORE_AI)
-SECRET_BEFORE_AI = [""] * sum(f.secret for f in BEFORE_AI)
+ASKED_BEFORE_AI = [f for f in BEFORE_AI if f.env not in cfg.PRESET_FIELDS and f.env not in cfg.EMAIL_FIELDS]
+PLAIN_BEFORE_AI = [""] * sum(not f.secret for f in ASKED_BEFORE_AI)
+SECRET_BEFORE_AI = [""] * sum(f.secret for f in ASKED_BEFORE_AI)
 
 
 def test_ai_section_takes_a_provider_number_one_key_and_lists_models(config_file):
@@ -166,3 +167,24 @@ def test_settings_saved_before_presets_read_as_advanced_when_changed(config_file
     assert cfg.read()["CACTAI_PRESET"] == "advanced"
     config_file.write_text(json.dumps({"responder": {"RISK_THRESHOLD": "80"}}))
     assert cfg.read()["CACTAI_PRESET"] == "moderate"
+
+
+def test_email_details_are_asked_only_with_an_smtp_server(config_file):
+    prompts = []
+
+    def ask(prompt):
+        prompts.append(prompt)
+        return ""
+    values = cfg.wizard(ask=ask, ask_secret=ask, say=lambda _: None)
+    assert values["SMTP_HOST"] == "" and values["CACTAI_EMAIL_MODE"] == "backup"
+    assert not any("Email: SMTP port" in p for p in prompts)
+
+    answers = {"Email: SMTP server": "smtp.example.test", "Email: connection security": "2",
+               "Email: recipients": "soc@example.test", "Email: send when": "2", "Email: SMTP password": "pw"}
+
+    def ask_email(prompt):
+        return next((a for key, a in answers.items() if key in prompt), "")
+    values = cfg.wizard(ask=ask_email, ask_secret=ask_email, say=lambda _: None)
+    assert values["SMTP_HOST"] == "smtp.example.test" and values["SMTP_PORT"] == "587"
+    assert values["SMTP_SECURITY"] == "ssl" and values["CACTAI_EMAIL_MODE"] == "always"
+    assert values["ALERT_EMAIL_TO"] == "soc@example.test" and values["SMTP_PASSWORD"] == "pw"
