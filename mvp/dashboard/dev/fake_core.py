@@ -4,7 +4,7 @@ NOT the real core. In-memory, single process, plays a scripted demo scenario:
   t≈4 s   brute_force incident opens (risk ≈ 40, amber) + notification
   ...     nobody acks -> inaction penalty climbs (fast demo clock)
   t≈40 s  sql_injection incident opens -> risk crosses 80 -> Needle approves
-          autonomous containment (block IP, lock user) + negligence report
+          autonomous containment (block IP, lock user) + evidence report
 Run:  .venv\\Scripts\\python dev\\fake_core.py   (serves http://127.0.0.1:8900)
 Env:  FAKE_CORE_PORT (8900, so it never collides with the real core on 8000), FAKE_DEMO_SPEED (120 = 30 real s per demo hour),
       FAKE_TTL_SECONDS (300 real s before containment expires),
@@ -84,6 +84,7 @@ class State:
         self.chat: list[dict] = []
         self.scan: dict | None = None
         self.log_sources: list[dict] = []
+        self.pending: list[dict] = []  # Scout proposals; seed one with POST /_fake/scout-proposal
 
 
 S = State()
@@ -177,13 +178,13 @@ def make_report(inc: dict) -> None:
         "actions": inc["actions"], "chain_head": S.audit[-1]["hash"] if S.audit else None,
     }
     S.reports[inc["id"]] = rep
-    audit("report_generated", "Scribe", incident=inc["id"], summary=f"Negligence report for {inc['id']}")
+    audit("report_generated", "Scribe", incident=inc["id"], summary=f"Evidence report for {inc['id']}")
 
 
 def report_md(rep: dict) -> str:
     inc = S.incidents[rep["incident_id"]]
     lines = [
-        f"# Negligence Report · {inc['id']}",
+        f"# Security Evidence Report · {inc['id']}",
         "",
         "> FAKE CORE output for UI development. Not evidence.",
         "",
@@ -229,7 +230,7 @@ def tick() -> None:
                         act["status"] = "expired"
                         audit("action_expired", "Watchdog", incident=inc["id"], target=act["target"])
             active = [i for i in S.incidents.values() if i["status"] in ("open", "acknowledged")]
-            if risk_index() >= THRESHOLD and active:
+            if risk_index() >= THRESHOLD and active and not S.protection["monitor_only"]:
                 S.history.append({"t": iso(now()), "risk_index": risk_index()})  # show the peak
                 audit("threshold_crossed", "Saguaro", risk_index=risk_index(), summary=f"Risk {risk_index()} ≥ {THRESHOLD}")
                 for inc in active:
@@ -266,7 +267,7 @@ def risk():
         idx = risk_index()
         return {"risk_index": idx, "band": band(idx), "raw_score": round(raw_score(), 1), "threshold": THRESHOLD,
                 "open_incidents": [i for i, v in S.incidents.items() if v["status"] in ("open", "acknowledged")],
-                "history": S.history}
+                "monitor_only": S.protection["monitor_only"], "history": S.history}
 
 
 @app.get("/incidents")
@@ -290,6 +291,8 @@ def decision(iid: str, body: dict = Body(...)):
         op, dec, just = body.get("operator", "?"), body.get("decision"), body.get("justification", "")
         if dec == "reject" and not just.strip():
             raise HTTPException(422, "justification required for reject")
+        if dec == "approve" and S.protection["monitor_only"]:
+            raise HTTPException(409, "Protection is off (monitor-only mode), so an approved hotpatch is not applied.")
         audit("decision", "Operator", operator=op, incident=iid, decision=dec, justification=just)
         if dec == "approve":
             apply_containment(inc, "operator", op)
@@ -348,6 +351,29 @@ def report(name: str):
         if not rep:
             raise HTTPException(404, f"no report for {iid}")
         return PlainTextResponse(report_md(rep), media_type="text/markdown") if name.endswith(".md") else rep
+
+
+def protection_view() -> dict:
+    return {"protection": "off" if S.protection["monitor_only"] else "on", **S.protection, "active_actions": []}
+
+
+@app.get("/protection")
+def get_protection():
+    with lock:
+        return protection_view()
+
+
+@app.post("/protection")
+def post_protection(body: dict = Body(...)):
+    with lock:
+        on, reason = bool(body.get("on")), str(body.get("reason") or "").strip()
+        if not on and not reason:
+            raise HTTPException(400, "turning protection off requires a reason")
+        S.protection = {"monitor_only": not on, "changed_at": iso(now()), "changed_by": body.get("operator", "?"),
+                        "reason": reason or None}
+        audit("protection_changed", "Saguaro", protection="on" if on else "off", operator=body.get("operator"),
+              reason=reason or None)
+        return protection_view()
 
 
 @app.get("/blocklist")
@@ -488,6 +514,40 @@ def post_log_source(body: dict = Body(...)):
         audit("log_source_added", "Cyanide", operator=body.get("operator"), file=f["name"],
               summary=f"{body.get('operator')} added {f['name']} to the collector")
         return {"ok": True, "file": f["name"], "layer": "web", "watching": len(S.log_sources)}
+
+
+@app.get("/log-sources/pending")
+def get_pending_sources():
+    return S.pending
+
+
+@app.post("/_fake/scout-proposal")
+def fake_scout_proposal(body: dict = Body(None)):
+    """Dev/test only: pretend `python -m scout find` proposed a file."""
+    with lock:
+        n = len(S.pending) + 1
+        p = {"id": f"p{n:010d}", "name": "auth.log", "path": "/var/log/auth.log", "layer": "os", "format": "text",
+             "why": "SSH logins with the source address, so password guessing shows up.",
+             "goal": "where are the login logs?", "proposed_at": iso(now()), **(body or {})}
+        S.pending.append(p)
+        return p
+
+
+@app.post("/log-sources/pending/{pid}")
+def decide_pending_source(pid: str, body: dict = Body(...)):
+    with lock:
+        p = next((x for x in S.pending if x["id"] == pid), None)
+        if p is None:
+            raise HTTPException(404, f"{pid} is not a pending Scout proposal")
+        S.pending.remove(p)
+        if body.get("approve"):
+            S.log_sources.append({"path": p["path"], "layer": p["layer"], "format": p["format"],
+                                  "found_by": "Scout", "confirmed_by": body.get("operator")})
+        audit("log_source_added" if body.get("approve") else "log_source_rejected", "Cyanide",
+              operator=body.get("operator"), file=p["name"],
+              summary=f"{body.get('operator')} {'added' if body.get('approve') else 'rejected'} {p['name']} "
+                      f"(proposed by Scout)")
+        return {"ok": True, "file": p["name"], "layer": p["layer"], "approved": bool(body.get("approve"))}
 
 
 @app.post("/chat/clear")

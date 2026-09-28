@@ -1,0 +1,12 @@
+192.0.2.10 - - [28/Sep/2026:14:00:01 +0800] "GET / HTTP/1.1" 200 612 "-" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36"
+192.0.2.10 - - [28/Sep/2026:14:00:01 +0800] "GET /favicon.ico HTTP/1.1" 404 153 "http://example.test/" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36"
+203.0.113.9 - - [28/Sep/2026:14:02:11 +0800] "GET /.env HTTP/1.1" 404 153 "-" "Mozilla/5.0 zgrab/0.x"
+203.0.113.9 - - [28/Sep/2026:14:02:11 +0800] "GET /.git/config HTTP/1.1" 404 153 "-" "Mozilla/5.0 zgrab/0.x"
+203.0.113.9 - - [28/Sep/2026:14:02:12 +0800] "GET /wp-login.php HTTP/1.1" 404 153 "-" "Mozilla/5.0 zgrab/0.x"
+203.0.113.9 - - [28/Sep/2026:14:02:12 +0800] "GET /phpmyadmin/index.php HTTP/1.1" 404 153 "-" "Mozilla/5.0 zgrab/0.x"
+203.0.113.9 - - [28/Sep/2026:14:02:13 +0800] "POST /cgi-bin/.%2e/.%2e/.%2e/bin/sh HTTP/1.1" 400 157 "-" "-"
+198.51.100.4 - - [28/Sep/2026:14:02:14 +0800] "\x16\x03\x01\x00\xa5\x01\x00\x00\xa1\x03\x03" 400 157 "-" "-"
+198.51.100.4 - - [28/Sep/2026:14:02:15 +0800] "" 400 0 "-" "-"
+198.51.100.22 - - [28/Sep/2026:14:02:16 +0800] "GET /search?q=1%27%20OR%20%271%27=%271 HTTP/1.1" 200 1024 "-" "sqlmap/1.8#stable (https://sqlmap.org)"
+198.51.100.30 - admin [28/Sep/2026:14:02:17 +0800] "GET /admin/ HTTP/2.0" 401 179 "-" "curl/8.5.0" "-" 0.001
+192.0.2.11 - - [28/Sep/2026:14:02:18 +0800] "GET /page HTTP/1.1" 200 88 "-" "Agent with \"quotes\" inside"

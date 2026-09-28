@@ -100,14 +100,14 @@ Place markers on the line: bell icon at 0 ("alert delivered, Ack: none"), bell a
 - Lab app with synthetic member data, all on localhost
 - Brute force → Jev tags it → Telegram alert ignored
 - Inaction penalty climbs → SQL injection → crosses 80
-- Needle approves → IP blocked 2h → negligence report → human decides
+- Needle approves → IP blocked 2h → evidence report → human decides
 
 **Visual:** screenshot of the dashboard at the moment the gauge crosses 80 (used as the title card before the screen recording).
 **Speaker note (Erick):** Say if the attack is a replay and if Jev is in fallback mode. Judges respect honesty more than polish.
 
 ---
 
-## Slide 9 · The negligence report
+## Slide 9 · The evidence report
 - Responsible entity: on-duty operator and shift
 - SLA violation: overdue by X h (policy 2h)
 - Timeline of inaction: detected → alert delivered (Ack: none) → reminder → threshold crossed
@@ -143,7 +143,7 @@ Place markers on the line: bell icon at 0 ("alert delivered, Ack: none"), bell a
 ---
 
 ## Slide 12 · Roadmap and team
-- Now (MVP): web, DB, OS collectors, Jev, risk engine, blocklist containment, Telegram, negligence report
+- Now (MVP): web, DB, OS collectors, Jev, risk engine, blocklist containment, Telegram, evidence report (PDF)
 - Next: Windows agent (Event Log, `netsh`), cloud config scan (S3, security groups), SMS/phone escalation
 - Later: Go/Rust single-binary collectors, pilot with a Singapore private education institution
 - Team: Erick Sientaro (Developer) · Ishmail (CEO) · Hozen (Notetaker, slides and sources)

@@ -1,0 +1,1500 @@
+{
+  "events": 178,
+  "by_origin": {
+    "lab": 116,
+    "replay": 17,
+    "handcrafted": 45
+  },
+  "jev_status": "disabled: TYPESAFE_API_KEY not set (fallback classifier in use)",
+  "runs": {
+    "rules": {
+      "per_category": {
+        "benign": {
+          "precision": 0.6951219512195121,
+          "recall": 0.6951219512195121,
+          "f1": 0.6951219512195121,
+          "support": 82,
+          "predicted": 82
+        },
+        "brute_force": {
+          "precision": 1.0,
+          "recall": 0.391304347826087,
+          "f1": 0.5625,
+          "support": 46,
+          "predicted": 18
+        },
+        "sql_injection": {
+          "precision": 1.0,
+          "recall": 0.7142857142857143,
+          "f1": 0.8333333333333333,
+          "support": 14,
+          "predicted": 10
+        },
+        "xss": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 5,
+          "predicted": 5
+        },
+        "port_scan": {
+          "precision": 1.0,
+          "recall": 0.6,
+          "f1": 0.7499999999999999,
+          "support": 5,
+          "predicted": 3
+        },
+        "privilege_escalation": {
+          "precision": 1.0,
+          "recall": 0.8,
+          "f1": 0.888888888888889,
+          "support": 10,
+          "predicted": 8
+        },
+        "data_exfiltration": {
+          "precision": 1.0,
+          "recall": 0.5454545454545454,
+          "f1": 0.7058823529411764,
+          "support": 11,
+          "predicted": 6
+        },
+        "misconfiguration": {
+          "precision": 0.8,
+          "recall": 0.8,
+          "f1": 0.8000000000000002,
+          "support": 5,
+          "predicted": 5
+        }
+      },
+      "accuracy": 0.6235955056179775,
+      "macro_f1": 0.7794658157978639,
+      "detection_rate": 0.5625,
+      "false_alarm_rate": 0.012195121951219513,
+      "no_answer": 41,
+      "mistakes": [
+        {
+          "event_id": "eval-0003",
+          "origin": "lab",
+          "raw": "login success user=admin",
+          "label": "benign",
+          "predicted": "(no answer)"
+        },
+        {
+          "event_id": "eval-0008",
+          "origin": "lab",
+          "raw": "login success user=admin",
+          "label": "benign",
+          "predicted": "(no answer)"
+        },
+        {
+          "event_id": "eval-0013",
+          "origin": "lab",
+          "raw": "login success user=admin",
+          "label": "benign",
+          "predicted": "(no answer)"
+        },
+        {
+          "event_id": "eval-0018",
+          "origin": "lab",
+          "raw": "login success user=admin",
+          "label": "benign",
+          "predicted": "(no answer)"
+        },
+        {
+          "event_id": "eval-0023",
+          "origin": "lab",
+          "raw": "login success user=admin",
+          "label": "benign",
+          "predicted": "(no answer)"
+        },
+        {
+          "event_id": "eval-0028",
+          "origin": "lab",
+          "raw": "login success user=admin",
+          "label": "benign",
+          "predicted": "(no answer)"
+        },
+        {
+          "event_id": "eval-0033",
+          "origin": "lab",
+          "raw": "login success user=admin",
+          "label": "benign",
+          "predicted": "(no answer)"
+        },
+        {
+          "event_id": "eval-0038",
+          "origin": "lab",
+          "raw": "login success user=admin",
+          "label": "benign",
+          "predicted": "(no answer)"
+        },
+        {
+          "event_id": "eval-0043",
+          "origin": "lab",
+          "raw": "login success user=admin",
+          "label": "benign",
+          "predicted": "(no answer)"
+        },
+        {
+          "event_id": "eval-0048",
+          "origin": "lab",
+          "raw": "login success user=admin",
+          "label": "benign",
+          "predicted": "(no answer)"
+        },
+        {
+          "event_id": "eval-0053",
+          "origin": "lab",
+          "raw": "login success user=admin",
+          "label": "benign",
+          "predicted": "(no answer)"
+        },
+        {
+          "event_id": "eval-0058",
+          "origin": "lab",
+          "raw": "login success user=admin",
+          "label": "benign",
+          "predicted": "(no answer)"
+        },
+        {
+          "event_id": "eval-0062",
+          "origin": "lab",
+          "raw": "login fail user=admin",
+          "label": "benign",
+          "predicted": "(no answer)"
+        },
+        {
+          "event_id": "eval-0064",
+          "origin": "lab",
+          "raw": "login success user=admin",
+          "label": "benign",
+          "predicted": "(no answer)"
+        },
+        {
+          "event_id": "eval-0065",
+          "origin": "lab",
+          "raw": "POST /login 401 user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0066",
+          "origin": "lab",
+          "raw": "login fail user=admin",
+          "label": "brute_force",
+          "predicted": "(no answer)"
+        },
+        {
+          "event_id": "eval-0067",
+          "origin": "lab",
+          "raw": "POST /login 401 user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0068",
+          "origin": "lab",
+          "raw": "login fail user=admin",
+          "label": "brute_force",
+          "predicted": "(no answer)"
+        },
+        {
+          "event_id": "eval-0069",
+          "origin": "lab",
+          "raw": "POST /login 401 user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0070",
+          "origin": "lab",
+          "raw": "login fail user=admin",
+          "label": "brute_force",
+          "predicted": "(no answer)"
+        },
+        {
+          "event_id": "eval-0071",
+          "origin": "lab",
+          "raw": "POST /login 401 user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0072",
+          "origin": "lab",
+          "raw": "login fail user=admin",
+          "label": "brute_force",
+          "predicted": "(no answer)"
+        },
+        {
+          "event_id": "eval-0074",
+          "origin": "lab",
+          "raw": "login fail user=admin",
+          "label": "brute_force",
+          "predicted": "(no answer)"
+        },
+        {
+          "event_id": "eval-0076",
+          "origin": "lab",
+          "raw": "login fail user=admin",
+          "label": "brute_force",
+          "predicted": "(no answer)"
+        },
+        {
+          "event_id": "eval-0078",
+          "origin": "lab",
+          "raw": "login fail user=admin",
+          "label": "brute_force",
+          "predicted": "(no answer)"
+        },
+        {
+          "event_id": "eval-0080",
+          "origin": "lab",
+          "raw": "login fail user=admin",
+          "label": "brute_force",
+          "predicted": "(no answer)"
+        },
+        {
+          "event_id": "eval-0082",
+          "origin": "lab",
+          "raw": "login fail user=admin",
+          "label": "brute_force",
+          "predicted": "(no answer)"
+        },
+        {
+          "event_id": "eval-0084",
+          "origin": "lab",
+          "raw": "login fail user=admin",
+          "label": "brute_force",
+          "predicted": "(no answer)"
+        },
+        {
+          "event_id": "eval-0086",
+          "origin": "lab",
+          "raw": "login fail user=admin",
+          "label": "brute_force",
+          "predicted": "(no answer)"
+        },
+        {
+          "event_id": "eval-0088",
+          "origin": "lab",
+          "raw": "login fail user=admin",
+          "label": "brute_force",
+          "predicted": "(no answer)"
+        },
+        {
+          "event_id": "eval-0095",
+          "origin": "lab",
+          "raw": "SELECT rows=0 q='1 AND 1=1'",
+          "label": "sql_injection",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0096",
+          "origin": "lab",
+          "raw": "SELECT rows=0 q=\"admin' #\"",
+          "label": "sql_injection",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0098",
+          "origin": "lab",
+          "raw": "SELECT rows=0 q=\"' uNiOn/**/SeLeCt null,version()--\"",
+          "label": "sql_injection",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0099",
+          "origin": "lab",
+          "raw": "SELECT rows=0 q=\"x' AND extractvalue(1,concat(0x7e,database()))--\"",
+          "label": "sql_injection",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0106",
+          "origin": "lab",
+          "raw": "SELECT rows=40 q='SELECT * FROM members'",
+          "label": "data_exfiltration",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0108",
+          "origin": "lab",
+          "raw": "SELECT rows=40 q='SELECT * FROM members'",
+          "label": "data_exfiltration",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0110",
+          "origin": "lab",
+          "raw": "SELECT rows=40 q='SELECT * FROM members'",
+          "label": "data_exfiltration",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0112",
+          "origin": "lab",
+          "raw": "SELECT rows=40 q='SELECT * FROM members'",
+          "label": "data_exfiltration",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0120",
+          "origin": "replay",
+          "raw": "POST /login 401 user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0121",
+          "origin": "replay",
+          "raw": "POST /login 401 user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0122",
+          "origin": "replay",
+          "raw": "POST /login 401 user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0123",
+          "origin": "replay",
+          "raw": "POST /login 401 user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0137",
+          "origin": "handcrafted",
+          "raw": "firewall: 214 connection attempts to 97 distinct ports from 203.0.113.9 in 10s",
+          "label": "port_scan",
+          "predicted": "(no answer)"
+        },
+        {
+          "event_id": "eval-0138",
+          "origin": "handcrafted",
+          "raw": "kernel: TCP SYN to closed ports 21,22,23,25,80,110,139,443,445,3389 from 203.0.113.9",
+          "label": "port_scan",
+          "predicted": "(no answer)"
+        },
+        {
+          "event_id": "eval-0143",
+          "origin": "handcrafted",
+          "raw": "blob container 'reports' access level changed to public (anonymous read)",
+          "label": "misconfiguration",
+          "predicted": "(no answer)"
+        },
+        {
+          "event_id": "eval-0146",
+          "origin": "handcrafted",
+          "raw": "sudo: www-data : user NOT in sudoers ; TTY=pts/0 ; COMMAND=/bin/bash",
+          "label": "privilege_escalation",
+          "predicted": "(no answer)"
+        },
+        {
+          "event_id": "eval-0148",
+          "origin": "handcrafted",
+          "raw": "process powershell -enc SQBFAFgA... started by apache",
+          "label": "privilege_escalation",
+          "predicted": "(no answer)"
+        },
+        {
+          "event_id": "eval-0149",
+          "origin": "handcrafted",
+          "raw": "EventID=4625 An account failed to log on. Account=administrator Source=203.0.113.60",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0150",
+          "origin": "handcrafted",
+          "raw": "EventID=4625 An account failed to log on. Account=administrator Source=203.0.113.60",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0151",
+          "origin": "handcrafted",
+          "raw": "EventID=4625 An account failed to log on. Account=administrator Source=203.0.113.60",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0152",
+          "origin": "handcrafted",
+          "raw": "EventID=4625 An account failed to log on. Account=administrator Source=203.0.113.60",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0155",
+          "origin": "handcrafted",
+          "raw": "sshd[812]: Failed password for root from 203.0.113.61 port 40100 ssh2",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0156",
+          "origin": "handcrafted",
+          "raw": "sshd[812]: Failed password for root from 203.0.113.61 port 40101 ssh2",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0157",
+          "origin": "handcrafted",
+          "raw": "sshd[812]: Failed password for root from 203.0.113.61 port 40102 ssh2",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0158",
+          "origin": "handcrafted",
+          "raw": "sshd[812]: Failed password for root from 203.0.113.61 port 40103 ssh2",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0163",
+          "origin": "handcrafted",
+          "raw": "s3 GetObject x 1840 objects (2.1 GB) bucket=aegis-student-docs by key AKIA...XYZ from 203.0.113.77",
+          "label": "data_exfiltration",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0166",
+          "origin": "handcrafted",
+          "raw": "cron: daily logrotate finished",
+          "label": "benign",
+          "predicted": "(no answer)"
+        },
+        {
+          "event_id": "eval-0167",
+          "origin": "handcrafted",
+          "raw": "sshd[900]: Accepted publickey for deploy from 192.0.2.20 port 51022 ssh2",
+          "label": "benign",
+          "predicted": "(no answer)"
+        },
+        {
+          "event_id": "eval-0168",
+          "origin": "handcrafted",
+          "raw": "systemd: Started Session 41 of user deploy.",
+          "label": "benign",
+          "predicted": "(no answer)"
+        },
+        {
+          "event_id": "eval-0170",
+          "origin": "handcrafted",
+          "raw": "GET /favicon.ico 404",
+          "label": "benign",
+          "predicted": "(no answer)"
+        },
+        {
+          "event_id": "eval-0171",
+          "origin": "handcrafted",
+          "raw": "GET /reports/term3.pdf 500 error while rendering",
+          "label": "benign",
+          "predicted": "(no answer)"
+        },
+        {
+          "event_id": "eval-0172",
+          "origin": "handcrafted",
+          "raw": "UFW ALLOW SRC=192.0.2.10 DST=10.0.0.5 PROTO=TCP DPT=443",
+          "label": "benign",
+          "predicted": "(no answer)"
+        },
+        {
+          "event_id": "eval-0173",
+          "origin": "handcrafted",
+          "raw": "vulnerability scan by approved vendor window 02:00-03:00 finished, 0 findings",
+          "label": "benign",
+          "predicted": "(no answer)"
+        },
+        {
+          "event_id": "eval-0174",
+          "origin": "handcrafted",
+          "raw": "PutBucketAcl bucket=aegis-student-docs acl=private by user=it-admin",
+          "label": "benign",
+          "predicted": "(no answer)"
+        },
+        {
+          "event_id": "eval-0175",
+          "origin": "handcrafted",
+          "raw": "Security group sg-0a1 rule removed: ingress 0.0.0.0/0 tcp 3389",
+          "label": "benign",
+          "predicted": "misconfiguration"
+        },
+        {
+          "event_id": "eval-0176",
+          "origin": "handcrafted",
+          "raw": "EventID=4624 An account was successfully logged on. Account=teacher01",
+          "label": "benign",
+          "predicted": "(no answer)"
+        },
+        {
+          "event_id": "eval-0178",
+          "origin": "handcrafted",
+          "raw": "GET /help/download all course notes 200",
+          "label": "benign",
+          "predicted": "(no answer)"
+        }
+      ]
+    },
+    "fallback": {
+      "per_category": {
+        "benign": {
+          "precision": 0.5263157894736842,
+          "recall": 0.975609756097561,
+          "f1": 0.6837606837606838,
+          "support": 82,
+          "predicted": 152
+        },
+        "brute_force": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 46,
+          "predicted": 0
+        },
+        "sql_injection": {
+          "precision": 1.0,
+          "recall": 0.42857142857142855,
+          "f1": 0.6,
+          "support": 14,
+          "predicted": 6
+        },
+        "xss": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 5,
+          "predicted": 5
+        },
+        "port_scan": {
+          "precision": 1.0,
+          "recall": 0.6,
+          "f1": 0.7499999999999999,
+          "support": 5,
+          "predicted": 3
+        },
+        "privilege_escalation": {
+          "precision": 1.0,
+          "recall": 0.5,
+          "f1": 0.6666666666666666,
+          "support": 10,
+          "predicted": 5
+        },
+        "data_exfiltration": {
+          "precision": 0.5,
+          "recall": 0.09090909090909091,
+          "f1": 0.15384615384615385,
+          "support": 11,
+          "predicted": 2
+        },
+        "misconfiguration": {
+          "precision": 0.8,
+          "recall": 0.8,
+          "f1": 0.8000000000000002,
+          "support": 5,
+          "predicted": 5
+        }
+      },
+      "accuracy": 0.5842696629213483,
+      "macro_f1": 0.581784188034188,
+      "detection_rate": 0.25,
+      "false_alarm_rate": 0.024390243902439025,
+      "no_answer": 0,
+      "mistakes": [
+        {
+          "event_id": "eval-0065",
+          "origin": "lab",
+          "raw": "POST /login 401 user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0066",
+          "origin": "lab",
+          "raw": "login fail user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0067",
+          "origin": "lab",
+          "raw": "POST /login 401 user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0068",
+          "origin": "lab",
+          "raw": "login fail user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0069",
+          "origin": "lab",
+          "raw": "POST /login 401 user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0070",
+          "origin": "lab",
+          "raw": "login fail user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0071",
+          "origin": "lab",
+          "raw": "POST /login 401 user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0072",
+          "origin": "lab",
+          "raw": "login fail user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0073",
+          "origin": "lab",
+          "raw": "POST /login 401 user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0074",
+          "origin": "lab",
+          "raw": "login fail user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0075",
+          "origin": "lab",
+          "raw": "POST /login 401 user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0076",
+          "origin": "lab",
+          "raw": "login fail user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0077",
+          "origin": "lab",
+          "raw": "POST /login 401 user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0078",
+          "origin": "lab",
+          "raw": "login fail user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0079",
+          "origin": "lab",
+          "raw": "POST /login 401 user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0080",
+          "origin": "lab",
+          "raw": "login fail user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0081",
+          "origin": "lab",
+          "raw": "POST /login 401 user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0082",
+          "origin": "lab",
+          "raw": "login fail user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0083",
+          "origin": "lab",
+          "raw": "POST /login 401 user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0084",
+          "origin": "lab",
+          "raw": "login fail user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0085",
+          "origin": "lab",
+          "raw": "POST /login 401 user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0086",
+          "origin": "lab",
+          "raw": "login fail user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0087",
+          "origin": "lab",
+          "raw": "POST /login 401 user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0088",
+          "origin": "lab",
+          "raw": "login fail user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0090",
+          "origin": "lab",
+          "raw": "SELECT rows=0 q=\"' UNION SELECT username, password FROM users --\"",
+          "label": "sql_injection",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0093",
+          "origin": "lab",
+          "raw": "SELECT rows=0 q=\"admin'--\"",
+          "label": "sql_injection",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0094",
+          "origin": "lab",
+          "raw": "SELECT rows=0 q=\"%' UNION SELECT email, program FROM members --\"",
+          "label": "sql_injection",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0095",
+          "origin": "lab",
+          "raw": "SELECT rows=0 q='1 AND 1=1'",
+          "label": "sql_injection",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0096",
+          "origin": "lab",
+          "raw": "SELECT rows=0 q=\"admin' #\"",
+          "label": "sql_injection",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0098",
+          "origin": "lab",
+          "raw": "SELECT rows=0 q=\"' uNiOn/**/SeLeCt null,version()--\"",
+          "label": "sql_injection",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0099",
+          "origin": "lab",
+          "raw": "SELECT rows=0 q=\"x' AND extractvalue(1,concat(0x7e,database()))--\"",
+          "label": "sql_injection",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0105",
+          "origin": "lab",
+          "raw": "GET /export 200",
+          "label": "data_exfiltration",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0106",
+          "origin": "lab",
+          "raw": "SELECT rows=40 q='SELECT * FROM members'",
+          "label": "data_exfiltration",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0107",
+          "origin": "lab",
+          "raw": "GET /export 200",
+          "label": "data_exfiltration",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0108",
+          "origin": "lab",
+          "raw": "SELECT rows=40 q='SELECT * FROM members'",
+          "label": "data_exfiltration",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0109",
+          "origin": "lab",
+          "raw": "GET /export 200",
+          "label": "data_exfiltration",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0110",
+          "origin": "lab",
+          "raw": "SELECT rows=40 q='SELECT * FROM members'",
+          "label": "data_exfiltration",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0111",
+          "origin": "lab",
+          "raw": "GET /export 200",
+          "label": "data_exfiltration",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0112",
+          "origin": "lab",
+          "raw": "SELECT rows=40 q='SELECT * FROM members'",
+          "label": "data_exfiltration",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0114",
+          "origin": "lab",
+          "raw": "web server spawned shell: id",
+          "label": "privilege_escalation",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0115",
+          "origin": "lab",
+          "raw": "web server spawned shell: cat /etc/passwd",
+          "label": "privilege_escalation",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0116",
+          "origin": "lab",
+          "raw": "web server spawned shell: uname -a",
+          "label": "privilege_escalation",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0120",
+          "origin": "replay",
+          "raw": "POST /login 401 user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0121",
+          "origin": "replay",
+          "raw": "POST /login 401 user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0122",
+          "origin": "replay",
+          "raw": "POST /login 401 user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0123",
+          "origin": "replay",
+          "raw": "POST /login 401 user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0124",
+          "origin": "replay",
+          "raw": "POST /login 401 user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0125",
+          "origin": "replay",
+          "raw": "POST /login 401 user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0126",
+          "origin": "replay",
+          "raw": "POST /login 401 user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0127",
+          "origin": "replay",
+          "raw": "POST /login 401 user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0128",
+          "origin": "replay",
+          "raw": "POST /login 401 user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0129",
+          "origin": "replay",
+          "raw": "POST /login 401 user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0131",
+          "origin": "replay",
+          "raw": "SELECT rows=0 q=\"' UNION SELECT username, password FROM users --\"",
+          "label": "sql_injection",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0137",
+          "origin": "handcrafted",
+          "raw": "firewall: 214 connection attempts to 97 distinct ports from 203.0.113.9 in 10s",
+          "label": "port_scan",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0138",
+          "origin": "handcrafted",
+          "raw": "kernel: TCP SYN to closed ports 21,22,23,25,80,110,139,443,445,3389 from 203.0.113.9",
+          "label": "port_scan",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0143",
+          "origin": "handcrafted",
+          "raw": "blob container 'reports' access level changed to public (anonymous read)",
+          "label": "misconfiguration",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0144",
+          "origin": "handcrafted",
+          "raw": "auditd: new SUID binary /tmp/.x/bash owner=www-data",
+          "label": "privilege_escalation",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0146",
+          "origin": "handcrafted",
+          "raw": "sudo: www-data : user NOT in sudoers ; TTY=pts/0 ; COMMAND=/bin/bash",
+          "label": "privilege_escalation",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0149",
+          "origin": "handcrafted",
+          "raw": "EventID=4625 An account failed to log on. Account=administrator Source=203.0.113.60",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0150",
+          "origin": "handcrafted",
+          "raw": "EventID=4625 An account failed to log on. Account=administrator Source=203.0.113.60",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0151",
+          "origin": "handcrafted",
+          "raw": "EventID=4625 An account failed to log on. Account=administrator Source=203.0.113.60",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0152",
+          "origin": "handcrafted",
+          "raw": "EventID=4625 An account failed to log on. Account=administrator Source=203.0.113.60",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0153",
+          "origin": "handcrafted",
+          "raw": "EventID=4625 An account failed to log on. Account=administrator Source=203.0.113.60",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0154",
+          "origin": "handcrafted",
+          "raw": "EventID=4625 An account failed to log on. Account=administrator Source=203.0.113.60",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0155",
+          "origin": "handcrafted",
+          "raw": "sshd[812]: Failed password for root from 203.0.113.61 port 40100 ssh2",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0156",
+          "origin": "handcrafted",
+          "raw": "sshd[812]: Failed password for root from 203.0.113.61 port 40101 ssh2",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0157",
+          "origin": "handcrafted",
+          "raw": "sshd[812]: Failed password for root from 203.0.113.61 port 40102 ssh2",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0158",
+          "origin": "handcrafted",
+          "raw": "sshd[812]: Failed password for root from 203.0.113.61 port 40103 ssh2",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0159",
+          "origin": "handcrafted",
+          "raw": "sshd[812]: Failed password for root from 203.0.113.61 port 40104 ssh2",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0160",
+          "origin": "handcrafted",
+          "raw": "sshd[812]: Failed password for root from 203.0.113.61 port 40105 ssh2",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0162",
+          "origin": "handcrafted",
+          "raw": "SELECT * FROM members rows=5200 client=203.0.113.77",
+          "label": "data_exfiltration",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0163",
+          "origin": "handcrafted",
+          "raw": "s3 GetObject x 1840 objects (2.1 GB) bucket=aegis-student-docs by key AKIA...XYZ from 203.0.113.77",
+          "label": "data_exfiltration",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0175",
+          "origin": "handcrafted",
+          "raw": "Security group sg-0a1 rule removed: ingress 0.0.0.0/0 tcp 3389",
+          "label": "benign",
+          "predicted": "misconfiguration"
+        },
+        {
+          "event_id": "eval-0178",
+          "origin": "handcrafted",
+          "raw": "GET /help/download all course notes 200",
+          "label": "benign",
+          "predicted": "data_exfiltration"
+        }
+      ]
+    },
+    "chain": {
+      "per_category": {
+        "benign": {
+          "precision": 0.6611570247933884,
+          "recall": 0.975609756097561,
+          "f1": 0.7881773399014778,
+          "support": 82,
+          "predicted": 121
+        },
+        "brute_force": {
+          "precision": 1.0,
+          "recall": 0.391304347826087,
+          "f1": 0.5625,
+          "support": 46,
+          "predicted": 18
+        },
+        "sql_injection": {
+          "precision": 1.0,
+          "recall": 0.7142857142857143,
+          "f1": 0.8333333333333333,
+          "support": 14,
+          "predicted": 10
+        },
+        "xss": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 5,
+          "predicted": 5
+        },
+        "port_scan": {
+          "precision": 1.0,
+          "recall": 0.6,
+          "f1": 0.7499999999999999,
+          "support": 5,
+          "predicted": 3
+        },
+        "privilege_escalation": {
+          "precision": 1.0,
+          "recall": 0.9,
+          "f1": 0.9473684210526316,
+          "support": 10,
+          "predicted": 9
+        },
+        "data_exfiltration": {
+          "precision": 0.8571428571428571,
+          "recall": 0.5454545454545454,
+          "f1": 0.6666666666666665,
+          "support": 11,
+          "predicted": 7
+        },
+        "misconfiguration": {
+          "precision": 0.8,
+          "recall": 0.8,
+          "f1": 0.8000000000000002,
+          "support": 5,
+          "predicted": 5
+        }
+      },
+      "accuracy": 0.7584269662921348,
+      "macro_f1": 0.7935057201192636,
+      "detection_rate": 0.5729166666666666,
+      "false_alarm_rate": 0.024390243902439025,
+      "no_answer": 0,
+      "mistakes": [
+        {
+          "event_id": "eval-0065",
+          "origin": "lab",
+          "raw": "POST /login 401 user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0066",
+          "origin": "lab",
+          "raw": "login fail user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0067",
+          "origin": "lab",
+          "raw": "POST /login 401 user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0068",
+          "origin": "lab",
+          "raw": "login fail user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0069",
+          "origin": "lab",
+          "raw": "POST /login 401 user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0070",
+          "origin": "lab",
+          "raw": "login fail user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0071",
+          "origin": "lab",
+          "raw": "POST /login 401 user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0072",
+          "origin": "lab",
+          "raw": "login fail user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0074",
+          "origin": "lab",
+          "raw": "login fail user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0076",
+          "origin": "lab",
+          "raw": "login fail user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0078",
+          "origin": "lab",
+          "raw": "login fail user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0080",
+          "origin": "lab",
+          "raw": "login fail user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0082",
+          "origin": "lab",
+          "raw": "login fail user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0084",
+          "origin": "lab",
+          "raw": "login fail user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0086",
+          "origin": "lab",
+          "raw": "login fail user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0088",
+          "origin": "lab",
+          "raw": "login fail user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0095",
+          "origin": "lab",
+          "raw": "SELECT rows=0 q='1 AND 1=1'",
+          "label": "sql_injection",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0096",
+          "origin": "lab",
+          "raw": "SELECT rows=0 q=\"admin' #\"",
+          "label": "sql_injection",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0098",
+          "origin": "lab",
+          "raw": "SELECT rows=0 q=\"' uNiOn/**/SeLeCt null,version()--\"",
+          "label": "sql_injection",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0099",
+          "origin": "lab",
+          "raw": "SELECT rows=0 q=\"x' AND extractvalue(1,concat(0x7e,database()))--\"",
+          "label": "sql_injection",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0106",
+          "origin": "lab",
+          "raw": "SELECT rows=40 q='SELECT * FROM members'",
+          "label": "data_exfiltration",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0108",
+          "origin": "lab",
+          "raw": "SELECT rows=40 q='SELECT * FROM members'",
+          "label": "data_exfiltration",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0110",
+          "origin": "lab",
+          "raw": "SELECT rows=40 q='SELECT * FROM members'",
+          "label": "data_exfiltration",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0112",
+          "origin": "lab",
+          "raw": "SELECT rows=40 q='SELECT * FROM members'",
+          "label": "data_exfiltration",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0120",
+          "origin": "replay",
+          "raw": "POST /login 401 user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0121",
+          "origin": "replay",
+          "raw": "POST /login 401 user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0122",
+          "origin": "replay",
+          "raw": "POST /login 401 user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0123",
+          "origin": "replay",
+          "raw": "POST /login 401 user=admin",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0137",
+          "origin": "handcrafted",
+          "raw": "firewall: 214 connection attempts to 97 distinct ports from 203.0.113.9 in 10s",
+          "label": "port_scan",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0138",
+          "origin": "handcrafted",
+          "raw": "kernel: TCP SYN to closed ports 21,22,23,25,80,110,139,443,445,3389 from 203.0.113.9",
+          "label": "port_scan",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0143",
+          "origin": "handcrafted",
+          "raw": "blob container 'reports' access level changed to public (anonymous read)",
+          "label": "misconfiguration",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0146",
+          "origin": "handcrafted",
+          "raw": "sudo: www-data : user NOT in sudoers ; TTY=pts/0 ; COMMAND=/bin/bash",
+          "label": "privilege_escalation",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0149",
+          "origin": "handcrafted",
+          "raw": "EventID=4625 An account failed to log on. Account=administrator Source=203.0.113.60",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0150",
+          "origin": "handcrafted",
+          "raw": "EventID=4625 An account failed to log on. Account=administrator Source=203.0.113.60",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0151",
+          "origin": "handcrafted",
+          "raw": "EventID=4625 An account failed to log on. Account=administrator Source=203.0.113.60",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0152",
+          "origin": "handcrafted",
+          "raw": "EventID=4625 An account failed to log on. Account=administrator Source=203.0.113.60",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0155",
+          "origin": "handcrafted",
+          "raw": "sshd[812]: Failed password for root from 203.0.113.61 port 40100 ssh2",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0156",
+          "origin": "handcrafted",
+          "raw": "sshd[812]: Failed password for root from 203.0.113.61 port 40101 ssh2",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0157",
+          "origin": "handcrafted",
+          "raw": "sshd[812]: Failed password for root from 203.0.113.61 port 40102 ssh2",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0158",
+          "origin": "handcrafted",
+          "raw": "sshd[812]: Failed password for root from 203.0.113.61 port 40103 ssh2",
+          "label": "brute_force",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0163",
+          "origin": "handcrafted",
+          "raw": "s3 GetObject x 1840 objects (2.1 GB) bucket=aegis-student-docs by key AKIA...XYZ from 203.0.113.77",
+          "label": "data_exfiltration",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0175",
+          "origin": "handcrafted",
+          "raw": "Security group sg-0a1 rule removed: ingress 0.0.0.0/0 tcp 3389",
+          "label": "benign",
+          "predicted": "misconfiguration"
+        },
+        {
+          "event_id": "eval-0178",
+          "origin": "handcrafted",
+          "raw": "GET /help/download all course notes 200",
+          "label": "benign",
+          "predicted": "data_exfiltration"
+        }
+      ]
+    }
+  }
+}

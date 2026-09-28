@@ -7,6 +7,7 @@ every change and restored on startup (state.py), so a restart keeps them. POST /
 from __future__ import annotations
 
 import copy
+import json
 import math
 import threading
 import time
@@ -28,11 +29,13 @@ from .agents import (
     SpineNet,
     Watchdog,
 )
+from . import firewall
 from .audit import AuditLog
 from .classifier import Classification, default_chain
 from .clock import DemoClock, fmt_demo_hours
-from .config import Settings
+from .config import Settings, sign
 from .jev_client import JevClient
+from .netlogs import enrich
 from .responders import BlocklistResponder, Responders, SimulatedResponder
 from .risk import SEVERITY, band, band_rank, inaction_penalty, risk_index
 from .rules import RulesEngine
@@ -46,7 +49,7 @@ TITLES = {
     "brute_force": "Brute force",
     "sql_injection": "SQL injection",
     "xss": "Cross-site scripting",
-    "port_scan": "Port scan",
+    "port_scan": "Port or web scan",
     "privilege_escalation": "Shell spawned / privilege escalation",
     "data_exfiltration": "Bulk data export",
     "misconfiguration": "Misconfiguration",
@@ -89,12 +92,14 @@ class Saguaro(Agent):
         self.settings = s = settings or Settings()
         self.clock = DemoClock(s.demo_speed)
         self.audit = AuditLog(s.db_path)
-        self.rules = RulesEngine(s.brute_force_count, s.brute_force_window_s, s.export_rows_threshold)
+        self.rules = RulesEngine(s.brute_force_count, s.brute_force_window_s, s.export_rows_threshold,
+                                 ssh_count=s.ssh_brute_force_count, ssh_window_s=s.ssh_brute_force_window_s,
+                                 scan_4xx_count=s.web_scan_4xx_count, scan_window_s=s.web_scan_window_s)
         self.jev = JevClient(s.jev_timeout_s)
         # The three parts: events arrive from collectors via POST /events, the classifier
         # chain labels them, and the responders carry out approved containment.
         self.classifier, self.jev_step = default_chain(self.rules, self.jev)
-        self.blocklist_responder = BlocklistResponder()
+        self.blocklist_responder = firewall.from_settings(s.firewall, s.firewall_enforce, s.protected_ips)
         self.responders = Responders(self.blocklist_responder, SimulatedResponder())
         self.root = Root(self.classifier)
         self.reservoir = Reservoir(self.classifier)
@@ -106,7 +111,8 @@ class Saguaro(Agent):
         self.scribe = Scribe(self.audit, self.clock)
         self.helpdesk = HelpDesk()
         self.lock = threading.RLock()
-        self.store = StateStore(self.audit)
+        self._protection_file = s.db_path.parent / "protection.json"
+        self._load_protection()
         self._init_state()
         self._configure()
         self.scribe.record(self.name, "core_started", self._config_summary())
@@ -150,6 +156,7 @@ class Saguaro(Agent):
             "ttl_hours": s.ttl_hours,
             "on_duty": s.on_duty,
             "jev": self.jev.status,
+            "block_ip_enforcement": self.blocklist_responder.enforcement,
         }
 
     def layer_agents(self) -> list[LayerAgent]:
@@ -181,7 +188,7 @@ class Saguaro(Agent):
         # Cap the total time one request may spend waiting on Jev; the rest use the fallback.
         self.jev_step.deadline = time.monotonic() + self.settings.jev_budget_s
         for raw_ev in events:
-            ev = dict(raw_ev)
+            ev = enrich(dict(raw_ev))
             now = self.clock.now()
             ev["event_id"] = str(ev.get("event_id") or f"evt-core-{uuid.uuid4().hex[:12]}")
             ev["host"] = ev.get("host") or "unknown"
@@ -304,6 +311,7 @@ class Saguaro(Agent):
             "timeline": [],
             "decisions": [],
             "_opened_ts": now,
+            "_last_event_ts": now,
             "_acked_ts": None,
             "_reminders": 0,
             "_sla_flag": False,
@@ -340,6 +348,7 @@ class Saguaro(Agent):
             inc["explanation"] += " The classifier is uncertain: needs human review (never auto-contained)."
 
     def _attach(self, inc: dict[str, Any], ev: dict[str, Any], cls: Classification, needs_review: bool, now: float) -> None:
+        inc["_last_event_ts"] = now
         for eid in [*cls.related_event_ids, ev["event_id"]]:
             if eid not in inc["event_ids"]:
                 inc["event_ids"].append(eid)
@@ -358,13 +367,15 @@ class Saguaro(Agent):
             inc["malicious_probability"] = max(inc["malicious_probability"], cls.malicious)
             inc["_autonomous_denied"] = False
             changed = True
+        if cls.reason.startswith("Cactus spine:") and not str(inc.get("classification_reason")).startswith("Cactus spine:"):
+            inc["classification_reason"] = cls.reason  # a decoy touch is the strongest evidence: lead with it
         if changed:
             inc["points"] = round(inc["base_points"] * inc["ai_confidence"] * inc["asset_criticality"], 1)
         self._describe(inc, self._agent(inc["analyzed_by"]))
 
     # ------------------------------------------------------------- risk engine
     def _refresh_incident(self, inc: dict[str, Any], now: float) -> None:
-        end = inc["_acked_ts"] if inc["_acked_ts"] is not None else now
+        end = inc["_acked_ts"] if inc["_acked_ts"] is not None else (inc.get("_closed_ts") or now)
         hours = self.clock.demo_hours(inc["_opened_ts"], end)
         inc["time_unaddressed_hours"] = round(hours, 2)
         inc["inaction_penalty"] = inaction_penalty(hours, self.settings.penalty_per_hour, self.settings.penalty_cap)
@@ -399,6 +410,7 @@ class Saguaro(Agent):
 
     def _evaluate(self, now: float) -> None:
         self._expire_actions(now)
+        self._auto_close_quiet(now)
         r = self._compute(now)
         self._sla_reminders(now, r)
         self._notify_open_incidents(now, r)
@@ -420,6 +432,17 @@ class Saguaro(Agent):
                 if i["status"] == "open" and not i["acked"] and not i["needs_review"]
                 and not i["_autonomous_denied"] and not self._active_actions(i, now)
             ]
+            if self.monitor_only:
+                for inc in candidates:
+                    if inc.get("_monitor_skipped"):
+                        continue
+                    inc["_monitor_skipped"] = True
+                    self.scribe.record(self.name, "containment_skipped", {
+                        "incident": inc["id"], "risk_index": r["risk_index"], "threshold": self.settings.threshold,
+                        "reason": "monitor-only mode", "would_apply": inc["recommended_action"]})
+                    self._timeline(inc, now, "monitor_only", f"Monitor-only: would have contained "
+                                                             f"({inc['recommended_action']}), nothing applied")
+                candidates = []
             for inc in candidates:
                 self._contain(inc, "autonomous", self.needle.name, now, r["risk_index"])
             if candidates:
@@ -429,7 +452,85 @@ class Saguaro(Agent):
             self._above_threshold = False
         self._save()
 
+    # -------------------------------------------------------------- protection
+    def _load_protection(self) -> None:
+        """Start in the mode the operator last chose (kept across restarts and demo resets)."""
+        saved: dict[str, Any] = {}
+        try:
+            saved = json.loads(self._protection_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            pass
+        env = self.settings.monitor_only
+        if env is not None and env.strip() != "":
+            self.monitor_only = env.strip().lower() in ("1", "true", "yes", "on")
+            saved = {"changed_by": "CACTAI_MONITOR_ONLY", "reason": "set in the environment"}
+        else:
+            self.monitor_only = bool(saved.get("monitor_only", False))
+        self._protection_meta = {k: saved.get(k) for k in ("changed_at", "changed_by", "reason")}
+
+    def protection(self) -> dict[str, Any]:
+        with self.lock:
+            now = self.clock.now()
+            return {
+                "protection": "off" if self.monitor_only else "on",
+                "monitor_only": self.monitor_only,
+                **self._protection_meta,
+                "active_actions": sorted(a["action_id"] for a in self.actions if self._is_active(a, now)),
+            }
+
+    def set_protection(self, on: bool, operator: str, reason: str | None) -> dict[str, Any]:
+        """The operator switch. Off = monitor-only: collect, classify and score, but apply no containment."""
+        reason = (reason or "").strip()
+        with self.lock:
+            if not on and not reason:
+                raise BadRequestError("turning protection off requires a reason")
+            if self.monitor_only == (not on):
+                return self.protection()
+            now = self.clock.now()
+            s = self.settings
+            self.monitor_only = not on
+            self._protection_meta = {"changed_at": self.clock.iso(now), "changed_by": operator, "reason": reason or None}
+            try:
+                self._protection_file.parent.mkdir(parents=True, exist_ok=True)
+                self._protection_file.write_text(json.dumps({"monitor_only": self.monitor_only, **self._protection_meta},
+                                                            indent=2) + "\n", encoding="utf-8")
+            except OSError:
+                pass  # still switched for this run; the audit record below is the proof
+            still = [a["action_id"] for a in self.actions if self._is_active(a, now)]
+            self.scribe.record(self.name, "protection_changed", {
+                "protection": "on" if on else "off", "monitor_only": self.monitor_only, "operator": operator,
+                "reason": reason or None, "active_actions_left_in_force": still})
+            open_ids = [i["id"] for i in self.incidents.values() if i["status"] in RISK_STATUSES]
+            for inc in self.incidents.values():
+                if inc["status"] in RISK_STATUSES:
+                    inc["_monitor_skipped"] = False
+                    self._timeline(inc, now, "protection", f"Protection turned {'on' if on else 'off'} by {operator}"
+                                                           + (f": {reason}" if reason else ""))
+            if on:
+                self._notify(now, "protection_on", None, [s.on_duty, s.it_manager], "Protection is back on",
+                             f"{operator} turned CactAI protection back on. Incidents over the threshold "
+                             f"({len(open_ids)} open) can be contained again.", [])
+            else:
+                self._notify(now, "protection_off", None, [s.on_duty, s.it_manager, s.cxo],
+                             "Protection is off: monitor-only mode",
+                             f"{operator} turned CactAI protection off: {reason}\nCactAI keeps collecting, classifying "
+                             f"and scoring, but applies no containment, autonomous or approved, until it is turned "
+                             f"back on. {len(still)} action(s) already in force stay until they expire or are rolled back.",
+                             [])
+            self._evaluate(now)
+        return self.protection()
+
+    def _refuse_if_monitor_only(self, what: str) -> None:
+        if self.monitor_only:
+            raise ConflictError(f"Protection is off (monitor-only mode), so {what} is not applied. "
+                                f"Turn protection back on first.")
+
     # ----------------------------------------------------------- notifications
+    def _report_url(self, incident_id: str) -> str:
+        """Signed, so the link in a Telegram alert opens in a browser without the API token."""
+        path = f"/reports/{incident_id}.md"
+        return f"{self.settings.public_url}{path}?sig={sign(self.settings.api_token, path)}"
+
     def _notify(self, now: float, kind: str, incident_id: str | None, recipients: list[str], title: str,
                 text: str, buttons: list[dict[str, str]]) -> dict[str, Any]:
         nid = f"ntf-{self._next_notif:04d}"
@@ -445,7 +546,7 @@ class Saguaro(Agent):
             "risk_index": r["risk_index"],
             "band": r["band"],
             "buttons": buttons,
-            "report_url": f"{self.settings.public_url}/reports/{incident_id}.md" if incident_id else None,
+            "report_url": self._report_url(incident_id) if incident_id else None,
             "created_at": self.clock.iso(now),
             "delivered": False,
             "delivered_at": None,
@@ -498,7 +599,7 @@ class Saguaro(Agent):
                              f"Risk CRITICAL ({r['risk_index']}/100): IT manager + CXO",
                              f"Risk index is {r['risk_index']}/100 (critical, threshold {s.threshold}). "
                              f"Open incidents: {', '.join(open_ids) or 'none'}. Autonomous temporary containment "
-                             f"is engaged for unacknowledged incidents; negligence reports are available.", [])
+                             f"is engaged for unacknowledged incidents; evidence reports are available.", [])
         self._last_band = new
 
     def _sla_reminders(self, now: float, r: dict[str, Any]) -> None:
@@ -636,7 +737,7 @@ class Saguaro(Agent):
                          f"{inc['id']}: autonomous containment engaged",
                          f"\U0001f335 CactAI autonomous override on {inc['id']} (risk {risk_idx}/100 >= {s.threshold}, "
                          f"no acknowledgement). Approved by Needle. Applied for {s.ttl_hours:g} h: {summary}.\n"
-                         f"Negligence report: {s.public_url}/reports/{inc['id']}.md", BUTTONS_AFTER_ACTION)
+                         f"Evidence report: {s.public_url}/reports/{inc['id']}.md", BUTTONS_AFTER_ACTION)
         else:
             self._notify(now, "operator_action", inc["id"], [s.on_duty],
                          f"{inc['id']}: hotpatch applied by {approver}",
@@ -662,71 +763,31 @@ class Saguaro(Agent):
                                      f"The temporary hotpatch for {inc['id']} expired after {a['ttl_hours']:g} h. "
                                      f"Make it permanent or leave it expired.", BUTTONS_AFTER_ACTION)
 
-    # ------------------------------------------------------------ persistence
-    def _encode_incident(self, inc: dict[str, Any]) -> dict[str, Any]:
-        """Incident as saved: actions by id (they are saved in their own table). Cyanide adds its plan."""
-        return {**inc, "actions": [a["action_id"] for a in inc["actions"]]}
-
-    def _decode_incident(self, data: dict[str, Any]) -> dict[str, Any]:
-        return data
-
-    def _save(self) -> None:
-        """Writes whatever changed since the last save. Called at the end of every state change."""
-        linked = {eid for inc in self.incidents.values() for eid in inc["event_ids"]}
-        self.store.save({
-            "incidents": {iid: self._encode_incident(inc) for iid, inc in self.incidents.items()},
-            "actions": {a["action_id"]: a for a in self.actions},
-            "notifications": {n["id"]: n for n in self.notifications},
-            # Only events behind an incident: the chat and Cyanide show them as evidence.
-            "events": {eid: self.events[eid] for eid in linked if eid in self.events},
-            "meta": {"counters": {
-                "next_incident": self._next_incident, "next_action": self._next_action,
-                "next_notif": self._next_notif, "last_band": self._last_band,
-                "above_threshold": self._above_threshold, "started_ts": self._started_ts,
-                "clock_offset": self.clock._offset,
-            }},
-        })
-
-    def _restore(self) -> None:
-        """Loads the saved state (if any), puts blocks still in force back in place, and rolls back
-        and audits the ones whose TTL ran out while the core was down."""
-        saved = self.store.load()
-        if not saved["incidents"] and not saved["actions"]:
+    def _auto_close_quiet(self, now: float) -> None:
+        """Resolve scan / brute-force incidents that went quiet, so a public server's background noise
+        does not pile up forever. Never touches an incident with containment in force."""
+        quiet_s = self.settings.auto_close_quiet_min * 60.0
+        if quiet_s <= 0:
             return
-        with self.lock:
-            c = saved["meta"].get("counters", {})
-            self.clock._offset = float(c.get("clock_offset", 0.0))
-            self._next_incident = max(self._next_incident, int(c.get("next_incident", 0)))
-            self._next_action = int(c.get("next_action", 1))
-            self._next_notif = int(c.get("next_notif", 1))
-            self._last_band = c.get("last_band", "green")
-            self._above_threshold = bool(c.get("above_threshold", False))
-            self._started_ts = float(c.get("started_ts", self._started_ts))
-            self.events = dict(sorted(saved["events"].items(), key=lambda kv: kv[0]))
-            self.actions = sorted(saved["actions"].values(), key=lambda a: a["action_id"])
-            by_id = {a["action_id"]: a for a in self.actions}
-            self.notifications = sorted(saved["notifications"].values(), key=lambda n: n["id"])
-            self.incidents = {}
-            for iid in sorted(saved["incidents"], key=lambda x: saved["incidents"][x]["_opened_ts"]):
-                inc = self._decode_incident(saved["incidents"][iid])
-                inc["actions"] = [by_id[x] for x in inc["actions"] if x in by_id]
-                self.incidents[iid] = inc
-            # The responders start empty: put back everything still in force.
-            in_force = [a for a in self.actions if a["status"] in ("active", "permanent")]
-            for a in in_force:
-                self.responders.apply(a)
-            now = self.clock.now()
-            expiring = [a["action_id"] for a in in_force if a["status"] == "active" and a["_expires_ts"] <= now]
-            self.scribe.record(self.name, "state_restored", {
-                "incidents": len(self.incidents),
-                "open_incidents": [i["id"] for i in self.incidents.values() if i["status"] in RISK_STATUSES],
-                "actions_in_force": [a["action_id"] for a in in_force if a["action_id"] not in expiring],
-                "actions_expired_while_down": expiring,
-                "pending_notifications": sum(1 for n in self.notifications if not n["delivered"]),
-            })
-            self._expire_actions(now, while_down=True)
-            self._evaluate(now)
-            self._record_history(now)
+        for inc in self.incidents.values():
+            if (inc["status"] not in RISK_STATUSES or inc["category"] not in self.settings.auto_close_categories
+                    or self._active_actions(inc, now)):
+                continue
+            last = inc.get("_last_event_ts") or inc["_opened_ts"]
+            if now - last < quiet_s:
+                continue
+            minutes = int((now - last) // 60)
+            was_acked = inc["acked"]
+            inc["status"] = "resolved"
+            inc["resolved_by"] = "auto-close"
+            inc["_closed_ts"] = now
+            self._refresh_incident(inc, now)
+            note = "" if was_acked else " It was never acknowledged; the inaction record stays in the report."
+            self._timeline(inc, now, "auto_closed", f"Closed automatically: no new events for {minutes} min.{note}")
+            self.scribe.record(self.name, "incident_auto_closed", {
+                "incident": inc["id"], "category": inc["category"], "src_ip": inc.get("src_ip"),
+                "quiet_minutes": minutes, "acked": was_acked, "sla_breached": inc["sla_breached"],
+                "events": len(inc["event_ids"])})
 
     # --------------------------------------------------------- operator verbs
     def _get(self, iid: str) -> dict[str, Any]:
@@ -776,6 +837,8 @@ class Saguaro(Agent):
                                                            "justification": justification})
                 self._timeline(inc, now, "decision", f"Rejected by {operator}: {justification}", -inc["points"])
             elif decision == "approve":
+                if not self._active_actions(inc, now):
+                    self._refuse_if_monitor_only("an approved hotpatch")
                 self._set_acked(inc, operator, "decision", now)
                 inc["decisions"].append({"operator": operator, "decision": "approve", "justification": justification,
                                          "at": self.clock.iso(now)})
@@ -821,6 +884,8 @@ class Saguaro(Agent):
             targets = [a for a in inc["actions"] if a["status"] in ("active", "expired")]
             if not targets:
                 raise ConflictError(f"{iid} has no active or expired hotpatch to make permanent")
+            if any(a["status"] == "expired" for a in targets):
+                self._refuse_if_monitor_only("putting an expired hotpatch back in force")
             self._set_acked(inc, operator, "permanent", now)
             for a in targets:
                 if a["status"] == "expired":
@@ -877,6 +942,7 @@ class Saguaro(Agent):
                 "open_incidents": [i["id"] for i in self.incidents.values() if i["status"] in RISK_STATUSES],
                 "needs_review": [i["id"] for i in self.incidents.values() if i["needs_review"] and i["status"] in RISK_STATUSES],
                 "contained_incidents": [i["id"] for i in self.incidents.values() if i["status"] == "contained"],
+                "monitor_only": self.monitor_only,
                 "demo_speed": self.settings.demo_speed,
                 "demo_hours_elapsed": round(self.clock.demo_hours(self._started_ts, now), 2),
                 "timestamp": self.clock.iso(now),

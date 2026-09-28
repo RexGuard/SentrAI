@@ -282,10 +282,10 @@ def ethics():
     save(fig, "cactus_ethics.png")
 
 
-# ---- 5. negligence report -------------------------------------------------
+# ---- 5. evidence report ---------------------------------------------------
 def report():
     fig = canvas()
-    fig.text(0.05, 0.9, "Executive negligence report", fontsize=46, weight="bold")
+    fig.text(0.05, 0.9, "Security evidence report", fontsize=46, weight="bold")
     fig.text(0.05, 0.845, "Incident RSK-2026-081  ·  generated automatically after containment",
              fontsize=21, color=MUTED)
     # SAMPLE badge
@@ -338,7 +338,7 @@ def report():
     fig.add_artist(FancyBboxPatch((0.765, cy - 0.035), 0.185, 0.065, transform=fig.transFigure,
                                   boxstyle="round,pad=0,rounding_size=0.008", fc=GREEN_D, ec="none"))
     fig.text(0.8575, cy, "✓ chain valid", fontsize=22, weight="bold", color=TEXT, ha="center", va="center")
-    save(fig, "negligence_report_mock.png")
+    save(fig, "evidence_report_mock.png")
 
 
 # ---- 6. title / end cards -------------------------------------------------

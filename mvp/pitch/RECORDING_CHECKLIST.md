@@ -41,7 +41,7 @@ Keep a second terminal tab for services (started by `run_demo.ps1`) but do **not
 
 Extra browser tabs, opened in advance, in this order:
 1. Dashboard `http://127.0.0.1:8501`
-2. Negligence report `http://127.0.0.1:8000/reports/<incident_id>.md` (or the dashboard's report view)
+2. Evidence report `http://127.0.0.1:8000/reports/<incident_id>.md` (or the dashboard's report view)
 3. Audit log `http://127.0.0.1:8000/audit` (shows `chain_valid: true`)
 
 ## 4. Order of commands during the take
