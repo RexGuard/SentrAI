@@ -76,7 +76,7 @@ def create_app(start_polling: bool = False, core_url: str | None = None,
         # The user under contention is whatever login/query is being attempted.
         user = request.form.get("user") or request.args.get("user")
         if blocklist.is_blocked(ip, user):
-            logger.log_access(ip, request.method, request.path, 403, user=user)
+            logger.log_access(ip, request.method, request.path, 403, user=user, blocked=True)
             return render_template("blocked.html", ip=ip), 403
         return None
 

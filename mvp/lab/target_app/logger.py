@@ -35,10 +35,12 @@ def _write(filename: str, record: dict[str, Any]) -> None:
 
 
 def log_access(src_ip: str, method: str, path_: str, status: int,
-               user: str | None = None, pii: bool = False) -> None:
+               user: str | None = None, pii: bool = False, blocked: bool = False) -> None:
     raw = f"{method} {path_} {status}"
     if user:
         raw += f" user={user}"
+    if blocked:  # refused by containment: core rules treat it as benign, not as a new attack
+        raw += " blocked by CactAI"
     _write(paths.ACCESS_LOG, {
         "ts": now_iso(),
         "src_ip": src_ip,

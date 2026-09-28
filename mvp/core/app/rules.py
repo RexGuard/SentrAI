@@ -67,6 +67,7 @@ SPINE_KINDS: dict[str, tuple[str, str]] = {
     "honeytoken_row": ("data_exfiltration", "bait database rows were read (no legitimate query returns them)"),
 }
 EXPORT = re.compile(r"/export\b", re.I)
+REFUSED = re.compile(r"/export\S*\s+403\b", re.I)
 ROWS = re.compile(r"\brows?\s*[=:]\s*(\d+)", re.I)
 BULK_DB = re.compile(r"\b(copy\s+\w+\s+to|select\s+\*\s+from\s+members)\b", re.I)
 BENIGN_FAST = re.compile(r"^(GET|HEAD)\s+/\S*\s+[23]\d\d\b|^POST\s+/login\S*\s+(200|302)\b", re.I)
@@ -120,6 +121,8 @@ class RulesEngine:
         for rx in PRIV_ESC:
             if rx.search(text):
                 return RuleHit("privilege_escalation", "web/app process spawned a shell (simulated endpoint, nothing executed)")
+        if REFUSED.search(text):
+            return RuleHit("benign", "export request was refused (403); no data left")
         if EXPORT.search(text) or BULK_DB.search(text):
             m = ROWS.search(text)
             rows = int(m.group(1)) if m else None
