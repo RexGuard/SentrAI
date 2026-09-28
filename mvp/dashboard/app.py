@@ -351,7 +351,7 @@ def decision_controls(inc: dict) -> None:
 
 # ------------------------------------------------------------------ pages
 
-CONFIG_ICONS = {"collector": "input", "classifier": "category", "responder": "shield", "notifications": "notifications",
+CONFIG_ICONS = {"preset": "verified_user", "collector": "input", "classifier": "category", "responder": "shield", "notifications": "notifications",
                 "ai": "auto_awesome"}
 
 
@@ -373,8 +373,14 @@ def page_config() -> None:
             if s.key == "ai":
                 values |= ai_settings(current)
                 continue
+            if s.key == "preset":
+                values |= preset_settings(current)
+                continue
+            fields = [f for f in s.fields if f.env not in cfg.PRESET_FIELDS]  # those live under the preset
+            if len(fields) < len(s.fields):
+                st.caption("Detection and response values are set by the security preset above.")
             cols = st.columns(2)
-            for n, f in enumerate(s.fields):
+            for n, f in enumerate(fields):
                 values[f.env] = cols[n % 2].text_input(
                     f.prompt, value=current[f.env], key=f"cfg_{f.env}", help=f"Environment variable {f.env}",
                     type="password" if f.secret else "default").strip()
@@ -390,6 +396,45 @@ def page_config() -> None:
             else:
                 st.success(f"Saved to {path}. Cyanide switched to the new AI settings ({ai.get('chat')}). "
                            "Restart the demo (stop_demo.ps1, then run_demo.ps1) for the other settings.")
+
+
+def preset_settings(current: dict[str, str]) -> dict[str, str]:
+    """The security preset: pick one, see what it sets, and open Advanced to change single values."""
+    keys = {env: f"cfg_{env}" for env in cfg.PRESET_FIELDS}
+    if current.get(cfg.PRESET_ENV) not in cfg.PRESETS:
+        current[cfg.PRESET_ENV] = cfg.DEFAULT_PRESET
+    st.session_state.setdefault(f"cfg_{cfg.PRESET_ENV}", current[cfg.PRESET_ENV])
+    for env, key in keys.items():  # widgets take their start value from session state, so a preset can fill them
+        st.session_state.setdefault(key, current[env])
+
+    def fill() -> None:
+        for env, value in cfg.preset_values(st.session_state[f"cfg_{cfg.PRESET_ENV}"]).items():
+            st.session_state[keys[env]] = value
+
+    name = st.segmented_control("Preset", tuple(cfg.PRESETS), key=f"cfg_{cfg.PRESET_ENV}", required=True,
+                                format_func=lambda p: cfg.PRESETS[p].label, on_change=fill,
+                                help="Environment variable CACTAI_PRESET. Picking a preset replaces the values "
+                                     "under Advanced with the preset's own.")
+    st.caption(cfg.PRESETS[name].about)
+    values = {cfg.PRESET_ENV: name} | {env: st.session_state[key].strip() for env, key in keys.items()}
+    changed = cfg.overrides(values)
+    base = cfg.preset_values(name)
+    chips = [pill(text, sh.BAND_COLORS["amber"] if set(envs) & set(changed) else sh.BAND_COLORS["green"])
+             for text, envs in cfg.describe(values)]
+    st.markdown(f'<div class="chips">{"".join(chips)}</div>', unsafe_allow_html=True)
+    if changed:
+        st.caption(f"{cfg.PRESETS[name].label} with {len(changed)} value{'s' if len(changed) > 1 else ''} "
+                   "changed by hand (shown in amber).")
+
+    with st.expander("Advanced: set each value yourself", icon=":material/tune:", expanded=bool(changed)):
+        cols = st.columns(2)
+        for n, env in enumerate(cfg.PRESET_FIELDS):
+            f = cfg.FIELDS[env]
+            cols[n % 2].text_input(f.prompt, key=keys[env],
+                                   help=f"Environment variable {env}. {cfg.PRESETS[name].label} uses {base[env]}.")
+        st.button("Reset to preset", icon=":material/restart_alt:", on_click=fill, disabled=not changed,
+                  help=f"Put back the {cfg.PRESETS[name].label} values")
+    return values
 
 
 def ai_settings(current: dict[str, str]) -> dict[str, str]:
@@ -753,7 +798,9 @@ def page_classifier() -> None:
 
     with st.container(border=True):
         section("Rules in use", "change them on the Configuration page", "rule")
+        preset = cfg.PRESETS.get(os.environ.get(cfg.PRESET_ENV, cfg.DEFAULT_PRESET), cfg.PRESETS[cfg.DEFAULT_PRESET])
         st.markdown(
+            f"- Security preset: **{preset.label}**\n"
             f"- Brute force: **{os.environ.get('BRUTE_FORCE_COUNT', '5')}** failed logins within "
             f"**{os.environ.get('BRUTE_FORCE_WINDOW_S', '60')} s**\n"
             f"- Bulk exfiltration: **{os.environ.get('EXPORT_ROWS_THRESHOLD', '100')}** rows or more in one export\n"

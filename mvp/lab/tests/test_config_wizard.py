@@ -32,13 +32,14 @@ def test_answers_are_saved_per_part_and_loaded_as_env_defaults(config_file, monk
     for name in cfg.FIELDS:  # load() below must not leak into other tests
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("RISK_THRESHOLD", "90")  # explicit env var wins over the file
-    # collector: logs dir, then 5 more fields; classifier: brute-force count comes next
-    values = cfg.wizard(ask=scripted(["/var/log/portal", "", "", "", "", "", "3", "", "", "70"]),
+    # preset, "set each value yourself", collector: logs dir, then 5 more fields; classifier: brute-force count next
+    values = cfg.wizard(ask=scripted(["", "y", "/var/log/portal", "", "", "", "", "", "3", "", "", "70"]),
                         ask_secret=scripted([]), say=lambda _: None)
     cfg.save(values)
 
     saved = json.loads(config_file.read_text())
-    assert set(saved) == {"collector", "classifier", "responder", "notifications", "ai"}
+    assert set(saved) == {"preset", "collector", "classifier", "responder", "notifications", "ai"}
+    assert saved["preset"]["CACTAI_PRESET"] == "moderate"
     assert saved["collector"]["CACTAI_LAB_LOGS"] == "/var/log/portal"
     assert saved["classifier"]["BRUTE_FORCE_COUNT"] == "3"
     assert saved["responder"]["RISK_THRESHOLD"] == "70"
@@ -50,7 +51,7 @@ def test_answers_are_saved_per_part_and_loaded_as_env_defaults(config_file, monk
 
 def test_invalid_number_is_asked_again(config_file):
     said = []
-    answers = ["", "", "", "", "", "", "five", "5"]
+    answers = ["", "y", "", "", "", "", "", "", "five", "5"]
     values = cfg.wizard(ask=scripted(answers), ask_secret=scripted([]), say=said.append)
     assert values["BRUTE_FORCE_COUNT"] == "5"
     assert "    Please enter a number." in said
@@ -78,7 +79,8 @@ def test_new_machine_runs_wizard_only_when_interactive(config_file, monkeypatch)
 
 
 BEFORE_AI = [f for s in cfg.SECTIONS if s.key != "ai" for f in s.fields]
-PLAIN_BEFORE_AI = [""] * sum(not f.secret for f in BEFORE_AI)
+# Without "set each value yourself", the preset's fields are not asked; that question is asked once.
+PLAIN_BEFORE_AI = [""] * (sum(not f.secret and f.env not in cfg.PRESET_FIELDS for f in BEFORE_AI) + 1)
 SECRET_BEFORE_AI = [""] * sum(f.secret for f in BEFORE_AI)
 
 
@@ -119,3 +121,42 @@ def test_settings_saved_with_one_key_per_provider_keep_the_key_in_use(config_fil
     config_file.write_text(json.dumps({"ai": {"CACTAI_LLM_PROVIDER": "auto", "CACTAI_LLM_API_KEY": "c",
                                               "CACTAI_LLM_BASE_URL": "https://llm.example.com/v1"}}))
     assert cfg.read()["CACTAI_LLM_PROVIDER"] == "compatible"
+
+
+def test_default_preset_is_what_the_demo_uses():
+    assert cfg.preset_values(cfg.DEFAULT_PRESET) == {env: cfg.FIELDS[env].default for env in cfg.PRESET_FIELDS}
+    assert all(set(p.values) == set(cfg.PRESET_FIELDS) for p in cfg.PRESETS.values())
+    strict, moderate, balanced = (cfg.preset_values(n) for n in ("strict", "moderate", "balanced"))
+    assert int(strict["RISK_THRESHOLD"]) < int(moderate["RISK_THRESHOLD"]) < int(balanced["RISK_THRESHOLD"])
+
+
+def test_picking_a_preset_sets_its_values_without_asking_them(config_file):
+    said = []
+    values = cfg.wizard(ask=scripted(["1", "n"]), ask_secret=scripted([]), say=said.append)
+    assert values["CACTAI_PRESET"] == "strict"
+    assert {env: values[env] for env in cfg.PRESET_FIELDS} == cfg.preset_values("strict")
+    assert cfg.overrides(values) == {}
+    assert any(line.startswith("    1. Strict: ") for line in said)
+
+
+def test_advanced_changes_are_overrides_and_offered_again(config_file):
+    # Balanced, advanced, 6 collector fields, then brute force count 4 and Enter for the rest
+    values = cfg.wizard(ask=scripted(["3", "y", "", "", "", "", "", "", "4"]), ask_secret=scripted([]),
+                        say=lambda _: None)
+    assert values["RISK_THRESHOLD"] == cfg.preset_values("balanced")["RISK_THRESHOLD"]
+    assert cfg.overrides(values) == {"BRUTE_FORCE_COUNT": "4"}
+    cfg.save(values)
+
+    said = []
+    again = cfg.wizard(ask=scripted([]), ask_secret=scripted([]), say=said.append)  # Enter keeps everything
+    assert again["CACTAI_PRESET"] == "balanced" and cfg.overrides(again) == {"BRUTE_FORCE_COUNT": "4"}
+    assert "    You changed 1 of these by hand before: BRUTE_FORCE_COUNT." in said
+
+    fresh = cfg.wizard(ask=scripted(["", "n"]), ask_secret=scripted([]), say=lambda _: None)
+    assert cfg.overrides(fresh) == {}  # "no" goes back to the plain preset
+
+
+def test_settings_saved_before_presets_count_as_moderate_with_overrides(config_file):
+    config_file.write_text(json.dumps({"responder": {"RISK_THRESHOLD": "70", "SLA_HOURS": "2"}}))
+    values = cfg.read()
+    assert cfg.overrides(values) == {"RISK_THRESHOLD": "70"}
