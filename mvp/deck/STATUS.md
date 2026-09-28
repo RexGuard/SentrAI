@@ -1,20 +1,20 @@
-# Deck build status (stopped early on request)
+# Deck build status
 
-## Done
-- `.venv/` created (Python 3.12) with python-pptx, matplotlib, pymupdf installed.
-- `architecture.png` rendered from `../pitch/architecture.svg` via headless Edge (2800x1800, checked visually: clean).
-- `make_assets.py` written (not yet run). It generates into `assets/`: `escalation.png` (slide 7 chart,
-  risk = round(100*(1-exp(-raw/60))), raw 42.3 +5/h capped +30, SQLi +54 at hour 6.5), `curve.png` (slide 6),
-  `logo.png` (cactus-shield), `bell.png` (slide 3), `gauge.png` (slide 8, value 88), `perimeter.png` (slide 10).
-- Verified tooling: PowerPoint 16.0 COM automation works (use for PNG render + PDF export); Edge present.
+## Done (28 Sep 2026)
+- `make_assets.py` generates the charts and illustrations into `assets/` (escalation, curve, gauge, bell, logo, perimeter).
+- `build.py` builds `CactAI.pptx`: 13 slides, 16:9, dark theme, speaker notes on every slide, content from `../pitch/SLIDES.md`.
+- `CactAI.pdf` is a LibreOffice render of the deck, checked slide by slide for overflow.
+- The placeholders in SLIDES.md are filled from `../research/SOURCES.md`: ChampionTutor hook (slide 2), PDPA s48J (slide 3), Computer Misuse Act s3/s5/s7 (slide 10), references (slide 13).
+- "Negligence report" is called the Security Evidence Report throughout the deck. `architecture.png` is rendered from `../pitch/architecture.svg` with that rename applied.
 
-## Not done
-- Assets not generated / not visually checked.
-- `build.py` (python-pptx, 13 slides 16:9, dark theme BG 0F1B14 / cards 182A1F / green 3FAE6A, speaker notes) not written.
-- `CactAI.pptx`, `CactAI.pdf`, slide renders, visual QA.
+## Before recording
+- Open `CactAI.pptx` in PowerPoint and flip through once: the checked render used DejaVu Sans, PowerPoint will use Segoe UI (narrower, so text only gets more room).
+- Slide 8: optionally swap the gauge for a real dashboard screenshot at the moment the gauge crosses 80.
+- Slide 7 and 9: replace the expected numbers with the recorded take's numbers if they differ.
 
-## How to resume
-1. `.venv\Scripts\python.exe make_assets.py` and inspect `assets\*.png`.
-2. Write `build.py` per the slide plan (SLIDES.md content, <=5 bullets, notes via `slide.notes_slide`).
-3. Render via PowerShell COM: `$pp=New-Object -ComObject PowerPoint.Application; $p=$pp.Presentations.Open(path,$true,$false,$false); $p.Slides | % { $_.Export("renders\slide$($_.SlideIndex).png","PNG",1600,900) }; $p.SaveAs(pdfPath,32); $p.Close(); $pp.Quit()`.
-4. Inspect renders, fix overflow, re-render.
+## Rebuild
+```
+pip install python-pptx matplotlib
+python make_assets.py
+python build.py
+```

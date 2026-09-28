@@ -24,7 +24,7 @@ BANDS = [(0, 30, "#2E8B57", "Green"), (30, 60, "#E0A100", "Amber"),
 BAND_TXT = {"Green": "#6FD39A", "Amber": "#F2C14E", "Red": "#FF7A66", "Critical": "#E68AAE"}
 
 plt.rcParams.update({
-    "font.family": "Segoe UI",
+    "font.family": ["Segoe UI", "DejaVu Sans"],
     "font.size": 15,
     "text.color": TEXT,
     "axes.labelcolor": MUTED,
@@ -49,7 +49,8 @@ def shade_bands(ax, xmax, labels=True):
     for lo, hi, col, name in BANDS:
         ax.axhspan(lo, hi, color=col, alpha=0.18, lw=0, zorder=0)
         if labels:
-            ax.text(xmax, (lo + hi) / 2, name, ha="right", va="center", fontsize=13,
+            y = (lo + hi) / 2 if name != "Critical" else 83.5
+            ax.text(xmax, y, name, ha="right", va="center", fontsize=13,
                     color=BAND_TXT[name], fontweight="bold", alpha=0.95, zorder=1)
 
 
@@ -73,7 +74,10 @@ def escalation_chart():
     ax.step(hours, idx, where="post", color=GREEN, lw=3.2, zorder=4)
     ax.scatter(hours[:-1], idx[:-1], s=60, color=TEXT, edgecolor=GREEN, lw=2, zorder=5)
     for h, v in zip(hours[:-1], idx[:-1]):
-        ax.text(h, v - 6.5, str(v), ha="center", va="top", fontsize=13, color=TEXT, zorder=6)
+        if v >= 80:  # above the tolerance line: label to the left so it doesn't sit on the dashes
+            ax.text(h - 0.15, v, str(v), ha="right", va="center", fontsize=13, color=TEXT, zorder=6)
+        else:
+            ax.text(h, v - 6.5, str(v), ha="center", va="top", fontsize=13, color=TEXT, zorder=6)
 
     def callout(x, y, tx, ty, txt, col):
         ax.annotate(txt, xy=(x, y), xytext=(tx, ty), fontsize=12.5, color=TEXT, ha="left",
@@ -83,7 +87,7 @@ def escalation_chart():
 
     callout(0, idx[0], 0.25, 20, "Alert delivered\nAck: none", "#F2C14E")
     callout(2, idx[2], 2.2, 32, "SLA breached:\nreminder, lead copied", "#F2C14E")
-    callout(6.5, idx[7], 4.2, 95, "Needle approved, IP blocked 2h", "#E68AAE")
+    callout(6.5, idx[7], 3.2, 95, "Needle approved, IP blocked 2h", "#E68AAE")
     ax.annotate("", xy=(5.9, 68.5), xytext=(0.3, 49.5),
                 arrowprops=dict(arrowstyle="->", color=MUTED, lw=1.2, ls=":"))
     ax.text(3.35, 48, "+5 per hour, no ack", fontsize=12.5, color=MUTED, rotation=10, ha="center")
