@@ -5,6 +5,8 @@ Values saved by the setup wizard (``mvp/cactai_config.py``) fill in any variable
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import os
 import sys
 from dataclasses import dataclass, field
@@ -16,6 +18,12 @@ import cactai_config  # noqa: E402
 
 cactai_config.load()
 DEFAULT_DB = CORE_DIR / "data" / "cactai.db"
+
+
+def sign(token: str, path: str) -> str:
+    """A signature for one read-only path (a report link in an alert), so it opens in a browser
+    without the API token. It reveals nothing about the token and works for that path only."""
+    return hmac.new(token.encode(), path.encode(), hashlib.sha256).hexdigest()[:32]
 
 
 def _f(name: str, default: float) -> float:

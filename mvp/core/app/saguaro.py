@@ -30,7 +30,7 @@ from .agents import (
 from .audit import AuditLog
 from .classifier import Classification, default_chain
 from .clock import DemoClock, fmt_demo_hours
-from .config import Settings
+from .config import Settings, sign
 from .jev_client import JevClient
 from .responders import BlocklistResponder, Responders, SimulatedResponder
 from .risk import SEVERITY, band, band_rank, inaction_penalty, risk_index
@@ -421,6 +421,11 @@ class Saguaro(Agent):
             self._above_threshold = False
 
     # ----------------------------------------------------------- notifications
+    def _report_url(self, incident_id: str) -> str:
+        """Signed, so the link in a Telegram alert opens in a browser without the API token."""
+        path = f"/reports/{incident_id}.md"
+        return f"{self.settings.public_url}{path}?sig={sign(self.settings.api_token, path)}"
+
     def _notify(self, now: float, kind: str, incident_id: str | None, recipients: list[str], title: str,
                 text: str, buttons: list[dict[str, str]]) -> dict[str, Any]:
         nid = f"ntf-{self._next_notif:04d}"
@@ -436,7 +441,7 @@ class Saguaro(Agent):
             "risk_index": r["risk_index"],
             "band": r["band"],
             "buttons": buttons,
-            "report_url": f"{self.settings.public_url}/reports/{incident_id}.md" if incident_id else None,
+            "report_url": self._report_url(incident_id) if incident_id else None,
             "created_at": self.clock.iso(now),
             "delivered": False,
             "delivered_at": None,

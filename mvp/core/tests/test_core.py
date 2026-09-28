@@ -294,4 +294,4 @@ def test_routine_db_query_and_ordinary_words_are_benign(client):
 def test_notification_report_url_is_absolute(client):
     brute_force(client)
     n = next(n for n in client.get("/notifications/pending").json() if n["incident"])
-    assert n["report_url"].startswith("http://") and n["report_url"].endswith(".md")
+    assert n["report_url"].startswith("http://") and ".md?sig=" in n["report_url"]

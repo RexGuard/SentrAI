@@ -142,7 +142,8 @@ behind an arrow.
 The core API refuses every request without its token, except `/health` and `/blocklist` (the
 fake portal reads that one). The token is generated on first run, saved in the settings file,
 and passed to the collector, dashboard and Telegram bot by `run_demo.ps1` / `run_demo.sh`, so
-nothing changes when you record. To call the API by hand:
+nothing changes when you record. The report link in a Telegram alert is signed for that one report,
+so it opens in a browser without the token. To call the API by hand:
 
 ```powershell
 $t = python cactai_config.py token

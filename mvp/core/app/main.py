@@ -13,7 +13,7 @@ from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, ConfigDict
 
-from .config import Settings
+from .config import Settings, sign
 from .reports import build_report, render_markdown
 from . import ai
 from .chat import OperatorChat, default_chat_provider
@@ -90,7 +90,7 @@ class HeartbeatIn(BaseModel):
 
 
 # Open without a token: the launchers' readiness check, and the list the fake portal enforces
-# (it holds no personal data). Every other endpoint needs "Authorization: Bearer <token>" or
+# (it holds no personal data). A report opens with the signed link from its alert (?sig=). Every other endpoint needs "Authorization: Bearer <token>" or
 # the X-CactAI-Token header; the token is CACTAI_API_TOKEN from the setup wizard.
 OPEN_PATHS = frozenset({"/health", "/blocklist", "/docs", "/openapi.json"})
 TOKEN_HEADER = "x-cactai-token"
@@ -128,8 +128,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     chat.off_reason = core.ai_off_reason = ai.why_off()
 
     def require_token(request: Request) -> None:
-        if request.url.path in OPEN_PATHS:
+        path = request.url.path
+        if path in OPEN_PATHS:
             return
+        sig = request.query_params.get("sig", "")
+        if sig and request.method == "GET" and path.startswith("/reports/") and path.endswith(".md") \
+                and hmac.compare_digest(sig, sign(core.settings.api_token, path)):
+            return  # the signed report link from an alert
         auth = request.headers.get("authorization", "")
         sent = auth[7:].strip() if auth[:7].lower() == "bearer " else request.headers.get(TOKEN_HEADER, "")
         if not (sent and hmac.compare_digest(sent.encode(), core.settings.api_token.encode())):

@@ -1,9 +1,13 @@
 """The core API needs the shared token everywhere except /health and /blocklist."""
+from urllib.parse import urlsplit
+
 import pytest
 from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.main import create_app
+
+from .conftest import ev
 
 
 @pytest.fixture
@@ -46,3 +50,18 @@ def test_bearer_or_header_token_is_accepted(anon):
     assert anon.get("/incidents", headers={"Authorization": "Bearer s3cret"}).status_code == 200
     assert anon.get("/incidents", headers={"X-CactAI-Token": "s3cret"}).status_code == 200
     assert anon.post("/demo/reset", headers={"Authorization": "bearer s3cret"}).status_code == 200
+
+
+
+def test_signed_report_link_opens_without_the_token(anon):
+    auth = {"Authorization": "Bearer s3cret"}
+    for n in range(5):
+        anon.post("/events", json=ev(n, "POST /login 401 user=admin"), headers=auth)
+    note = next(n for n in anon.get("/notifications/pending", headers=auth).json() if n["incident"])
+    url = urlsplit(note["report_url"])
+    assert anon.get(f"{url.path}?{url.query}").status_code == 200
+    assert anon.get(url.path).status_code == 401
+    assert anon.get(f"{url.path}?sig=0000").status_code == 401
+    other = url.path.replace(note["incident"], "RSK-2026-999")
+    assert anon.get(f"{other}?{url.query}").status_code == 401  # a signature fits one report only
+    assert anon.get(f"/reports/{note['incident']}?{url.query}").status_code == 401  # the .md path only
