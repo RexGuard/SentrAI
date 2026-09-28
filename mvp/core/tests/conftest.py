@@ -8,7 +8,7 @@ os.environ["CACTAI_DB"] = str(_TMP / "import.db")
 os.environ["CACTAI_BACKGROUND"] = "0"
 os.environ["CACTAI_CONFIG"] = str(Path(_TMP) / "no-config.json")  # ignore this machine's saved settings
 os.environ.pop("TYPESAFE_API_KEY", None)
-os.environ.pop("CACTAI_MONITOR_ONLY", None)  # tests start with protection on
+os.environ["CACTAI_API_TOKEN"] = "test-token"  # the token the test clients send
 os.environ["CYANIDE_ENABLED"] = "0"  # never call Claude from tests; Cyanide tests inject a fake planner
 
 import pytest  # noqa: E402
@@ -18,11 +18,14 @@ from app.config import Settings  # noqa: E402
 from app.main import create_app  # noqa: E402
 
 
+AUTH = {"Authorization": "Bearer test-token"}
+
+
 @pytest.fixture
 def client(tmp_path):
     settings = Settings(db_path=tmp_path / "cactai.db", background=False, demo_speed=60.0)
     app = create_app(settings)
-    with TestClient(app) as c:
+    with TestClient(app, headers=AUTH) as c:
         c.core = app.state.core  # type: ignore[attr-defined]
         yield c
 

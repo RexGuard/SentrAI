@@ -30,6 +30,7 @@ import requests
 MVP = Path(__file__).resolve().parents[1]
 CORE = "http://127.0.0.1:8000"
 TARGET = "http://127.0.0.1:5000"
+AUTH = {"Authorization": "Bearer e2e-token"}  # the core API token every component gets below
 ATTACKER_BF = "203.0.113.45"
 ATTACKER_SQLI = "198.51.100.23"
 
@@ -87,6 +88,7 @@ def stack(tmp_path_factory):
         DEMO_SPEED="3600",          # 1 real second = 1 demo hour
         CACTAI_DB=str(tmp / "audit.db"),
         CACTAI_CORE_URL=CORE,
+        CACTAI_API_TOKEN="e2e-token",
         HOTPATCH_TTL_HOURS="200",   # keep blocks active long enough to assert on them
     )
     env.pop("TYPESAFE_API_KEY", None)  # deterministic: rules + fallback only
@@ -128,11 +130,11 @@ def attack(module: str, *args: str) -> None:
 
 
 def incidents() -> list[dict]:
-    return requests.get(f"{CORE}/incidents", timeout=3).json()
+    return requests.get(f"{CORE}/incidents", headers=AUTH, timeout=3).json()
 
 
 def risk() -> dict:
-    return requests.get(f"{CORE}/risk?history=0", timeout=3).json()
+    return requests.get(f"{CORE}/risk?history=0", headers=AUTH, timeout=3).json()
 
 
 def test_demo_story(stack):
@@ -148,7 +150,7 @@ def test_demo_story(stack):
     assert bf["src_ip"] == ATTACKER_BF and bf["classified_by"] == "rules"
     start_risk = risk()["risk_index"]
     assert start_risk >= 30
-    pending_kinds = {n["kind"] for n in requests.get(f"{CORE}/notifications", timeout=3).json()}
+    pending_kinds = {n["kind"] for n in requests.get(f"{CORE}/notifications", headers=AUTH, timeout=3).json()}
     assert "incident_opened" in pending_kinds
 
     # 3. Inaction: with the fast demo clock the penalty grows within seconds.
@@ -157,14 +159,14 @@ def test_demo_story(stack):
     # 4. SQL injection pushes risk over the threshold -> autonomous containment.
     attack("attacks.sqli", "--count", "3", "--delay", "0.2")
     bl = wait_for(lambda: (lambda b: b if ATTACKER_SQLI in b["ips"] else None)(
-        requests.get(f"{CORE}/blocklist", timeout=3).json()), 20)
+        requests.get(f"{CORE}/blocklist", headers=AUTH, timeout=3).json()), 20)
     assert bl, "attacker IP was not blocked"
     assert ATTACKER_BF in bl["ips"] and "admin" in bl["users"]
     by_cat = {i["category"]: i for i in incidents()}
     assert by_cat["sql_injection"]["status"] == "contained"
     acts = [a for i in by_cat.values() for a in i["actions"]]
     assert acts and all(a["approved_by"] == "Needle" and a["mode"] == "autonomous" for a in acts)
-    history = requests.get(f"{CORE}/risk?history=600", timeout=3).json()["history"]
+    history = requests.get(f"{CORE}/risk?history=600", headers=AUTH, timeout=3).json()["history"]
     assert max(h["risk_index"] for h in history) >= 80, "threshold peak missing from chart history"
 
     # 5. The target app enforces the block (poll interval 2 s); loopback is never blocked.
@@ -175,17 +177,17 @@ def test_demo_story(stack):
     assert requests.get(f"{TARGET}/", timeout=3).status_code == 200, "loopback must never be blocked"
 
     # 6. Negligence report and audit chain.
-    md = requests.get(f"{CORE}/reports/{bf['id']}.md", timeout=3).text
+    md = requests.get(f"{CORE}/reports/{bf['id']}.md", headers=AUTH, timeout=3).text
     assert "Ack: none" in md and "Needle" in md
-    audit = requests.get(f"{CORE}/audit", timeout=3).json()
+    audit = requests.get(f"{CORE}/audit", headers=AUTH, timeout=3).json()
     assert audit["chain_valid"] is True and audit["count"] > 10
 
     # 7. Rollback removes the block for that incident.
     sq = by_cat["sql_injection"]
     r = requests.post(f"{CORE}/incidents/{sq['id']}/rollback",
-                      json={"operator": "erick", "justification": "e2e test rollback"}, timeout=3)
+                      json={"operator": "erick", "justification": "e2e test rollback"}, headers=AUTH, timeout=3)
     assert r.status_code == 200
-    assert ATTACKER_SQLI not in requests.get(f"{CORE}/blocklist", timeout=3).json()["ips"]
+    assert ATTACKER_SQLI not in requests.get(f"{CORE}/blocklist", headers=AUTH, timeout=3).json()["ips"]
 
 
 if __name__ == "__main__":

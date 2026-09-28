@@ -5,6 +5,8 @@ Values saved by the setup wizard (``mvp/cactai_config.py``) fill in any variable
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import os
 import sys
 from dataclasses import dataclass, field
@@ -16,6 +18,12 @@ import cactai_config  # noqa: E402
 
 cactai_config.load()
 DEFAULT_DB = CORE_DIR / "data" / "cactai.db"
+
+
+def sign(token: str, path: str) -> str:
+    """A signature for one read-only path (a report link in an alert), so it opens in a browser
+    without the API token. It reveals nothing about the token and works for that path only."""
+    return hmac.new(token.encode(), path.encode(), hashlib.sha256).hexdigest()[:32]
 
 
 def _f(name: str, default: float) -> float:
@@ -49,6 +57,16 @@ class Settings:
     brute_force_count: int = field(default_factory=lambda: _i("BRUTE_FORCE_COUNT", 5))
     brute_force_window_s: float = field(default_factory=lambda: _f("BRUTE_FORCE_WINDOW_S", 60.0))
     export_rows_threshold: int = field(default_factory=lambda: _i("EXPORT_ROWS_THRESHOLD", 100))
+    # Real public-server traffic: SSH guesses are slower than the demo's web brute force.
+    ssh_brute_force_count: int = field(default_factory=lambda: _i("SSH_BRUTE_FORCE_COUNT", 5))
+    ssh_brute_force_window_s: float = field(default_factory=lambda: _f("SSH_BRUTE_FORCE_WINDOW_S", 600.0))
+    web_scan_4xx_count: int = field(default_factory=lambda: _i("WEB_SCAN_4XX_COUNT", 10))
+    web_scan_window_s: float = field(default_factory=lambda: _f("WEB_SCAN_WINDOW_S", 120.0))
+    # Close scan / brute-force incidents that have had no new event for this many real minutes (0 = never).
+    auto_close_quiet_min: float = field(default_factory=lambda: _f("AUTO_CLOSE_QUIET_MIN", 60.0))
+    auto_close_categories: set[str] = field(
+        default_factory=lambda: {x.strip() for x in os.getenv("AUTO_CLOSE_CATEGORIES", "port_scan,brute_force").split(",") if x.strip()}
+    )
     watchdog_silence_s: float = field(default_factory=lambda: _f("WATCHDOG_SILENCE_S", 30.0))
     tick_s: float = field(default_factory=lambda: _f("TICK_S", 1.0))
     id_year: int = field(default_factory=lambda: _i("ID_YEAR", 2026))
@@ -63,9 +81,13 @@ class Settings:
     protected_users: set[str] = field(
         default_factory=lambda: {x.strip() for x in os.getenv("PROTECTED_USERS", "").split(",") if x.strip()}
     )
+    # Host firewall for block_ip (app/firewall.py): off keeps blocking portal-only; enforce=False is a dry run.
+    firewall: str = field(default_factory=lambda: os.getenv("CACTAI_FIREWALL", "off"))
+    firewall_enforce: bool = field(
+        default_factory=lambda: os.getenv("CACTAI_FIREWALL_ENFORCE", "0").strip().lower() in ("1", "true", "yes", "on")
+    )
     jev_budget_s: float = field(default_factory=lambda: _f("JEV_BUDGET_S", 2.0))
     public_url: str = field(default_factory=lambda: os.getenv("CACTAI_PUBLIC_URL", "http://127.0.0.1:8000").rstrip("/"))
     background: bool = field(default_factory=lambda: os.getenv("CACTAI_BACKGROUND", "1") != "0")
-    # Monitor-only ("protection off") at start: "1" or "0" wins over the last switch saved in
-    # data/protection.json; unset keeps whatever the operator last chose (protection on for a new install).
-    monitor_only: str | None = field(default_factory=lambda: os.getenv("CACTAI_MONITOR_ONLY"))
+    # Every endpoint but /health and /blocklist needs it (see main.py). Made and saved on first use.
+    api_token: str = field(default_factory=cactai_config.api_token, repr=False)

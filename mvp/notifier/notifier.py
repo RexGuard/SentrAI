@@ -2,6 +2,7 @@
 
 Env:
   CACTAI_CORE_URL      core API base URL (default http://127.0.0.1:8000)
+  CACTAI_API_TOKEN     core API token (default: the one saved by the setup wizard)
   TELEGRAM_BOT_TOKEN   bot token from @BotFather  (never hardcode it)
   TELEGRAM_CHAT_ID     chat that receives alerts and is allowed to press buttons
   CACTAI_OPERATOR      fallback operator name (default "operator")
@@ -254,7 +255,7 @@ def main(argv: list[str] | None = None) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-    core = Core(args.core)
+    core = Core(args.core, token=cactai_config.api_token())
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
     chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
     operator = os.environ.get("CACTAI_OPERATOR", "operator")

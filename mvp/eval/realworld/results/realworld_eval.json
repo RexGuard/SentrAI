@@ -1,0 +1,1983 @@
+{
+ "events": 1808,
+ "by_origin": {
+  "web": 1454,
+  "ssh": 354
+ },
+ "categories": [
+  "benign",
+  "brute_force",
+  "sql_injection",
+  "xss",
+  "port_scan",
+  "privilege_escalation",
+  "data_exfiltration",
+  "misconfiguration"
+ ],
+ "runs": {
+  "rules": {
+   "per_category": {
+    "benign": {
+     "precision": 0.9275747508305647,
+     "recall": 1.0,
+     "f1": 0.9624267493967598,
+     "support": 1396,
+     "predicted": 1505
+    },
+    "brute_force": {
+     "precision": 1.0,
+     "recall": 0.7064516129032258,
+     "f1": 0.827977315689981,
+     "support": 310,
+     "predicted": 219
+    },
+    "sql_injection": {
+     "precision": 1.0,
+     "recall": 1.0,
+     "f1": 1.0,
+     "support": 5,
+     "predicted": 5
+    },
+    "xss": {
+     "precision": 1.0,
+     "recall": 1.0,
+     "f1": 1.0,
+     "support": 1,
+     "predicted": 1
+    },
+    "port_scan": {
+     "precision": 1.0,
+     "recall": 0.8125,
+     "f1": 0.896551724137931,
+     "support": 96,
+     "predicted": 78
+    },
+    "privilege_escalation": {
+     "precision": 0.0,
+     "recall": 0.0,
+     "f1": 0.0,
+     "support": 0,
+     "predicted": 0
+    },
+    "data_exfiltration": {
+     "precision": 0.0,
+     "recall": 0.0,
+     "f1": 0.0,
+     "support": 0,
+     "predicted": 0
+    },
+    "misconfiguration": {
+     "precision": 0.0,
+     "recall": 0.0,
+     "f1": 0.0,
+     "support": 0,
+     "predicted": 0
+    }
+   },
+   "accuracy": 0.9397123893805309,
+   "macro_f1": 0.9373911578449345,
+   "detection_rate": 0.7354368932038835,
+   "false_alarm_rate": 0.0,
+   "no_answer": 0
+  },
+  "fallback": {
+   "per_category": {
+    "benign": {
+     "precision": 0.7738359201773836,
+     "recall": 1.0,
+     "f1": 0.8724999999999999,
+     "support": 1396,
+     "predicted": 1804
+    },
+    "brute_force": {
+     "precision": 0.0,
+     "recall": 0.0,
+     "f1": 0.0,
+     "support": 310,
+     "predicted": 0
+    },
+    "sql_injection": {
+     "precision": 1.0,
+     "recall": 0.4,
+     "f1": 0.5714285714285715,
+     "support": 5,
+     "predicted": 2
+    },
+    "xss": {
+     "precision": 1.0,
+     "recall": 1.0,
+     "f1": 1.0,
+     "support": 1,
+     "predicted": 1
+    },
+    "port_scan": {
+     "precision": 0.0,
+     "recall": 0.0,
+     "f1": 0.0,
+     "support": 96,
+     "predicted": 0
+    },
+    "privilege_escalation": {
+     "precision": 0.0,
+     "recall": 0.0,
+     "f1": 0.0,
+     "support": 0,
+     "predicted": 0
+    },
+    "data_exfiltration": {
+     "precision": 0.0,
+     "recall": 0.0,
+     "f1": 0.0,
+     "support": 0,
+     "predicted": 1
+    },
+    "misconfiguration": {
+     "precision": 0.0,
+     "recall": 0.0,
+     "f1": 0.0,
+     "support": 0,
+     "predicted": 0
+    }
+   },
+   "accuracy": 0.7737831858407079,
+   "macro_f1": 0.4887857142857143,
+   "detection_rate": 0.009708737864077669,
+   "false_alarm_rate": 0.0,
+   "no_answer": 0
+  },
+  "chain": {
+   "per_category": {
+    "benign": {
+     "precision": 0.9275747508305647,
+     "recall": 1.0,
+     "f1": 0.9624267493967598,
+     "support": 1396,
+     "predicted": 1505
+    },
+    "brute_force": {
+     "precision": 1.0,
+     "recall": 0.7064516129032258,
+     "f1": 0.827977315689981,
+     "support": 310,
+     "predicted": 219
+    },
+    "sql_injection": {
+     "precision": 1.0,
+     "recall": 1.0,
+     "f1": 1.0,
+     "support": 5,
+     "predicted": 5
+    },
+    "xss": {
+     "precision": 1.0,
+     "recall": 1.0,
+     "f1": 1.0,
+     "support": 1,
+     "predicted": 1
+    },
+    "port_scan": {
+     "precision": 1.0,
+     "recall": 0.8125,
+     "f1": 0.896551724137931,
+     "support": 96,
+     "predicted": 78
+    },
+    "privilege_escalation": {
+     "precision": 0.0,
+     "recall": 0.0,
+     "f1": 0.0,
+     "support": 0,
+     "predicted": 0
+    },
+    "data_exfiltration": {
+     "precision": 0.0,
+     "recall": 0.0,
+     "f1": 0.0,
+     "support": 0,
+     "predicted": 0
+    },
+    "misconfiguration": {
+     "precision": 0.0,
+     "recall": 0.0,
+     "f1": 0.0,
+     "support": 0,
+     "predicted": 0
+    }
+   },
+   "accuracy": 0.9397123893805309,
+   "macro_f1": 0.9373911578449345,
+   "detection_rate": 0.7354368932038835,
+   "false_alarm_rate": 0.0,
+   "no_answer": 0,
+   "sources": [
+    {
+     "session": "uptime",
+     "label": "benign",
+     "scenario": "monitor",
+     "origin": "web",
+     "lines": 120,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "ssh-slow-bf",
+     "label": "brute_force",
+     "scenario": "slow_bruteforce",
+     "origin": "ssh",
+     "lines": 12,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "sshd-daemon",
+     "label": "benign",
+     "scenario": "daemon",
+     "origin": "ssh",
+     "lines": 2,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "ci-deploy",
+     "label": "benign",
+     "scenario": "deploy",
+     "origin": "ssh",
+     "lines": 24,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-8",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 35,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "zgrab",
+     "label": "port_scan",
+     "scenario": "scanner_ua",
+     "origin": "web",
+     "lines": 2,
+     "first_flag": 1,
+     "flagged": 2,
+     "categories": {
+      "port_scan": 2
+     }
+    },
+    {
+     "session": "ssh-scanner-0",
+     "label": "port_scan",
+     "scenario": "banner_grab",
+     "origin": "ssh",
+     "lines": 4,
+     "first_flag": 3,
+     "flagged": 2,
+     "categories": {
+      "port_scan": 2
+     }
+    },
+    {
+     "session": "visitor-1",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 36,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "admin",
+     "label": "benign",
+     "scenario": "admin_login",
+     "origin": "ssh",
+     "lines": 25,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-29",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 17,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "env-scanner",
+     "label": "port_scan",
+     "scenario": "secret_file_probe",
+     "origin": "web",
+     "lines": 20,
+     "first_flag": 1,
+     "flagged": 20,
+     "categories": {
+      "port_scan": 20
+     }
+    },
+    {
+     "session": "censys",
+     "label": "port_scan",
+     "scenario": "scanner_ua",
+     "origin": "web",
+     "lines": 1,
+     "first_flag": 1,
+     "flagged": 1,
+     "categories": {
+      "port_scan": 1
+     }
+    },
+    {
+     "session": "ssh-root-bf",
+     "label": "brute_force",
+     "scenario": "password_bruteforce",
+     "origin": "ssh",
+     "lines": 120,
+     "first_flag": 19,
+     "flagged": 102,
+     "categories": {
+      "brute_force": 102
+     }
+    },
+    {
+     "session": "visitor-4",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 39,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "googlebot",
+     "label": "benign",
+     "scenario": "crawler",
+     "origin": "web",
+     "lines": 31,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "bingbot",
+     "label": "benign",
+     "scenario": "crawler",
+     "origin": "web",
+     "lines": 1,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "nuclei",
+     "label": "port_scan",
+     "scenario": "scanner_ua",
+     "origin": "web",
+     "lines": 5,
+     "first_flag": 1,
+     "flagged": 5,
+     "categories": {
+      "port_scan": 5
+     }
+    },
+    {
+     "session": "visitor-22",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 33,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-0",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 26,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "nikto",
+     "label": "port_scan",
+     "scenario": "scanner_ua",
+     "origin": "web",
+     "lines": 3,
+     "first_flag": 1,
+     "flagged": 3,
+     "categories": {
+      "port_scan": 3
+     }
+    },
+    {
+     "session": "visitor-23",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 29,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-20",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 28,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "ssh-scanner-1",
+     "label": "port_scan",
+     "scenario": "banner_grab",
+     "origin": "ssh",
+     "lines": 3,
+     "first_flag": 3,
+     "flagged": 1,
+     "categories": {
+      "port_scan": 1
+     }
+    },
+    {
+     "session": "visitor-36",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 30,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "wp-scanner",
+     "label": "port_scan",
+     "scenario": "cms_probe",
+     "origin": "web",
+     "lines": 12,
+     "first_flag": 1,
+     "flagged": 12,
+     "categories": {
+      "port_scan": 12
+     }
+    },
+    {
+     "session": "parent-login",
+     "label": "benign",
+     "scenario": "login_typo",
+     "origin": "web",
+     "lines": 3,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-15",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 31,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-13",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 20,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-21",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 40,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "log4shell",
+     "label": "port_scan",
+     "scenario": "exploit_probe",
+     "origin": "web",
+     "lines": 1,
+     "first_flag": 1,
+     "flagged": 1,
+     "categories": {
+      "port_scan": 1
+     }
+    },
+    {
+     "session": "visitor-5",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 22,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-30",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 38,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "ssh-scanner-2",
+     "label": "port_scan",
+     "scenario": "banner_grab",
+     "origin": "ssh",
+     "lines": 1,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "phpunit-rce",
+     "label": "port_scan",
+     "scenario": "exploit_probe",
+     "origin": "web",
+     "lines": 1,
+     "first_flag": 1,
+     "flagged": 1,
+     "categories": {
+      "port_scan": 1
+     }
+    },
+    {
+     "session": "visitor-32",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 35,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "preview",
+     "label": "benign",
+     "scenario": "preview",
+     "origin": "web",
+     "lines": 1,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "router-bot",
+     "label": "port_scan",
+     "scenario": "exploit_probe",
+     "origin": "web",
+     "lines": 2,
+     "first_flag": 1,
+     "flagged": 2,
+     "categories": {
+      "port_scan": 2
+     }
+    },
+    {
+     "session": "visitor-37",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 30,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "sec-txt",
+     "label": "benign",
+     "scenario": "researcher_courtesy",
+     "origin": "web",
+     "lines": 1,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "thinkphp",
+     "label": "port_scan",
+     "scenario": "exploit_probe",
+     "origin": "web",
+     "lines": 1,
+     "first_flag": 1,
+     "flagged": 1,
+     "categories": {
+      "port_scan": 1
+     }
+    },
+    {
+     "session": "traversal",
+     "label": "port_scan",
+     "scenario": "exploit_probe",
+     "origin": "web",
+     "lines": 1,
+     "first_flag": 1,
+     "flagged": 1,
+     "categories": {
+      "port_scan": 1
+     }
+    },
+    {
+     "session": "teacher-typo",
+     "label": "benign",
+     "scenario": "password_typo",
+     "origin": "ssh",
+     "lines": 3,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "proxy-check",
+     "label": "port_scan",
+     "scenario": "proxy_probe",
+     "origin": "web",
+     "lines": 2,
+     "first_flag": 1,
+     "flagged": 2,
+     "categories": {
+      "port_scan": 2
+     }
+    },
+    {
+     "session": "visitor-35",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 19,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "broken-image",
+     "label": "benign",
+     "scenario": "refresh_404",
+     "origin": "web",
+     "lines": 6,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-25",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 35,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-34",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 18,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "dirbuster",
+     "label": "port_scan",
+     "scenario": "path_bruteforce",
+     "origin": "web",
+     "lines": 30,
+     "first_flag": 10,
+     "flagged": 21,
+     "categories": {
+      "port_scan": 21
+     }
+    },
+    {
+     "session": "ssh-scanner-3",
+     "label": "port_scan",
+     "scenario": "banner_grab",
+     "origin": "ssh",
+     "lines": 2,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-24",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 38,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-11",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 39,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "ssh-dict",
+     "label": "brute_force",
+     "scenario": "invalid_user_dictionary",
+     "origin": "ssh",
+     "lines": 120,
+     "first_flag": 25,
+     "flagged": 80,
+     "categories": {
+      "brute_force": 80
+     }
+    },
+    {
+     "session": "visitor-18",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 25,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "sqlmap",
+     "label": "sql_injection",
+     "scenario": "sqli_tool",
+     "origin": "web",
+     "lines": 4,
+     "first_flag": 1,
+     "flagged": 4,
+     "categories": {
+      "sql_injection": 4
+     }
+    },
+    {
+     "session": "manual-sqli",
+     "label": "sql_injection",
+     "scenario": "sqli",
+     "origin": "web",
+     "lines": 1,
+     "first_flag": 1,
+     "flagged": 1,
+     "categories": {
+      "sql_injection": 1
+     }
+    },
+    {
+     "session": "manual-xss",
+     "label": "xss",
+     "scenario": "xss",
+     "origin": "web",
+     "lines": 1,
+     "first_flag": 1,
+     "flagged": 1,
+     "categories": {
+      "xss": 1
+     }
+    },
+    {
+     "session": "visitor-38",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 21,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "acme",
+     "label": "benign",
+     "scenario": "acme",
+     "origin": "web",
+     "lines": 3,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "ssh-scanner-4",
+     "label": "port_scan",
+     "scenario": "banner_grab",
+     "origin": "ssh",
+     "lines": 5,
+     "first_flag": 3,
+     "flagged": 3,
+     "categories": {
+      "port_scan": 3
+     }
+    },
+    {
+     "session": "visitor-31",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 23,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-26",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 41,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-33",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 13,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "web-login-bf",
+     "label": "brute_force",
+     "scenario": "login_bruteforce",
+     "origin": "web",
+     "lines": 25,
+     "first_flag": 5,
+     "flagged": 21,
+     "categories": {
+      "brute_force": 21
+     }
+    },
+    {
+     "session": "visitor-19",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 13,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-2",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 18,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-10",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 30,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-7",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 41,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "ssh-keyonly-invalid",
+     "label": "brute_force",
+     "scenario": "key_only_server",
+     "origin": "ssh",
+     "lines": 16,
+     "first_flag": 9,
+     "flagged": 8,
+     "categories": {
+      "brute_force": 8
+     }
+    },
+    {
+     "session": "visitor-12",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 39,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-16",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 29,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-6",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 26,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "ssh-keyonly-root",
+     "label": "brute_force",
+     "scenario": "key_only_server",
+     "origin": "ssh",
+     "lines": 8,
+     "first_flag": 5,
+     "flagged": 4,
+     "categories": {
+      "brute_force": 4
+     }
+    },
+    {
+     "session": "ssh-compromise",
+     "label": "brute_force",
+     "scenario": "guessed_password",
+     "origin": "ssh",
+     "lines": 9,
+     "first_flag": 5,
+     "flagged": 4,
+     "categories": {
+      "brute_force": 4
+     }
+    },
+    {
+     "session": "visitor-39",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 31,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-27",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 37,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-17",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 29,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-3",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 33,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-9",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 35,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-14",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 28,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-28",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 26,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    }
+   ]
+  },
+  "chain+parsed": {
+   "per_category": {
+    "benign": {
+     "precision": 0.9275747508305647,
+     "recall": 1.0,
+     "f1": 0.9624267493967598,
+     "support": 1396,
+     "predicted": 1505
+    },
+    "brute_force": {
+     "precision": 1.0,
+     "recall": 0.7064516129032258,
+     "f1": 0.827977315689981,
+     "support": 310,
+     "predicted": 219
+    },
+    "sql_injection": {
+     "precision": 1.0,
+     "recall": 1.0,
+     "f1": 1.0,
+     "support": 5,
+     "predicted": 5
+    },
+    "xss": {
+     "precision": 1.0,
+     "recall": 1.0,
+     "f1": 1.0,
+     "support": 1,
+     "predicted": 1
+    },
+    "port_scan": {
+     "precision": 1.0,
+     "recall": 0.8125,
+     "f1": 0.896551724137931,
+     "support": 96,
+     "predicted": 78
+    },
+    "privilege_escalation": {
+     "precision": 0.0,
+     "recall": 0.0,
+     "f1": 0.0,
+     "support": 0,
+     "predicted": 0
+    },
+    "data_exfiltration": {
+     "precision": 0.0,
+     "recall": 0.0,
+     "f1": 0.0,
+     "support": 0,
+     "predicted": 0
+    },
+    "misconfiguration": {
+     "precision": 0.0,
+     "recall": 0.0,
+     "f1": 0.0,
+     "support": 0,
+     "predicted": 0
+    }
+   },
+   "accuracy": 0.9397123893805309,
+   "macro_f1": 0.9373911578449345,
+   "detection_rate": 0.7354368932038835,
+   "false_alarm_rate": 0.0,
+   "no_answer": 0,
+   "sources": [
+    {
+     "session": "uptime",
+     "label": "benign",
+     "scenario": "monitor",
+     "origin": "web",
+     "lines": 120,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "ssh-slow-bf",
+     "label": "brute_force",
+     "scenario": "slow_bruteforce",
+     "origin": "ssh",
+     "lines": 12,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "sshd-daemon",
+     "label": "benign",
+     "scenario": "daemon",
+     "origin": "ssh",
+     "lines": 2,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "ci-deploy",
+     "label": "benign",
+     "scenario": "deploy",
+     "origin": "ssh",
+     "lines": 24,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-8",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 35,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "zgrab",
+     "label": "port_scan",
+     "scenario": "scanner_ua",
+     "origin": "web",
+     "lines": 2,
+     "first_flag": 1,
+     "flagged": 2,
+     "categories": {
+      "port_scan": 2
+     }
+    },
+    {
+     "session": "ssh-scanner-0",
+     "label": "port_scan",
+     "scenario": "banner_grab",
+     "origin": "ssh",
+     "lines": 4,
+     "first_flag": 3,
+     "flagged": 2,
+     "categories": {
+      "port_scan": 2
+     }
+    },
+    {
+     "session": "visitor-1",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 36,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "admin",
+     "label": "benign",
+     "scenario": "admin_login",
+     "origin": "ssh",
+     "lines": 25,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-29",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 17,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "env-scanner",
+     "label": "port_scan",
+     "scenario": "secret_file_probe",
+     "origin": "web",
+     "lines": 20,
+     "first_flag": 1,
+     "flagged": 20,
+     "categories": {
+      "port_scan": 20
+     }
+    },
+    {
+     "session": "censys",
+     "label": "port_scan",
+     "scenario": "scanner_ua",
+     "origin": "web",
+     "lines": 1,
+     "first_flag": 1,
+     "flagged": 1,
+     "categories": {
+      "port_scan": 1
+     }
+    },
+    {
+     "session": "ssh-root-bf",
+     "label": "brute_force",
+     "scenario": "password_bruteforce",
+     "origin": "ssh",
+     "lines": 120,
+     "first_flag": 19,
+     "flagged": 102,
+     "categories": {
+      "brute_force": 102
+     }
+    },
+    {
+     "session": "visitor-4",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 39,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "googlebot",
+     "label": "benign",
+     "scenario": "crawler",
+     "origin": "web",
+     "lines": 31,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "bingbot",
+     "label": "benign",
+     "scenario": "crawler",
+     "origin": "web",
+     "lines": 1,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "nuclei",
+     "label": "port_scan",
+     "scenario": "scanner_ua",
+     "origin": "web",
+     "lines": 5,
+     "first_flag": 1,
+     "flagged": 5,
+     "categories": {
+      "port_scan": 5
+     }
+    },
+    {
+     "session": "visitor-22",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 33,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-0",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 26,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "nikto",
+     "label": "port_scan",
+     "scenario": "scanner_ua",
+     "origin": "web",
+     "lines": 3,
+     "first_flag": 1,
+     "flagged": 3,
+     "categories": {
+      "port_scan": 3
+     }
+    },
+    {
+     "session": "visitor-23",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 29,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-20",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 28,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "ssh-scanner-1",
+     "label": "port_scan",
+     "scenario": "banner_grab",
+     "origin": "ssh",
+     "lines": 3,
+     "first_flag": 3,
+     "flagged": 1,
+     "categories": {
+      "port_scan": 1
+     }
+    },
+    {
+     "session": "visitor-36",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 30,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "wp-scanner",
+     "label": "port_scan",
+     "scenario": "cms_probe",
+     "origin": "web",
+     "lines": 12,
+     "first_flag": 1,
+     "flagged": 12,
+     "categories": {
+      "port_scan": 12
+     }
+    },
+    {
+     "session": "parent-login",
+     "label": "benign",
+     "scenario": "login_typo",
+     "origin": "web",
+     "lines": 3,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-15",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 31,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-13",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 20,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-21",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 40,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "log4shell",
+     "label": "port_scan",
+     "scenario": "exploit_probe",
+     "origin": "web",
+     "lines": 1,
+     "first_flag": 1,
+     "flagged": 1,
+     "categories": {
+      "port_scan": 1
+     }
+    },
+    {
+     "session": "visitor-5",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 22,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-30",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 38,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "ssh-scanner-2",
+     "label": "port_scan",
+     "scenario": "banner_grab",
+     "origin": "ssh",
+     "lines": 1,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "phpunit-rce",
+     "label": "port_scan",
+     "scenario": "exploit_probe",
+     "origin": "web",
+     "lines": 1,
+     "first_flag": 1,
+     "flagged": 1,
+     "categories": {
+      "port_scan": 1
+     }
+    },
+    {
+     "session": "visitor-32",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 35,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "preview",
+     "label": "benign",
+     "scenario": "preview",
+     "origin": "web",
+     "lines": 1,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "router-bot",
+     "label": "port_scan",
+     "scenario": "exploit_probe",
+     "origin": "web",
+     "lines": 2,
+     "first_flag": 1,
+     "flagged": 2,
+     "categories": {
+      "port_scan": 2
+     }
+    },
+    {
+     "session": "visitor-37",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 30,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "sec-txt",
+     "label": "benign",
+     "scenario": "researcher_courtesy",
+     "origin": "web",
+     "lines": 1,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "thinkphp",
+     "label": "port_scan",
+     "scenario": "exploit_probe",
+     "origin": "web",
+     "lines": 1,
+     "first_flag": 1,
+     "flagged": 1,
+     "categories": {
+      "port_scan": 1
+     }
+    },
+    {
+     "session": "traversal",
+     "label": "port_scan",
+     "scenario": "exploit_probe",
+     "origin": "web",
+     "lines": 1,
+     "first_flag": 1,
+     "flagged": 1,
+     "categories": {
+      "port_scan": 1
+     }
+    },
+    {
+     "session": "teacher-typo",
+     "label": "benign",
+     "scenario": "password_typo",
+     "origin": "ssh",
+     "lines": 3,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "proxy-check",
+     "label": "port_scan",
+     "scenario": "proxy_probe",
+     "origin": "web",
+     "lines": 2,
+     "first_flag": 1,
+     "flagged": 2,
+     "categories": {
+      "port_scan": 2
+     }
+    },
+    {
+     "session": "visitor-35",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 19,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "broken-image",
+     "label": "benign",
+     "scenario": "refresh_404",
+     "origin": "web",
+     "lines": 6,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-25",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 35,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-34",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 18,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "dirbuster",
+     "label": "port_scan",
+     "scenario": "path_bruteforce",
+     "origin": "web",
+     "lines": 30,
+     "first_flag": 10,
+     "flagged": 21,
+     "categories": {
+      "port_scan": 21
+     }
+    },
+    {
+     "session": "ssh-scanner-3",
+     "label": "port_scan",
+     "scenario": "banner_grab",
+     "origin": "ssh",
+     "lines": 2,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-24",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 38,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-11",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 39,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "ssh-dict",
+     "label": "brute_force",
+     "scenario": "invalid_user_dictionary",
+     "origin": "ssh",
+     "lines": 120,
+     "first_flag": 25,
+     "flagged": 80,
+     "categories": {
+      "brute_force": 80
+     }
+    },
+    {
+     "session": "visitor-18",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 25,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "sqlmap",
+     "label": "sql_injection",
+     "scenario": "sqli_tool",
+     "origin": "web",
+     "lines": 4,
+     "first_flag": 1,
+     "flagged": 4,
+     "categories": {
+      "sql_injection": 4
+     }
+    },
+    {
+     "session": "manual-sqli",
+     "label": "sql_injection",
+     "scenario": "sqli",
+     "origin": "web",
+     "lines": 1,
+     "first_flag": 1,
+     "flagged": 1,
+     "categories": {
+      "sql_injection": 1
+     }
+    },
+    {
+     "session": "manual-xss",
+     "label": "xss",
+     "scenario": "xss",
+     "origin": "web",
+     "lines": 1,
+     "first_flag": 1,
+     "flagged": 1,
+     "categories": {
+      "xss": 1
+     }
+    },
+    {
+     "session": "visitor-38",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 21,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "acme",
+     "label": "benign",
+     "scenario": "acme",
+     "origin": "web",
+     "lines": 3,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "ssh-scanner-4",
+     "label": "port_scan",
+     "scenario": "banner_grab",
+     "origin": "ssh",
+     "lines": 5,
+     "first_flag": 3,
+     "flagged": 3,
+     "categories": {
+      "port_scan": 3
+     }
+    },
+    {
+     "session": "visitor-31",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 23,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-26",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 41,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-33",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 13,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "web-login-bf",
+     "label": "brute_force",
+     "scenario": "login_bruteforce",
+     "origin": "web",
+     "lines": 25,
+     "first_flag": 5,
+     "flagged": 21,
+     "categories": {
+      "brute_force": 21
+     }
+    },
+    {
+     "session": "visitor-19",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 13,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-2",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 18,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-10",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 30,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-7",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 41,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "ssh-keyonly-invalid",
+     "label": "brute_force",
+     "scenario": "key_only_server",
+     "origin": "ssh",
+     "lines": 16,
+     "first_flag": 9,
+     "flagged": 8,
+     "categories": {
+      "brute_force": 8
+     }
+    },
+    {
+     "session": "visitor-12",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 39,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-16",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 29,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-6",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 26,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "ssh-keyonly-root",
+     "label": "brute_force",
+     "scenario": "key_only_server",
+     "origin": "ssh",
+     "lines": 8,
+     "first_flag": 5,
+     "flagged": 4,
+     "categories": {
+      "brute_force": 4
+     }
+    },
+    {
+     "session": "ssh-compromise",
+     "label": "brute_force",
+     "scenario": "guessed_password",
+     "origin": "ssh",
+     "lines": 9,
+     "first_flag": 5,
+     "flagged": 4,
+     "categories": {
+      "brute_force": 4
+     }
+    },
+    {
+     "session": "visitor-39",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 31,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-27",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 37,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-17",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 29,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-3",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 33,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-9",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 35,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-14",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 28,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    },
+    {
+     "session": "visitor-28",
+     "label": "benign",
+     "scenario": "visitor",
+     "origin": "web",
+     "lines": 26,
+     "first_flag": null,
+     "flagged": 0,
+     "categories": {}
+    }
+   ]
+  }
+ }
+}

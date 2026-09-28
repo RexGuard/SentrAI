@@ -191,6 +191,33 @@ def test_collector_page_scans_and_watches_a_log(fake_core, tmp_path, monkeypatch
     assert len([b for b in at.button if b.label == "Watch"]) == 1
 
 
+def test_scout_proposals_are_approved_or_dismissed_on_the_collector_page(fake_core, tmp_path, monkeypatch):
+    import streamlit as st
+    from streamlit.testing.v1 import AppTest
+
+    monkeypatch.setenv("CACTAI_CONFIG", str(tmp_path / "config.json"))
+    requests.post(f"{fake_core}/demo/reset", timeout=3)
+    for name in ("auth.log", "syslog"):
+        requests.post(f"{fake_core}/_fake/scout-proposal", json={"name": name, "path": f"/var/log/{name}"}, timeout=3)
+    st.cache_data.clear()
+    at = AppTest.from_file(APP, default_timeout=20)
+    at.session_state["core_url"] = fake_core
+    at.session_state["auto_refresh"] = False
+    at.session_state["operator"] = "erick"
+    at.session_state["page"] = "collector"
+    at.run()
+    assert not at.exception, at.exception
+    assert any("Scout proposals" in m.value for m in at.markdown)
+    next(b for b in at.button if b.key.startswith("scout_yes_")).click().run()
+    assert not at.exception, at.exception
+    next(b for b in at.button if b.key.startswith("scout_no_")).click().run()
+    assert not at.exception, at.exception
+    assert requests.get(f"{fake_core}/log-sources/pending", timeout=3).json() == []
+    added = requests.get(f"{fake_core}/log-sources", timeout=3).json()
+    assert [(x["path"], x["found_by"]) for x in added if x.get("found_by") == "Scout"] == [("/var/log/auth.log", "Scout")]
+    assert not any(b.key and b.key.startswith("scout_") for b in at.button)
+
+
 def test_preset_fills_the_values_and_a_change_by_hand_switches_to_advanced(fake_core, tmp_path, monkeypatch):
     import json
 
@@ -220,3 +247,23 @@ def test_preset_fills_the_values_and_a_change_by_hand_switches_to_advanced(fake_
 
     at.button_group(key="cfg_CACTAI_PRESET").set_value("balanced").run()
     assert at.text_input(key="cfg_SLA_HOURS").value == cfg.preset_values("balanced")["SLA_HOURS"]
+
+
+def test_login_asks_for_the_dashboard_password(fake_core, tmp_path, monkeypatch):
+    from streamlit.testing.v1 import AppTest
+
+    monkeypatch.setenv("CACTAI_CONFIG", str(tmp_path / "config.json"))
+    monkeypatch.setenv(cfg.PASSWORD_ENV, "cactus")
+    at = AppTest.from_file(APP, default_timeout=20)
+    at.session_state["core_url"] = fake_core
+    at.session_state["auto_refresh"] = False
+    at.run()
+    assert not at.sidebar.button  # nothing but the login form
+    at.text_input[0].input("wrong")
+    at.button[0].click().run()
+    assert "Wrong password." in [e.value for e in at.error]
+    at.text_input[0].input("cactus")
+    at.button[0].click().run()
+    assert not at.exception, at.exception
+    assert any("Collector" in b.label for b in at.sidebar.button)
+    assert any(b.label == "Sign out" for b in at.sidebar.button)
