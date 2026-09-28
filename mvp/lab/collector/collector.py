@@ -19,6 +19,7 @@ Handles file creation (logs may not exist yet) and rotation/truncation.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import re
@@ -195,11 +196,14 @@ class DiscoveredLogSource(Source):
     Any format: each new line becomes one event carrying the raw text. The source IP and
     user are taken from JSON fields when present, otherwise guessed from the text."""
 
-    def __init__(self, path: Path, layer: str, fmt: str = "text") -> None:
+    def __init__(self, path: Path, layer: str, fmt: str = "text", from_end: bool = False) -> None:
         self.name = path.name
         self.layer, self.fmt = layer, fmt
         self.source = f"scout:{path.name}"
         self.tailer = Tailer(path)
+        if from_end:  # added while running: only new lines, not the file's whole history
+            with contextlib.suppress(OSError):
+                self.tailer.pos = path.stat().st_size
 
     def poll(self) -> list[dict[str, Any]]:
         events = []
@@ -242,10 +246,38 @@ class Collector:
         self.logs_dir = logs_dir
         self.flush_interval = flush_interval
         self.heartbeat_interval = heartbeat_interval
+        self.watch_sources = sources is None  # default set: also pick up newly approved log files
         self.sources = sources if sources is not None else default_sources(logs_dir, heartbeat_interval)
+        self._sources_stamp: float | None = None
+        self._tail_from_end = False
+        self._started = time.time()
         self.pending: list[dict] = []
 
+    def refresh_discovered(self) -> list[Source]:
+        """Start tailing log files approved since startup (Scout, or a process scan in the dashboard)."""
+        from scout import sources as scout_sources
+
+        f = scout_sources.sources_file()
+        try:
+            stamp = f.stat().st_mtime
+        except OSError:
+            return []
+        if stamp == self._sources_stamp:
+            return []
+        self._tail_from_end = self._sources_stamp is not None or stamp > self._started
+        self._sources_stamp = stamp
+        tailed = {str(s.tailer.path) for s in self.sources if isinstance(s, DiscoveredLogSource)}
+        added: list[Source] = [DiscoveredLogSource(Path(s["path"]), s["layer"], s.get("format", "text"),
+                                                   from_end=self._tail_from_end)
+                               for s in scout_sources.load() if str(Path(s["path"])) not in tailed]
+        for src in added:
+            print(f"[collector] now watching {src.name} ({src.layer})", flush=True)
+        self.sources[-1:-1] = added  # before the heartbeat
+        return added
+
     def collect(self) -> None:
+        if self.watch_sources:
+            self.refresh_discovered()
         for source in self.sources:
             self.pending.extend(source.poll())
 

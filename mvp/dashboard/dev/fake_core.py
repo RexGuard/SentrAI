@@ -82,6 +82,8 @@ class State:
         self.seq_ntf = 0
         self.script_done: set[str] = set()
         self.chat: list[dict] = []
+        self.scan: dict | None = None
+        self.log_sources: list[dict] = []
 
 
 S = State()
@@ -430,6 +432,62 @@ def post_chat(body: dict = Body(...)):
         audit("operator_chat", "Cyanide", operator=body.get("operator"), incident=iid, question=text,
               summary=f"{body.get('operator')} asked: {text[:80]}")
         return reply
+
+
+FAKE_SCAN = {
+    "platform": "Windows", "enabled": True, "scanned": 142, "skipped_protected": 3, "recognised": 3, "error": None,
+    "notes": ["MySQL / MariaDB database: The error log shows failed logins only when log_error_verbosity is 3."],
+    "processes": [{"pid": 1200, "name": "python.exe", "program": "CactAI lab: fake student portal", "layer": "web",
+                   "path": "~\\cactai\\mvp\\lab\\.venv\\Scripts\\python.exe", "account": "(user)", "service": "",
+                   "log_options": []},
+                  {"pid": 1300, "name": "nginx.exe", "program": "nginx web server", "layer": "web",
+                   "path": "C:\\nginx-1.27\\nginx.exe", "account": "(user)", "service": "", "log_options": []}],
+    "suggestions": [
+        {"id": "s1", "path": "C:\\nginx-1.27\\logs", "kind": "folder", "program": "nginx web server", "layer": "web",
+         "format": "text", "reasons": ["next to the program"], "files_found": 2, "already_watched": False,
+         "files": [{"id": "s1f1", "name": "access.log", "size": 20480, "modified": "2026-09-28T20:01:00", "watched": False},
+                   {"id": "s1f2", "name": "error.log", "size": 512, "modified": "2026-09-28T19:00:00", "watched": False}]},
+        {"id": "s2", "path": "~\\cactai\\mvp\\lab\\logs", "kind": "folder", "program": "CactAI lab: fake student portal",
+         "layer": "web", "format": "jsonl", "reasons": ["logs folder of the app"], "files_found": 1, "already_watched": True,
+         "files": [{"id": "s2f1", "name": "access.jsonl", "size": 4096, "modified": "2026-09-28T20:02:00", "watched": True}]},
+    ],
+}
+
+
+@app.post("/system/scan")
+def post_scan(body: dict = Body(None)):
+    import copy
+    with lock:
+        S.scan = {**copy.deepcopy(FAKE_SCAN), "scanned_at": iso(now())}
+        for s in S.scan["suggestions"]:
+            for f in s["files"]:
+                f["watched"] = f["watched"] or any(x["file_id"] == f["id"] for x in S.log_sources)
+        audit("system_scan", "Cyanide", by=(body or {}).get("operator"), summary="Scanned 142 processes")
+        return S.scan
+
+
+@app.get("/system/scan")
+def get_scan():
+    return S.scan or {"suggestions": [], "processes": [], "scanned_at": None}
+
+
+@app.get("/log-sources")
+def get_log_sources():
+    return S.log_sources
+
+
+@app.post("/log-sources")
+def post_log_source(body: dict = Body(...)):
+    with lock:
+        f = next((f for s in (S.scan or {}).get("suggestions", []) for f in s["files"] if f["id"] == body.get("file_id")), None)
+        if f is None:
+            raise HTTPException(404, f"{body.get('file_id')} is not in the latest scan; scan again")
+        f["watched"] = True
+        S.log_sources.append({"file_id": f["id"], "path": f["name"], "layer": "web", "format": "text",
+                              "found_by": "process scan", "confirmed_by": body.get("operator")})
+        audit("log_source_added", "Cyanide", operator=body.get("operator"), file=f["name"],
+              summary=f"{body.get('operator')} added {f['name']} to the collector")
+        return {"ok": True, "file": f["name"], "layer": "web", "watching": len(S.log_sources)}
 
 
 @app.post("/chat/clear")

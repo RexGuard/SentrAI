@@ -16,6 +16,7 @@ from .config import Settings
 from .reports import build_report, render_markdown
 from . import ai
 from .chat import OperatorChat, default_chat_provider
+from .discovery import Discovery
 from .cyanide import Cyanide, default_planner
 from .saguaro import BadRequestError, ConflictError, Saguaro
 
@@ -66,6 +67,16 @@ class ChatIn(BaseModel):
     incident: Optional[str] = None
 
 
+class ScanIn(BaseModel):
+    operator: str = "operator"
+
+
+class LogSourceIn(BaseModel):
+    operator: str
+    file_id: str
+    layer: Optional[str] = None
+
+
 class AITestIn(BaseModel):
     provider: str
     api_key: str = ""
@@ -104,12 +115,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # Operator chat: read-only tools plus suggestion buttons; answers from the core's own
     # explanations when no AI key is set (or when the fixed-playbook engine runs).
-    chat = OperatorChat(core, default_chat_provider() if isinstance(core, Cyanide) else None)
+    discovery = Discovery(core)
+    chat = OperatorChat(core, default_chat_provider() if isinstance(core, Cyanide) else None, discovery)
     chat.off_reason = core.ai_off_reason = ai.why_off()
 
     app = FastAPI(title="CactAI core", version="0.1.0", lifespan=lifespan)
     app.state.core = core
     app.state.chat = chat
+    app.state.discovery = discovery
 
     def not_found(iid: str) -> HTTPException:
         return HTTPException(status_code=404, detail=f"incident {iid} not found")
@@ -242,6 +255,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/chat/clear")
     def clear_chat() -> dict[str, Any]:
         return chat.clear()
+
+    # Process scan: read-only, suggests log files; an operator approves each one by id.
+    @app.post("/system/scan")
+    def post_scan(body: Optional[ScanIn] = None) -> dict[str, Any]:
+        return discovery.scan((body.operator if body else None) or "operator")
+
+    @app.get("/system/scan")
+    def get_scan() -> dict[str, Any]:
+        return discovery.latest() or {"suggestions": [], "processes": [], "scanned_at": None}
+
+    @app.get("/log-sources")
+    def get_log_sources() -> list[dict[str, Any]]:
+        return discovery.sources()
+
+    @app.post("/log-sources")
+    def post_log_source(body: LogSourceIn) -> dict[str, Any]:
+        try:
+            return discovery.approve(body.file_id, body.operator, body.layer)
+        except KeyError as e:
+            raise HTTPException(404, str(e).strip("'\""))
+        except ValueError as e:
+            raise HTTPException(409, str(e))
 
     @app.get("/ai")
     def ai_status() -> dict[str, Any]:

@@ -142,3 +142,23 @@ def test_jsonl_fields_win_over_text_guesses(tmp_path):
 def _clean_sources():
     yield
     Path(sources.sources_file()).unlink(missing_ok=True)
+
+
+def test_running_collector_picks_up_newly_approved_files_from_their_end(box, tmp_path):
+    from collector.collector import Collector
+
+    c = Collector("http://127.0.0.1:9", tmp_path / "logs")
+    c.collect()
+    assert not any(isinstance(s, DiscoveredLogSource) for s in c.sources)
+    import time
+    time.sleep(0.01)
+    sources.add({"path": str(box / "var/log/auth.log"), "layer": "os", "format": "text"}, "process scan")
+    c.pending.clear()
+    c.collect()  # the two old lines are history, not new events
+    assert [s.name for s in c.sources if isinstance(s, DiscoveredLogSource)] == ["auth.log"]
+    assert not [e for e in c.pending if e["source"] == "scout:auth.log"]
+    with open(box / "var/log/auth.log", "a") as fh:
+        fh.write("Sep 28 10:06:00 web sshd[1]: Failed password for root from 198.51.100.9\n")
+    c.collect()
+    assert [e["src_ip"] for e in c.pending if e["source"] == "scout:auth.log"] == ["198.51.100.9"]
+    assert type(c.sources[-1]).__name__ == "HeartbeatSource"
