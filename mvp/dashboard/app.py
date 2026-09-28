@@ -1,7 +1,8 @@
 """CactAI operator dashboard (Streamlit, http://127.0.0.1:8501).
 
-The sidebar is the menu: Configuration (the home page), Approvals, one page per part of the
-pipeline (Collector, Classifier, Action taker), Review, Reports and Audit trail. A part's
+The sidebar is the menu: Configuration (the home page), Approvals, Chat (talk with the
+orchestrator), one page per part of the pipeline (Collector, Classifier, Action taker), Review,
+Reports and Audit trail. A part's
 menu button shows a bubble with the malicious activity that arrived since it was last opened.
 
 Run from this folder:  .venv\\Scripts\\streamlit run app.py
@@ -173,6 +174,7 @@ def audit_records() -> tuple[list[dict], bool | None, str | None]:
 PAGES = {  # key: (icon, label, menu group)
     "config": ("⚙️", "Configuration", ""),
     "approvals": ("✋", "Approvals", "Decide"),
+    "chat": ("💬", "Chat", "Decide"),
     "collector": ("📥", "Collector", "Pipeline"),
     "classifier": ("🧠", "Classifier", "Pipeline"),
     "responder": ("🛡️", "Action taker", "Pipeline"),
@@ -407,6 +409,114 @@ def page_approvals() -> None:
             incident_summary(inc)
             decision_controls(inc)
             table(sh.action_rows(inc), "No containment actions yet.")
+
+
+CHAT_STARTERS = ("What is happening right now?", "Which incident should I deal with first?",
+                 "Why did you block the last IP address?")
+
+
+def page_chat() -> None:
+    """Talk with the orchestrator. It reads everything; it can only suggest, the operator decides.
+
+    Not auto-refreshed, so a rerun never interrupts typing.
+    """
+    show_flash()
+    if header("Chat", "ask the orchestrator what it sees and why it acted · it suggests, you decide") is None:
+        return
+    hist, err = safe(client.chat_history, {})
+    if err:
+        st.warning(f"Chat is not available on this core: {err}")
+        return
+    assistant = str(hist.get("assistant") or "Cyanide")
+    messages = hist.get("messages") or []
+    incidents, _ = fetch("incidents", [])
+    by_id = {str(i.get("id")): i for i in incidents or [] if i.get("id")}
+
+    c1, c2, c3 = st.columns([4, 6, 2], vertical_alignment="bottom")
+    about = c1.selectbox("Talk about", [""] + sorted(by_id, reverse=True), key="chat_about",
+                         format_func=lambda i: f"{i} · {sh.category_label(by_id[i].get('category'))}" if i
+                         else "The whole operation")
+    c2.caption(f"{assistant} · {hist.get('model') or 'model unknown'} · read-only: every action still needs "
+               "your click and goes through the normal approval checks")
+    if c3.button("🧹 Clear chat", width="stretch", disabled=not messages):
+        safe(client.clear_chat)
+        st.rerun()
+
+    with st.container(height=540, border=True):
+        if not messages:
+            st.caption(f"Ask {assistant} about incidents, its decisions, or what to do next.")
+        for m in messages:
+            chat_message(m, assistant, by_id)
+
+    if not messages:
+        cols = st.columns(len(CHAT_STARTERS))
+        for col, q in zip(cols, CHAT_STARTERS):
+            if col.button(q, width="stretch", key=f"starter_{q}"):
+                st.session_state["chat_pending"] = q
+    prompt = st.chat_input(f"Ask {assistant}…") or st.session_state.pop("chat_pending", None)
+    if prompt:
+        with st.spinner(f"{assistant} is looking into it…"):
+            _, err = safe(lambda: client.chat(st.session_state.operator, prompt, about or None))
+        if err:
+            st.session_state["flash"] = (f"Chat failed: {err}", "⚠️")
+        st.rerun()
+
+
+def chat_message(m: dict, assistant: str, by_id: dict[str, dict]) -> None:
+    mine = m.get("role") == "operator"
+    who = m.get("operator") or st.session_state.operator if mine else assistant
+    with st.chat_message("user" if mine else "assistant", avatar="👤" if mine else "🧪"):
+        meta = f"**{who}** · {sh.short_time(m.get('ts'))}"
+        if m.get("incident"):
+            meta += f" · about {m['incident']}"
+        if not mine and m.get("source") == "fallback":
+            meta += " · core explanation (no AI)"
+        st.caption(meta)
+        st.markdown(str(m.get("text") or "").replace("\n", "  \n"))  # keep the core's line breaks
+        if m.get("looked_at"):
+            st.caption("Looked at: " + ", ".join(dict.fromkeys(m["looked_at"])))
+        for n, s in enumerate(m.get("suggestions") or []):
+            chat_suggestion(m.get("id"), n, s, by_id.get(str(s.get("incident"))))
+
+
+def chat_suggestion(mid: Any, n: int, s: dict, inc: dict | None) -> None:
+    """A suggested decision. Pressing it calls the same endpoints as the Approvals page."""
+    inc_id, decision = str(s.get("incident")), str(s.get("decision"))
+    ok, why_not = sh.suggestion_state(inc, decision)
+    label = str(s.get("label") or f"{decision} {inc_id}")
+    if not ok:
+        st.caption(f"💡 Suggested: {label} · {why_not}")
+        return
+    op = st.session_state.operator
+    with st.form(key=f"sugg_{mid}_{n}", border=True):
+        st.markdown(f"💡 **Suggested: {html.escape(label)}**")
+        just = st.text_input("Justification (written to the audit log)", value=str(s.get("reason") or ""),
+                             key=f"sugg_just_{mid}_{n}")
+        go_ = st.form_submit_button(f"Confirm: {label}", type="primary" if decision != "reject" else "secondary")
+    if not go_:
+        return
+    just = just.strip()
+    if decision == "reject" and not just:
+        st.error("Rejecting requires a written justification.")
+        return
+
+    def _run() -> None:
+        if decision in ("approve", "reject"):
+            try:
+                client.ack(inc_id, op)
+            except CoreError:
+                pass
+            client.decision(inc_id, op, decision, just)
+        elif decision == "ack":
+            client.ack(inc_id, op)
+        elif decision == "rollback":
+            client.rollback(inc_id, op, just or "Rolled back by operator after chat")
+        else:
+            client.permanent(inc_id, op, just or "Made permanent by operator after chat")
+
+    run_action(label, _run, rerun=False)
+    st.cache_data.clear()
+    st.rerun()
 
 
 @st.fragment(run_every=AUTO)
@@ -667,6 +777,6 @@ def report_viewer(inc_id: str) -> None:
 
 
 {
-    "config": page_config, "approvals": page_approvals, "collector": page_collector, "classifier": page_classifier,
+    "config": page_config, "approvals": page_approvals, "chat": page_chat, "collector": page_collector, "classifier": page_classifier,
     "responder": page_responder, "review": page_review, "reports": page_reports, "audit": page_audit,
 }[st.session_state.page]()

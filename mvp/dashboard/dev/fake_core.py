@@ -81,6 +81,7 @@ class State:
         self.seq_act = 0
         self.seq_ntf = 0
         self.script_done: set[str] = set()
+        self.chat: list[dict] = []
 
 
 S = State()
@@ -378,6 +379,44 @@ def delivered(nid: str, body: dict = Body(...)):
                       message_id=n["message_id"])
                 return n
         raise HTTPException(404, f"notification {nid} not found")
+
+
+@app.get("/chat")
+def get_chat():
+    with lock:
+        return {"assistant": "Cyanide", "model": "fake core (canned answers)", "messages": S.chat}
+
+
+@app.post("/chat")
+def post_chat(body: dict = Body(...)):
+    """Canned orchestrator: explains the named (or first open) incident and suggests approving it."""
+    with lock:
+        text, iid = str(body.get("message") or "").strip(), body.get("incident")
+        if not text:
+            raise HTTPException(400, "empty message")
+        S.chat.append({"id": len(S.chat) + 1, "role": "operator", "operator": body.get("operator"), "text": text,
+                       "ts": iso(now()), "incident": iid})
+        inc = S.incidents.get(iid) or next((i for i in S.incidents.values() if i["status"] in ("open", "acknowledged")), None)
+        if inc:
+            answer = (f"{inc['id']} is {inc['category'].replace('_', ' ')} from {inc.get('src_ip')}, status {inc['status']}. "
+                      f"Recommended: {inc.get('recommended_action')}.")
+            sugg = [{"incident": inc["id"], "decision": "approve", "label": f"Approve & patch {inc['id']}",
+                     "reason": "Suggested by the fake core", "status": inc["status"]}] if inc["status"] in ("open", "acknowledged") else []
+        else:
+            answer, sugg = "No active incidents. Risk is quiet.", []
+        reply = {"id": len(S.chat) + 1, "role": "assistant", "text": answer, "ts": iso(now()), "incident": iid,
+                 "source": "fallback", "looked_at": ["risk overview"], "suggestions": sugg}
+        S.chat.append(reply)
+        audit("operator_chat", "Cyanide", operator=body.get("operator"), incident=iid, question=text,
+              summary=f"{body.get('operator')} asked: {text[:80]}")
+        return reply
+
+
+@app.post("/chat/clear")
+def clear_chat():
+    with lock:
+        S.chat = []
+    return {"ok": True}
 
 
 @app.post("/demo/reset")

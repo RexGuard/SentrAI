@@ -204,6 +204,22 @@ def available_actions(inc: dict) -> dict[str, bool]:
     }
 
 
+CHAT_DECISION_NEEDS = {"approve": "decide", "reject": "decide", "ack": "ack",
+                       "rollback": "contain_controls", "make_permanent": "contain_controls"}
+
+
+def suggestion_state(inc: dict | None, decision: str) -> tuple[bool, str]:
+    """Whether a decision the orchestrator suggested in chat can still be made, and why not."""
+    if not inc:
+        return False, "incident not found"
+    need = CHAT_DECISION_NEEDS.get(decision)
+    if need is None:
+        return False, f"unknown decision {decision}"
+    if not available_actions(inc)[need]:
+        return False, f"no longer possible: incident is {status_label(inc.get('status')).lower()}"
+    return True, ""
+
+
 def action_rows(inc: dict) -> pd.DataFrame:
     rows = [
         {

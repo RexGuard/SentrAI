@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict
 
 from .config import Settings
 from .reports import build_report, render_markdown
+from .chat import OperatorChat, default_chat_provider
 from .cyanide import Cyanide, default_planner
 from .saguaro import BadRequestError, ConflictError, Saguaro
 
@@ -58,6 +59,12 @@ class AdvanceIn(BaseModel):
     demo_hours: float = 1.0
 
 
+class ChatIn(BaseModel):
+    operator: str
+    message: str
+    incident: Optional[str] = None
+
+
 class HeartbeatIn(BaseModel):
     collector: str
 
@@ -87,8 +94,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 await task
         core.audit.close()
 
+    # Operator chat: read-only tools plus suggestion buttons; answers from the core's own
+    # explanations when no AI key is set (or when the fixed-playbook engine runs).
+    chat = OperatorChat(core, default_chat_provider() if isinstance(core, Cyanide) else None)
+
     app = FastAPI(title="CactAI core", version="0.1.0", lifespan=lifespan)
     app.state.core = core
+    app.state.chat = chat
 
     def not_found(iid: str) -> HTTPException:
         return HTTPException(status_code=404, detail=f"incident {iid} not found")
@@ -207,6 +219,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def helpdesk_why(target: str) -> dict[str, Any]:
         return core.why_target(target)
 
+    @app.get("/chat")
+    def get_chat(limit: int = Query(100, ge=0, le=200)) -> dict[str, Any]:
+        return chat.messages(limit)
+
+    @app.post("/chat")
+    def post_chat(body: ChatIn) -> dict[str, Any]:
+        try:
+            return chat.ask(body.operator, body.message, body.incident)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @app.post("/chat/clear")
+    def clear_chat() -> dict[str, Any]:
+        return chat.clear()
+
     @app.post("/heartbeat")
     def post_heartbeat(body: HeartbeatIn) -> dict[str, Any]:
         core.ingest([{"source": "heartbeat", "host": body.collector, "layer": "os", "raw": "heartbeat"}])
@@ -214,6 +241,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/demo/reset")
     def demo_reset() -> dict[str, Any]:
+        chat.clear()
         return core.reset()
 
     @app.post("/demo/advance")
