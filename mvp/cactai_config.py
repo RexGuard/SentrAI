@@ -116,10 +116,20 @@ SECTIONS = (
         Field("PROTECTED_USERS", "Accounts never to lock (comma-separated)"),
         Field("ON_DUTY", "On-duty responder shown in alerts", "John Doe (SEC-409) / Shift Bravo"),
     )),
-    Section("notifications", "4. Notifications", "Telegram alerts. Leave blank to print alerts to the console.", (
+    Section("notifications", "4. Notifications", "Telegram alerts, with email as the backup. "
+            "Leave both blank to print alerts to the console.", (
         Field("TELEGRAM_BOT_TOKEN", "Telegram bot token", secret=True),
         Field("TELEGRAM_CHAT_ID", "Telegram chat id"),
         Field("CACTAI_OPERATOR", "Your name, as shown on approvals", "operator"),
+        Field("SMTP_HOST", "Email: SMTP server, blank for no email alerts"),
+        Field("SMTP_PORT", "Email: SMTP port (587 STARTTLS, 465 SSL)", "587", int),
+        Field("SMTP_SECURITY", "Email: connection security", "starttls", choices=("starttls", "ssl", "none")),
+        Field("SMTP_USER", "Email: SMTP login, blank if none"),
+        Field("SMTP_PASSWORD", "Email: SMTP password or app password", secret=True),
+        Field("ALERT_EMAIL_FROM", "Email: sender address, blank to use the login"),
+        Field("ALERT_EMAIL_TO", "Email: recipients (comma-separated)"),
+        Field("CACTAI_EMAIL_MODE", "Email: send when Telegram fails, or always", "backup",
+              choices=("backup", "always")),
     )),
     Section("ai", "5. AI model", "Cyanide and Scout. Pick a provider and paste its key; "
             "leave the key blank to run on fixed playbooks.", (
@@ -135,6 +145,8 @@ SECTIONS = (
     )),
 )
 FIELDS = {f.env: f for s in SECTIONS for f in s.fields}
+EMAIL_FIELDS = ("SMTP_PORT", "SMTP_SECURITY", "SMTP_USER", "SMTP_PASSWORD", "ALERT_EMAIL_FROM", "ALERT_EMAIL_TO",
+                "CACTAI_EMAIL_MODE")  # asked only when SMTP_HOST is set
 MODEL_ENV = "CACTAI_LLM_MODEL"
 TOKEN_ENV = "CACTAI_API_TOKEN"
 PASSWORD_ENV = "CACTAI_DASHBOARD_PASSWORD"
