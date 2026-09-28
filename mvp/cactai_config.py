@@ -8,6 +8,10 @@ A machine is "new" when it has no settings file yet. There, `ensure()` walks the
 through one short section per part of the pipeline (collector, classifier, responder,
 notifications). Pressing Enter keeps the default, which is exactly what the demo uses.
 
+The security values (when an event counts as an attack, when CactAI acts, for how long) come
+from a preset: Strict, Moderate or Balanced. The saved file keeps the preset's name and every
+value, so any value set by hand is an override of that preset (see `overrides()`).
+
 Run (any venv, stdlib only):
     python cactai_config.py              set up if this is a new machine, then show settings
     python cactai_config.py setup        run the wizard again (current values as defaults)
@@ -50,7 +54,38 @@ class Section:
     fields: tuple[Field, ...]
 
 
+PRESET_ENV = "CACTAI_PRESET"
+DEFAULT_PRESET = "moderate"  # the values the demo was built and recorded with
+
+
+@dataclass(frozen=True)
+class Preset:
+    label: str
+    about: str
+    values: dict[str, str]
+
+
+# Ordered from most to least cautious. Each preset sets every field listed in PRESET_FIELDS.
+PRESETS = {
+    "strict": Preset("Strict", "Acts early and holds longer. For sensitive data; expect more alerts and "
+                     "some false positives.", {
+        "BRUTE_FORCE_COUNT": "3", "BRUTE_FORCE_WINDOW_S": "120", "EXPORT_ROWS_THRESHOLD": "50",
+        "RISK_THRESHOLD": "65", "HOTPATCH_TTL_HOURS": "4", "SLA_HOURS": "1", "NEEDLE_MIN_CONFIDENCE": "0.5"}),
+    "moderate": Preset("Moderate", "The recommended default: clear attacks are contained quickly, "
+                       "unclear ones wait for a person.", {
+        "BRUTE_FORCE_COUNT": "5", "BRUTE_FORCE_WINDOW_S": "60", "EXPORT_ROWS_THRESHOLD": "100",
+        "RISK_THRESHOLD": "80", "HOTPATCH_TTL_HOURS": "2", "SLA_HOURS": "2", "NEEDLE_MIN_CONFIDENCE": "0.6"}),
+    "balanced": Preset("Balanced", "Puts day-to-day operations first: acts only on strong evidence, "
+                       "blocks briefly and gives people more time.", {
+        "BRUTE_FORCE_COUNT": "8", "BRUTE_FORCE_WINDOW_S": "60", "EXPORT_ROWS_THRESHOLD": "250",
+        "RISK_THRESHOLD": "90", "HOTPATCH_TTL_HOURS": "1", "SLA_HOURS": "4", "NEEDLE_MIN_CONFIDENCE": "0.75"}),
+}
+PRESET_FIELDS = tuple(PRESETS[DEFAULT_PRESET].values)
+
 SECTIONS = (
+    Section("preset", "Security preset", "One choice sets the detection and response values below.", (
+        Field(PRESET_ENV, "Preset", DEFAULT_PRESET, choices=tuple(PRESETS)),
+    )),
     Section("collector", "1. Collector", "Where the logs are and where to send events.", (
         Field("CACTAI_LAB_LOGS", "Logs directory", str(MVP_DIR / "lab" / "logs")),
         Field("CACTAI_LOG_ACCESS", "Web access log file name", "access.jsonl"),
@@ -69,6 +104,7 @@ SECTIONS = (
         Field("RISK_THRESHOLD", "Risk index (0-100) at which temporary blocks start", "80", int),
         Field("HOTPATCH_TTL_HOURS", "Hours before an automatic block expires", "2", float),
         Field("SLA_HOURS", "Hours a human has to respond before escalation", "2", float),
+        Field("NEEDLE_MIN_CONFIDENCE", "AI confidence (0-1) needed before acting without a person", "0.6", float),
         Field("PROTECTED_IPS", "IPs never to block (comma-separated)", "127.0.0.1,::1,localhost"),
         Field("PROTECTED_USERS", "Accounts never to lock (comma-separated)"),
         Field("ON_DUTY", "On-duty responder shown in alerts", "John Doe (SEC-409) / Shift Bravo"),
@@ -106,6 +142,38 @@ def _one_ai_key(values: dict[str, str]) -> dict[str, str]:
             provider = "compatible"
         values["CACTAI_LLM_PROVIDER"] = provider if provider != "auto" else FIELDS["CACTAI_LLM_PROVIDER"].default
     return values
+
+
+def preset_values(name: str) -> dict[str, str]:
+    """The values a preset sets (the default preset's for an unknown name)."""
+    return dict(PRESETS.get(name, PRESETS[DEFAULT_PRESET]).values)
+
+
+def _same(a: str, b: str) -> bool:
+    try:
+        return float(a) == float(b)
+    except ValueError:
+        return a.strip() == b.strip()
+
+
+def overrides(values: dict[str, str]) -> dict[str, str]:
+    """The preset-controlled values that differ from the chosen preset, i.e. the ones set by hand."""
+    base = preset_values(values.get(PRESET_ENV, DEFAULT_PRESET))
+    return {env: values[env] for env in PRESET_FIELDS if env in values and not _same(values[env], base[env])}
+
+
+def describe(values: dict[str, str]) -> list[tuple[str, tuple[str, ...]]]:
+    """The preset-controlled values in plain words, each with the fields it shows, for summaries."""
+    v = {env: values.get(env, FIELDS[env].default) for env in PRESET_FIELDS}
+    return [
+        (f"brute force at {v['BRUTE_FORCE_COUNT']} failed logins in {v['BRUTE_FORCE_WINDOW_S']} s",
+         ("BRUTE_FORCE_COUNT", "BRUTE_FORCE_WINDOW_S")),
+        (f"bulk export at {v['EXPORT_ROWS_THRESHOLD']} rows", ("EXPORT_ROWS_THRESHOLD",)),
+        (f"acts at risk {v['RISK_THRESHOLD']}", ("RISK_THRESHOLD",)),
+        (f"blocks last {v['HOTPATCH_TTL_HOURS']} h", ("HOTPATCH_TTL_HOURS",)),
+        (f"people have {v['SLA_HOURS']} h to respond", ("SLA_HOURS",)),
+        (f"acts alone only at {v['NEEDLE_MIN_CONFIDENCE']} AI confidence or more", ("NEEDLE_MIN_CONFIDENCE",)),
+    ]
 
 
 def read() -> dict[str, str]:
@@ -171,19 +239,29 @@ def wizard(ask: Callable[[str], str] | None = None, ask_secret: Callable[[str], 
 
     A field with choices shows a numbered list; the model question takes "?" to list the
     models the key can use. `models` is replaceable for tests.
+
+    After the preset, one question decides whether to set its values one by one (advanced).
+    If not, the preset's values are used as they are.
     """
     ask, ask_secret = ask or input, ask_secret or getpass.getpass
     current = {f.env: f.default for f in FIELDS.values()} | read()
     say("\nCactAI setup. Press Enter to keep the value in [brackets].")
-    values = {}
+    values: dict[str, str] = {}
+    preset, advanced = preset_values(DEFAULT_PRESET), False
     for section in SECTIONS:
         say(f"\n{section.title}: {section.about}")
         for f in section.fields:
+            if f.env in PRESET_FIELDS and not advanced:
+                values[f.env] = preset[f.env]
+                continue
             shown = ("set" if current[f.env] else "not set") if f.secret else current[f.env]
             prompt = f.prompt
             if f.choices:
                 for n, choice in enumerate(f.choices, 1):
-                    say(f"    {n}. {cactai_llm.LABEL.get(choice, choice)}")
+                    if f.env == PRESET_ENV:
+                        say(f"    {n}. {PRESETS[choice].label}: {PRESETS[choice].about}")
+                    else:
+                        say(f"    {n}. {cactai_llm.LABEL.get(choice, choice)}")
                 prompt += " (number)"
             listed: list[str] = []
             if f.env == MODEL_ENV:
@@ -209,7 +287,25 @@ def wizard(ask: Callable[[str], str] | None = None, ask_secret: Callable[[str], 
                     break
                 say("    Please pick one of the numbers above." if f.choices else "    Please enter a number.")
             values[f.env] = answer
+            if f.env == PRESET_ENV:
+                preset, advanced = _pick_preset(answer, current, ask, say)
     return values
+
+
+def _pick_preset(name: str, current: dict[str, str], ask: Callable[[str], str],
+                 say: Callable[[str], None]) -> tuple[dict[str, str], bool]:
+    """The chosen preset's values and whether to ask for each one (keeping earlier overrides as defaults)."""
+    preset = preset_values(name)
+    say("    " + "; ".join(text for text, _ in describe(preset)) + ".")
+    kept = overrides(current) if current.get(PRESET_ENV) == name else {}
+    if kept:
+        say(f"    You changed {len(kept)} of these by hand before: " + ", ".join(kept) + ".")
+    hint = "Y/n" if kept else "y/N"
+    answer = ask(f"  Set each value yourself (advanced)? [{hint}]: ").strip().lower()
+    advanced = answer.startswith("y") if answer else bool(kept)
+    if advanced:  # the questions below then offer the preset's values, or your earlier changes
+        current.update(preset | kept)
+    return preset, advanced
 
 
 def ensure(interactive: bool | None = None) -> dict[str, str]:

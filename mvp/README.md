@@ -60,7 +60,9 @@ The dashboard opens on Configuration. Open **Review** for the gauge; the Collect
 ### First-run setup
 
 On a new machine, `run_demo.ps1` (and the collector when started on its own) first runs a
-short setup wizard, one section per part: **collector** (logs directory and log file names),
+short setup wizard. It starts with a **security preset** (Strict, Moderate or Balanced), which
+sets the detection and response values; answer `y` to "set each value yourself" to change them
+one by one. Then one section per part: **collector** (logs directory and log file names),
 **classifier** (brute-force and bulk-export thresholds, TypeSafe key), **responder** (risk
 threshold, block expiry, SLA, IPs and accounts never to touch) and **notifications**
 (Telegram). Press Enter at every question to keep the demo defaults.
@@ -76,6 +78,22 @@ python cactai_config.py setup      # change them
 The file holds the TypeSafe key and Telegram token in plain text, so keep it in your own
 user folder. `run_demo.ps1` only clears old `.jsonl` logs when the logs directory is inside
 `mvp\lab`, so pointing it at real logs never deletes them.
+
+### Security presets
+
+| Value | Strict | Moderate (default) | Balanced |
+| --- | --- | --- | --- |
+| Brute force: failed logins / seconds (`BRUTE_FORCE_COUNT` / `_WINDOW_S`) | 3 / 120 | 5 / 60 | 8 / 60 |
+| Rows in one export that count as exfiltration (`EXPORT_ROWS_THRESHOLD`) | 50 | 100 | 250 |
+| Risk at which temporary blocks start (`RISK_THRESHOLD`) | 65 | 80 | 90 |
+| Hours before a block expires (`HOTPATCH_TTL_HOURS`) | 4 | 2 | 1 |
+| Hours a person has to respond (`SLA_HOURS`) | 1 | 2 | 4 |
+| AI confidence needed to act without a person (`NEEDLE_MIN_CONFIDENCE`) | 0.5 | 0.6 | 0.75 |
+
+Strict acts early and holds longer (more alerts, some false positives). Moderate is what the
+demo uses. Balanced puts day-to-day operations first. The settings file keeps the preset name
+(`CACTAI_PRESET`) and every value, so a value that differs from the preset is an override; the
+dashboard's Configuration page shows overrides in amber under **Advanced** and can reset them.
 
 ### Variables
 
@@ -95,6 +113,8 @@ user folder. `run_demo.ps1` only clears old `.jsonl` logs when the logs director
 | `CACTAI_LOG_ACCESS`, `_AUTH`, `_DB`, `_OS` | `access.jsonl`, `auth.jsonl`, `db.jsonl`, `os.jsonl` | lab: log file names |
 | `BRUTE_FORCE_COUNT` / `BRUTE_FORCE_WINDOW_S` | 5 / 60 | core: failed logins that count as brute force |
 | `EXPORT_ROWS_THRESHOLD` | 100 | core: rows in one export that count as exfiltration |
+| `NEEDLE_MIN_CONFIDENCE` | 0.6 | core: AI confidence Needle needs before approving an autonomous action |
+| `CACTAI_PRESET` | `moderate` | wizard and dashboard: the security preset the values above came from |
 | `CACTAI_OPERATOR` | `operator` | notifier: name shown on approvals |
 | `CACTAI_CONFIG` | `~\.cactai\config.json` | all: where the setup wizard saves settings |
 
