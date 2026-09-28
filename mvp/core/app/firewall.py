@@ -154,13 +154,13 @@ class FirewallResponder(BlocklistResponder):
         self.history: list[dict[str, object]] = []  # every command run or logged, newest last
 
     # -- command plumbing
-    def _run(self, args: list[str]) -> tuple[int, str]:
+    def _run(self, args: list[str], probe: bool = False) -> tuple[int, str]:
         if not self.enforce:
             log.info("firewall dry run: %s", " ".join(args))
             self.history.append({"cmd": args, "dry_run": True})
             return 0, "dry run"
         rc, out = self.runner(args)
-        (log.info if rc == 0 else log.warning)("firewall %s -> %s %s", " ".join(args), rc, out)
+        (log.info if rc == 0 or probe else log.warning)("firewall %s -> %s %s", " ".join(args), rc, out)
         self.history.append({"cmd": args, "dry_run": False, "rc": rc, "output": out[:500]})
         return rc, out
 
@@ -192,7 +192,14 @@ class FirewallResponder(BlocklistResponder):
             return in_blocklist
         add, check, remove = block_commands(self.backend, target)
         start = len(self.history)
-        ok = added = self._setup() and self._run(add)[0] == 0
+        ready = self._setup()
+        if ready and self.enforce and self._run(check, probe=True)[0] == 0:
+            # Already in the firewall, e.g. re-applied after a restart (saved state): adopt it, add no duplicate.
+            self._in_firewall.add(target)
+            self._record(action, {"commands": [" ".join(h["cmd"]) for h in self.history[start:]], "ok": True,
+                                  "already_in_firewall": True})
+            return in_blocklist
+        ok = added = ready and self._run(add)[0] == 0
         if ok and self.enforce:
             ok = self._run(check)[0] == 0  # verify it is really in force
         if ok:

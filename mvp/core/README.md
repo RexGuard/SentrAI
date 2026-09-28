@@ -39,6 +39,7 @@ Tests:
 | `TEAM_LEAD`, `IT_MANAGER`, `CXO` | role names | Escalation recipients. |
 | `TYPESAFE_API_KEY` | unset | Turns on Jev (TypeSafe System One). Without it the fallback classifier is used. |
 | `JEV_TIMEOUT_S` | `3` | Timeout for each Jev call. After 3 failures in a row a 60 s circuit breaker opens. |
+| `PROTECTED_IPS` | `127.0.0.1,::1,localhost` | Addresses never blocked, by the portal or the firewall. Add your own admin IP before turning the firewall on, e.g. `PROTECTED_IPS=127.0.0.1,::1,localhost,198.51.100.200`. |
 | `CACTAI_FIREWALL` | `off` | Mirror `block_ip` into the host firewall: `auto`, `nftables`, `iptables` (Linux) or `netsh` (Windows). `off` keeps blocking portal-only. |
 | `CACTAI_FIREWALL_ENFORCE` | `0` | `0` is a dry run: the command is logged and written to the audit trail, never run. `1` runs it (admin/root). Loopback, link-local, multicast and `PROTECTED_IPS` are never sent to the firewall. |
 | `CACTAI_DB` | `data/cactai.db` | SQLite audit chain. |

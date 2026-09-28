@@ -120,7 +120,7 @@ behind an arrow.
 | `RISK_THRESHOLD` | 80 | core |
 | `SLA_HOURS` / `HOTPATCH_TTL_HOURS` | 2 / 2 | core |
 | `ON_DUTY`, `TEAM_LEAD`, `IT_MANAGER`, `CXO` | sample names | core (reports, escalation) |
-| `PROTECTED_IPS` | `127.0.0.1,::1,localhost` | core: never auto-blocked |
+| `PROTECTED_IPS` | `127.0.0.1,::1,localhost` | core: never auto-blocked (portal or firewall); add your admin IP here before enabling `CACTAI_FIREWALL` |
 | `PROTECTED_USERS` | empty | core: never auto-locked |
 | `CACTAI_FIREWALL` | `off` | core: also block IPs in the host firewall (`auto`, `nftables`, `iptables`, `netsh`); `off` keeps portal-only blocking |
 | `CACTAI_FIREWALL_ENFORCE` | `0` | core: `0` is a dry run that only logs the firewall command; `1` really runs it (needs admin/root) |

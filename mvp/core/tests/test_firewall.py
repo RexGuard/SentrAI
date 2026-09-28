@@ -15,15 +15,30 @@ IP = "203.0.113.45"
 
 
 class FakeRunner:
-    """Records every command; commands whose argv contains `fail_on` return exit code 1."""
+    """A pretend firewall that remembers its rules, so check commands answer truthfully.
+    Commands whose argv contains `fail_on` return exit code 1 and change nothing."""
 
     def __init__(self, fail_on: str | None = None) -> None:
         self.calls: list[list[str]] = []
         self.fail_on = fail_on
+        self.rules: set[tuple[str, ...]] = set()
 
     def __call__(self, args):
         self.calls.append(list(args))
-        return (1, "boom") if self.fail_on and self.fail_on in args else (0, "")
+        if self.fail_on and self.fail_on in args:
+            return 1, "boom"
+        at = 3 if args[0] == "netsh" else 1  # position of the verb
+        verb = args[at]
+        if args[0] == "nft" and args[2] != "element":
+            return 0, ""  # table/set/chain setup
+        key = tuple(args[:at] + args[at + 1:at + 3]) if args[0] == "netsh" else tuple(args[:at] + args[at + 1:])
+        if verb in ("-C", "get", "show"):
+            return (0, "") if key in self.rules else (1, "no such rule")
+        if verb in ("-I", "add"):
+            self.rules.add(key)
+        elif verb in ("-D", "delete"):
+            self.rules.discard(key)
+        return 0, ""
 
     def verbs(self, tool):
         return [c[1] for c in self.calls if c[0] == tool]
@@ -84,12 +99,44 @@ def test_enforced_iptables_adds_verifies_and_removes_once_per_address():
     r = FirewallResponder("iptables", enforce=True, runner=runner)
     a1, a2 = block(), block()
     assert r.apply(a1) and r.apply(a2)
-    assert runner.verbs("iptables") == ["-I", "-C"]  # second incident reuses the same rule
+    assert runner.verbs("iptables") == ["-C", "-I", "-C"]  # second incident reuses the same rule
     r.revert(a1)
-    assert runner.verbs("iptables") == ["-I", "-C"]  # still blocked by the second incident
+    assert runner.verbs("iptables") == ["-C", "-I", "-C"]  # still blocked by the second incident
     r.revert(a2)
-    assert runner.verbs("iptables") == ["-I", "-C", "-D"]
+    assert runner.verbs("iptables") == ["-C", "-I", "-C", "-D"]
+    assert runner.rules == set()
     assert r.status()["blocked"] == []
+
+
+def test_reapply_after_restart_adopts_the_existing_rule():
+    """Saved state re-applies every active block on startup; that must not add duplicate rules."""
+    runner = FakeRunner()
+    FirewallResponder("iptables", enforce=True, runner=runner).apply(block())
+    restarted = FirewallResponder("iptables", enforce=True, runner=runner)  # same host firewall, fresh process
+    a = block()
+    assert restarted.apply(a) and a["firewall"]["already_in_firewall"]
+    assert runner.verbs("iptables") == ["-C", "-I", "-C", "-C"]  # no second -I
+    restarted.revert(a)
+    assert runner.rules == set()  # the adopted rule is still cleaned up on expiry
+
+
+@pytest.mark.parametrize("backend", ["nftables", "netsh"])
+def test_reapply_is_idempotent_on_every_backend(backend):
+    runner = FakeRunner()
+    FirewallResponder(backend, enforce=True, runner=runner).apply(block())
+    adds = sum(1 for c in runner.calls if "add" in c and IP in " ".join(c))
+    FirewallResponder(backend, enforce=True, runner=runner).apply(block())
+    assert sum(1 for c in runner.calls if "add" in c and IP in " ".join(c)) == adds == 1
+
+
+def test_admin_ip_in_protected_ips_is_never_blocked(monkeypatch):
+    monkeypatch.setenv("PROTECTED_IPS", "127.0.0.1,::1,localhost,198.51.100.200")
+    s = Settings()
+    runner = FakeRunner()
+    r = from_settings("iptables", True, s.protected_ips, runner=runner)
+    a = block("198.51.100.200")
+    r.apply(a)
+    assert a["firewall"]["skipped"] == "protected address" and runner.calls == []
 
 
 def test_ipv6_uses_ip6tables():
@@ -122,7 +169,7 @@ def test_failed_command_reports_not_verified():
     r = FirewallResponder("iptables", enforce=True, runner=runner)
     a = block()
     assert r.apply(a) is False and a["firewall"]["ok"] is False
-    assert runner.verbs("iptables") == ["-I", "-C", "-D"]  # the unverified rule is taken out again
+    assert runner.verbs("iptables") == ["-C", "-I", "-C", "-D"]  # the unverified rule is taken out again
 
 
 def test_other_actions_pass_through_untouched():
@@ -152,14 +199,14 @@ def test_approval_ttl_and_rollback_drive_the_firewall(fw_client):
         inc = c.post("/incidents/RSK-2026-081/decision", json={"operator": "erick", "decision": "approve"}).json()
         act = next(a for a in inc["actions"] if a["type"] == "block_ip")
         assert act["enforcement"] == "blocklist + firewall (iptables)" and act["verified"]
-        assert runner.verbs("iptables") == ["-I", "-C"]
+        assert runner.verbs("iptables") == ["-C", "-I", "-C"]
         assert IP in c.get("/blocklist").json()["ips"]
         c.post("/demo/advance", json={"demo_hours": 2.1})  # TTL expiry
-        assert runner.verbs("iptables") == ["-I", "-C", "-D"]
+        assert runner.verbs("iptables") == ["-C", "-I", "-C", "-D"]
         assert c.get("/blocklist").json()["ips"] == []
         audit = c.get("/audit").json()["records"]
         applied = [x for x in audit if x["type"] == "action_applied" and x["data"]["type"] == "block_ip"]
-        assert "iptables -I INPUT" in applied[0]["data"]["firewall"]["commands"][0]
+        assert "iptables -I INPUT" in applied[0]["data"]["firewall"]["commands"][1]
 
 
 def test_failed_firewall_block_is_rolled_back(fw_client):
@@ -170,7 +217,7 @@ def test_failed_firewall_block_is_rolled_back(fw_client):
         act = next(a for a in inc["actions"] if a["type"] == "block_ip")
         assert act["status"] == "rolled_back" and not act["verified"]
         assert IP not in c.get("/blocklist").json()["ips"]
-        assert runner.verbs("iptables") == ["-I"]  # nothing to remove, it never went in
+        assert runner.verbs("iptables") == ["-C", "-I"]  # nothing to remove, it never went in
 
 
 def test_dry_run_core_never_runs_commands(fw_client):
