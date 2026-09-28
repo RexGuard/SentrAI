@@ -20,6 +20,7 @@ from .agents import (
     HelpDesk,
     LayerAgent,
     Needle,
+    Proposal,
     Reservoir,
     Root,
     Scribe,
@@ -319,8 +320,12 @@ class Saguaro(Agent):
         })
         return inc
 
+    def _proposals(self, inc: dict[str, Any], agent: LayerAgent) -> list[Proposal]:
+        """The containment steps for an incident. Cyanide overrides this with its own plan."""
+        return agent.propose(inc, self.settings.ttl_hours)
+
     def _describe(self, inc: dict[str, Any], agent: LayerAgent) -> None:
-        proposals = agent.propose(inc, self.settings.ttl_hours)
+        proposals = self._proposals(inc, agent)
         inc["recommended_action"] = agent.recommended_text(proposals, self.settings.ttl_hours)
         inc["explanation"] = agent.explain(inc)
         if inc.get("needs_review"):
@@ -560,7 +565,7 @@ class Saguaro(Agent):
                  justification: str | None = None) -> bool:
         s = self.settings
         analyst = self._agent(inc["analyzed_by"])
-        proposals = analyst.propose(inc, s.ttl_hours)
+        proposals = self._proposals(inc, analyst)
         executor = self.areole_win if "win" in str(inc.get("host") or "").lower() else self.areole_linux
         # 1. Snapshot
         pre = self._state_for_snapshot(now)

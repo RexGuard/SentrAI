@@ -44,7 +44,25 @@ Tests:
 | `EXPORT_ROWS_THRESHOLD` | `100` | `/export` with at least this many rows counts as data exfiltration. |
 | `WATCHDOG_SILENCE_S` | `30` | Watchdog flags a collector after this many seconds of silence. |
 | `PROTECTED_IPS` | empty | Comma-separated IPs that Needle will never approve blocking. |
+| `CACTAI_ENGINE` | `cyanide` | Orchestrator. `cyanide` plans with Claude when a key is set; `saguaro` keeps the fixed playbooks only. |
+| `ANTHROPIC_API_KEY` | unset | Turns on Cyanide's planner (Claude). Without it Cyanide behaves exactly like Saguaro. |
+| `CYANIDE_PROFILE` | unset | Path to the system profile JSON, e.g. `profiles\tuition_centre.json`. |
+| `CYANIDE_MODEL` / `CYANIDE_EFFORT` / `CYANIDE_TIMEOUT_S` | `claude-opus-5` / `low` / `20` | Model, effort level and per-call timeout for planning. |
+| `CYANIDE_ENABLED` | `1` | Set to `0` to switch the planner off without removing the key (tests do this). |
 | `CACTAI_BACKGROUND` | `1` | Set to `0` to turn off the 1 s background tick (tests do this). |
+
+## Cyanide (the orchestrator)
+
+Cyanide (`app/cyanide.py`) replaces Saguaro's fixed judgement with Claude, and keeps everything that must stay predictable.
+
+- **What Claude decides.** When an incident opens, Cyanide sends Claude the system profile, the incident, its log lines and the list of installed actions. Claude answers with an assessment in plain words, the containment steps that fit this system, and whether CactAI may act alone or must wait for a human.
+- **What stays fixed.** The risk index, SLA, inaction penalty, notifications, TTLs and the audit chain are Saguaro's code, unchanged. Needle still reviews every autonomous action.
+- **Guardrails.** Claude can only pick installed action types. IP, account and host targets must appear in the incident's own events; anything else is dropped and logged. Accounts and IPs listed as protected in the profile go to Needle, which refuses them. A plan can make CactAI more careful ("hold: exam week, the admin account is shared") but never bypass the threshold or the TTL.
+- **Fallback.** No key, a timeout or a bad answer means the default playbook is used, and the timeline says so.
+- **Adapting to a new system.** Write a profile (see `profiles/tuition_centre.json`): what the hosts do, which accounts matter, business hours, what must never be touched. A new responder (a new action type) is offered to Claude automatically.
+- **Speed.** Planning runs on a background thread, so ingestion never waits on the model. The playbook text shows until the plan arrives, usually a few seconds later.
+
+Audit records: `cyanide_plan` (actions, reasons, dropped steps), `cyanide_hold` and `cyanide_fallback`.
 
 ## How it works
 
