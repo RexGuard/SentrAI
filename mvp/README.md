@@ -56,6 +56,15 @@ cd .. && ./stop_demo.sh
 
 The attack commands above work the same with `.venv/bin/python` in place of `.\.venv\Scripts\python.exe`.
 
+If port 8000 or 8501 is taken, pick others: `./run_demo.sh --core-port 8100 --dashboard-port 8601`
+(`.\run_demo.ps1 -CorePort 8100 -DashboardPort 8601` on Windows, or set `CACTAI_CORE_PORT` /
+`CACTAI_DASHBOARD_PORT`). The portal stays on 5000, the only port the attack scripts accept.
+
+### On a server (systemd services)
+
+To keep CactAI running on a Linux server, install it as services instead of running the demo:
+`sudo ./deploy/install.sh --protect <your admin IP>`. See [deploy/README.md](deploy/README.md).
+
 ### What you should see
 
 The dashboard opens on Configuration. Open **Review** for the gauge; the Collector, Classifier and Action taker buttons show a red bubble when new malicious activity reaches that part.

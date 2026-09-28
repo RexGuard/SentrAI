@@ -714,11 +714,35 @@ def page_collector() -> None:
         section("Events per layer agent", "", "hub")
         table(sh.pd.DataFrame([{"Agent": a.get("name"), "Events analysed": a.get("analyzed", 0)} for a in layer]),
               "No agent data.")
+    scout_proposals()
     log_discovery()
     with st.container(border=True):
         section("Malicious events collected", "newest first", "warning")
         table(sh.classification_rows(records)[["Time", "Event", "Category", "Layer agent", "Incident", "Raw log line"]],
               "No malicious events yet.")
+
+
+def scout_proposals() -> None:
+    """Log files Scout proposed (python -m scout find), waiting for the operator's yes or no."""
+    waiting, err = safe(client.pending_log_sources, [])
+    if err or not waiting:
+        return
+    with st.container(border=True):
+        section("Scout proposals", "log files Scout found · nothing is watched until you press Watch",
+                "travel_explore")
+        for p in waiting:
+            c1, c2, c3 = st.columns([6, 1, 1])
+            c1.markdown(f"**{html.escape(str(p.get('name')))}** · `{p.get('path')}` · {p.get('layer')}  \n"
+                        f"<span style='opacity:.7'>{html.escape(str(p.get('why') or ''))}</span>",
+                        unsafe_allow_html=True)
+            pid = p.get("id")
+            for col, approve, label in ((c2, True, "Watch"), (c3, False, "Dismiss")):
+                if col.button(label, key=f"scout_{'yes' if approve else 'no'}_{pid}",
+                              icon=":material/visibility:" if approve else ":material/close:"):
+                    run_action(f"Collector now watches {p.get('name')}" if approve else f"Dismissed {p.get('name')}",
+                               lambda a=approve: client.decide_log_source(pid, st.session_state.operator, a),
+                               rerun=False)
+                    st.rerun()
 
 
 def log_discovery() -> None:
