@@ -2,3 +2,7 @@ flask==3.0.3
 requests==2.32.3
 psutil==6.0.0
 pytest==8.3.3
+# Optional: Scout (python -m scout find) uses Claude.
+anthropic>=1.0
+# Optional: Scout with OpenAI, DeepSeek or another OpenAI-compatible API.
+openai>=1.0

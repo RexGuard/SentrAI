@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import os
 from typing import Any, Optional, Union
 
 from fastapi import Body, FastAPI, HTTPException, Query
@@ -13,6 +14,7 @@ from pydantic import BaseModel, ConfigDict
 
 from .config import Settings
 from .reports import build_report, render_markdown
+from .cyanide import Cyanide, default_planner
 from .saguaro import BadRequestError, ConflictError, Saguaro
 
 log = logging.getLogger("cactai.core")
@@ -61,7 +63,11 @@ class HeartbeatIn(BaseModel):
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
-    core = Saguaro(settings or Settings())
+    # Cyanide (Claude-planned) is the default orchestrator; CACTAI_ENGINE=saguaro keeps the fixed playbooks.
+    if os.getenv("CACTAI_ENGINE", "cyanide").lower() == "saguaro":
+        core: Saguaro = Saguaro(settings or Settings())
+    else:
+        core = Cyanide(settings or Settings(), planner=default_planner())
 
     async def ticker() -> None:
         while True:

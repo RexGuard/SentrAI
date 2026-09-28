@@ -75,6 +75,16 @@ SECTIONS = (
         Field("TELEGRAM_CHAT_ID", "Telegram chat id"),
         Field("CACTAI_OPERATOR", "Your name, as shown on approvals", "operator"),
     )),
+    Section("ai", "5. AI model", "Cyanide and Scout. Set at least one key; leave all blank to run on fixed playbooks.", (
+        Field("CACTAI_LLM_PROVIDER", "Provider: auto, anthropic, openai, deepseek, commandcode or compatible", "auto"),
+        Field("ANTHROPIC_API_KEY", "Anthropic (Claude) API key", secret=True),
+        Field("OPENAI_API_KEY", "OpenAI API key", secret=True),
+        Field("DEEPSEEK_API_KEY", "DeepSeek API key", secret=True),
+        Field("COMMANDCODE_API_KEY", "Command Code API key (also set the model name below)", secret=True),
+        Field("CACTAI_LLM_API_KEY", "Other OpenAI-compatible service: API key", secret=True),
+        Field("CACTAI_LLM_BASE_URL", "Other OpenAI-compatible service: base URL"),
+        Field("CACTAI_LLM_MODEL", "Model name, blank for the provider's default"),
+    )),
 )
 FIELDS = {f.env: f for s in SECTIONS for f in s.fields}
 

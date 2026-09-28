@@ -1,0 +1,20 @@
+{
+  "organisation": "Small Singapore tuition centre (demo)",
+  "it_staff": "One part-time IT administrator, outsourced support after hours",
+  "business_hours": "Mon-Sat 09:00-21:00 SGT; exams run in the last two weeks of each term",
+  "assets": [
+    {"host": "web-01", "role": "Student portal: logins, class materials, fee payments", "criticality": "high"},
+    {"host": "db-01", "role": "Student and parent records (personal data under PDPA)", "criticality": "critical"}
+  ],
+  "accounts": {
+    "admin": "Shared admin account used by the IT administrator",
+    "teachers": "Teachers log in from the centre's office network"
+  },
+  "protected_ips": ["10.0.0.1"],
+  "protected_users": [],
+  "preferences": [
+    "Protecting student personal data comes before portal uptime.",
+    "Avoid locking teacher accounts during class hours unless data is being taken.",
+    "Blocking an outside IP address is low impact; prefer it over locking accounts."
+  ]
+}

@@ -200,7 +200,7 @@ def test_helpdesk_and_agents(client):
     assert "Needle" in why and "failed logins" in why
     assert "RSK-2026-081" in client.get("/helpdesk/why", params={"target": "203.0.113.45"}).json()["incidents"]
     names = {a["name"] for a in client.get("/agents").json()}
-    assert {"Saguaro", "Root", "Reservoir", "AreoleLinux", "AreoleWin", "SpineNet", "Needle", "Watchdog",
+    assert {"Cyanide", "Root", "Reservoir", "AreoleLinux", "AreoleWin", "SpineNet", "Needle", "Watchdog",
             "Scribe", "HelpDesk", "Jev"} <= names
 
 
