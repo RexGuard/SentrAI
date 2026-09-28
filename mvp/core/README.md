@@ -93,6 +93,18 @@ Audit records: `cyanide_plan` (actions, reasons, dropped steps), `cyanide_hold` 
    This is containment inside the app only. The target app polls `/blocklist`. **No firewall, shell or OS changes are ever made.** Expired actions drop out of `/blocklist`.
 5. **Audit**. Every agent decision is appended to an SQLite hash chain, with the agent's name in `data.agent`. The hash is `sha256(prev_hash + canonical_json({seq, ts, type, data}))`. SQL triggers block UPDATE and DELETE. `/audit` re-verifies the whole chain on each call.
 
+## Process scan (finding logs automatically)
+
+Scout follows a technician through the folders. The process scan (`app/procscan.py`, `app/discovery.py`) is the automatic half: it lists the programs running on this computer, recognises the known ones (IIS, nginx, Apache, Tomcat, MySQL, PostgreSQL, SQL Server, MongoDB, Redis, SSH, Docker, syslog, Node and Python apps, and the CactAI lab portal) and looks for their log files in the usual places, next to the program, in options such as `--log-file`, and (on Linux) in the files each process has open.
+
+- **How.** Windows: PowerShell/CIM (`Win32_Process`, plus `Win32_Service` for the service account). Linux: `/proc`. macOS: `ps`. Standard library only, no admin rights needed; processes it cannot read are listed by name only.
+- **Read-only.** It never starts, stops or signals a process and never reads log contents. It only checks which files exist.
+- **Private details stay out.** Command lines are cut down to log options with secrets masked, home folders show as `~`, personal accounts as `(user)`. Credential stores and sensitive system processes (lsass, KeePass, 1Password, ssh-agent and similar) are skipped, and the profile can add more with `"process_scan": {"skip_processes": ["veyon*"]}` or turn scanning off with `"enabled": false`.
+- **Nothing is watched until an operator says so.** Each file in a scan has an id. The dashboard's Collector page (Find logs on this computer) and Cyanide's chat buttons approve a file by that id, so neither the model nor a crafted request can point the collector at an arbitrary path. Approved files go to the same list Scout writes (`lab/scout/sources.json`), and the running collector starts tailing them within a few seconds, from the end of the file.
+- **Cyanide.** Chat has two new tools: `scan_system` and `suggest_log_source` (a button, like `suggest_action`). Without an AI key, asking the chat to "scan" gives the scanner's own list with buttons.
+
+Audit records: `system_scan` and `log_source_added`.
+
 ## Endpoints
 
 These follow the contract:
@@ -115,6 +127,8 @@ Additions that do not change the contract:
 - `GET /agents`: status of each agent and of Jev.
 - `GET /notifications`: all notifications, including delivered ones.
 - `POST /heartbeat {"collector": "web-01"}`: collector heartbeat for Watchdog. An event with `"source": "heartbeat"` does the same.
+- `POST /system/scan {"operator": "erick"}` and `GET /system/scan` (latest): read-only process scan with suggested log files.
+- `GET /log-sources` and `POST /log-sources {"operator", "file_id", "layer"?}`: extra log files the collector watches; a file is added only by its id from the latest scan.
 - `POST /demo/advance {"demo_hours": 3}`: fast-forwards the demo clock, for tests and to skip ahead during a take.
 
 ### Response shapes the contract leaves open

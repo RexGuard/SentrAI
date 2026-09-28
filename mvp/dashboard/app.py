@@ -566,6 +566,9 @@ def chat_message(m: dict, assistant: str, by_id: dict[str, dict]) -> None:
 
 def chat_suggestion(mid: Any, n: int, s: dict, inc: dict | None) -> None:
     """A suggested decision. Pressing it calls the same endpoints as the Approvals page."""
+    if s.get("kind") == "watch_log":
+        watch_suggestion(mid, n, s)
+        return
     inc_id, decision = str(s.get("incident")), str(s.get("decision"))
     ok, why_not = sh.suggestion_state(inc, decision)
     label = str(s.get("label") or f"{decision} {inc_id}")
@@ -604,8 +607,21 @@ def chat_suggestion(mid: Any, n: int, s: dict, inc: dict | None) -> None:
     st.rerun()
 
 
+def watch_suggestion(mid: Any, n: int, s: dict) -> None:
+    """A log file Cyanide found in a process scan. Pressing Watch adds it to the collector."""
+    label = str(s.get("label") or "Watch log")
+    with st.container(border=True):
+        st.markdown(f"💡 **Suggested: {html.escape(label)}**")
+        if s.get("reason"):
+            st.caption(str(s["reason"]))
+        if st.button(f"Confirm: {label}", key=f"sugg_{mid}_{n}", type="primary"):
+            run_action(label, lambda: client.watch_log(str(s.get("file_id")), st.session_state.operator), rerun=False)
+            st.rerun()
+
+
 @st.fragment(run_every=AUTO)
 def page_collector() -> None:
+    show_flash()
     if header("Collector", "part 1 · turns raw logs into events and ships them to the core") is None:
         return
     records, _, _ = audit_records()
@@ -640,6 +656,10 @@ def page_collector() -> None:
             path = logs_dir / (os.environ.get(env) or cfg.FIELDS[env].default)
             rows.append({"Log": cfg.FIELDS[env].prompt.replace(" file name", ""), "File": path.name,
                          "Size": f"{path.stat().st_size / 1024:.1f} KB" if path.exists() else "not created yet"})
+        extra, _ = safe(client.log_sources, [])
+        for x in extra or []:
+            rows.append({"Log": f"{x.get('layer', '?')} · {x.get('found_by') or 'Scout'}", "File": x.get("path"),
+                         "Size": "watched"})
         table(sh.pd.DataFrame(rows), "")
     with right, st.container(border=True):
         section("Heartbeats", "Watchdog flags a collector that goes quiet", "monitor_heart")
@@ -650,10 +670,62 @@ def page_collector() -> None:
         section("Events per layer agent", "", "hub")
         table(sh.pd.DataFrame([{"Agent": a.get("name"), "Events analysed": a.get("analyzed", 0)} for a in layer]),
               "No agent data.")
+    log_discovery()
     with st.container(border=True):
         section("Malicious events collected", "newest first", "warning")
         table(sh.classification_rows(records)[["Time", "Event", "Category", "Layer agent", "Incident", "Raw log line"]],
               "No malicious events yet.")
+
+
+def log_discovery() -> None:
+    """Process scan: the core lists running programs and their log files; the operator picks what to watch."""
+    with st.container(border=True):
+        section("Find logs on this computer", "read-only scan of running programs · nothing is watched until you "
+                                              "press Watch", "travel_explore")
+        if st.button("Scan running programs", icon=":material/radar:", key="scan_system"):
+            with st.spinner("Scanning running programs…"):
+                run_action("Scan finished", lambda: client.scan_system(st.session_state.operator), rerun=False)
+        latest, err = safe(client.latest_scan, None)
+        if err or not latest or not latest.get("scanned_at"):
+            st.caption("No scan yet. Cyanide can also run one when you ask it in Chat.")
+            return
+        st.caption(f"Last scan {sh.short_time(latest.get('scanned_at'))}: {latest.get('scanned', 0)} processes, "
+                   f"{latest.get('recognised', 0)} recognised, {latest.get('skipped_protected', 0)} protected "
+                   f"ones skipped.")
+        if latest.get("error"):
+            st.warning(f"The scan hit a problem: {latest['error']}")
+        found = latest.get("suggestions") or []
+        known = [s for s in found if s.get("recognised", True)]
+        other = [s for s in found if not s.get("recognised", True)]
+        if not known:
+            empty("No log files found for the programs CactAI recognises.", "search_off")
+        for s in known[:10]:
+            scan_suggestion(s)
+        if other:
+            with st.expander(f"Other log files open by programs CactAI doesn't recognise ({len(other)})"):
+                for s in other[:10]:
+                    scan_suggestion(s)
+        for note in latest.get("notes") or []:
+            st.caption(f"ℹ️ {note}")
+
+
+def scan_suggestion(s: dict) -> None:
+    """One place the scan found logs, with a Watch button per file not yet watched."""
+    files = s.get("files") or []
+    state = "✅ already watched" if s.get("already_watched") else f"{len(files)} log file(s)"
+    st.markdown(f"**{html.escape(str(s.get('program')))}** · `{s.get('path')}` · {s.get('layer')} · {state}  \n"
+                f"<span style='opacity:.7'>{html.escape(', '.join(s.get('reasons') or []))}</span>",
+                unsafe_allow_html=True)
+    for f in files:
+        c1, c2 = st.columns([5, 1])
+        c1.caption(f"{f.get('name')} · {int(f.get('size') or 0) / 1024:.1f} KB · changed "
+                   f"{sh.short_time(f.get('modified'))}")
+        if f.get("watched"):
+            c2.caption("watched")
+        elif c2.button("Watch", key=f"watch_{f.get('id')}", icon=":material/visibility:"):
+            run_action(f"Collector now watches {f.get('name')}",
+                       lambda fid=f.get("id"): client.watch_log(fid, st.session_state.operator), rerun=False)
+            st.rerun()
 
 
 @st.fragment(run_every=AUTO)

@@ -160,3 +160,28 @@ def test_ai_settings_fetch_the_models_and_save_the_pick(fake_core, models_api, t
     at.text_input(key="cfg_CACTAI_LLM_API_KEY").set_value("wrong").run()
     next(b for b in at.button if "Fetch models" in b.label).click().run()
     assert any("rejected this API key" in w.value for w in at.warning)
+
+
+def test_collector_page_scans_and_watches_a_log(fake_core, tmp_path, monkeypatch):
+    from streamlit.testing.v1 import AppTest
+
+    monkeypatch.setenv("CACTAI_CONFIG", str(tmp_path / "config.json"))
+    requests.post(f"{fake_core}/demo/reset", timeout=3)
+    import streamlit as st
+    st.cache_data.clear()
+    at = AppTest.from_file(APP, default_timeout=20)
+    at.session_state["core_url"] = fake_core
+    at.session_state["auto_refresh"] = False
+    at.session_state["operator"] = "erick"
+    at.session_state["page"] = "collector"
+    at.run()
+    assert not at.exception, at.exception
+    next(b for b in at.button if b.label == "Scan running programs").click().run()
+    assert not at.exception, at.exception
+    watch = [b for b in at.button if b.label == "Watch"]
+    assert len(watch) == 2  # nginx access.log and error.log; the lab log is already watched
+    watch[0].click().run()
+    assert not at.exception, at.exception
+    added = requests.get(f"{fake_core}/log-sources", timeout=3).json()
+    assert [x["confirmed_by"] for x in added] == ["erick"]
+    assert len([b for b in at.button if b.label == "Watch"]) == 1

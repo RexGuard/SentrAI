@@ -8,6 +8,7 @@ import requests
 DEFAULT_TIMEOUT = 2.5
 CHAT_TIMEOUT = 90.0  # the orchestrator may call its AI model several times per answer
 AI_TEST_TIMEOUT = 45.0  # one real request to the AI provider
+SCAN_TIMEOUT = 40.0  # PowerShell/CIM process listing can take a few seconds on Windows
 
 
 class CoreError(Exception):
@@ -132,6 +133,20 @@ class CoreClient:
     def ai_test(self, settings: dict | None = None) -> dict:
         """One real request to the AI provider: with settings, those; without, what Cyanide uses now."""
         return self.post_json("/ai/test", settings, timeout=AI_TEST_TIMEOUT)
+
+    def scan_system(self, operator: str) -> dict:
+        """Read-only scan of the running programs; returns suggested log files, each with an id."""
+        return self.post_json("/system/scan", {"operator": operator}, timeout=SCAN_TIMEOUT)
+
+    def latest_scan(self) -> dict:
+        return self.get_json("/system/scan")
+
+    def log_sources(self) -> list[dict]:
+        """Extra log files the collector watches (approved from a scan, or by Scout)."""
+        return list(self.get_json("/log-sources") or [])
+
+    def watch_log(self, file_id: str, operator: str, layer: str | None = None) -> dict:
+        return self.post_json("/log-sources", {"file_id": file_id, "operator": operator, "layer": layer})
 
     def reset_demo(self) -> Any:
         return self.post_json("/demo/reset", {})
