@@ -155,9 +155,9 @@ def s02_hook(prs, n):
     cw, gap, y = Inches(2.8), Inches(0.23), Inches(2.1)
     for i, (big, small, col) in enumerate(cols):
         x = MARGIN + i * (cw + gap)
-        box(s, x, y, cw, Inches(2.3), CARD, LINE)
+        box(s, x, y, cw, Inches(2.5), CARD, LINE)
         text(s, x + Inches(0.25), y + Inches(0.3), cw - Inches(0.5), Inches(0.8), big, size=28, bold=True, color=col)
-        text(s, x + Inches(0.25), y + Inches(1.05), cw - Inches(0.5), Inches(1.1), small, size=17)
+        text(s, x + Inches(0.25), y + Inches(1.05), cw - Inches(0.5), Inches(1.3), small, size=16)
     text(s, MARGIN, Inches(4.9), Inches(11.9), Inches(0.7),
          [[("“The vulnerability was left unfixed until the Incident happened.”", {"size": 22})]], color=TEXT)
     text(s, MARGIN, Inches(5.6), Inches(11.9), Inches(0.6),

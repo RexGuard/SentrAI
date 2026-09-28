@@ -90,7 +90,7 @@ def escalation_chart():
     callout(6.5, idx[7], 3.2, 95, "Needle approved, IP blocked 2h", "#E68AAE")
     ax.annotate("", xy=(5.9, 68.5), xytext=(0.3, 49.5),
                 arrowprops=dict(arrowstyle="->", color=MUTED, lw=1.2, ls=":"))
-    ax.text(3.35, 48, "+5 per hour, no ack", fontsize=12.5, color=MUTED, rotation=10, ha="center")
+    ax.text(4.7, 47, "+5 per hour, no ack", fontsize=12.5, color=MUTED, rotation=8, ha="center")
 
     ax.set_xlim(-0.2, 7.5)
     ax.set_ylim(0, 102)
@@ -119,7 +119,10 @@ def curve_chart():
     for r in (35, 70, 97, 140):
         v = risk(r)
         ax.scatter([r], [v], s=60, color=TEXT, edgecolor=GREEN, lw=2, zorder=5)
-        ax.text(r + 4, v - 4, f"raw {r} → {v}", fontsize=12.5, color=TEXT, va="top", zorder=6)
+        if r == 140:  # above-left of the point, clear of the "Critical" band label
+            ax.text(r - 4, v + 2, f"raw {r} → {v}", fontsize=12.5, color=TEXT, ha="right", va="bottom", zorder=6)
+        else:
+            ax.text(r + 4, v - 4, f"raw {r} → {v}", fontsize=12.5, color=TEXT, va="top", zorder=6)
     ax.set_xlim(0, 220)
     ax.set_ylim(0, 108)
     ax.set_yticks([0, 30, 60, 80, 100])
