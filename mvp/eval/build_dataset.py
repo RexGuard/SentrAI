@@ -152,7 +152,7 @@ def replay_events() -> list[dict]:
     out = []
     for ev in simulate.build_sequence():
         raw = ev["raw"]
-        if ev["source"] == "flask_auth":
+        if ev["source"] in ("flask_auth", "flask_access") and " 401" in raw:
             label = "brute_force"
         elif ev["source"] == "db_query":
             label = "sql_injection"

@@ -7,11 +7,11 @@ Jev: disabled: TYPESAFE_API_KEY not set (fallback classifier in use).
 
 | | Rules | Keyword fallback | Chain (as shipped) | Jev | Chain with Jev |
 |---|---|---|---|---|---|
-| Macro F1 | 76% | 58% | 77% | not run | not run |
-| Accuracy | 59% | 58% | 72% | not run | not run |
-| Attacks flagged | 50% | 25% | 51% | not run | not run |
+| Macro F1 | 78% | 58% | 79% | not run | not run |
+| Accuracy | 62% | 58% | 76% | not run | not run |
+| Attacks flagged | 56% | 25% | 57% | not run | not run |
 | False alarms on benign | 1% | 2% | 2% | not run | not run |
-| No answer | 51 | 0 | 0 | not run | not run |
+| No answer | 41 | 0 | 0 | not run | not run |
 
 ## F1 per category
 
@@ -19,8 +19,8 @@ Precision / recall / F1. Support is the number of events with that label.
 
 | Category | Support | Rules | Keyword fallback | Chain (as shipped) | Jev | Chain with Jev |
 |---|---|---|---|---|---|---|
-| benign | 82 | 73% / 70% / **71%** | 53% / 98% / **68%** | 63% / 98% / **77%** | not run | not run |
-| brute_force | 46 | 100% / 26% / **41%** | 0% / 0% / **0%** | 100% / 26% / **41%** | not run | not run |
+| benign | 82 | 70% / 70% / **70%** | 53% / 98% / **68%** | 66% / 98% / **79%** | not run | not run |
+| brute_force | 46 | 100% / 39% / **56%** | 0% / 0% / **0%** | 100% / 39% / **56%** | not run | not run |
 | sql_injection | 14 | 100% / 71% / **83%** | 100% / 43% / **60%** | 100% / 71% / **83%** | not run | not run |
 | xss | 5 | 100% / 100% / **100%** | 100% / 100% / **100%** | 100% / 100% / **100%** | not run | not run |
 | port_scan | 5 | 100% / 60% / **75%** | 100% / 60% / **75%** | 100% / 60% / **75%** | not run | not run |
@@ -56,16 +56,10 @@ Precision / recall / F1. Support is the number of events with that label.
 | eval-0108 (lab) | data_exfiltration | benign | `SELECT rows=40 q='SELECT * FROM members'` |
 | eval-0110 (lab) | data_exfiltration | benign | `SELECT rows=40 q='SELECT * FROM members'` |
 | eval-0112 (lab) | data_exfiltration | benign | `SELECT rows=40 q='SELECT * FROM members'` |
-| eval-0120 (replay) | brute_force | benign | `login fail user=admin` |
-| eval-0121 (replay) | brute_force | benign | `login fail user=admin` |
-| eval-0122 (replay) | brute_force | benign | `login fail user=admin` |
-| eval-0123 (replay) | brute_force | benign | `login fail user=admin` |
-| eval-0124 (replay) | brute_force | benign | `login fail user=admin` |
-| eval-0125 (replay) | brute_force | benign | `login fail user=admin` |
-| eval-0126 (replay) | brute_force | benign | `login fail user=admin` |
-| eval-0127 (replay) | brute_force | benign | `login fail user=admin` |
-| eval-0128 (replay) | brute_force | benign | `login fail user=admin` |
-| eval-0129 (replay) | brute_force | benign | `login fail user=admin` |
+| eval-0120 (replay) | brute_force | benign | `POST /login 401 user=admin` |
+| eval-0121 (replay) | brute_force | benign | `POST /login 401 user=admin` |
+| eval-0122 (replay) | brute_force | benign | `POST /login 401 user=admin` |
+| eval-0123 (replay) | brute_force | benign | `POST /login 401 user=admin` |
 | eval-0137 (handcrafted) | port_scan | benign | `firewall: 214 connection attempts to 97 distinct ports from 203.0.113.9 in 10s` |
 | eval-0138 (handcrafted) | port_scan | benign | `kernel: TCP SYN to closed ports 21,22,23,25,80,110,139,443,445,3389 from 203.0.113.9` |
 | eval-0143 (handcrafted) | misconfiguration | benign | `blob container 'reports' access level changed to public (anonymous read)` |
