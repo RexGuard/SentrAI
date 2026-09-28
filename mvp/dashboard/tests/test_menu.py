@@ -104,3 +104,59 @@ def test_chat_asks_and_the_suggestion_goes_through_the_normal_decision(fake_core
     assert inc["status"] == "contained"
     decisions = [r for r in requests.get(f"{fake_core}/audit", timeout=3).json()["records"] if r["type"] == "decision"]
     assert decisions[-1]["data"]["operator"] == "erick"
+
+
+@pytest.fixture
+def models_api():
+    """A local OpenAI-compatible service whose /v1/models lists two models."""
+    import json
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            ok = self.path == "/v1/models" and self.headers.get("Authorization") == "Bearer k"
+            body = json.dumps({"data": [{"id": "small-model"}, {"id": "big-model"}]} if ok else {"error": "no"}).encode()
+            self.send_response(200 if ok else 401)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{server.server_port}/v1"
+    server.shutdown()
+
+
+def test_ai_settings_fetch_the_models_and_save_the_pick(fake_core, models_api, tmp_path, monkeypatch):
+    import json
+
+    from streamlit.testing.v1 import AppTest
+
+    path = tmp_path / "config.json"
+    monkeypatch.setenv("CACTAI_CONFIG", str(path))
+    at = AppTest.from_file(APP, default_timeout=20)
+    at.session_state["core_url"] = fake_core
+    at.session_state["auto_refresh"] = False
+    at.session_state["page"] = "config"
+    at.run()
+    at.selectbox(key="cfg_CACTAI_LLM_PROVIDER").set_value("compatible").run()
+    at.text_input(key="cfg_CACTAI_LLM_BASE_URL").set_value(models_api)
+    at.text_input(key="cfg_CACTAI_LLM_API_KEY").set_value("k").run()
+    next(b for b in at.button if "Fetch models" in b.label).click().run()
+    assert not at.exception, at.exception
+    assert at.selectbox(key="ai_model_pick").options == ["big-model", "small-model"]
+    at.selectbox(key="ai_model_pick").set_value("small-model").run()
+    assert at.text_input(key="cfg_CACTAI_LLM_MODEL").value == "small-model"
+
+    next(b for b in at.button if "Save settings" in b.label).click().run()
+    assert not at.exception, at.exception
+    assert json.loads(path.read_text())["ai"] == {"CACTAI_LLM_PROVIDER": "compatible", "CACTAI_LLM_API_KEY": "k",
+                                                  "CACTAI_LLM_BASE_URL": models_api, "CACTAI_LLM_MODEL": "small-model"}
+
+    at.text_input(key="cfg_CACTAI_LLM_API_KEY").set_value("wrong").run()
+    next(b for b in at.button if "Fetch models" in b.label).click().run()
+    assert any("rejected this API key" in w.value for w in at.warning)

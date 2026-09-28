@@ -75,3 +75,47 @@ def test_new_machine_runs_wizard_only_when_interactive(config_file, monkeypatch)
 
     monkeypatch.setattr("builtins.input", lambda _: pytest.fail("asked again on a configured machine"))
     cfg.ensure(interactive=True)
+
+
+BEFORE_AI = [f for s in cfg.SECTIONS if s.key != "ai" for f in s.fields]
+PLAIN_BEFORE_AI = [""] * sum(not f.secret for f in BEFORE_AI)
+SECRET_BEFORE_AI = [""] * sum(f.secret for f in BEFORE_AI)
+
+
+def test_ai_section_takes_a_provider_number_one_key_and_lists_models(config_file):
+    said = []
+    listed = lambda values: ["deepseek-chat", "deepseek-reasoner"]  # noqa: E731
+    answers = iter(PLAIN_BEFORE_AI + ["3", "", "?", "2"])  # provider, base URL, list, pick
+    values = cfg.wizard(ask=lambda p: next(answers, ""),
+                        ask_secret=scripted(SECRET_BEFORE_AI + ["sk-deep"]), say=said.append, models=listed)
+    assert values["CACTAI_LLM_PROVIDER"] == "deepseek"
+    assert values["CACTAI_LLM_API_KEY"] == "sk-deep"
+    assert values["CACTAI_LLM_MODEL"] == "deepseek-reasoner"
+    assert "    3. DeepSeek" in said and "    2. deepseek-reasoner" in said
+
+
+def test_model_listing_failure_is_explained_and_asked_again(config_file):
+    def broken(values):
+        raise cfg.cactai_llm.LLMError("the service rejected this API key")
+
+    said = []
+    answers = iter(PLAIN_BEFORE_AI + ["", "", "?", "my-model"])
+    values = cfg.wizard(ask=lambda p: next(answers, ""), ask_secret=scripted(SECRET_BEFORE_AI + ["bad"]), say=said.append, models=broken)
+    assert values["CACTAI_LLM_MODEL"] == "my-model"
+    assert "    Could not list the models: the service rejected this API key." in said
+
+
+def test_settings_saved_with_one_key_per_provider_keep_the_key_in_use(config_file):
+    old = {"CACTAI_LLM_PROVIDER": "auto", "ANTHROPIC_API_KEY": "", "OPENAI_API_KEY": "sk-open",
+           "DEEPSEEK_API_KEY": "sk-deep", "CACTAI_LLM_MODEL": ""}
+    config_file.write_text(json.dumps({"ai": old}))
+    values = cfg.read()
+    assert (values["CACTAI_LLM_PROVIDER"], values["CACTAI_LLM_API_KEY"]) == ("openai", "sk-open")
+    assert "OPENAI_API_KEY" not in values
+
+    config_file.write_text(json.dumps({"ai": {**old, "CACTAI_LLM_PROVIDER": "deepseek"}}))
+    assert cfg.read()["CACTAI_LLM_API_KEY"] == "sk-deep"
+
+    config_file.write_text(json.dumps({"ai": {"CACTAI_LLM_PROVIDER": "auto", "CACTAI_LLM_API_KEY": "c",
+                                              "CACTAI_LLM_BASE_URL": "https://llm.example.com/v1"}}))
+    assert cfg.read()["CACTAI_LLM_PROVIDER"] == "compatible"

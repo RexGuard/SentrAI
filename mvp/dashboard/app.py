@@ -368,18 +368,19 @@ def page_config() -> None:
                                                   value=st.session_state.operator).strip() or "operator"
 
     current = {f.env: f.default for f in cfg.FIELDS.values()} | cfg.read()
-    with st.form("settings", border=False):
-        values = {}
-        for s in cfg.SECTIONS:
-            with st.container(border=True):
-                section(s.title, s.about)
-                cols = st.columns(2)
-                for n, f in enumerate(s.fields):
-                    values[f.env] = cols[n % 2].text_input(
-                        f.prompt, value=current[f.env], key=f"cfg_{f.env}", help=f"Environment variable {f.env}",
-                        type="password" if f.secret else "default").strip()
-        saved = st.form_submit_button("💾 Save settings", type="primary")
-    if saved:
+    values = {}
+    for s in cfg.SECTIONS:
+        with st.container(border=True):
+            section(s.title, s.about)
+            if s.key == "ai":
+                values |= ai_settings(current)
+                continue
+            cols = st.columns(2)
+            for n, f in enumerate(s.fields):
+                values[f.env] = cols[n % 2].text_input(
+                    f.prompt, value=current[f.env], key=f"cfg_{f.env}", help=f"Environment variable {f.env}",
+                    type="password" if f.secret else "default").strip()
+    if st.button("💾 Save settings", type="primary"):
         bad = [f.prompt for f in cfg.FIELDS.values() if not cfg.valid(f, values[f.env])]
         if bad:
             st.error("Please enter a number for: " + "; ".join(bad))
@@ -387,6 +388,54 @@ def page_config() -> None:
             path = cfg.save(values)
             st.success(f"Saved to {path}. Restart the demo (stop_demo.ps1, then run_demo.ps1) so the core, "
                        "collector and notifier pick up the new settings.")
+
+
+def ai_settings(current: dict[str, str]) -> dict[str, str]:
+    """Section 5: one provider list, one key, and a button that asks the provider for its models."""
+    keys = {env: f"cfg_{env}" for env in ("CACTAI_LLM_PROVIDER", "CACTAI_LLM_API_KEY", "CACTAI_LLM_BASE_URL",
+                                          cfg.MODEL_ENV)}
+    for env, key in keys.items():  # widgets take their start value from session state, so a pick can fill the model
+        st.session_state.setdefault(key, current[env])
+    c1, c2 = st.columns(2)
+    provider = c1.selectbox("Provider", cfg.cactai_llm.PROVIDERS, key=keys["CACTAI_LLM_PROVIDER"],
+                            format_func=lambda p: cfg.cactai_llm.LABEL[p],
+                            help="Environment variable CACTAI_LLM_PROVIDER")
+    api_key = c2.text_input("API key", key=keys["CACTAI_LLM_API_KEY"], type="password",
+                            help="Environment variable CACTAI_LLM_API_KEY. Leave blank to run on fixed playbooks.").strip()
+    if provider == "compatible":
+        base_url = st.text_input("Base URL", key=keys["CACTAI_LLM_BASE_URL"], placeholder="https://llm.example.com/v1",
+                                 help="Environment variable CACTAI_LLM_BASE_URL").strip()
+    else:
+        base_url = st.session_state[keys["CACTAI_LLM_BASE_URL"]].strip()
+        st.caption(f"Endpoint: {base_url or cfg.cactai_llm.BASE_URL.get(provider, '')}")
+
+    default = cfg.cactai_llm.DEFAULT_MODEL.get(provider) or "none, type one"
+    m1, m2 = st.columns([3, 1], vertical_alignment="bottom")
+    model = m1.text_input("Model", key=keys[cfg.MODEL_ENV], placeholder=f"blank for the default ({default})",
+                          help="Environment variable CACTAI_LLM_MODEL; a value set in the environment "
+                               "before CactAI starts wins over this one.").strip()
+    ai = {"CACTAI_LLM_PROVIDER": provider, "CACTAI_LLM_API_KEY": api_key, "CACTAI_LLM_BASE_URL": base_url,
+          cfg.MODEL_ENV: model}
+    if m2.button("🔄 Fetch models", width="stretch", disabled=not api_key,
+                 help="Ask the provider which models this key can use"):
+        with st.spinner("Asking the provider for its models..."):
+            try:
+                st.session_state.ai_models = (provider, cfg.fetch_models(ai), None)
+            except cfg.cactai_llm.LLMError as exc:
+                st.session_state.ai_models = (provider, [], str(exc))
+
+    fetched_for, models, error = st.session_state.get("ai_models") or ("", [], None)
+    if fetched_for == provider and error:
+        st.warning(f"Could not list the models: {error}. You can still type the model name.")
+    elif fetched_for == provider and not models:
+        st.info("The provider listed no models for this key. Type the model name instead.")
+    elif fetched_for == provider:
+        def pick() -> None:
+            st.session_state[keys[cfg.MODEL_ENV]] = st.session_state.ai_model_pick
+
+        st.selectbox(f"Available models ({len(models)})", models, key="ai_model_pick", on_change=pick,
+                     index=models.index(model) if model in models else None, placeholder="Pick a model")
+    return ai
 
 
 @st.fragment(run_every=AUTO)

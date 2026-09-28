@@ -10,15 +10,20 @@ Providers:
   openai     OPENAI_API_KEY     OpenAI, through the ``openai`` package
   deepseek   DEEPSEEK_API_KEY   DeepSeek's OpenAI-compatible API (``openai`` package)
   commandcode COMMANDCODE_API_KEY  Command Code's OpenAI-compatible API (needs CACTAI_LLM_MODEL)
-  compatible CACTAI_LLM_API_KEY + CACTAI_LLM_BASE_URL: any other OpenAI-compatible service
+  compatible CACTAI_LLM_BASE_URL: any other OpenAI-compatible service
 
-CACTAI_LLM_PROVIDER picks one; "auto" (the default) takes the first provider whose key is
-set, in the order above. CACTAI_LLM_MODEL overrides the provider's default model.
+The setup wizard keeps one key for all of them: CACTAI_LLM_API_KEY is used by whichever
+provider CACTAI_LLM_PROVIDER names (a provider's own variable above still wins when set).
+"auto" (the default) takes the first provider whose own key is set, in the order above.
+CACTAI_LLM_MODEL overrides the provider's default model; ``list_models()`` asks the provider
+which models the key can use.
 """
 from __future__ import annotations
 
 import json
 import os
+import urllib.error
+import urllib.request
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -27,7 +32,10 @@ KEY_ENV = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY", "deepse
            "commandcode": "COMMANDCODE_API_KEY", "compatible": "CACTAI_LLM_API_KEY"}
 DEFAULT_MODEL = {"anthropic": "claude-opus-5", "openai": "gpt-5", "deepseek": "deepseek-chat", "commandcode": "",
                  "compatible": ""}
-BASE_URL = {"deepseek": "https://api.deepseek.com", "commandcode": "https://api.commandcode.ai/provider/v1"}
+LABEL = {"anthropic": "Anthropic (Claude)", "openai": "OpenAI", "deepseek": "DeepSeek", "commandcode": "Command Code",
+         "compatible": "Other OpenAI-compatible service"}
+GENERIC_KEY_ENV = "CACTAI_LLM_API_KEY"
+BASE_URL = {"anthropic": "https://api.anthropic.com", "openai": "https://api.openai.com/v1", "deepseek": "https://api.deepseek.com", "commandcode": "https://api.commandcode.ai/provider/v1"}
 
 
 class LLMError(Exception):
@@ -48,14 +56,23 @@ class Turn:
     stop: str = "end"  # "tool_use", "end", or the provider's reason for stopping early
 
 
+def api_key(name: str) -> str | None:
+    """The key for one provider: its own variable, else the shared CACTAI_LLM_API_KEY."""
+    return os.getenv(KEY_ENV[name]) or os.getenv(GENERIC_KEY_ENV) or None
+
+
 def provider_name() -> str | None:
     """The provider to use, or None when no key is configured."""
     choice = os.getenv("CACTAI_LLM_PROVIDER", "auto").strip().lower() or "auto"
     if choice != "auto":
-        return choice if choice in PROVIDERS and os.getenv(KEY_ENV[choice]) else None
+        return choice if choice in PROVIDERS and api_key(choice) else None
     if os.getenv("ANTHROPIC_AUTH_TOKEN"):
         return "anthropic"
-    return next((p for p in PROVIDERS if os.getenv(KEY_ENV[p])), None)
+    name = next((p for p in PROVIDERS if os.getenv(KEY_ENV[p])), None)
+    if name == "compatible" and os.getenv(GENERIC_KEY_ENV, "").startswith("sk-ant-") \
+            and not os.getenv("CACTAI_LLM_BASE_URL"):
+        return "anthropic"  # a Claude key in the shared field, with no other service named
+    return name
 
 
 def from_env(effort: str = "medium", timeout_s: float = 120.0) -> "Provider | None":
@@ -64,12 +81,66 @@ def from_env(effort: str = "medium", timeout_s: float = 120.0) -> "Provider | No
         return None
     model = os.getenv("CACTAI_LLM_MODEL") or DEFAULT_MODEL[name]
     if name == "anthropic":
-        return AnthropicProvider(model=model, effort=effort, timeout_s=timeout_s)
+        return AnthropicProvider(model=model, effort=effort, timeout_s=timeout_s, api_key=api_key(name))
     base_url = os.getenv("CACTAI_LLM_BASE_URL") or BASE_URL.get(name)
     if not model or (name == "compatible" and not base_url):
         raise LLMError(f"the {name} provider needs CACTAI_LLM_MODEL" + (" and CACTAI_LLM_BASE_URL" if name == "compatible" else ""))
-    return OpenAIProvider(name=name, model=model, api_key=os.getenv(KEY_ENV[name]), base_url=base_url,
-                          timeout_s=timeout_s)
+    return OpenAIProvider(name=name, model=model, api_key=api_key(name), base_url=base_url, timeout_s=timeout_s)
+
+
+# Model ids in OpenAI's list that cannot hold a conversation.
+_NOT_CHAT = ("embedding", "tts", "whisper", "dall-e", "moderation", "transcribe", "image", "realtime", "audio",
+             "davinci", "babbage", "sora")
+
+
+def list_models(name: str, key: str, base_url: str | None = None, timeout_s: float = 15.0) -> list[str]:
+    """The model ids this key can use at this provider, newest first where the provider says so.
+
+    Raises LLMError with a sentence a person can act on: the key was rejected, the service
+    could not be reached, or it does not list its models (then type the model name).
+    """
+    if name not in PROVIDERS:
+        raise LLMError(f"unknown provider {name!r}")
+    if not key:
+        raise LLMError("enter the API key first")
+    base = (base_url or BASE_URL.get(name) or "").rstrip("/")
+    if not base:
+        raise LLMError("enter the service's base URL first")
+    if name == "anthropic":
+        headers = {"x-api-key": key, "anthropic-version": "2023-06-01"}
+        ids: list[str] = []
+        after = ""
+        while True:  # the list is paged; newest models come first
+            page = _get_json(f"{base}/v1/models?limit=1000{after}", headers, timeout_s)
+            ids += [m["id"] for m in page.get("data", []) if isinstance(m, dict) and m.get("id")]
+            if not page.get("has_more") or not page.get("last_id"):
+                return list(dict.fromkeys(ids))
+            after = f"&after_id={page['last_id']}"
+    page = _get_json(f"{base}/models", {"Authorization": f"Bearer {key}"}, timeout_s)
+    ids = [m["id"] for m in page.get("data", []) if isinstance(m, dict) and m.get("id")]
+    if name == "openai":
+        ids = [i for i in ids if not any(word in i for word in _NOT_CHAT)]
+    return sorted(set(ids))
+
+
+def _get_json(url: str, headers: dict[str, str], timeout_s: float) -> dict[str, Any]:
+    req = urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": "cactai", **headers})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout_s) as r:
+            data = json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403):
+            raise LLMError("the service rejected this API key") from e
+        if e.code in (404, 405):
+            raise LLMError("this service does not list its models; type the model name instead") from e
+        raise LLMError(f"the service answered HTTP {e.code}") from e
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        raise LLMError(f"could not reach {url.split('?')[0]}: {getattr(e, 'reason', e)}") from e
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        raise LLMError("this service does not list its models; type the model name instead") from e
+    if not isinstance(data, dict) or not isinstance(data.get("data"), list):
+        raise LLMError("this service does not list its models; type the model name instead")
+    return data
 
 
 class Provider:
@@ -101,11 +172,12 @@ class AnthropicProvider(Provider):
     name = "anthropic"
 
     def __init__(self, model: str = DEFAULT_MODEL["anthropic"], effort: str = "medium", timeout_s: float = 120.0,
-                 client: Any = None) -> None:
+                 client: Any = None, api_key: str | None = None) -> None:
         if client is None:
             import anthropic
 
-            client = anthropic.Anthropic(timeout=timeout_s, max_retries=1)
+            # No key given: the SDK reads ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN itself.
+            client = anthropic.Anthropic(timeout=timeout_s, max_retries=1, **({"api_key": api_key} if api_key else {}))
         self.client, self.model, self.effort = client, model, effort
 
     def _create(self, **kw: Any) -> Any:
