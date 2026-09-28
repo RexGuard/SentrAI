@@ -111,6 +111,8 @@ def format_telegram(notification: dict, incident: dict | None = None, risk: dict
     if f["penalty"]:
         lines.append(f"Inaction penalty: +{e(str(f['penalty']))} pts" + (" · <b>SLA BREACHED</b>" if f["sla_breached"] else ""))
     lines += ["", f"<b>Recommended:</b> {e(str(f['recommended']))}"]
+    if notification.get("report_url"):  # signed by the core, so it opens without the API token
+        lines.append(f'<a href="{e(notification["report_url"], quote=True)}">Open the report</a>')
     if f["kind"] in ("autonomous_action", "containment"):
         lines.append("<i>Temporary, reversible fix with TTL. Choose Rollback or Make Permanent.</i>")
     else:

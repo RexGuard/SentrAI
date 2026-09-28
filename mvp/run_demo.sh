@@ -116,6 +116,12 @@ PY_NOTIF="$ROOT/notifier/.venv/bin/python"
 # First run on this machine: ask for the settings (logs, rules, responder, alerts) once.
 "$PY_LAB" "$ROOT/cactai_config.py"
 
+# The core API token (made and saved on first use). Every component gets the same one, and the
+# scripts you run later (scenario.py, replay) read it from the settings file.
+CACTAI_API_TOKEN="$("$PY_LAB" "$ROOT/cactai_config.py" token | tail -n 1)"
+[ -n "$CACTAI_API_TOKEN" ] || { echo "Could not read the API token (python cactai_config.py token)." >&2; exit 1; }
+export CACTAI_API_TOKEN
+
 export PYTHONUTF8=1 PYTHONIOENCODING=utf-8 PYTHONUNBUFFERED=1
 export DEMO_SPEED CACTAI_CORE_URL="$CORE" CACTAI_PUBLIC_URL="${CACTAI_PUBLIC_URL:-$CORE}"
 

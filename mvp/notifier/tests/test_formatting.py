@@ -51,3 +51,10 @@ def test_console_box_is_aligned_without_color():
     assert body and all(len(l) == 60 for l in body)
     assert "\033[" not in out
     assert "[Approve & Patch]" in out
+
+
+def test_alert_links_the_signed_report():
+    url = "http://127.0.0.1:8000/reports/RSK-2026-081.md?sig=abc&x=1"
+    msg = format_telegram({**NOTIF, "report_url": url}, INC)
+    assert '<a href="http://127.0.0.1:8000/reports/RSK-2026-081.md?sig=abc&amp;x=1">Open the report</a>' in msg
+    assert "Open the report" not in format_telegram(NOTIF, INC)  # alerts without an incident have no report

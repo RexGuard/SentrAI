@@ -20,10 +20,12 @@ class CoreError(Exception):
 
 
 class CoreClient:
-    def __init__(self, base_url: str, timeout: float = DEFAULT_TIMEOUT) -> None:
+    def __init__(self, base_url: str, timeout: float = DEFAULT_TIMEOUT, token: str = "") -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.session = requests.Session()
+        if token:  # the core's API token (cactai_config.api_token())
+            self.session.headers["Authorization"] = f"Bearer {token}"
 
     def _url(self, path: str) -> str:
         return f"{self.base_url}/{path.lstrip('/')}"

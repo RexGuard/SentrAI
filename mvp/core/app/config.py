@@ -5,6 +5,8 @@ Values saved by the setup wizard (``mvp/cactai_config.py``) fill in any variable
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import os
 import sys
 from dataclasses import dataclass, field
@@ -16,6 +18,12 @@ import cactai_config  # noqa: E402
 
 cactai_config.load()
 DEFAULT_DB = CORE_DIR / "data" / "cactai.db"
+
+
+def sign(token: str, path: str) -> str:
+    """A signature for one read-only path (a report link in an alert), so it opens in a browser
+    without the API token. It reveals nothing about the token and works for that path only."""
+    return hmac.new(token.encode(), path.encode(), hashlib.sha256).hexdigest()[:32]
 
 
 def _f(name: str, default: float) -> float:
@@ -76,3 +84,5 @@ class Settings:
     jev_budget_s: float = field(default_factory=lambda: _f("JEV_BUDGET_S", 2.0))
     public_url: str = field(default_factory=lambda: os.getenv("CACTAI_PUBLIC_URL", "http://127.0.0.1:8000").rstrip("/"))
     background: bool = field(default_factory=lambda: os.getenv("CACTAI_BACKGROUND", "1") != "0")
+    # Every endpoint but /health and /blocklist needs it (see main.py). Made and saved on first use.
+    api_token: str = field(default_factory=cactai_config.api_token, repr=False)

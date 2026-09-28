@@ -23,6 +23,8 @@ from pathlib import Path
 import requests
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.append(str(Path(__file__).resolve().parents[2]))
+import cactai_config  # noqa: E402
 
 SGT = timezone(timedelta(hours=8))
 HOST = "web-01"
@@ -95,10 +97,14 @@ def main() -> None:
         return
 
     delay = 1.0 / args.speed if args.speed > 0 else 0.0
+    cactai_config.load()
+    headers = {"Authorization": f"Bearer {cactai_config.api_token()}"}
     sent = 0
     for ev in seq:
         try:
-            r = requests.post(f"{args.core.rstrip('/')}/events", json=ev, timeout=3)
+            r = requests.post(f"{args.core.rstrip('/')}/events", json=ev, headers=headers, timeout=3)
+            if r.status_code == 401:
+                raise SystemExit("  [!] core refused the API token; run through run_demo or set CACTAI_API_TOKEN")
             body = r.json() if r.ok else {}
             sent += 1
             print(f"  [{sent:>2}/{len(seq)}] {ev['source']:<12} {ev['raw'][:44]:<44} "

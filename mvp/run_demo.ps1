@@ -87,6 +87,12 @@ $pyNotif = Ensure-Venv "notifier"
 & $pyLab (Join-Path $Root "cactai_config.py")
 if ($LASTEXITCODE -ne 0) { exit 1 }
 
+# The core API token (made and saved on first use). Every window gets the same one, and the
+# scripts you run later (scenario.py, replay) read it from the settings file.
+$env:CACTAI_API_TOKEN = (& $pyLab (Join-Path $Root "cactai_config.py") token | Select-Object -Last 1).Trim()
+if (-not $env:CACTAI_API_TOKEN) { Write-Host "Could not read the API token (python cactai_config.py token)." -ForegroundColor Red; exit 1 }
+$authHeader = @{ Authorization = "Bearer $($env:CACTAI_API_TOKEN)" }
+
 # Shared environment for every child window.
 $env:PYTHONUTF8 = "1"
 $env:PYTHONIOENCODING = "utf-8"

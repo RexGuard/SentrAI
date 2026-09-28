@@ -557,8 +557,9 @@ def default_sources(logs_dir: Path, heartbeat_interval: float = 10.0, store: Off
 class Collector:
     def __init__(self, core_url: str, logs_dir: Path,
                  flush_interval: float = 1.0, heartbeat_interval: float = 10.0,
-                 sources: list[Source] | None = None):
+                 sources: list[Source] | None = None, token: str = ""):
         self.core_url = core_url.rstrip("/")
+        self.headers = {"Authorization": f"Bearer {token}"} if token else {}
         self.logs_dir = logs_dir
         self.flush_interval = flush_interval
         self.heartbeat_interval = heartbeat_interval
@@ -606,7 +607,7 @@ class Collector:
             return True
         batch = self.pending
         try:
-            resp = requests.post(f"{self.core_url}/events", json=batch, timeout=3)
+            resp = requests.post(f"{self.core_url}/events", json=batch, headers=self.headers, timeout=3)
             resp.raise_for_status()
             body = {}
             try:
@@ -689,7 +690,7 @@ def main() -> None:
     logs_dir = Path(args.logs)
     logs_dir.mkdir(parents=True, exist_ok=True)
     Collector(args.core, logs_dir, args.flush_interval,
-              args.heartbeat_interval).run()
+              args.heartbeat_interval, token=cactai_config.api_token()).run()
 
 
 if __name__ == "__main__":
