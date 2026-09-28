@@ -7,13 +7,31 @@ runOnSave = false
 [browser]
 gatherUsageStats = false
 
+# Same palette as the website's dark mode (assets/cactai.css), so the console and the site look like one product.
 [theme]
 base = "dark"
-primaryColor = "#3fb56a"
-backgroundColor = "#0f1210"
-secondaryBackgroundColor = "#181d19"
-textColor = "#f2f4f1"
-font = "sans serif"
+primaryColor = "#4fb67c"
+backgroundColor = "#0f1612"
+secondaryBackgroundColor = "#16201a"
+textColor = "#e6efe8"
+linkColor = "#6fcf97"
+borderColor = "#2a3a30"
+dataframeBorderColor = "#223027"
+dataframeHeaderBackgroundColor = "#1b2820"
+showWidgetBorder = true
+baseRadius = "10px"
+buttonRadius = "9px"
+font = "system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif"
+codeFont = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
+baseFontSize = 15
+greenColor = "#4fb67c"
+redColor = "#e5484d"
+orangeColor = "#ec835a"
+yellowColor = "#e8b34a"
+
+[theme.sidebar]
+backgroundColor = "#111a15"
+secondaryBackgroundColor = "#16201a"
 
 [client]
 toolbarMode = "minimal"
