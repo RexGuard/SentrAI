@@ -248,16 +248,16 @@ def test_jev_path_and_parsing(client):
             return self.result
 
     core = client.core
-    core.classifier.jev = FakeJev(JevResult("port_scan", 0.3, 0.97, {}))
+    core.jev_step.jev = FakeJev(JevResult("port_scan", 0.3, 0.97, {}))
     client.post("/events", json=ev(1, "SYN to 22,23,80,443,3306 in 2s", ip="198.51.100.20", layer="network"))
     inc = client.get("/incidents").json()[0]
     assert inc["classified_by"] == "jev" and inc["ai_confidence"] == 0.5  # clipped to 0.5-1.0
     assert inc["needs_review"] is False and inc["analyzed_by"] == "SpineNet"
-    core.classifier.jev = FakeJev(JevResult("misconfiguration", 0.8, 0.5, {}))  # malicious p in 0.4-0.6
+    core.jev_step.jev = FakeJev(JevResult("misconfiguration", 0.8, 0.5, {}))  # malicious p in 0.4-0.6
     client.post("/events", json=ev(2, "bucket settings changed", ip=None, user=None, host="cloud-01", layer="cloud"))
     inc2 = [i for i in client.get("/incidents").json() if i["category"] == "misconfiguration"][0]
     assert inc2["needs_review"] is True
-    core.classifier.jev = FakeJev(None)  # Jev failure -> fallback
+    core.jev_step.jev = FakeJev(None)  # Jev failure -> fallback
     client.post("/events", json=ev(3, "GET /about 200 ok", ip="198.51.100.21"))
     assert len(client.get("/incidents").json()) == 2
 

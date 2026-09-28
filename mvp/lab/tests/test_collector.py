@@ -101,3 +101,14 @@ def test_collector_buffers_when_core_down(monkeypatch, tmp_path):
     assert col.flush() is False
     # Event stays buffered for retry.
     assert len(col.pending) == 1
+
+
+def test_collector_accepts_any_source(tmp_path):
+    class Fake(collector.Source):
+        def poll(self):
+            return [collector.make_event("network", "fake_ids", "nmap -sS 10.0.0.0/24", src_ip="198.51.100.9")]
+
+    col = collector.Collector("http://127.0.0.1:9", tmp_path, sources=[Fake()])
+    col.collect()
+    assert [e["source"] for e in col.pending] == ["fake_ids"]
+    _assert_valid_event(col.pending[0])

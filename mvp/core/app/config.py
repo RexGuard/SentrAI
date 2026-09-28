@@ -1,12 +1,20 @@
-"""Runtime settings, read from environment variables once per engine instance."""
+"""Runtime settings, read from environment variables once per engine instance.
+
+Values saved by the setup wizard (``mvp/cactai_config.py``) fill in any variable not set.
+"""
 
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
 CORE_DIR = Path(__file__).resolve().parent.parent
+sys.path.append(str(CORE_DIR.parent))
+import cactai_config  # noqa: E402
+
+cactai_config.load()
 DEFAULT_DB = CORE_DIR / "data" / "cactai.db"
 
 

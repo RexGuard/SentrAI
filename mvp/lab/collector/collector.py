@@ -1,12 +1,18 @@
-"""CactAI log collector.
+"""Part 1 of 3: the collector. Turns raw logs into Events and ships them to core.
 
-Tails the target app's JSON-lines logs, normalizes each line into the shared
-Event schema (see ``mvp/CONTRACT.md``), and batches them to core
-``POST /events`` once per second. Retries on failure and emits a heartbeat
-event every 10 seconds so Watchdog can tell the collector is alive.
+A source is any ``Source`` subclass: implement ``poll()`` and return new Event
+dicts (build them with ``make_event`` so every source emits the same shape, see
+``mvp/CONTRACT.md``). The ``Collector`` polls all its sources, batches the events
+to core ``POST /events`` once per second, and keeps them buffered while core is down.
+
+Default sources: one ``JsonLogSource`` per target-app log, plus a ``HeartbeatSource``
+every 10 seconds so Watchdog can tell the collector is alive.
 
 Run:  python -m collector.collector           (from mvp/lab)
    or python collector/collector.py
+
+On a new machine (no settings file yet) it first runs the setup wizard in
+``mvp/cactai_config.py``; the logs directory and file names come from there.
 
 Handles file creation (logs may not exist yet) and rotation/truncation.
 """
@@ -18,14 +24,21 @@ import os
 import sys
 import time
 import uuid
+from abc import ABC, abstractmethod
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 import requests
 
 # Allow running both as ``python -m collector.collector`` and as a script.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.append(str(Path(__file__).resolve().parents[2]))
+import cactai_config  # noqa: E402
+
+if __name__ == "__main__":
+    # First run on this machine: ask for the settings before any path or log name is read.
+    cactai_config.ensure()
 from target_app import paths  # noqa: E402
 
 HOST = "web-01"
@@ -51,6 +64,22 @@ def criticality_for(layer: str, record: dict) -> float:
     return 1.0
 
 
+def make_event(layer: str, source: str, raw: str, *, src_ip: str | None = None, user: str | None = None,
+               ts: str | None = None, criticality: float = 1.0) -> dict[str, Any]:
+    """The one place an Event dict is built (contract Event schema)."""
+    return {
+        "event_id": f"evt-{uuid.uuid4().hex[:12]}",
+        "timestamp": ts or _now_iso(),
+        "host": HOST,
+        "layer": layer,
+        "source": source,
+        "src_ip": src_ip,
+        "user": user,
+        "raw": raw,
+        "asset_criticality": criticality,
+    }
+
+
 def normalize(log_name: str, record: dict[str, Any]) -> dict[str, Any] | None:
     """Turn one raw log line into a contract Event dict.
 
@@ -60,31 +89,12 @@ def normalize(log_name: str, record: dict[str, Any]) -> dict[str, Any] | None:
     if mapping is None:
         return None
     layer, source = mapping
-    return {
-        "event_id": f"evt-{uuid.uuid4().hex[:12]}",
-        "timestamp": record.get("ts") or _now_iso(),
-        "host": HOST,
-        "layer": layer,
-        "source": source,
-        "src_ip": record.get("src_ip"),
-        "user": record.get("user"),
-        "raw": record.get("raw", ""),
-        "asset_criticality": criticality_for(layer, record),
-    }
+    return make_event(layer, source, record.get("raw", ""), src_ip=record.get("src_ip"), user=record.get("user"),
+                      ts=record.get("ts"), criticality=criticality_for(layer, record))
 
 
 def heartbeat_event() -> dict[str, Any]:
-    return {
-        "event_id": f"evt-{uuid.uuid4().hex[:12]}",
-        "timestamp": _now_iso(),
-        "host": HOST,
-        "layer": "os",
-        "source": "heartbeat",
-        "src_ip": None,
-        "user": None,
-        "raw": "collector heartbeat",
-        "asset_criticality": 1.0,
-    }
+    return make_event("os", "heartbeat", "collector heartbeat")
 
 
 class Tailer:
@@ -132,33 +142,66 @@ class Tailer:
         return lines
 
 
+class Source(ABC):
+    """Anything that produces events: a log file, a syslog socket, a cloud API."""
+
+    @abstractmethod
+    def poll(self) -> list[dict[str, Any]]:
+        """Return the Events that appeared since the last call (may be empty)."""
+
+
+class JsonLogSource(Source):
+    """One JSON-lines log file written by the target app."""
+
+    def __init__(self, path: Path) -> None:
+        self.name = path.name
+        self.tailer = Tailer(path)
+
+    def poll(self) -> list[dict[str, Any]]:
+        events = []
+        for line in self.tailer.read_new_lines():
+            try:
+                event = normalize(self.name, json.loads(line))
+            except json.JSONDecodeError:
+                continue
+            if event is not None:
+                events.append(event)
+        return events
+
+
+class HeartbeatSource(Source):
+    """Emits one heartbeat event every ``interval`` seconds."""
+
+    def __init__(self, interval: float = 10.0) -> None:
+        self.interval = interval
+        self._last = time.time()  # first heartbeat one interval after start
+
+    def poll(self) -> list[dict[str, Any]]:
+        now = time.time()
+        if now - self._last < self.interval:
+            return []
+        self._last = now
+        return [heartbeat_event()]
+
+
+def default_sources(logs_dir: Path, heartbeat_interval: float = 10.0) -> list[Source]:
+    return [*(JsonLogSource(logs_dir / name) for name in SOURCE_MAP), HeartbeatSource(heartbeat_interval)]
+
+
 class Collector:
     def __init__(self, core_url: str, logs_dir: Path,
-                 flush_interval: float = 1.0, heartbeat_interval: float = 10.0):
+                 flush_interval: float = 1.0, heartbeat_interval: float = 10.0,
+                 sources: list[Source] | None = None):
         self.core_url = core_url.rstrip("/")
         self.logs_dir = logs_dir
         self.flush_interval = flush_interval
         self.heartbeat_interval = heartbeat_interval
-        self.tailers = {name: Tailer(logs_dir / name) for name in SOURCE_MAP}
+        self.sources = sources if sources is not None else default_sources(logs_dir, heartbeat_interval)
         self.pending: list[dict] = []
-        self._last_heartbeat = 0.0
 
     def collect(self) -> None:
-        for name, tailer in self.tailers.items():
-            for line in tailer.read_new_lines():
-                try:
-                    record = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                event = normalize(name, record)
-                if event is not None:
-                    self.pending.append(event)
-
-    def maybe_heartbeat(self) -> None:
-        now = time.time()
-        if now - self._last_heartbeat >= self.heartbeat_interval:
-            self.pending.append(heartbeat_event())
-            self._last_heartbeat = now
+        for source in self.sources:
+            self.pending.extend(source.poll())
 
     def flush(self) -> bool:
         """POST pending events. Keep them buffered if core is down."""
@@ -186,11 +229,8 @@ class Collector:
         print(f"[collector] tailing {self.logs_dir} -> {self.core_url}/events "
               f"(flush {self.flush_interval}s, heartbeat {self.heartbeat_interval}s)",
               flush=True)
-        # Prime heartbeat so the first one fires promptly after startup.
-        self._last_heartbeat = time.time()
         while True:
             self.collect()
-            self.maybe_heartbeat()
             self.flush()
             time.sleep(self.flush_interval)
 

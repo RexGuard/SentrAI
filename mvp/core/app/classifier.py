@@ -1,4 +1,8 @@
-"""Three-stage classification: rules -> Jev -> fallback heuristic.
+"""Part 2 of 3: the classifier. Labels one event with a category and confidence.
+
+A classifier is any `Classifier` subclass: implement `classify()` and return a
+`Classification`, or None to hand the event to the next classifier. `ClassifierChain`
+runs them in order; the default chain is rules -> Jev -> fallback keywords.
 
 Output confidence is always clipped to 0.5-1.0 (the AI Confidence Factor).
 `malicious` is the probability that the event is part of an attack; 0.4-0.6 means
@@ -10,6 +14,7 @@ from __future__ import annotations
 import math
 import re
 import time
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import unquote_plus
@@ -24,9 +29,70 @@ class Classification:
     category: str
     confidence: float
     malicious: float
-    classified_by: str  # rules | jev | fallback
     reason: str
     related_event_ids: list[str] = field(default_factory=list)
+    classified_by: str = ""  # stamped by ClassifierChain with the classifier's name
+
+
+class Classifier(ABC):
+    """One classification step. Return None when this classifier cannot decide."""
+
+    name = "classifier"
+
+    @abstractmethod
+    def classify(self, event: dict[str, Any], now: float) -> Classification | None: ...
+
+
+class ClassifierChain:
+    """Asks each classifier in turn; the first answer wins."""
+
+    def __init__(self, *classifiers: Classifier) -> None:
+        self.classifiers = list(classifiers)
+
+    def classify(self, event: dict[str, Any], now: float) -> Classification:
+        for c in self.classifiers:
+            result = c.classify(event, now)
+            if result is not None:
+                result.classified_by = result.classified_by or c.name
+                return result
+        return Classification("benign", 0.5, 0.0, "no classifier recognised the event", classified_by="none")
+
+
+class RulesClassifier(Classifier):
+    """Deterministic signatures and thresholds (rules.py). Always confidence 1.0."""
+
+    name = "rules"
+
+    def __init__(self, rules: RulesEngine) -> None:
+        self.rules = rules
+
+    def classify(self, event: dict[str, Any], now: float) -> Classification | None:
+        hit = self.rules.check(event, now)
+        if hit is None:
+            return None
+        malicious = 0.0 if hit.category == "benign" else 1.0
+        return Classification(hit.category, 1.0, malicious, hit.reason, hit.related_event_ids)
+
+
+class JevClassifier(Classifier):
+    """TypeSafe System One. Skipped once the per-request time budget (`deadline`) is spent."""
+
+    name = "jev"
+
+    def __init__(self, jev: JevClient) -> None:
+        self.jev = jev
+        self.deadline = math.inf  # set per ingest request by Saguaro
+
+    def classify(self, event: dict[str, Any], now: float) -> Classification | None:
+        if time.monotonic() >= self.deadline:
+            return None
+        r = self.jev.classify(event)
+        if r is None:
+            return None
+        return Classification(
+            r.category, clip_confidence(r.confidence), round(r.malicious, 3),
+            f"Jev System One: {r.category} p={r.confidence:.2f}, malicious p={r.malicious:.2f}",
+        )
 
 
 # (patterns, category, confidence 0.5-0.8, malicious probability). Whole-word regexes so
@@ -43,45 +109,25 @@ FALLBACK_TABLE: list[tuple[tuple[str, ...], str, float, float]] = [
 _FALLBACK_RX = [(tuple(re.compile(p, re.I) for p in pats), cat, conf, mal) for pats, cat, conf, mal in FALLBACK_TABLE]
 
 
-def fallback_classify(event: dict[str, Any]) -> Classification:
-    text = unquote_plus(str(event.get("raw") or "")).lower()
-    for patterns, category, conf, mal in _FALLBACK_RX:
-        m = next((m for rx in patterns if (m := rx.search(text))), None)
-        if m:
-            return Classification(
-                category, clip_confidence(conf), mal, "fallback", f"fallback heuristic: matched '{m.group(0).strip()}'"
-            )
-    if any(k in text for k in (" 401", " 403", "denied", "unauthorized")):
-        return Classification("benign", 0.6, 0.3, "fallback", "fallback heuristic: isolated access denial")
-    if any(k in text for k in (" 500", " 502", " 503", "error")):
-        return Classification("benign", 0.6, 0.35, "fallback", "fallback heuristic: server error, no attack signature")
-    return Classification("benign", 0.8, 0.1, "fallback", "fallback heuristic: no suspicious markers")
+class FallbackClassifier(Classifier):
+    """Keyword heuristic used when rules and Jev give no answer. Always answers."""
+
+    name = "fallback"
+
+    def classify(self, event: dict[str, Any], now: float = 0.0) -> Classification:
+        text = unquote_plus(str(event.get("raw") or "")).lower()
+        for patterns, category, conf, mal in _FALLBACK_RX:
+            m = next((m for rx in patterns if (m := rx.search(text))), None)
+            if m:
+                return Classification(category, clip_confidence(conf), mal, f"fallback heuristic: matched '{m.group(0).strip()}'")
+        if any(k in text for k in (" 401", " 403", "denied", "unauthorized")):
+            return Classification("benign", 0.6, 0.3, "fallback heuristic: isolated access denial")
+        if any(k in text for k in (" 500", " 502", " 503", "error")):
+            return Classification("benign", 0.6, 0.35, "fallback heuristic: server error, no attack signature")
+        return Classification("benign", 0.8, 0.1, "fallback heuristic: no suspicious markers")
 
 
-class Classifier:
-    def __init__(self, rules: RulesEngine, jev: JevClient) -> None:
-        self.rules = rules
-        self.jev = jev
-        self.jev_deadline = math.inf  # set per ingest request by Saguaro
-
-    def classify(self, event: dict[str, Any], now: float) -> Classification:
-        hit = self.rules.check(event, now)
-        if hit is not None:
-            return Classification(
-                hit.category,
-                1.0,
-                0.0 if hit.category == "benign" else 1.0,
-                "rules",
-                hit.reason,
-                hit.related_event_ids,
-            )
-        result = self.jev.classify(event) if time.monotonic() < self.jev_deadline else None
-        if result is not None:
-            return Classification(
-                result.category,
-                clip_confidence(result.confidence),
-                round(result.malicious, 3),
-                "jev",
-                f"Jev System One: {result.category} p={result.confidence:.2f}, malicious p={result.malicious:.2f}",
-            )
-        return fallback_classify(event)
+def default_chain(rules: RulesEngine, jev: JevClient) -> tuple[ClassifierChain, JevClassifier]:
+    """rules -> Jev -> fallback. Returns the Jev step too so Saguaro can set its time budget."""
+    jev_step = JevClassifier(jev)
+    return ClassifierChain(RulesClassifier(rules), jev_step, FallbackClassifier()), jev_step

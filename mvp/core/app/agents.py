@@ -3,7 +3,7 @@
 Saguaro (orchestrator) lives in saguaro.py and calls these in turn:
   Root / Reservoir / AreoleLinux / AreoleWin / SpineNet  -> analyze events, propose playbooks
   Needle   -> two-key reviewer for every autonomous action
-  Areole*  -> the only agents that execute, and only allowlisted app-level blocklist playbooks
+  Areole*  -> the only agents that execute, through the responders in responders.py
   Watchdog -> collector heartbeats
   Scribe   -> hash-chained audit + negligence reports
   HelpDesk -> answers "why" questions from incident data
@@ -16,13 +16,12 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from .audit import AuditLog, canonical
-from .classifier import Classification, Classifier
+from .classifier import Classification, ClassifierChain
 from .clock import DemoClock
+from .responders import Responders
 
 if TYPE_CHECKING:
     from .config import Settings
-
-ALLOWLIST = {"block_ip", "lock_user", "rate_limit", "waf_rule", "kill_process", "revoke_public_acl"}
 
 # category -> ordered playbook steps: (action type, incident field or literal target)
 PLAYBOOKS: dict[str, list[tuple[str, str]]] = {
@@ -86,7 +85,7 @@ class LayerAgent(Agent):
     layers: tuple[str, ...] = ()
     role = "layer analyst (propose only)"
 
-    def __init__(self, classifier: Classifier) -> None:
+    def __init__(self, classifier: ClassifierChain) -> None:
         self.classifier = classifier
         self.analyzed = 0
 
@@ -140,25 +139,24 @@ class SpineNet(LayerAgent):
 
 
 class Areole(LayerAgent):
-    """OS agents. The only executors, and only via allowlisted app-level blocklist playbooks.
-    NO firewall, shell or OS changes are ever made: containment is enforced by the target
-    app polling GET /blocklist."""
+    """OS agents. The only executors: they build the action record and hand it to the
+    responder for its type (responders.py). NO firewall, shell or OS changes are ever made."""
 
     layers = ("os",)
     can_execute = True
     role = "OS layer; runs allowlisted playbooks (app-level blocklist only)"
 
-    def __init__(self, classifier: Classifier) -> None:
+    def __init__(self, classifier: ClassifierChain, responders: Responders) -> None:
         super().__init__(classifier)
+        self.responders = responders
         self.executed = 0
 
     def apply(self, proposal: Proposal, incident_id: str, action_id: str, mode: str, approved_by: str,
               now: float, clock: DemoClock, ttl_hours: float, snapshot_hash: str) -> dict[str, Any]:
-        if proposal.type not in ALLOWLIST:
-            raise ValueError(f"{proposal.type} is not an allowlisted playbook")
+        responder = self.responders.for_type(proposal.type)  # raises if nothing handles it
         self.executed += 1
         expires_ts = now + clock.real_seconds(ttl_hours)
-        return {
+        action = {
             "action_id": action_id,
             "incident": incident_id,
             "type": proposal.type,
@@ -172,10 +170,12 @@ class Areole(LayerAgent):
             "applied_at": clock.iso(now),
             "executed_by": self.name,
             "proposed_by": proposal.proposed_by,
-            "enforcement": "blocklist" if proposal.type in ("block_ip", "lock_user") else "recorded (simulated)",
+            "enforcement": responder.enforcement,
             "verified": None,
             "_expires_ts": expires_ts,
         }
+        action["verified"] = responder.apply(action)
+        return action
 
 
 class AreoleLinux(Areole):
@@ -190,10 +190,27 @@ class Needle(Agent):
     name = "Needle"
     role = "reviewer: two-key approval for every autonomous action"
 
-    def __init__(self, min_confidence: float, protected_ips: set[str], protected_users: set[str] | None = None) -> None:
+    def __init__(self, min_confidence: float, allowlist: set[str], protected_ips: set[str],
+                 protected_users: set[str] | None = None) -> None:
         self.min_confidence = min_confidence
+        self.allowlist = allowlist
         self.protected_ips = protected_ips
         self.protected_users = protected_users or set()
+
+    def screen(self, proposals: list[Proposal]) -> tuple[list[Proposal], list[dict[str, str]]]:
+        """Splits proposals into (allowed, denied): allowlisted type and not a protected target."""
+        ok: list[Proposal] = []
+        denied: list[dict[str, str]] = []
+        for p in proposals:
+            why = ("not in allowlist" if p.type not in self.allowlist
+                   else "protected asset" if p.type == "block_ip" and p.target in self.protected_ips
+                   else "protected account" if p.type == "lock_user" and p.target in self.protected_users
+                   else None)
+            if why:
+                denied.append({"type": p.type, "target": p.target, "why": why})
+            else:
+                ok.append(p)
+        return ok, denied
 
     def review(self, incident: dict[str, Any], proposals: list[Proposal], risk_index: int, threshold: int) -> Review:
         conf = incident["ai_confidence"]
@@ -204,17 +221,7 @@ class Needle(Agent):
             return Review(False, f"DENY: AI confidence {conf} < {self.min_confidence}; autonomous action not justified.")
         if risk_index < threshold:
             return Review(False, f"DENY: risk index {risk_index} is below threshold {threshold}.")
-        ok: list[Proposal] = []
-        denied: list[dict[str, str]] = []
-        for p in proposals:
-            if p.type not in ALLOWLIST:
-                denied.append({"type": p.type, "target": p.target, "why": "not in allowlist"})
-            elif p.type == "block_ip" and p.target in self.protected_ips:
-                denied.append({"type": p.type, "target": p.target, "why": "protected asset"})
-            elif p.type == "lock_user" and p.target in self.protected_users:
-                denied.append({"type": p.type, "target": p.target, "why": "protected account"})
-            else:
-                ok.append(p)
+        ok, denied = self.screen(proposals)
         if not ok:
             return Review(False, "DENY: no allowlisted action remains after review.", [], denied)
         reasoning = (

@@ -499,3 +499,94 @@ def _fade(hex_color: str, alpha: float) -> str:
 def demote_headings(md: str, by: int = 2) -> str:
     """Render report headings smaller so they fit the panel (the download keeps the original)."""
     return re.sub(r"^(#{1,4}) ", lambda m: "#" * min(6, len(m.group(1)) + by) + " ", md or "", flags=re.M)
+
+
+# ---------------------------------------------------------------- menu bubbles and part views
+
+# Audit record types that put a bubble on a part's menu button until that page is opened.
+ALERT_TYPES: dict[str, tuple[str, ...]] = {
+    "collector": ("event_classified", "collector_silent"),  # malicious events picked up, silent collectors
+    "classifier": ("incident_opened",),  # new attacks identified
+    "responder": ("action_applied", "auto_rollback"),  # containment put in place or undone
+}
+
+
+def head_seq(records: list[dict]) -> int:
+    return max((int(r.get("seq") or 0) for r in records), default=0)
+
+
+def unseen_counts(records: list[dict], seen: dict[str, int]) -> dict[str, int]:
+    """Alert records newer than the last audit seq each page was viewed at.
+
+    A demo reset restarts the chain, so a remembered seq beyond the head counts as 0.
+    """
+    head = head_seq(records)
+    counts = {}
+    for page, types in ALERT_TYPES.items():
+        last = seen.get(page, 0)
+        last = 0 if last > head else last
+        counts[page] = sum(1 for r in records if r.get("type") in types and int(r.get("seq") or 0) > last)
+    return counts
+
+
+def records_of(records: list[dict], *types: str) -> list[dict]:
+    """Records of the given types, newest first."""
+    return sorted((r for r in records if r.get("type") in types), key=lambda r: -int(r.get("seq") or 0))
+
+
+def classification_rows(records: list[dict]) -> pd.DataFrame:
+    rows = [
+        {
+            "Time": short_time(r.get("ts")),
+            "Event": d.get("event_id", "-"),
+            "Category": category_label(d.get("category")),
+            "Confidence": d.get("confidence"),
+            "Malicious": d.get("malicious"),
+            "Classified by": CLASSIFIER_LABELS.get(str(d.get("classified_by")), str(d.get("classified_by") or "-")),
+            "Layer agent": d.get("agent", "-"),
+            "Incident": d.get("incident", "-"),
+            "Raw log line": d.get("raw", ""),
+            "Reason": d.get("reason", ""),
+        }
+        for r in records_of(records, "event_classified")
+        for d in [r.get("data") or {}]
+    ]
+    return pd.DataFrame(rows, columns=["Time", "Event", "Category", "Confidence", "Malicious", "Classified by",
+                                       "Layer agent", "Incident", "Raw log line", "Reason"])
+
+
+def risk_breakdown(incidents: Iterable[dict]) -> pd.DataFrame:
+    """How the risk score is built: base x confidence x criticality, plus the inaction penalty."""
+    rows = [
+        {
+            "Incident": inc.get("id", "?"),
+            "Category": category_label(inc.get("category")),
+            "Status": status_label(inc.get("status")),
+            "Base": inc.get("base_points"),
+            "Confidence": inc.get("ai_confidence"),
+            "Criticality": inc.get("asset_criticality"),
+            "Points": round(float(inc.get("points") or 0), 1),
+            "Inaction penalty": round(float(inc.get("inaction_penalty") or 0), 1),
+            "Unaddressed (demo h)": round(float(inc.get("time_unaddressed_hours") or 0), 1),
+            "Counts now": incident_contribution(inc) if inc.get("status") in ACTIVE_STATUSES else 0.0,
+        }
+        for inc in incidents or []
+    ]
+    df = pd.DataFrame(rows, columns=["Incident", "Category", "Status", "Base", "Confidence", "Criticality",
+                                     "Points", "Inaction penalty", "Unaddressed (demo h)", "Counts now"])
+    return df.sort_values("Counts now", ascending=False).reset_index(drop=True) if not df.empty else df
+
+
+def all_action_rows(incidents: Iterable[dict]) -> pd.DataFrame:
+    frames = [action_rows(inc).assign(Incident=inc.get("id", "?")) for inc in incidents or []]
+    frames = [f for f in frames if not f.empty]
+    if not frames:
+        return pd.DataFrame(columns=["Incident", *action_rows({}).columns])
+    df = pd.concat(frames, ignore_index=True)
+    return df[["Incident", *[c for c in df.columns if c != "Incident"]]]
+
+
+def pending_approvals(incidents: Iterable[dict]) -> list[dict]:
+    """Incidents waiting on a person: open ones to approve or reject, contained ones to keep or roll back."""
+    waiting = [i for i in incidents or [] if (a := available_actions(i))["decide"] or a["contain_controls"]]
+    return sorted(waiting, key=lambda i: (not available_actions(i)["decide"], -incident_contribution(i)))

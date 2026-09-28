@@ -79,9 +79,11 @@ def stack(tmp_path_factory):
             pytest.skip(f"port {port} is in use: stop the running demo (stop_demo.ps1) first")
 
     tmp = tmp_path_factory.mktemp("e2e")
+    (tmp / "config.json").write_text("{}")  # empty settings: defaults only, and no setup wizard
     env = dict(os.environ)
     env.update(
         PYTHONUTF8="1",
+        CACTAI_CONFIG=str(tmp / "config.json"),
         DEMO_SPEED="3600",          # 1 real second = 1 demo hour
         CACTAI_DB=str(tmp / "audit.db"),
         CACTAI_CORE_URL=CORE,

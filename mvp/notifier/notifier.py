@@ -19,6 +19,7 @@ import os
 import sys
 import time
 from datetime import datetime
+from pathlib import Path
 from typing import Callable
 
 from core import Core, CoreError
@@ -237,6 +238,10 @@ def run_telegram(core: Core, token: str, chat_id: str, poll: float, fallback_ope
 # ------------------------------------------------------------------ entry point
 
 def main(argv: list[str] | None = None) -> int:
+    sys.path.append(str(Path(__file__).resolve().parents[1]))
+    import cactai_config
+    cactai_config.load()  # saved settings (bot token, chat id, operator) as env defaults
+
     p = argparse.ArgumentParser(description="CactAI notifier")
     p.add_argument("--core", default=os.environ.get("CACTAI_CORE_URL", DEFAULT_CORE))
     p.add_argument("--console", action="store_true", help="force console mode")

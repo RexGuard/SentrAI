@@ -14,7 +14,6 @@ from collections import deque
 from typing import Any
 
 from .agents import (
-    ALLOWLIST,
     Agent,
     AreoleLinux,
     AreoleWin,
@@ -28,10 +27,11 @@ from .agents import (
     Watchdog,
 )
 from .audit import AuditLog
-from .classifier import Classification, Classifier
+from .classifier import Classification, default_chain
 from .clock import DemoClock, fmt_demo_hours
 from .config import Settings
 from .jev_client import JevClient
+from .responders import BlocklistResponder, Responders, SimulatedResponder
 from .risk import SEVERITY, band, band_rank, inaction_penalty, risk_index
 from .rules import RulesEngine
 
@@ -88,13 +88,17 @@ class Saguaro(Agent):
         self.audit = AuditLog(s.db_path)
         self.rules = RulesEngine(s.brute_force_count, s.brute_force_window_s, s.export_rows_threshold)
         self.jev = JevClient(s.jev_timeout_s)
-        self.classifier = Classifier(self.rules, self.jev)
+        # The three parts: events arrive from collectors via POST /events, the classifier
+        # chain labels them, and the responders carry out approved containment.
+        self.classifier, self.jev_step = default_chain(self.rules, self.jev)
+        self.blocklist_responder = BlocklistResponder()
+        self.responders = Responders(self.blocklist_responder, SimulatedResponder())
         self.root = Root(self.classifier)
         self.reservoir = Reservoir(self.classifier)
         self.spinenet = SpineNet(self.classifier)
-        self.areole_linux = AreoleLinux(self.classifier)
-        self.areole_win = AreoleWin(self.classifier)
-        self.needle = Needle(s.needle_min_confidence, s.protected_ips, s.protected_users)
+        self.areole_linux = AreoleLinux(self.classifier, self.responders)
+        self.areole_win = AreoleWin(self.classifier, self.responders)
+        self.needle = Needle(s.needle_min_confidence, self.responders.allowlist, s.protected_ips, s.protected_users)
         self.watchdog = Watchdog(s.watchdog_silence_s)
         self.scribe = Scribe(self.audit, self.clock)
         self.helpdesk = HelpDesk()
@@ -166,7 +170,7 @@ class Saguaro(Agent):
     def ingest(self, events: list[dict[str, Any]]) -> dict[str, Any]:
         accepted = 0
         # Cap the total time one request may spend waiting on Jev; the rest use the fallback.
-        self.classifier.jev_deadline = time.monotonic() + self.settings.jev_budget_s
+        self.jev_step.deadline = time.monotonic() + self.settings.jev_budget_s
         for raw_ev in events:
             ev = dict(raw_ev)
             now = self.clock.now()
@@ -538,21 +542,18 @@ class Saguaro(Agent):
     def _active_actions(self, inc: dict[str, Any], now: float) -> list[dict[str, Any]]:
         return [a for a in inc["actions"] if self._is_active(a, now)]
 
-    def blocklist(self, now: float | None = None) -> dict[str, list[str]]:
+    def blocklist(self) -> dict[str, list[str]]:
         with self.lock:
-            now = self.clock.now() if now is None else now
-            ips: set[str] = set()
-            users: set[str] = set()
-            for a in self.actions:
-                if self._is_active(a, now):
-                    if a["type"] == "block_ip":
-                        ips.add(a["target"])
-                    elif a["type"] == "lock_user":
-                        users.add(a["target"])
-            return {"ips": sorted(ips), "users": sorted(users)}
+            return self.blocklist_responder.blocklist()
+
+    def _end_action(self, a: dict[str, Any], status: str) -> None:
+        """Every way an action stops (expired, rolled back) goes through here, so the responder undoes it."""
+        if a["status"] in ("active", "permanent"):  # still in force: undo it
+            self.responders.revert(a)
+        a["status"] = status
 
     def _state_for_snapshot(self, now: float) -> dict[str, Any]:
-        bl = self.blocklist(now)
+        bl = self.blocklist()
         return {**bl, "active_actions": sorted(a["action_id"] for a in self.actions if self._is_active(a, now))}
 
     def _contain(self, inc: dict[str, Any], mode: str, approver: str, now: float, risk_idx: int,
@@ -581,9 +582,7 @@ class Saguaro(Agent):
                 return False
             approved = review.approved_proposals
         else:
-            approved = [p for p in proposals if p.type in ALLOWLIST
-                        and not (p.type == "block_ip" and p.target in s.protected_ips)
-                        and not (p.type == "lock_user" and p.target in s.protected_users)]
+            approved, _ = self.needle.screen(proposals)
             self.scribe.record(self.needle.name, "needle_review", {
                 "incident": inc["id"], "approved": True, "operator": approver,
                 "reasoning": f"Operator {approver} approved; the human decision is the second key. "
@@ -602,21 +601,13 @@ class Saguaro(Agent):
             inc["actions"].append(a)
             new_actions.append(a)
             self.scribe.record(executor.name, "action_applied", a)
-        # 4. Verify
-        bl = self.blocklist(now)
-        results = []
-        for a in new_actions:
-            if a["type"] == "block_ip":
-                a["verified"] = a["target"] in bl["ips"]
-            elif a["type"] == "lock_user":
-                a["verified"] = a["target"] in bl["users"]
-            else:
-                a["verified"] = True  # simulated playbooks: verified as recorded
-            results.append({"action_id": a["action_id"], "type": a["type"], "target": a["target"], "verified": a["verified"]})
+        # 4. Verify (each responder reported whether its action is in force)
+        results = [{"action_id": a["action_id"], "type": a["type"], "target": a["target"], "verified": a["verified"]}
+                   for a in new_actions]
         self.scribe.record(executor.name, "verify", {"incident": inc["id"], "results": results})
         for a in new_actions:
             if not a["verified"]:
-                a["status"] = "rolled_back"
+                self._end_action(a, "rolled_back")
                 self.scribe.record(executor.name, "auto_rollback", {"incident": inc["id"], "action_id": a["action_id"],
                                                                     "snapshot_hash": snap, "why": "verification failed"})
         inc["status"] = "contained"
@@ -641,7 +632,7 @@ class Saguaro(Agent):
     def _expire_actions(self, now: float) -> None:
         for a in self.actions:
             if a["status"] == "active" and a["_expires_ts"] <= now:
-                a["status"] = "expired"
+                self._end_action(a, "expired")
                 self.scribe.record(a["executed_by"], "action_expired", {"incident": a["incident"], "action_id": a["action_id"],
                                                                        "type": a["type"], "target": a["target"]})
                 inc = self.incidents.get(a["incident"])
@@ -690,7 +681,7 @@ class Saguaro(Agent):
                     raise BadRequestError("reject requires a justification")
                 self._set_acked(inc, operator, "decision", now)
                 for a in self._active_actions(inc, now):
-                    a["status"] = "rolled_back"
+                    self._end_action(a, "rolled_back")
                     self.scribe.record(self.name, "action_rolled_back", {"incident": iid, "action_id": a["action_id"],
                                                                          "operator": operator, "reason": "incident rejected"})
                 inc["status"] = "rejected"
@@ -726,7 +717,7 @@ class Saguaro(Agent):
             self._set_acked(inc, operator, "rollback", now)
             snap = Scribe.snapshot_hash(self._state_for_snapshot(now))
             for a in active:
-                a["status"] = "rolled_back"
+                self._end_action(a, "rolled_back")
                 a["rolled_back_at"] = self.clock.iso(now)
                 self.scribe.record(self.name, "action_rolled_back", {
                     "incident": iid, "action_id": a["action_id"], "operator": operator, "justification": justification,
@@ -748,6 +739,8 @@ class Saguaro(Agent):
                 raise ConflictError(f"{iid} has no active or expired hotpatch to make permanent")
             self._set_acked(inc, operator, "permanent", now)
             for a in targets:
+                if a["status"] == "expired":
+                    self.responders.apply(a)  # an expired block goes back in force
                 a["status"] = "permanent"
                 a["expires_at"] = None
                 a["_expires_ts"] = math.inf
@@ -845,6 +838,7 @@ class Saguaro(Agent):
         with self.lock:
             archived = self.audit.archive_and_reset()
             self.rules.reset()
+            self.responders.reset()
             self.watchdog.reset()
             self.clock._offset = 0.0
             self._init_state()

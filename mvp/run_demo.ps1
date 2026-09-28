@@ -61,6 +61,11 @@ $pyLab = Ensure-Venv "lab"
 $pyDash = Ensure-Venv "dashboard"
 $pyNotif = Ensure-Venv "notifier"
 
+# First run on this machine: ask for the settings (logs, rules, responder, alerts) once.
+# Every component reads the saved file itself; explicit env vars below still win.
+& $pyLab (Join-Path $Root "cactai_config.py")
+if ($LASTEXITCODE -ne 0) { exit 1 }
+
 # Shared environment for every child window.
 $env:PYTHONUTF8 = "1"
 $env:PYTHONIOENCODING = "utf-8"
@@ -99,8 +104,8 @@ if (-not (Wait-Http "http://127.0.0.1:8000/health")) {
 try { Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/demo/reset" -TimeoutSec 5 | Out-Null } catch { }
 
 $labDir = Join-Path $Root "lab"
-$logsDir = Join-Path $labDir "logs"
-if (Test-Path $logsDir) { Get-ChildItem $logsDir -Filter *.jsonl | Remove-Item -Force }
+$logsDir = (& $pyLab (Join-Path $Root "cactai_config.py") get CACTAI_LAB_LOGS)
+if ((Test-Path $logsDir) -and ($logsDir -like "*$labDir*")) { Get-ChildItem $logsDir -Filter *.jsonl | Remove-Item -Force }
 
 $started += Start-Component "target" $labDir "& '$pyLab' -m target_app"
 if (-not (Wait-Http "http://127.0.0.1:5000/healthz")) {
