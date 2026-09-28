@@ -4,28 +4,38 @@
 
 .DESCRIPTION
   Opens one titled window per component:
-    core       FastAPI risk engine + agents     http://127.0.0.1:8000
+    core       FastAPI risk engine + agents     http://127.0.0.1:8000  (-CorePort)
     target     Aegis Academy portal (fake)      http://127.0.0.1:5000
     collector  tails the portal logs -> core
     notifier   Telegram bot (console mode if TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID are not set)
-    dashboard  Streamlit                        http://127.0.0.1:8501
+    dashboard  Streamlit                        http://127.0.0.1:8501  (-DashboardPort)
   Window PIDs are saved to mvp\.demo_pids.json so stop_demo.ps1 stops only these.
 
 .EXAMPLE
   .\run_demo.ps1                     # live mode, 1 real minute = 1 demo hour
   .\run_demo.ps1 -DemoSpeed 600      # faster inaction penalty (1 real minute = 10 demo hours)
   .\run_demo.ps1 -Mode replay        # no collector; use replay\simulate.py instead of live attacks
+  .\run_demo.ps1 -CorePort 8100      # when 8000 is taken (or set CACTAI_CORE_PORT / CACTAI_DASHBOARD_PORT)
 #>
 param(
     [ValidateSet("live", "replay")] [string]$Mode = "live",
     [double]$DemoSpeed = 60,
     [switch]$NoDashboard,
-    [switch]$NoBrowser
+    [switch]$NoBrowser,
+    [int]$CorePort = $(if ($env:CACTAI_CORE_PORT) { [int]$env:CACTAI_CORE_PORT } else { 8000 }),
+    [int]$DashboardPort = $(if ($env:CACTAI_DASHBOARD_PORT) { [int]$env:CACTAI_DASHBOARD_PORT } else { 8501 })
 )
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $PidFile = Join-Path $Root ".demo_pids.json"
+$TargetPort = 5000  # fixed: the attack scripts refuse any other port
+if (($CorePort -eq $DashboardPort) -or ($CorePort -eq $TargetPort) -or ($DashboardPort -eq $TargetPort)) {
+    Write-Host "Core, dashboard and target ($TargetPort) need three different ports." -ForegroundColor Red
+    exit 2
+}
+$Core = "http://127.0.0.1:$CorePort"
+$Dash = "http://127.0.0.1:$DashboardPort"
 
 if (Test-Path $PidFile) {
     Write-Host "A demo seems to be running already (found .demo_pids.json). Run .\stop_demo.ps1 first." -ForegroundColor Yellow
@@ -60,9 +70,9 @@ function Test-Port([int]$Port) {
     return [bool]$c
 }
 
-foreach ($p in 8000, 5000, 8501) {
+foreach ($p in $CorePort, $TargetPort, $DashboardPort) {
     if (Test-Port $p) {
-        Write-Host "Port $p is already in use. Close whatever is using it (or run .\stop_demo.ps1) and try again." -ForegroundColor Red
+        Write-Host "Port $p is already in use. Close whatever is using it (or run .\stop_demo.ps1), or pick another port with -CorePort / -DashboardPort, and try again." -ForegroundColor Red
         exit 1
     }
 }
@@ -81,7 +91,8 @@ if ($LASTEXITCODE -ne 0) { exit 1 }
 $env:PYTHONUTF8 = "1"
 $env:PYTHONIOENCODING = "utf-8"
 $env:DEMO_SPEED = "$DemoSpeed"
-$env:CACTAI_CORE_URL = "http://127.0.0.1:8000"
+$env:CACTAI_CORE_URL = $Core
+if (-not $env:CACTAI_PUBLIC_URL) { $env:CACTAI_PUBLIC_URL = $Core }
 
 $started = @()
 
@@ -107,12 +118,12 @@ function Wait-Http([string]$Url, [int]$Seconds = 40) {
 Write-Host ""
 Write-Host "CactAI demo  (mode: $Mode, DEMO_SPEED=$DemoSpeed -> 1 real minute = $([math]::Round($DemoSpeed/60,2)) demo hours)" -ForegroundColor Green
 
-$started += Start-Component "core" (Join-Path $Root "core") "& '$pyCore' -m uvicorn app.main:app --host 127.0.0.1 --port 8000"
-if (-not (Wait-Http "http://127.0.0.1:8000/health")) {
-    Write-Host "Core did not come up on :8000. Check the 'CactAI - core' window." -ForegroundColor Red
+$started += Start-Component "core" (Join-Path $Root "core") "& '$pyCore' -m uvicorn app.main:app --host 127.0.0.1 --port $CorePort"
+if (-not (Wait-Http "$Core/health")) {
+    Write-Host "Core did not come up on :$CorePort. Check the 'CactAI - core' window." -ForegroundColor Red
 }
 # Fresh audit chain and incident state for this take.
-try { Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/demo/reset" -TimeoutSec 5 | Out-Null } catch { }
+try { Invoke-RestMethod -Method Post -Uri "$Core/demo/reset" -TimeoutSec 5 | Out-Null } catch { }
 
 $labDir = Join-Path $Root "lab"
 $logsDir = (& $pyLab (Join-Path $Root "cactai_config.py") get CACTAI_LAB_LOGS)
@@ -130,9 +141,9 @@ $started += Start-Component "notifier" (Join-Path $Root "notifier") "& '$pyNotif
 
 if (-not $NoDashboard) {
     $dashDir = Join-Path $Root "dashboard"
-    $started += Start-Component "dashboard" $dashDir "& '$pyDash' -m streamlit run app.py --server.port 8501 --server.headless true --browser.gatherUsageStats false"
-    if ((Wait-Http "http://127.0.0.1:8501" 60) -and (-not $NoBrowser)) {
-        Start-Process "http://127.0.0.1:8501"
+    $started += Start-Component "dashboard" $dashDir "& '$pyDash' -m streamlit run app.py --server.port $DashboardPort --server.headless true --browser.gatherUsageStats false"
+    if ((Wait-Http $Dash 60) -and (-not $NoBrowser)) {
+        Start-Process $Dash
     }
 }
 
@@ -151,5 +162,6 @@ if ($Mode -eq "live") {
 }
 Write-Host ""
 Write-Host "Portal:    http://127.0.0.1:5000"
-Write-Host "Dashboard: http://127.0.0.1:8501"
+Write-Host "Core API:  $Core"
+Write-Host "Dashboard: $Dash"
 Write-Host "Stop everything with .\stop_demo.ps1"
