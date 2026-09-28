@@ -98,13 +98,17 @@ def default_chat_provider() -> cactai_llm.Provider | None:
 class OperatorChat:
     def __init__(self, core: Saguaro, provider: cactai_llm.Provider | None = None) -> None:
         self.core, self.provider = core, provider
+        self.off_reason: str | None = None  # why there is no model (set by main.py and /ai/reload)
         self.lock = threading.Lock()
         self.history: list[dict[str, Any]] = []
         self._seq = 0
 
     @property
     def status(self) -> str:
-        return f"online ({self.provider.label})" if self.provider else "offline: answers from the core's explanations"
+        if self.provider:
+            return f"online ({self.provider.label})"
+        why = f" ({self.off_reason})" if self.off_reason else ""
+        return f"offline{why}: answers from the core's explanations"
 
     # --------------------------------------------------------------- public
     def messages(self, limit: int = 100) -> dict[str, Any]:

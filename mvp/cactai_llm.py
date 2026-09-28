@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
@@ -75,17 +76,89 @@ def provider_name() -> str | None:
     return name
 
 
+def off_reason() -> str:
+    """Why from_env() has no provider, in words a person can act on."""
+    choice = os.getenv("CACTAI_LLM_PROVIDER", "auto").strip().lower() or "auto"
+    if choice != "auto" and choice not in PROVIDERS:
+        return f"unknown provider {choice!r} in CACTAI_LLM_PROVIDER"
+    if choice != "auto":
+        return f"no API key for {LABEL[choice]}: enter one under Configuration, section 5"
+    return "no API key set: enter one under Configuration, section 5"
+
+
+def key_source(name: str) -> str | None:
+    """The environment variable the key for this provider comes from (it tells an old variable apart)."""
+    if name == "anthropic" and not os.getenv(KEY_ENV[name]) and not os.getenv(GENERIC_KEY_ENV) \
+            and os.getenv("ANTHROPIC_AUTH_TOKEN"):
+        return "ANTHROPIC_AUTH_TOKEN"
+    return next((env for env in (KEY_ENV[name], GENERIC_KEY_ENV) if os.getenv(env)), None)
+
+
 def from_env(effort: str = "medium", timeout_s: float = 120.0) -> "Provider | None":
     name = provider_name()
     if name is None:
         return None
-    model = os.getenv("CACTAI_LLM_MODEL") or DEFAULT_MODEL[name]
-    if name == "anthropic":
-        return AnthropicProvider(model=model, effort=effort, timeout_s=timeout_s, api_key=api_key(name))
-    base_url = os.getenv("CACTAI_LLM_BASE_URL") or BASE_URL.get(name)
-    if not model or (name == "compatible" and not base_url):
+    return build(name, api_key(name), os.getenv("CACTAI_LLM_MODEL"), os.getenv("CACTAI_LLM_BASE_URL"),
+                 effort=effort, timeout_s=timeout_s)
+
+
+def build(name: str, key: str | None, model: str | None = None, base_url: str | None = None,
+          effort: str = "medium", timeout_s: float = 120.0) -> "Provider":
+    """One provider from explicit settings (from_env and the connection test both use this).
+
+    Raises LLMError when a setting is missing or the provider's Python package is not installed.
+    """
+    if name not in PROVIDERS:
+        raise LLMError(f"unknown provider {name!r}")
+    model = model or DEFAULT_MODEL[name]
+    base_url = base_url or BASE_URL.get(name)
+    if name != "anthropic" and (not model or (name == "compatible" and not base_url)):
         raise LLMError(f"the {name} provider needs CACTAI_LLM_MODEL" + (" and CACTAI_LLM_BASE_URL" if name == "compatible" else ""))
-    return OpenAIProvider(name=name, model=model, api_key=api_key(name), base_url=base_url, timeout_s=timeout_s)
+    try:
+        if name == "anthropic":
+            return AnthropicProvider(model=model, effort=effort, timeout_s=timeout_s, api_key=key)
+        return OpenAIProvider(name=name, model=model, api_key=key, base_url=base_url, timeout_s=timeout_s)
+    except ImportError as e:
+        package = "anthropic" if name == "anthropic" else "openai"
+        raise LLMError(f"the '{package}' Python package is not installed for this part of CactAI. Run "
+                       f"stop_demo.ps1, then run_demo.ps1 again: it installs new packages when it starts") from e
+
+
+PING_SCHEMA = {"type": "object", "properties": {"ok": {"type": "boolean"}}, "required": ["ok"],
+               "additionalProperties": False}
+
+
+def check(provider: "Provider") -> dict[str, Any]:
+    """One tiny real request through the same call Cyanide makes, so a pass means Cyanide can plan.
+
+    Returns {"ok", "provider", "model", "ms", "error", "hint"}.
+    """
+    started = time.monotonic()
+    error = None
+    try:
+        provider.complete_json("You are a connection test for CactAI.", 'Reply with {"ok": true}.', PING_SCHEMA)
+    except LLMError as e:
+        error = str(e)[:600]
+    return {"ok": error is None, "provider": provider.name, "model": provider.model,
+            "ms": round((time.monotonic() - started) * 1000), "error": error, "hint": hint(error) if error else None}
+
+
+def hint(error: str) -> str | None:
+    """A plain next step for the errors people hit most when setting up a key."""
+    e = error.lower()
+    if "authentication" in e or "401" in e or "invalid x-api-key" in e or "incorrect api key" in e:
+        return "The provider rejected the key. Copy it again (no spaces) and check it belongs to the provider chosen above."
+    if "permission" in e or "403" in e:
+        return "The key works but may not use this model. Pick another model with Fetch models."
+    if "not_found" in e or "404" in e or "model_not_found" in e or "does not exist" in e:
+        return "The provider does not know this model name. Use Fetch models and pick one from the list."
+    if "credit" in e or "billing" in e or "quota" in e or "insufficient" in e or "429" in e:
+        return "The key has no credit left or hit a rate limit. Check billing on the provider's website."
+    if "effort" in e or "output_config" in e or "json_schema" in e or "response_format" in e:
+        return "This model does not support the structured answers Cyanide needs. Try the provider's default model."
+    if "connection" in e or "timeout" in e or "timed out" in e or "could not reach" in e:
+        return "The provider could not be reached. Check the internet connection, proxy or base URL."
+    return None
 
 
 # Model ids in OpenAI's list that cannot hold a conversation.

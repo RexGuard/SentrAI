@@ -381,6 +381,26 @@ def delivered(nid: str, body: dict = Body(...)):
         raise HTTPException(404, f"notification {nid} not found")
 
 
+FAKE_AI = {"engine": "Cyanide", "planner": "off (fake core)", "chat": "offline (fake core)", "online": False,
+           "provider": None, "model": None, "key_source": None, "off_reason": "the fake core has no AI model"}
+
+
+@app.get("/ai")
+def ai_status():
+    return FAKE_AI
+
+
+@app.post("/ai/reload")
+def ai_reload():
+    return FAKE_AI
+
+
+@app.post("/ai/test")
+def ai_test(body: dict = Body(None)):
+    return {"ok": False, "provider": (body or {}).get("provider"), "model": None, "ms": 0, "hint": None,
+            "error": "the fake core does not call AI providers; start the real core to test"}
+
+
 @app.get("/chat")
 def get_chat():
     with lock:
