@@ -74,8 +74,11 @@ class CoreClient:
             data = data.get("incidents", [])
         return list(data or [])
 
-    def audit(self) -> Any:
-        return self.get_json("/audit")
+    def audit(self, limit: int = 0) -> Any:
+        return self.get_json(f"/audit?limit={limit}" if limit else "/audit")
+
+    def agents(self) -> list[dict]:
+        return list(self.get_json("/agents") or [])
 
     def blocklist(self) -> dict:
         return self.get_json("/blocklist")

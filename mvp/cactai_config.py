@@ -105,7 +105,8 @@ def load() -> dict[str, str]:
     return values
 
 
-def _valid(field: Field, answer: str) -> bool:
+def valid(field: Field, answer: str) -> bool:
+    """True when the answer parses as the field's type (always true for text)."""
     try:
         field.kind(answer)
         return True
@@ -127,7 +128,7 @@ def wizard(ask: Callable[[str], str] | None = None, ask_secret: Callable[[str], 
             while True:
                 answer = (ask_secret if f.secret else ask)(f"  {f.prompt} [{shown}]: ").strip()
                 answer = answer or current[f.env]
-                if _valid(f, answer):
+                if valid(f, answer):
                     break
                 say("    Please enter a number.")
             values[f.env] = answer

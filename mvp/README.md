@@ -8,7 +8,7 @@ A working prototype of CactAI that runs natively on one Windows laptop (no Docke
 | Target app | `lab/target_app/` | Fictional "Aegis Academy Student Portal" that writes logs and enforces CactAI's blocklist (HTTP 403) | http://127.0.0.1:5000 |
 | Collector | `lab/collector/` | Tails the portal's web, DB and OS logs and sends normalized events to core | |
 | Attacks / replay | `lab/attacks/`, `lab/replay/` | Localhost-only attack scripts and a scripted replay for backup recordings | |
-| Dashboard | `dashboard/` | Streamlit risk console: gauge, risk over time, incident queue, Approve / Reject / Rollback / Make Permanent, audit feed, report viewer | http://127.0.0.1:8501 |
+| Dashboard | `dashboard/` | Streamlit console with a sidebar menu: Configuration (home), Approvals, Collector, Classifier, Action taker, Review (gauge, threshold, risk accumulated), Reports, Audit trail. Menu bubbles flag new malicious activity per part | http://127.0.0.1:8501 |
 | Notifier | `notifier/` | Telegram bot with Approve / Reject buttons, or console mode without a token | |
 
 The interface between components is defined in [`CONTRACT.md`](CONTRACT.md).
@@ -42,12 +42,14 @@ Stop everything with `.\stop_demo.ps1`.
 
 ### What you should see
 
+The dashboard opens on Configuration. Open **Review** for the gauge; the Collector, Classifier and Action taker buttons show a red bubble when new malicious activity reaches that part.
+
 1. Benign traffic: no incidents, gauge green.
 2. Brute force from `203.0.113.45`: incident `RSK-2026-081`, risk about 39 (amber), operator alert (Telegram or the notifier window).
 3. Nobody acknowledges: +5 per demo hour, SLA reminders, escalation to the team lead at red.
 4. SQL injection from `198.51.100.23`: risk crosses 80, Needle approves, both attackers are blocked and `admin` is locked for 2 demo hours. The portal returns "Blocked by CactAI" (403) to them. Your own machine (127.0.0.1) is never blocked.
-5. The negligence report (dashboard, or `http://127.0.0.1:8000/reports/RSK-2026-081.md`) shows the timeline of inaction, "Ack: none" and the audit chain hash.
-6. Roll back or make the fix permanent from the dashboard.
+5. The report (dashboard **Reports** page, or `http://127.0.0.1:8000/reports/RSK-2026-081.md`) shows the timeline of inaction, "Ack: none" and the audit chain hash.
+6. Roll back or make the fix permanent from the dashboard **Approvals** page.
 
 ### Demo speed
 
@@ -139,7 +141,7 @@ class AttackToolClassifier(Classifier):
 | --- | --- | --- |
 | Core | `.venv\Scripts\python -m pytest -q` | 27 passed |
 | Lab | `.venv\Scripts\python -m pytest -q` | 36 passed |
-| Dashboard | `.venv\Scripts\python -m pytest -q` | 12 passed |
+| Dashboard | `.venv\Scripts\python -m pytest -q` | 25 passed |
 | Notifier | `.venv\Scripts\python -m pytest -q` | 8 passed |
 | End-to-end (real core + portal + collector + attacks) | from `integration`: `..\lab\.venv\Scripts\python -m pytest -q test_e2e.py` | 1 passed |
 

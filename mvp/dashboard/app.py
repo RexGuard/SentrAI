@@ -1,5 +1,9 @@
 """CactAI operator dashboard (Streamlit, http://127.0.0.1:8501).
 
+The sidebar is the menu: Configuration (the home page), Approvals, one page per part of the
+pipeline (Collector, Classifier, Action taker), Review, Reports and Audit trail. A part's
+menu button shows a bubble with the malicious activity that arrived since it was last opened.
+
 Run from this folder:  .venv\\Scripts\\streamlit run app.py
 """
 from __future__ import annotations
@@ -7,7 +11,9 @@ from __future__ import annotations
 import html
 import json
 import os
+import sys
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import streamlit as st
@@ -15,8 +21,13 @@ import streamlit as st
 from cactai_ui import shaping as sh
 from cactai_ui.api import CoreClient, CoreError
 
+sys.path.append(str(Path(__file__).resolve().parents[1]))
+import cactai_config as cfg  # noqa: E402
+
+cfg.load()
+
 DEFAULT_CORE = os.environ.get("CACTAI_CORE_URL", "http://127.0.0.1:8000")
-DEFAULT_OPERATOR = os.environ.get("CACTAI_OPERATOR", "erick")
+DEFAULT_OPERATOR = os.environ.get("CACTAI_OPERATOR", "operator")
 REFRESH_SECONDS = 2
 
 st.set_page_config(page_title="CactAI · Risk Console", page_icon="🌵", layout="wide",
@@ -62,6 +73,16 @@ section[data-testid="stSidebar"] { background: #121613; border-right: 1px solid 
 .reco b { color:#3fb56a; font-size:.72rem; letter-spacing:.09em; text-transform:uppercase; display:block; margin-bottom:.2rem; }
 .offline { border:1px solid rgba(208,59,59,.5); background:rgba(208,59,59,.1); border-radius:14px; padding:1.2rem 1.4rem; color:#f2d6d6; }
 div[data-testid="stForm"] { border:1px solid rgba(255,255,255,.08); border-radius:12px; }
+section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] { gap:.25rem; }
+section[data-testid="stSidebar"] .stButton button { justify-content:flex-start; border:none; background:transparent;
+        color:#dfe3dc; padding:.4rem .7rem; min-height:2.3rem; }
+section[data-testid="stSidebar"] .stButton button > div { justify-content:flex-start; width:100%; }
+section[data-testid="stSidebar"] .cact-brand { margin-bottom:.8rem; }
+section[data-testid="stSidebar"] .stButton button:hover { background:rgba(63,181,106,.10); color:#f2f4f1; }
+section[data-testid="stSidebar"] .stButton button[kind="primary"] { background:rgba(63,181,106,.18); color:#f2f4f1;
+        border-left:3px solid #3fb56a; border-radius:6px; }
+.nav-group { color:#6f766c; font-size:.68rem; text-transform:uppercase; letter-spacing:.12em; font-weight:700;
+             margin:1rem 0 .5rem .7rem; }
 @media (max-width: 900px) { .detail-grid { grid-template-columns: repeat(2, minmax(0,1fr)); } }
 </style>
 """
@@ -113,7 +134,81 @@ def show_flash() -> None:
         st.toast(flash[0], icon=flash[1])
 
 
-# ------------------------------------------------------------------ sidebar
+
+
+# ------------------------------------------------------------------ data
+
+st.session_state.setdefault("core_url", DEFAULT_CORE)
+st.session_state.setdefault("operator", DEFAULT_OPERATOR)
+st.session_state.setdefault("auto_refresh", True)
+st.session_state.setdefault("page", "config")
+st.session_state.setdefault("seen", {})
+client = CoreClient(st.session_state.core_url)
+AUTO = REFRESH_SECONDS if st.session_state.auto_refresh else None
+AUDIT_WINDOW = 500  # latest records the dashboard reads; the core still verifies the whole chain
+
+
+@st.cache_data(ttl=1, show_spinner=False)
+def _get(base_url: str, what: str) -> Any:
+    c = CoreClient(base_url)
+    return {"risk": c.risk, "incidents": c.incidents, "blocklist": c.blocklist, "agents": c.agents,
+            "audit": lambda: c.audit(AUDIT_WINDOW)}[what]()
+
+
+def fetch(what: str, default: Any = None) -> tuple[Any, str | None]:
+    """One cached read per second, shared by the menu and the page."""
+    return safe(lambda: _get(st.session_state.core_url, what), default)
+
+
+def audit_records() -> tuple[list[dict], bool | None, str | None]:
+    payload, err = fetch("audit", [])
+    records, valid = sh.normalize_audit(payload)
+    if valid is None and records:
+        valid = sh.verify_chain_links(records)
+    return records, valid, err
+
+
+# ------------------------------------------------------------------ menu
+
+PAGES = {  # key: (icon, label, menu group)
+    "config": ("⚙️", "Configuration", ""),
+    "approvals": ("✋", "Approvals", "Decide"),
+    "collector": ("📥", "Collector", "Pipeline"),
+    "classifier": ("🧠", "Classifier", "Pipeline"),
+    "responder": ("🛡️", "Action taker", "Pipeline"),
+    "review": ("📈", "Review", "Oversight"),
+    "reports": ("📄", "Reports", "Oversight"),
+    "audit": ("📜", "Audit trail", "Oversight"),
+}
+
+
+def go(page: str) -> None:
+    st.session_state.page = page
+    st.rerun()
+
+
+@st.fragment(run_every=AUTO)
+def menu() -> None:
+    records, _, _ = audit_records()
+    incidents, _ = fetch("incidents", [])
+    page, seen = st.session_state.page, st.session_state.seen
+    if page in sh.ALERT_TYPES:  # whatever arrives while you look at a page counts as seen
+        seen[page] = sh.head_seq(records)
+    bubbles = {**sh.unseen_counts(records, seen), "approvals": len(sh.pending_approvals(incidents or []))}
+
+    group = None
+    for key, (icon, label, grp) in PAGES.items():
+        if grp != group:
+            group = grp
+            if grp:
+                st.markdown(f'<div class="nav-group">{grp}</div>', unsafe_allow_html=True)
+        n = bubbles.get(key, 0)
+        text = f"{icon}  {label}" + (f"  :red-badge[{n}]" if n else "")
+        if st.button(text, key=f"nav_{key}", width="stretch", type="primary" if key == page else "secondary"):
+            if key in sh.ALERT_TYPES:
+                seen[key] = sh.head_seq(records)
+            go(key)
+
 
 with st.sidebar:
     st.markdown(
@@ -122,159 +217,419 @@ with st.sidebar:
         '<div class="cact-tag">Proof, not just alerts.</div></div></div>',
         unsafe_allow_html=True,
     )
+    menu()
     st.divider()
-    core_url = st.text_input("Core API URL", value=DEFAULT_CORE, key="core_url")
-    operator = st.text_input("Operator name", value=DEFAULT_OPERATOR, key="operator").strip() or "operator"
-    auto = st.toggle(f"Auto-refresh every {REFRESH_SECONDS} s", value=True, key="auto_refresh")
-    st.divider()
+    st.toggle(f"Auto-refresh every {REFRESH_SECONDS} s", key="auto_refresh")
     if st.button("🔄 Reset demo", width="stretch", help="POST /demo/reset: clears state for a fresh take"):
-        run_action("Demo reset", lambda: CoreClient(core_url).reset_demo(), rerun=False)
-        st.session_state.pop("sel_inc", None)
-    st.caption("Humans stay in charge. Above the threshold the organization set, CactAI applies a "
-               "temporary, reversible fix and records who was warned and when.")
+        run_action("Demo reset", lambda: client.reset_demo(), rerun=False)
+        st.session_state.seen = {}
     st.caption("A cactus doesn't chase you. It just makes touching it a bad idea.")
 
-client = CoreClient(core_url)
 
+# ------------------------------------------------------------------ shared page parts
 
-# ------------------------------------------------------------------ main body
-
-@st.fragment(run_every=REFRESH_SECONDS if auto else None)
-def live_console() -> None:
-    show_flash()
-    risk, err = safe(client.risk)
+def header(title: str, note: str = "") -> dict | None:
+    """Page title plus the live status pills. Returns /risk, or None when the core is offline."""
+    risk, err = fetch("risk")
     now_s = datetime.now().strftime("%H:%M:%S")
-
+    icon = PAGES[st.session_state.page][0]
     if err or not isinstance(risk, dict):
-        st.markdown(
-            '<div class="cact-head"><div class="cact-brand"><div class="cact-logo">🌵</div><div>'
-            '<div class="cact-name">Cact<span>AI</span> Risk Console</div></div></div>'
-            + pill("CORE OFFLINE", sh.BAND_COLORS["critical"]) + "</div>",
-            unsafe_allow_html=True,
-        )
+        pills = pill("CORE OFFLINE", sh.BAND_COLORS["critical"])
+    else:
+        band = sh.resolve_band(risk)
+        _, valid, _ = audit_records()
+        pills = (pill(f"RISK {risk.get('risk_index', '-')} · {sh.BAND_LABELS.get(band, band).upper()}", sh.band_color(band))
+                 + (pill("CHAIN VALID ✅", sh.BAND_COLORS["green"]) if valid
+                    else pill("CHAIN BROKEN ❌", sh.BAND_COLORS["critical"]) if valid is False
+                    else pill("CHAIN UNKNOWN", sh.UNKNOWN_COLOR)))
+    pills += pill(f"LIVE · {now_s}" if AUTO else f"PAUSED · {now_s}", "#3fb56a" if AUTO else sh.UNKNOWN_COLOR)
+    st.markdown(
+        f'<div class="cact-head"><div><div class="cact-name" style="font-size:1.6rem">{icon} {html.escape(title)}</div>'
+        f'<div class="cact-tag">{html.escape(note)}</div></div>'
+        f'<div style="display:flex;gap:.5rem;flex-wrap:wrap">{pills}</div></div>',
+        unsafe_allow_html=True,
+    )
+    if err or not isinstance(risk, dict):
         st.markdown(
             f'<div class="offline"><b>Core API unreachable</b><br>'
             f'<span style="color:#b9a5a5">{html.escape(err or "unexpected /risk payload")}</span><br><br>'
             f'Retrying every {REFRESH_SECONDS} s. Start the core (or <code>dev/fake_core.py</code>) '
-            f'and check the URL in the sidebar. Last attempt {now_s}.</div>',
+            f'and check the Core URL on the Configuration page.</div>',
             unsafe_allow_html=True,
         )
-        if not auto:
-            st.button("Retry now")
-        return
+        return None
+    return risk
 
-    incidents, inc_err = safe(client.incidents, [])
-    audit_payload, audit_err = safe(client.audit, [])
-    blocklist, bl_err = safe(client.blocklist, {"ips": [], "users": []})
-    records, chain_valid = sh.normalize_audit(audit_payload)
-    if chain_valid is None and records:
-        chain_valid = sh.verify_chain_links(records)
 
-    idx = risk.get("risk_index")
-    band = sh.resolve_band(risk)
-    color = sh.band_color(band)
-    threshold = float(risk.get("threshold") or 80)
+def table(df, empty: str, **kwargs) -> None:
+    if df.empty:
+        st.caption(empty)
+    else:
+        st.dataframe(df, hide_index=True, width="stretch", **kwargs)
 
-    # ---------- header
-    chain_pill = (pill("CHAIN VALID ✅", sh.BAND_COLORS["green"]) if chain_valid
-                  else pill("CHAIN BROKEN ❌", sh.BAND_COLORS["critical"]) if chain_valid is False
-                  else pill("CHAIN UNKNOWN", sh.UNKNOWN_COLOR))
+
+def incident_summary(inc: dict) -> None:
+    inc_id = str(inc.get("id"))
+    sev_color = {"low": "#0ca30c", "medium": "#fab219", "high": "#ec835a", "critical": "#d03b3b"}.get(
+        str(inc.get("severity")), sh.UNKNOWN_COLOR)
     st.markdown(
-        '<div class="cact-head"><div class="cact-brand"><div class="cact-logo">🌵</div><div>'
-        '<div class="cact-name">Cact<span>AI</span> Risk Console</div>'
-        '<div class="cact-tag">Accountability-based security · CIA + Non-repudiation & Authentication</div>'
-        '</div></div><div style="display:flex;gap:.5rem;flex-wrap:wrap">'
-        + pill(sh.BAND_LABELS.get(band, band).upper(), color)
-        + chain_pill
-        + pill(f"LIVE · {now_s}" if auto else f"PAUSED · {now_s}", "#3fb56a" if auto else sh.UNKNOWN_COLOR)
-        + "</div></div>",
+        f'<div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">'
+        f'<span style="font-size:1.25rem;font-weight:800;color:#f2f4f1">{html.escape(inc_id)}</span>'
+        f'{pill(str(inc.get("severity", "?")).upper(), sev_color)}'
+        f'{pill(sh.status_label(inc.get("status")), "#b9bdb4")}'
+        + (pill("SLA BREACHED", sh.BAND_COLORS["critical"]) if inc.get("sla_breached") else "")
+        + (pill(f"ACK · {inc.get('acked_by')}", sh.BAND_COLORS["green"]) if inc.get("acked")
+           else pill("ACK · NONE", sh.BAND_COLORS["amber"]))
+        + "</div>",
         unsafe_allow_html=True,
     )
+    conf = inc.get("ai_confidence")
+    st.markdown(
+        '<div class="detail-grid">'
+        f'<div><span>Category</span><b>{html.escape(sh.category_label(inc.get("category")))}</b></div>'
+        f'<div><span>AI confidence</span><b>{conf if conf is not None else "-"}</b></div>'
+        f'<div><span>Classified by</span><b>{html.escape(sh.CLASSIFIER_LABELS.get(str(inc.get("classified_by")), str(inc.get("classified_by"))))}</b></div>'
+        f'<div><span>Contribution</span><b>{sh.incident_contribution(inc)} pts</b></div>'
+        f'<div><span>Source IP</span><b>{html.escape(str(inc.get("src_ip") or "-"))}</b></div>'
+        f'<div><span>User</span><b>{html.escape(str(inc.get("user") or "-"))}</b></div>'
+        f'<div><span>Host / layer</span><b>{html.escape(str(inc.get("host") or "-"))} · {html.escape(str(inc.get("layer") or "-"))}</b></div>'
+        f'<div><span>Opened</span><b>{html.escape(sh.short_time(inc.get("opened_at")))}</b></div>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+    if inc.get("explanation"):
+        st.markdown(f"_{inc['explanation']}_")
+    st.markdown(f'<div class="reco"><b>Recommended action</b>{html.escape(str(inc.get("recommended_action") or "-"))}</div>',
+                unsafe_allow_html=True)
+    st.write("")
 
-    # ---------- KPIs
+
+def decision_controls(inc: dict) -> None:
+    """Approve / reject an open incident, or keep / roll back a contained one."""
+    inc_id = str(inc.get("id"))
+    op = st.session_state.operator
+    can = sh.available_actions(inc)
+
+    def ack_then(decision: str, just: str):
+        def _run() -> None:
+            try:
+                client.ack(inc_id, op)
+            except CoreError:
+                pass
+            client.decision(inc_id, op, decision, just)
+        return _run
+
+    if can["decide"]:
+        if can["ack"] and st.button("👁️ Acknowledge", key=f"ack_{inc_id}",
+                                    help="Records that you have seen this alert (POST /ack)"):
+            run_action(f"Acknowledged {inc_id}", lambda: client.ack(inc_id, op))
+        with st.form(key=f"decide_{inc_id}", clear_on_submit=True, border=True):
+            just = st.text_area("Justification (required to reject, written to the audit log)", key=f"just_{inc_id}",
+                                height=80, placeholder="e.g. False positive: this IP is our penetration tester")
+            c1, c2 = st.columns(2)
+            approve = c1.form_submit_button("✅ Approve & Patch", type="primary", width="stretch")
+            reject = c2.form_submit_button("⛔ Reject with Justification", width="stretch")
+        if approve:
+            run_action(f"Approved & patched {inc_id}", ack_then("approve", just.strip()))
+        elif reject:
+            if not just.strip():
+                st.error("Rejecting requires a written justification.")
+            else:
+                run_action(f"Rejected {inc_id}", ack_then("reject", just.strip()))
+    elif can["contain_controls"]:
+        with st.form(key=f"contain_{inc_id}", clear_on_submit=True, border=True):
+            just = st.text_area("Justification (written to the audit log)", key=f"cjust_{inc_id}", height=70,
+                                placeholder="e.g. Verified attacker; keep the block")
+            c1, c2 = st.columns(2)
+            rb = c1.form_submit_button("↩️ Rollback", width="stretch")
+            perm = c2.form_submit_button("📌 Make Permanent", type="primary", width="stretch")
+        if rb:
+            run_action(f"Rolled back {inc_id}",
+                       lambda: client.rollback(inc_id, op, just.strip() or "Rolled back by operator from dashboard"))
+        elif perm:
+            run_action(f"Made permanent {inc_id}",
+                       lambda: client.permanent(inc_id, op, just.strip() or "Made permanent by operator from dashboard"))
+    else:
+        st.caption(f"No operator action available (status: {inc.get('status')}).")
+
+
+# ------------------------------------------------------------------ pages
+
+def page_config() -> None:
+    header("Configuration", f"Saved to {cfg.config_path()} · read by every part when it starts")
+    with st.container(border=True):
+        section("🖥️ Dashboard", "this browser session only")
+        c1, c2 = st.columns(2)
+        # Own widget keys: Streamlit drops a widget's state when you leave the page.
+        st.session_state.core_url = c1.text_input("Core API URL", value=st.session_state.core_url).strip()
+        st.session_state.operator = c2.text_input("Operator name (recorded on your approvals)",
+                                                  value=st.session_state.operator).strip() or "operator"
+
+    current = {f.env: f.default for f in cfg.FIELDS.values()} | cfg.read()
+    with st.form("settings", border=False):
+        values = {}
+        for s in cfg.SECTIONS:
+            with st.container(border=True):
+                section(s.title, s.about)
+                cols = st.columns(2)
+                for n, f in enumerate(s.fields):
+                    values[f.env] = cols[n % 2].text_input(
+                        f.prompt, value=current[f.env], key=f"cfg_{f.env}", help=f"Environment variable {f.env}",
+                        type="password" if f.secret else "default").strip()
+        saved = st.form_submit_button("💾 Save settings", type="primary")
+    if saved:
+        bad = [f.prompt for f in cfg.FIELDS.values() if not cfg.valid(f, values[f.env])]
+        if bad:
+            st.error("Please enter a number for: " + "; ".join(bad))
+        else:
+            path = cfg.save(values)
+            st.success(f"Saved to {path}. Restart the demo (stop_demo.ps1, then run_demo.ps1) so the core, "
+                       "collector and notifier pick up the new settings.")
+
+
+@st.fragment(run_every=AUTO)
+def page_approvals() -> None:
+    show_flash()
+    if header("Approvals", "requests waiting on a person · nothing permanent happens without one") is None:
+        return
+    incidents, err = fetch("incidents", [])
+    if err:
+        st.warning(f"Could not load incidents: {err}")
+    waiting = sh.pending_approvals(incidents or [])
+    if not waiting:
+        st.success("🌵 Nothing waiting for a decision.")
+        return
+    for n, inc in enumerate(waiting):
+        can = sh.available_actions(inc)
+        verb = "Approve or reject" if can["decide"] else "Keep or roll back"
+        title = f"{verb} · {inc.get('id')} · {sh.category_label(inc.get('category'))} · {sh.incident_contribution(inc)} pts"
+        with st.expander(title, expanded=n == 0):
+            incident_summary(inc)
+            decision_controls(inc)
+            table(sh.action_rows(inc), "No containment actions yet.")
+
+
+@st.fragment(run_every=AUTO)
+def page_collector() -> None:
+    if header("Collector", "part 1 · turns raw logs into events and ships them to the core") is None:
+        return
+    records, _, _ = audit_records()
+    agents, _ = fetch("agents", [])
+    agents = agents or []
+    layer = [a for a in agents if "analyzed" in a]
+    watchdog = next((a for a in agents if a.get("name") == "Watchdog"), {})
+    collectors = watchdog.get("collectors") or []
+    malicious = sh.records_of(records, "event_classified")
+    silent = sh.records_of(records, "collector_silent")
+
+    k1, k2, k3, k4 = st.columns(4)
+    with k1:
+        kpi("Events analysed", str(sum(int(a.get("analyzed") or 0) for a in layer)), "by the layer agents")
+    with k2:
+        kpi("Malicious events", str(len(malicious)), "attached to incidents",
+            sh.BAND_COLORS["critical"] if malicious else "#f2f4f1")
+    with k3:
+        kpi("Collectors", str(len(collectors)), "sending heartbeats")
+    with k4:
+        kpi("Silent alerts", str(len(silent)), "collector stopped reporting",
+            sh.BAND_COLORS["amber"] if silent else "#f2f4f1")
+    st.write("")
+
+    left, right = st.columns(2)
+    with left, st.container(border=True):
+        section("📂 Log sources", "from the settings file")
+        logs_dir = Path(os.environ.get("CACTAI_LAB_LOGS") or cfg.FIELDS["CACTAI_LAB_LOGS"].default)
+        st.caption(f"Folder: {logs_dir}")
+        rows = []
+        for env in ("CACTAI_LOG_ACCESS", "CACTAI_LOG_AUTH", "CACTAI_LOG_DB", "CACTAI_LOG_OS"):
+            path = logs_dir / (os.environ.get(env) or cfg.FIELDS[env].default)
+            rows.append({"Log": cfg.FIELDS[env].prompt.replace(" file name", ""), "File": path.name,
+                         "Size": f"{path.stat().st_size / 1024:.1f} KB" if path.exists() else "not created yet"})
+        table(sh.pd.DataFrame(rows), "")
+    with right, st.container(border=True):
+        section("📡 Heartbeats", "Watchdog flags a collector that goes quiet")
+        table(sh.pd.DataFrame([{"Collector": c.get("collector", "-"), "State": "⚠️ silent" if c.get("silent") else "✅ alive",
+                                "Last seen": datetime.fromtimestamp(float(c["last_seen_ts"])).strftime("%H:%M:%S")
+                                if c.get("last_seen_ts") else "-"} for c in collectors]),
+              "No heartbeat received yet. Start the collector.")
+        section("🧭 Events per layer agent")
+        table(sh.pd.DataFrame([{"Agent": a.get("name"), "Events analysed": a.get("analyzed", 0)} for a in layer]),
+              "No agent data.")
+    with st.container(border=True):
+        section("🚨 Malicious events collected", "newest first")
+        table(sh.classification_rows(records)[["Time", "Event", "Category", "Layer agent", "Incident", "Raw log line"]],
+              "No malicious events yet.")
+
+
+@st.fragment(run_every=AUTO)
+def page_classifier() -> None:
+    if header("Classifier", "part 2 · rules, then Jev (AI), then fallback keywords; first answer wins") is None:
+        return
+    records, _, _ = audit_records()
+    agents, _ = fetch("agents", [])
+    jev = next((a for a in agents or [] if a.get("name") == "Jev"), {})
+    rows = sh.classification_rows(records)
+    opened = sh.records_of(records, "incident_opened")
+
+    k1, k2, k3, k4 = st.columns(4)
+    with k1:
+        kpi("Attacks identified", str(len(opened)), "incidents opened", sh.BAND_COLORS["critical"] if opened else "#f2f4f1")
+    with k2:
+        kpi("Malicious events", str(len(rows)), "classified as an attack")
+    with k3:
+        by_rules = int((rows["Classified by"] == "Rules").sum()) if not rows.empty else 0
+        kpi("Settled by rules", str(by_rules), "confidence 1.0")
+    with k4:
+        status = str(jev.get("status") or "unknown")
+        kpi("Jev (AI)", "off" if status.startswith("disabled") else "on", status.split("(")[0][:48])
+    st.write("")
+
+    with st.container(border=True):
+        section("🧪 Rules in use", "change them on the Configuration page")
+        st.markdown(
+            f"- Brute force: **{os.environ.get('BRUTE_FORCE_COUNT', '5')}** failed logins within "
+            f"**{os.environ.get('BRUTE_FORCE_WINDOW_S', '60')} s**\n"
+            f"- Bulk exfiltration: **{os.environ.get('EXPORT_ROWS_THRESHOLD', '100')}** rows or more in one export\n"
+            "- Signatures: SQL injection, XSS, privilege escalation, port scans, misconfiguration")
+    with st.container(border=True):
+        section("🏷️ Classifications", "newest first · 0.4-0.6 malicious means needs review, never auto-contained")
+        table(rows, "No malicious classifications yet.", column_config={
+            "Confidence": st.column_config.ProgressColumn("Confidence", min_value=0, max_value=1, format="%.2f"),
+            "Malicious": st.column_config.ProgressColumn("Malicious", min_value=0, max_value=1, format="%.2f")})
+
+
+@st.fragment(run_every=AUTO)
+def page_responder() -> None:
+    show_flash()
+    if header("Action taker", "part 3 · temporary, reversible fixes enforced by the app blocklist") is None:
+        return
+    records, _, _ = audit_records()
+    incidents, _ = fetch("incidents", [])
+    blocklist, bl_err = fetch("blocklist", {"ips": [], "users": []})
+    containment = sh.build_containment_rows(blocklist, incidents or [])
+    history = sh.all_action_rows(incidents or [])
+
+    k1, k2, k3, k4 = st.columns(4)
+    with k1:
+        kpi("Active containment", str(len(containment)), "in force now", sh.BAND_COLORS["amber"] if len(containment) else "#f2f4f1")
+    with k2:
+        kpi("Blocked IPs", str(len((blocklist or {}).get("ips") or [])), "via GET /blocklist")
+    with k3:
+        kpi("Locked accounts", str(len((blocklist or {}).get("users") or [])), "via GET /blocklist")
+    with k4:
+        kpi("Actions taken", str(len(history)), f"expire after {os.environ.get('HOTPATCH_TTL_HOURS', '2')} demo h")
+    st.write("")
+
+    with st.container(border=True):
+        section("🛡️ Active containment", "enforced via /blocklist")
+        if bl_err:
+            st.warning(f"Could not load blocklist: {bl_err}")
+        table(containment, "Nothing contained right now.")
+    left, right = st.columns([7, 5])
+    with left, st.container(border=True):
+        section("🗂️ Action history", "every action is reversible and expires unless a person keeps it")
+        table(history, "No actions taken yet.")
+    with right, st.container(border=True):
+        section("📍 Needle reviews", "two-key check before any autonomous action")
+        render_feed(sh.build_activity_feed(sh.records_of(records, "needle_review", "action_applied",
+                                                         "auto_rollback", "action_rolled_back"), limit=15))
+
+
+@st.fragment(run_every=AUTO)
+def page_review() -> None:
+    risk = header("Review", "threshold level and the risk accumulated so far")
+    if risk is None:
+        return
+    incidents, inc_err = fetch("incidents", [])
+    incidents = incidents or []
+    idx, band = risk.get("risk_index"), sh.resolve_band(risk)
+    color, threshold = sh.band_color(band), float(risk.get("threshold") or 80)
     active = [i for i in incidents if i.get("status") in sh.ACTIVE_STATUSES]
-    breached = [i for i in incidents if i.get("sla_breached")]
-    containment = sh.build_containment_rows(blocklist, incidents)
     penalty = sum(float(i.get("inaction_penalty") or 0) for i in active)
+
     k1, k2, k3, k4, k5 = st.columns(5)
     with k1:
         kpi("Risk index", f"{idx if idx is not None else '-'} / 100", f"raw score {risk.get('raw_score', '-')}", color)
     with k2:
-        kpi("Open incidents", str(len(active)), f"{len(incidents)} total")
+        kpi("Threshold", f"{threshold:.0f}", "autonomous containment above this")
     with k3:
+        gap = threshold - float(idx or 0)
+        kpi("Headroom", f"{gap:.0f}" if gap > 0 else "over", "points until the threshold",
+            sh.BAND_COLORS["critical"] if gap <= 0 else "#f2f4f1")
+    with k4:
+        kpi("Open incidents", str(len(active)), f"{len(incidents)} total")
+    with k5:
         kpi("Inaction penalty", f"+{penalty:.0f}", "+5 per demo-hour unacknowledged",
             sh.BAND_COLORS["amber"] if penalty else "#f2f4f1")
-    with k4:
-        kpi("SLA breached", str(len(breached)), "policy SLA 2 h",
-            sh.BAND_COLORS["critical"] if breached else "#f2f4f1")
-    with k5:
-        kpi("Active containment", str(len(containment)), f"threshold {threshold:.0f}")
-
     st.write("")
 
-    # ---------- gauge + history
     g, h = st.columns([5, 7])
-    with g:
-        with st.container(border=True):
-            section("Risk gauge", f"threshold {threshold:.0f} · white line")
-            st.plotly_chart(sh.gauge_figure(idx, threshold, band), width="stretch",
-                            config={"displayModeBar": False}, key="gauge")
-            st.markdown(f'<div style="text-align:center;margin-top:-.4rem">{pill(sh.BAND_LABELS.get(band, band), color)}</div>',
-                        unsafe_allow_html=True)
-    with h:
-        with st.container(border=True):
-            section("Risk over time", "step line · bands green / amber / red / critical")
-            hist = sh.history_frame(risk.get("history"))
-            if hist.empty:
-                st.info("No history yet. The core will append a point on every risk change.")
-            else:
-                st.plotly_chart(sh.history_figure(hist, threshold), width="stretch",
-                                config={"displayModeBar": False}, key="history")
+    with g, st.container(border=True):
+        section("Risk gauge", f"threshold {threshold:.0f} · white line")
+        st.plotly_chart(sh.gauge_figure(idx, threshold, band), width="stretch", config={"displayModeBar": False}, key="gauge")
+        st.markdown(f'<div style="text-align:center;margin-top:-.4rem">{pill(sh.BAND_LABELS.get(band, band), color)}</div>',
+                    unsafe_allow_html=True)
+    with h, st.container(border=True):
+        section("Risk over time", "step line · bands green / amber / red / critical")
+        hist = sh.history_frame(risk.get("history"))
+        if hist.empty:
+            st.info("No history yet. The core will append a point on every risk change.")
+        else:
+            st.plotly_chart(sh.history_figure(hist, threshold), width="stretch", config={"displayModeBar": False}, key="history")
 
-    # ---------- incident queue
     with st.container(border=True):
-        section("Incident queue", "open first · penalties tick while nobody acts")
+        section("🧮 Risk accumulated", "points = base × confidence × criticality, plus the inaction penalty; "
+                "index = 100·(1−e^(−raw/60))")
         if inc_err:
             st.warning(f"Could not load incidents: {inc_err}")
-        table = sh.build_incident_table(incidents)
-        if table.empty:
-            st.success("🌵 Quiet desert. No incidents.")
-        else:
-            st.dataframe(
-                table, hide_index=True, width="stretch",
-                column_config={
-                    "Confidence": st.column_config.ProgressColumn("Confidence", min_value=0, max_value=1, format="%.2f"),
-                    "Inaction penalty": st.column_config.NumberColumn("Inaction penalty", format="+%d pts"),
-                    "Points": st.column_config.NumberColumn("Points", format="%.1f"),
-                    "SLA breached": st.column_config.CheckboxColumn("SLA breached"),
-                },
-            )
+        table(sh.risk_breakdown(incidents), "🌵 Quiet desert. No incidents.", column_config={
+            "Confidence": st.column_config.ProgressColumn("Confidence", min_value=0, max_value=1, format="%.2f"),
+            "Inaction penalty": st.column_config.NumberColumn("Inaction penalty", format="+%.0f pts")})
 
-    # ---------- detail + side panels
+
+@st.fragment(run_every=AUTO)
+def page_reports() -> None:
+    header("Reports", "one evidence report per contained incident · GET /reports/{id}")
+    incidents, err = fetch("incidents", [])
+    records, _, _ = audit_records()
+    with_report = {str((r.get("data") or {}).get("incident")) for r in sh.records_of(records, "report_generated")}
+    by_id = {str(i.get("id")): i for i in incidents or [] if i.get("id")}
+    if err or not by_id:
+        st.caption("No incidents yet, so no reports.")
+        return
+    newest = sorted(by_id, key=lambda i: str(by_id[i].get("opened_at") or ""), reverse=True)
+    ids = sorted(newest, key=lambda i: i not in with_report)  # ready reports first
+    rows = [{"Incident": i, "Category": sh.category_label(by_id[i].get("category")),
+             "Report": "✅ ready" if i in with_report else "-"} for i in ids]
+    left, right = st.columns([4, 8])
+    with left, st.container(border=True):
+        section("🗃️ All incidents", f"{len(with_report & set(by_id))} reports ready")
+        table(sh.pd.DataFrame(rows), "")
+    with right, st.container(border=True):
+        inc_id = st.selectbox("Open report for", ids, key="report_inc", format_func=lambda i: f"{i} · {sh.category_label(by_id[i].get('category'))}")
+        report_viewer(inc_id)
+
+
+@st.fragment(run_every=AUTO)
+def page_audit() -> None:
+    if header("Audit trail", "every step by every agent and person, hash-chained") is None:
+        return
+    records, valid, err = audit_records()
+    agents, _ = fetch("agents", [])
     left, right = st.columns([7, 5])
-    with left:
-        selected = incident_detail(incidents)
-    with right:
-        with st.container(border=True):
-            section("🛡️ Active containment", "enforced via /blocklist")
-            if bl_err:
-                st.warning(f"Could not load blocklist: {bl_err}")
-            if containment.empty:
-                st.caption("Nothing contained right now.")
-            else:
-                st.dataframe(containment, hide_index=True, width="stretch")
-        with st.container(border=True):
-            badge = ('<span style="color:#0ca30c">Chain valid ✅</span>' if chain_valid
-                     else '<span style="color:#d03b3b">Chain BROKEN ❌</span>' if chain_valid is False
-                     else '<span style="color:#8a8f98">Chain status unknown</span>')
-            section(f"🤖 Agent activity &nbsp;{badge}", f"{len(records)} hash-chained records")
-            if audit_err:
-                st.warning(f"Could not load audit log: {audit_err}")
-            render_feed(sh.build_activity_feed(records))
-
-    if selected:
-        with st.container(border=True):
-            report_viewer(selected)
+    with left, st.container(border=True):
+        badge = ('<span style="color:#0ca30c">Chain valid ✅</span>' if valid
+                 else '<span style="color:#d03b3b">Chain BROKEN ❌</span>' if valid is False
+                 else '<span style="color:#8a8f98">Chain status unknown</span>')
+        section(f"🤖 Agent activity &nbsp;{badge}", f"latest {len(records)} hash-chained records")
+        if err:
+            st.warning(f"Could not load audit log: {err}")
+        render_feed(sh.build_activity_feed(records, limit=60))
+    with right, st.container(border=True):
+        section("👥 Agents", "who does what")
+        table(sh.pd.DataFrame([{"Agent": a.get("name"), "Role": a.get("role"),
+                                "Can act": "yes" if a.get("can_execute") else "no"} for a in agents or []]),
+              "Agent list unavailable.")
 
 
 def render_feed(feed: list[dict]) -> None:
@@ -294,129 +649,24 @@ def render_feed(feed: list[dict]) -> None:
     st.markdown(f'<div class="feed">{"".join(rows)}</div>', unsafe_allow_html=True)
 
 
-def incident_detail(incidents: list[dict]) -> str | None:
-    with st.container(border=True):
-        section("🔎 Incident detail")
-        if not incidents:
-            st.caption("Select an incident once one is opened.")
-            return None
-        by_id = {i.get("id"): i for i in incidents if i.get("id")}
-        # Stable newest-first order; remember the choice ourselves so it survives option changes.
-        ids = sorted(by_id, key=lambda i: (str(by_id[i].get("opened_at") or ""), i), reverse=True)
-        sel = st.session_state.get("sel_inc")
-        if sel not in by_id:
-            sel = sh.pick_default_incident(incidents)
-        inc_id = st.selectbox(
-            "Incident", ids, index=ids.index(sel), label_visibility="collapsed",
-            format_func=lambda i: f"{i} · {sh.category_label(by_id[i].get('category'))} · {by_id[i].get('status')}",
-        )
-        st.session_state["sel_inc"] = inc_id
-        inc = by_id[inc_id]
-        sev_color = {"low": "#0ca30c", "medium": "#fab219", "high": "#ec835a", "critical": "#d03b3b"}.get(
-            str(inc.get("severity")), sh.UNKNOWN_COLOR)
-        st.markdown(
-            f'<div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">'
-            f'<span style="font-size:1.25rem;font-weight:800;color:#f2f4f1">{html.escape(inc_id)}</span>'
-            f'{pill(str(inc.get("severity", "?")).upper(), sev_color)}'
-            f'{pill(sh.status_label(inc.get("status")), "#b9bdb4")}'
-            + (pill("SLA BREACHED", sh.BAND_COLORS["critical"]) if inc.get("sla_breached") else "")
-            + (pill(f"ACK · {inc.get('acked_by')}", sh.BAND_COLORS["green"]) if inc.get("acked")
-               else pill("ACK · NONE", sh.BAND_COLORS["amber"]))
-            + "</div>",
-            unsafe_allow_html=True,
-        )
-        conf = inc.get("ai_confidence")
-        st.markdown(
-            '<div class="detail-grid">'
-            f'<div><span>Category</span><b>{html.escape(sh.category_label(inc.get("category")))}</b></div>'
-            f'<div><span>AI confidence</span><b>{conf if conf is not None else "-"}</b></div>'
-            f'<div><span>Classified by</span><b>{html.escape(sh.CLASSIFIER_LABELS.get(str(inc.get("classified_by")), str(inc.get("classified_by"))))}</b></div>'
-            f'<div><span>Contribution</span><b>{sh.incident_contribution(inc)} pts</b></div>'
-            f'<div><span>Source IP</span><b>{html.escape(str(inc.get("src_ip") or "-"))}</b></div>'
-            f'<div><span>User</span><b>{html.escape(str(inc.get("user") or "-"))}</b></div>'
-            f'<div><span>Host / layer</span><b>{html.escape(str(inc.get("host") or "-"))} · {html.escape(str(inc.get("layer") or "-"))}</b></div>'
-            f'<div><span>Opened</span><b>{html.escape(sh.short_time(inc.get("opened_at")))}</b></div>'
-            '</div>',
-            unsafe_allow_html=True,
-        )
-        if inc.get("explanation"):
-            st.markdown(f"_{inc['explanation']}_")
-        st.markdown(f'<div class="reco"><b>Recommended action</b>{html.escape(str(inc.get("recommended_action") or "-"))}</div>',
-                    unsafe_allow_html=True)
-        st.write("")
-
-        can = sh.available_actions(inc)
-        if can["decide"]:
-            if can["ack"] and st.button("👁️ Acknowledge", key=f"ack_{inc_id}",
-                                        help="Records that you have seen this alert (POST /ack)"):
-                run_action(f"Acknowledged {inc_id}", lambda: client.ack(inc_id, st.session_state.operator))
-            with st.form(key=f"decide_{inc_id}", clear_on_submit=True, border=True):
-                just = st.text_area("Justification (required to reject, written to the audit log)",
-                                    key=f"just_{inc_id}", height=80,
-                                    placeholder="e.g. False positive: this IP is our penetration tester")
-                c1, c2 = st.columns(2)
-                approve = c1.form_submit_button("✅ Approve & Patch", type="primary", width="stretch")
-                reject = c2.form_submit_button("⛔ Reject with Justification", width="stretch")
-            op = st.session_state.operator
-            if approve:
-                def _approve() -> None:
-                    try:
-                        client.ack(inc_id, op)
-                    except CoreError:
-                        pass
-                    client.decision(inc_id, op, "approve", just.strip())
-                run_action(f"Approved & patched {inc_id}", _approve)
-            elif reject:
-                if not just.strip():
-                    st.toast("⚠️ Rejecting requires a written justification.", icon="⛔")
-                    st.error("Rejecting requires a written justification.")
-                else:
-                    def _reject() -> None:
-                        try:
-                            client.ack(inc_id, op)
-                        except CoreError:
-                            pass
-                        client.decision(inc_id, op, "reject", just.strip())
-                    run_action(f"Rejected {inc_id}", _reject)
-        elif can["contain_controls"]:
-            with st.form(key=f"contain_{inc_id}", clear_on_submit=True, border=True):
-                just = st.text_area("Justification (written to the audit log)", key=f"cjust_{inc_id}", height=70,
-                                    placeholder="e.g. Verified attacker; keep the block")
-                c1, c2 = st.columns(2)
-                rb = c1.form_submit_button("↩️ Rollback", width="stretch")
-                perm = c2.form_submit_button("📌 Make Permanent", type="primary", width="stretch")
-            op = st.session_state.operator
-            if rb:
-                run_action(f"Rolled back {inc_id}",
-                           lambda: client.rollback(inc_id, op, just.strip() or "Rolled back by operator from dashboard"))
-            elif perm:
-                run_action(f"Made permanent {inc_id}",
-                           lambda: client.permanent(inc_id, op, just.strip() or "Made permanent by operator from dashboard"))
-        else:
-            st.caption(f"No operator action available (status: {inc.get('status')}).")
-
-        acts = sh.action_rows(inc)
-        if not acts.empty:
-            st.markdown("**Containment actions**")
-            st.dataframe(acts, hide_index=True, width="stretch")
-    return inc_id
-
-
 def report_viewer(inc_id: str) -> None:
-    section("📄 Negligence report", "GET /reports/{id}.md")
+    section("📄 Evidence report", f"GET /reports/{inc_id}.md")
     md, err = safe(lambda: client.report_md(inc_id))
     if err or not md:
-        st.caption("No report for this incident yet. Scribe generates one when autonomous containment fires.")
+        st.caption("No report for this incident yet. Scribe writes one when autonomous containment fires.")
         return
     d1, d2 = st.columns(2)
-    d1.download_button("⬇️ Download report (.md)", md, file_name=f"{inc_id}-negligence-report.md",
+    d1.download_button("⬇️ Download report (.md)", md, file_name=f"{inc_id}-evidence-report.md",
                        mime="text/markdown", width="stretch", key=f"dl_md_{inc_id}")
     rep_json, jerr = safe(lambda: client.report_json(inc_id))
     if rep_json is not None and not jerr:
-        d2.download_button("⬇️ Download report (.json)", json.dumps(rep_json, indent=2), file_name=f"{inc_id}-negligence-report.json",
+        d2.download_button("⬇️ Download report (.json)", json.dumps(rep_json, indent=2), file_name=f"{inc_id}-evidence-report.json",
                            mime="application/json", width="stretch", key=f"dl_json_{inc_id}")
-    with st.container(height=460, border=True):
+    with st.container(height=520, border=True):
         st.markdown(sh.demote_headings(md))
 
 
-live_console()
+{
+    "config": page_config, "approvals": page_approvals, "collector": page_collector, "classifier": page_classifier,
+    "responder": page_responder, "review": page_review, "reports": page_reports, "audit": page_audit,
+}[st.session_state.page]()
