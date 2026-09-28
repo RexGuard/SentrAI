@@ -11,3 +11,5 @@ mvp/lab/logs/
 mvp/lab/data/
 mvp/lab/*.db
 mvp/lab/target_app/*.db
+.sass-cache/
+_site/

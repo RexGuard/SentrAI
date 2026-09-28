@@ -1,6 +1,5 @@
 ---
 title: CactAI
-permalink: /
 ---
 
 # 🌵 CactAI

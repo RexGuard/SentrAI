@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+{% include head.html %}
+</head>
+<body>
+{% include header.html %}
+<main id="main">
+  <div class="wrap">
+    <div class="doc-hero"><div class="crumbs"><a href="{{ '/' | relative_url }}">Home</a> / {{ page.title | default: site.title }}</div></div>
+    <div class="doc">
+      <aside class="toc" aria-label="On this page"><p>On this page</p><ol id="toc"></ol></aside>
+      <article class="prose">
+        {{ content }}
+      </article>
+    </div>
+  </div>
+</main>
+<a class="to-top" href="#main" aria-label="Back to top">↑</a>
+{% include footer.html %}
+<script>
+  (function () {
+    var list = document.getElementById('toc');
+    var heads = document.querySelectorAll('.prose h2[id]');
+    heads.forEach(function (h) {
+      var li = document.createElement('li'), a = document.createElement('a');
+      a.href = '#' + h.id; a.textContent = h.textContent; li.appendChild(a); list.appendChild(li);
+    });
+    if (!heads.length) document.querySelector('.toc').style.display = 'none';
+    var links = list.querySelectorAll('a'), top = document.querySelector('.to-top');
+    function onScroll() {
+      var current = 0;
+      heads.forEach(function (h, i) { if (h.getBoundingClientRect().top < 120) current = i; });
+      links.forEach(function (a, i) { a.classList.toggle('active', i === current); });
+      top.classList.toggle('show', window.scrollY > 800);
+    }
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+  })();
+</script>
+</body>
+</html>

@@ -1,0 +1,251 @@
+---
+layout: null
+title: CactAI
+description: CactAI watches your systems, scores risk from 0 to 100, applies temporary fixes when nobody acts, and keeps tamper-evident proof of who knew what and when.
+---
+<!doctype html>
+<html lang="en">
+<head>
+{% include head.html %}
+</head>
+<body>
+{% include header.html %}
+<main id="main">
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="wrap">
+      <div>
+        <p class="eyebrow">Cybersecurity + AI for small organizations</p>
+        <h1>Alerts don't stop breaches. <em>Acting on them does.</em></h1>
+        <p class="lede">CactAI watches the web, database and OS layers, turns every anomaly into a live 0 to 100 risk score that grows while nobody acts, applies a temporary fix when your tolerance is crossed, and keeps tamper-evident proof of who knew what and when.</p>
+        <div class="cta">
+          <a class="btn btn-primary" href="#how">See how it works</a>
+          <a class="btn btn-ghost" href="https://github.com/RexGuard/cactai/tree/main/mvp">Explore the prototype</a>
+        </div>
+        <p class="quote">"A cactus doesn't chase you. It just makes touching it a bad idea."</p>
+      </div>
+
+      <div class="gauge-card" aria-label="Example incident: risk rose to 82 and CactAI applied a temporary block">
+        <div class="top"><span>Student portal · live risk</span><span class="pill">Red band</span></div>
+        <svg class="gauge" viewBox="0 0 200 120" role="img" aria-label="Risk index 82 out of 100">
+          <defs>
+            <linearGradient id="gaugeGrad" x1="0" x2="1">
+              <stop offset="0" stop-color="#2e8b57"/><stop offset=".55" stop-color="#e0a030"/><stop offset="1" stop-color="#b03a2e"/>
+            </linearGradient>
+          </defs>
+          <path class="track" d="M20 105 A80 80 0 0 1 180 105" fill="none" stroke-width="16" stroke-linecap="round"/>
+          <path class="fill" d="M20 105 A80 80 0 0 1 180 105" fill="none" stroke-width="16" stroke-linecap="round" pathLength="100"/>
+          <text class="num" x="100" y="96" text-anchor="middle">82</text>
+          <text class="cap" x="100" y="116" text-anchor="middle">RISK INDEX · THRESHOLD 80</text>
+        </svg>
+        <ol class="events">
+          <li><time>14:00</time><span>SQL injection attempts on /login</span><b class="up">+25</b></li>
+          <li><time>16:00</time><span>No acknowledgement after 2 h SLA</span><b class="up">+10</b></li>
+          <li><time>16:40</time><span>Brute force from 3 IPs</span><b class="up">+47</b></li>
+          <li><time>16:40</time><span>Attackers blocked, expires in 2 h</span><b class="act">fix</b></li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <!-- Problem -->
+  <section class="alt" id="problem">
+    <div class="wrap">
+      <p class="eyebrow">The problem</p>
+      <h2 class="section-title">Small organizations get the alert. Nobody acts in time.</h2>
+      <p class="lede">Singapore SMEs and private schools hold large amounts of personal data with one or two IT staff and no security team. The breach is rarely a surprise: the warning was there, it was just never acted on.</p>
+      <div class="stats">
+        <div class="stat">
+          <div class="big">S$1M or 10%</div>
+          <p>Maximum PDPA penalty since Oct 2022: S$1 million or 10% of annual Singapore turnover (above S$10M), whichever is higher.</p>
+          <a class="src" href="https://www.pdpc.gov.sg/-/media/files/pdpc/pdf-files/other-guides/active-enforcement/guide-on-active-enforcement_oct2022.pdf">PDPC, Guide on Active Enforcement</a>
+        </div>
+        <div class="stat">
+          <div class="big">4,625</div>
+          <p>Students' data sold online after a pentest-reported SQL injection hole at a tuition company went unfixed for two months.</p>
+          <a class="src" href="https://www.pdpc.gov.sg/-/media/files/pdpc/pdf-files/commissions-decisions/decision--championtutor-inc-private-limited--10082021.pdf">PDPC decision, ChampionTutor (2021)</a>
+        </div>
+        <div class="stat">
+          <div class="big">67%</div>
+          <p>Of the ~4,484 alerts a security team receives each day go ignored, according to a survey of 2,000 SOC analysts.</p>
+          <a class="src" href="https://www.vectra.ai/resources/2023-state-of-threat-detection">Vectra AI, State of Threat Detection 2023</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- How it works -->
+  <section id="how">
+    <div class="wrap">
+      <p class="eyebrow">How it works</p>
+      <h2 class="section-title">From log line to accountable decision, in four steps.</h2>
+      <p class="lede">A collector reads what your systems already log, AI classifies it, the risk engine scores it, and the responder acts only inside your own network, always reversibly.</p>
+      <ol class="steps">
+        <li><h3>Collect</h3><p>Web, database and OS logs are gathered per layer. Scout helps a novice technician find where logs live on unfamiliar systems.</p></li>
+        <li><h3>Classify</h3><p>Rules plus AI categorize each event (brute force, SQL injection, exfiltration, misconfiguration) with a confidence that feeds the score.</p></li>
+        <li><h3>Score</h3><p>A live 0 to 100 risk index with an inaction penalty, so an ignored alert gets louder every hour instead of fading away.</p></li>
+        <li><h3>Respond</h3><p>Past your threshold, CactAI blocks or locks with a time limit, escalates up the ladder, and writes every step to a hash-chained log.</p></li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section class="alt" id="features">
+    <div class="wrap">
+      <p class="eyebrow">What makes it different</p>
+      <h2 class="section-title">Built for teams of one or two, not a 24/7 SOC.</h2>
+      <p class="lede">Every automatic action is temporary, every decision is recorded, and a human always has the final say.</p>
+      <div class="grid">
+        <div class="card">
+          <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg></div>
+          <h3>Risk grows with inaction</h3>
+          <p>Unaddressed alerts add points every hour past the SLA, so neglect is visible on the gauge long before it becomes a breach.</p>
+        </div>
+        <div class="card">
+          <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M9 2h6"/></svg></div>
+          <h3>Every fix expires</h3>
+          <p>Automatic blocks carry a time limit (default 2 hours). A person must make them permanent, extend them, or roll them back.</p>
+        </div>
+        <div class="card">
+          <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg></div>
+          <h3>Tamper-evident evidence</h3>
+          <p>A hash-chained audit log and evidence report show what was detected, who was told, and what was done, for PDPA Protection Obligation reviews.</p>
+        </div>
+        <div class="card">
+          <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 4.9 5.4.8-3.9 3.8.9 5.4L12 14.4 7.2 16.9l.9-5.4L4.2 7.7l5.4-.8z"/><path d="M5 21h14"/></svg></div>
+          <h3>Cyanide, the AI planner</h3>
+          <p>An AI incident planner picks containment steps for your system profile, while scoring, time limits and the audit trail stay deterministic.</p>
+        </div>
+        <div class="card">
+          <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 01-11.6 7.1L3 21l1.9-6.4A8 8 0 1121 12z"/></svg></div>
+          <h3>Ask before you approve</h3>
+          <p>Operators chat with Cyanide to understand an incident. Suggestions arrive as buttons that go through the normal approval gates.</p>
+        </div>
+        <div class="card">
+          <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 01-3.4 0"/></svg></div>
+          <h3>Escalation that reaches people</h3>
+          <p>Dashboard and Telegram alerts climb from the on-duty operator to the team lead, IT manager and CXO as the risk band rises.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Cactus ethics -->
+  <section id="cactus">
+    <div class="wrap">
+      <p class="eyebrow">The cactus principle</p>
+      <h2 class="section-title">Left alone, it does no harm. Attack it, and it pricks you.</h2>
+      <p class="lede">CactAI never hacks back. Striking an attacker's machine is an offence under Singapore's Computer Misuse Act, and attacks usually come through hijacked computers owned by other victims. The spines stay on the cactus.</p>
+      <div class="split">
+        <div class="do">
+          <h3>What CactAI does, inside your network</h3>
+          <ul>
+            <li>Blocks IPs, locks accounts and rate-limits logins</li>
+            <li>Slows attackers down with tarpits</li>
+            <li>Plants honeytokens that raise a near-certain alert when touched</li>
+            <li>Preserves evidence for SingCERT or the police</li>
+          </ul>
+        </div>
+        <div class="dont">
+          <h3>What CactAI never does</h3>
+          <ul>
+            <li>Access, scan or disrupt the attacker's systems</li>
+            <li>Make a fix permanent without a human decision</li>
+            <li>Change anything outside a pre-approved playbook</li>
+            <li>Claim an alert was read when it was only delivered</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Why CactAI -->
+  <section class="alt" id="why">
+    <div class="wrap">
+      <p class="eyebrow">Why CactAI</p>
+      <h2 class="section-title">Three tools you'd otherwise buy separately, in one product.</h2>
+      <p class="lede">Automated response, on-call escalation and compliance evidence all exist today, but as separate products sized for larger teams.</p>
+      <div class="table-scroll">
+        <table class="compare">
+          <thead><tr><th>Need</th><th>Usually</th><th>CactAI</th></tr></thead>
+          <tbody>
+            <tr><td>Contain an attack</td><td>Enterprise auto-response tools, fixes can stay forever</td><td>Temporary fixes that expire without a human decision</td></tr>
+            <tr><td>Make sure someone acts</td><td>A separate on-call paging service</td><td>Risk that grows with inaction, plus an escalation ladder</td></tr>
+            <tr><td>Prove due diligence</td><td>A separate compliance platform</td><td>Hash-chained evidence built from the same incident</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- Prototype -->
+  <section id="demo">
+    <div class="wrap">
+      <p class="eyebrow">Working prototype</p>
+      <h2 class="section-title">A fictional student portal gets attacked. CactAI handles it.</h2>
+      <p class="lede">The MVP runs on one Windows laptop: attack scripts hit the demo portal, CactAI scores the risk, alerts the operator, blocks the attackers when the score crosses 80, and writes a hash-chained evidence report. One script starts everything, and automated tests cover the full story end to end.</p>
+      <div class="figure">
+        <img src="{{ '/mvp/pitch/architecture.svg' | relative_url }}" alt="CactAI architecture: collector, classifier and responder around the risk engine, with the agents, dashboard and notifier" loading="lazy" width="1400" height="900">
+      </div>
+      <p class="figcap">Architecture: collector, classifier and responder around a deterministic risk engine.</p>
+      <div class="cta" style="margin-top:24px">
+        <a class="btn btn-primary" href="https://github.com/RexGuard/cactai/tree/main/mvp">MVP code and how to run it</a>
+        <a class="btn btn-ghost" href="https://github.com/RexGuard/cactai/blob/main/mvp/pitch/VIDEO_SCRIPT.md">Video script</a>
+        <a class="btn btn-ghost" href="https://github.com/RexGuard/cactai/blob/main/mvp/research/SOURCES.md">Sources</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Roadmap -->
+  <section class="alt" id="roadmap">
+    <div class="wrap">
+      <p class="eyebrow">Roadmap</p>
+      <h2 class="section-title">From hackathon MVP to a pilot in about five months.</h2>
+      <p class="lede">Nine phases, roughly 105 developer-days. The critical path runs through hardening, real collectors, real containment and the pilot.</p>
+      <ol class="timeline">
+        <li class="now"><span class="ph">P0</span><b>Finish the hackathon</b><span>Sep 2026</span></li>
+        <li class="crit"><span class="ph">P1</span><b>Harden the core</b><span>Oct</span></li>
+        <li class="crit"><span class="ph">P2</span><b>Real data collection</b><span>Oct to Nov</span></li>
+        <li><span class="ph">P3</span><b>Trustworthy AI</b><span>Oct to Nov</span></li>
+        <li class="crit"><span class="ph">P4</span><b>Real containment</b><span>Nov</span></li>
+        <li><span class="ph">P5</span><b>Escalation</b><span>Nov</span></li>
+        <li><span class="ph">P6</span><b>Evidence reports</b><span>Nov to Dec</span></li>
+        <li><span class="ph">P7</span><b>Agent services</b><span>Dec</span></li>
+        <li class="crit"><span class="ph">P8</span><b>Pilot</b><span>Jan to Feb 2027</span></li>
+      </ol>
+      <div class="cta" style="margin-top:28px">
+        <a class="btn btn-ghost" href="{{ '/ROADMAP.html' | relative_url }}">Read the full roadmap</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Team -->
+  <section id="team">
+    <div class="wrap">
+      <p class="eyebrow">Team</p>
+      <h2 class="section-title">The people behind CactAI.</h2>
+      <div class="team" style="margin-top:28px">
+        <div class="member"><div class="avatar" aria-hidden="true">ES</div><div><b>Erick Sientaro</b><span>Developer, builds the prototype</span></div></div>
+        <div class="member"><div class="avatar" aria-hidden="true">I</div><div><b>Ishmail</b><span>CEO, pitch and narration</span></div></div>
+        <div class="member"><div class="avatar" aria-hidden="true">H</div><div><b>Hozen</b><span>Notetaker, slides and source checks</span></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section style="padding-top:0">
+    <div class="wrap">
+      <div class="band">
+        <div>
+          <h2>Read the full plan</h2>
+          <p>Problem, data collection per layer, the risk formula, the hotpatch workflow, ethics and the MVP demo script.</p>
+        </div>
+        <a class="btn btn-ghost" href="{{ '/Cybersecurity%20+%20AI.html' | relative_url }}">Open the plan</a>
+      </div>
+    </div>
+  </section>
+
+</main>
+{% include footer.html %}
+</body>
+</html>
