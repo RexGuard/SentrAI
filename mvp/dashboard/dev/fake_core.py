@@ -84,6 +84,7 @@ class State:
         self.chat: list[dict] = []
         self.scan: dict | None = None
         self.log_sources: list[dict] = []
+        self.protection: dict = {"monitor_only": False, "changed_at": None, "changed_by": None, "reason": None}
 
 
 S = State()
@@ -229,7 +230,7 @@ def tick() -> None:
                         act["status"] = "expired"
                         audit("action_expired", "Watchdog", incident=inc["id"], target=act["target"])
             active = [i for i in S.incidents.values() if i["status"] in ("open", "acknowledged")]
-            if risk_index() >= THRESHOLD and active:
+            if risk_index() >= THRESHOLD and active and not S.protection["monitor_only"]:
                 S.history.append({"t": iso(now()), "risk_index": risk_index()})  # show the peak
                 audit("threshold_crossed", "Saguaro", risk_index=risk_index(), summary=f"Risk {risk_index()} ≥ {THRESHOLD}")
                 for inc in active:
@@ -266,7 +267,7 @@ def risk():
         idx = risk_index()
         return {"risk_index": idx, "band": band(idx), "raw_score": round(raw_score(), 1), "threshold": THRESHOLD,
                 "open_incidents": [i for i, v in S.incidents.items() if v["status"] in ("open", "acknowledged")],
-                "history": S.history}
+                "monitor_only": S.protection["monitor_only"], "history": S.history}
 
 
 @app.get("/incidents")
@@ -290,6 +291,8 @@ def decision(iid: str, body: dict = Body(...)):
         op, dec, just = body.get("operator", "?"), body.get("decision"), body.get("justification", "")
         if dec == "reject" and not just.strip():
             raise HTTPException(422, "justification required for reject")
+        if dec == "approve" and S.protection["monitor_only"]:
+            raise HTTPException(409, "Protection is off (monitor-only mode), so an approved hotpatch is not applied.")
         audit("decision", "Operator", operator=op, incident=iid, decision=dec, justification=just)
         if dec == "approve":
             apply_containment(inc, "operator", op)
@@ -348,6 +351,29 @@ def report(name: str):
         if not rep:
             raise HTTPException(404, f"no report for {iid}")
         return PlainTextResponse(report_md(rep), media_type="text/markdown") if name.endswith(".md") else rep
+
+
+def protection_view() -> dict:
+    return {"protection": "off" if S.protection["monitor_only"] else "on", **S.protection, "active_actions": []}
+
+
+@app.get("/protection")
+def get_protection():
+    with lock:
+        return protection_view()
+
+
+@app.post("/protection")
+def post_protection(body: dict = Body(...)):
+    with lock:
+        on, reason = bool(body.get("on")), str(body.get("reason") or "").strip()
+        if not on and not reason:
+            raise HTTPException(400, "turning protection off requires a reason")
+        S.protection = {"monitor_only": not on, "changed_at": iso(now()), "changed_by": body.get("operator", "?"),
+                        "reason": reason or None}
+        audit("protection_changed", "Saguaro", protection="on" if on else "off", operator=body.get("operator"),
+              reason=reason or None)
+        return protection_view()
 
 
 @app.get("/blocklist")

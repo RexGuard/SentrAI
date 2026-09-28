@@ -120,6 +120,11 @@ def fetch(what: str, default: Any = None) -> tuple[Any, str | None]:
     return safe(lambda: _get(st.session_state.core_url, what), default)
 
 
+def protection_off() -> bool:
+    risk, _ = fetch("risk")
+    return bool(isinstance(risk, dict) and risk.get("monitor_only"))
+
+
 def audit_records() -> tuple[list[dict], bool | None, str | None]:
     payload, err = fetch("audit", [])
     records, valid = sh.normalize_audit(payload)
@@ -169,7 +174,9 @@ def side_risk() -> None:
         f'<div class="num" style="color:{color}">{idx if idx is not None else "-"}<small> / 100</small></div>'
         f'<div class="bar"><i style="width:{pct:.0f}%;background:{color}"></i><b style="left:{threshold:.0f}%"></b></div>'
         f'<div class="foot"><span>threshold {threshold:.0f}</span>'
-        f'<span style="color:{chain[1]}">{icon("link")} {chain[0]}</span></div></div>',
+        f'<span style="color:{chain[1]}">{icon("link")} {chain[0]}</span></div>'
+        + (f'<div class="side-off">{icon("shield")} Protection off · monitor only</div>' if risk.get("monitor_only") else "")
+        + '</div>',
         unsafe_allow_html=True,
     )
 
@@ -229,10 +236,15 @@ def header(title: str, note: str = "") -> dict | None:
     else:
         band = sh.resolve_band(risk)
         _, valid, _ = audit_records()
-        chips = (pill(f"Risk {risk.get('risk_index', '-')} · {sh.BAND_LABELS.get(band, band)}", sh.band_color(band))
+        label = sh.BAND_LABELS.get(band, band)
+        if risk.get("monitor_only") and band == "critical":
+            label = "CRITICAL · nothing applied (monitor only)"
+        chips = (pill(f"Risk {risk.get('risk_index', '-')} · {label}", sh.band_color(band))
                  + (pill("Chain valid", sh.BAND_COLORS["green"]) if valid
                     else pill("Chain broken", sh.BAND_COLORS["critical"]) if valid is False
                     else pill("Chain unknown", sh.UNKNOWN_COLOR)))
+        if risk.get("monitor_only"):
+            chips = pill("Protection off", sh.BAND_COLORS["amber"]) + chips
     chips += pill(f"Live · {now_s}" if AUTO else f"Paused · {now_s}", sh.BAND_COLORS["green"] if AUTO else sh.UNKNOWN_COLOR,
                   pulse=bool(AUTO))
     st.markdown(
@@ -251,7 +263,25 @@ def header(title: str, note: str = "") -> dict | None:
             unsafe_allow_html=True,
         )
         return None
+    if risk.get("monitor_only"):
+        protection_banner()
     return risk
+
+
+def protection_banner() -> None:
+    """Shown on every page while protection is off, so nobody mistakes monitoring for protection."""
+    p, _ = safe(client.protection, {})
+    who = f" by {p['changed_by']}" if p.get("changed_by") else ""
+    why = f": {p['reason']}" if p.get("reason") else ""
+    left = len(p.get("active_actions") or [])
+    kept = f" {left} action(s) already in force stay until they expire or are rolled back." if left else ""
+    st.markdown(
+        f'<div class="protect-off">{icon("remove_moderator")}<div><b>Protection is off: monitor-only mode</b><br>'
+        f'<small>Turned off{html.escape(who)}{html.escape(why)}</small><br>'
+        f'CactAI is still collecting, classifying and scoring, but applies no containment, autonomous or approved.'
+        f'{kept} Turn it back on from the Configuration page.</div></div>',
+        unsafe_allow_html=True,
+    )
 
 
 def table(df, empty_text: str, **kwargs) -> None:
@@ -323,7 +353,10 @@ def decision_controls(inc: dict) -> None:
             just = st.text_area("Justification (required to reject, written to the audit log)", key=f"just_{inc_id}",
                                 height=80, placeholder="e.g. False positive: this IP is our penetration tester")
             c1, c2 = st.columns(2)
-            approve = c1.form_submit_button("Approve & Patch", icon=":material/check:", type="primary", width="stretch")
+            off = protection_off()
+            approve = c1.form_submit_button("Approve & Patch", icon=":material/check:", type="primary", width="stretch",
+                                            disabled=off, help="Protection is off (monitor only): turn it on in "
+                                                               "Configuration to apply a hotpatch." if off else None)
             reject = c2.form_submit_button("Reject with Justification", icon=":material/block:", width="stretch")
         if approve:
             run_action(f"Approved & patched {inc_id}", ack_then("approve", just.strip()))
@@ -359,6 +392,7 @@ def page_config() -> None:
     with st.container(border=True):
         section(preset.title, preset.about, "verified_user")
         values |= preset_settings(current)
+        protection_switch()
 
     # Everything else is folded away; the arrow on each row opens it.
     with st.expander("Dashboard"):  # no icon, so the row shows its arrow
@@ -394,6 +428,44 @@ def page_config() -> None:
             else:
                 st.success(f"Saved to {path}. Cyanide switched to the new AI settings ({ai.get('chat')}). "
                            "Restart the demo (stop_demo.ps1, then run_demo.ps1) for the other settings.")
+
+
+def protection_switch() -> None:
+    """Protection on/off. Takes effect at once in the running core (no Save) and is kept across restarts."""
+    p, err = safe(client.protection)
+    st.markdown('<div class="side-sep"></div>', unsafe_allow_html=True)
+    if err or not isinstance(p, dict):
+        st.caption(f"Protection switch: the core is not reachable ({err}).")
+        return
+    op = st.session_state.operator
+
+    def switch(on: bool, reason: str = "") -> None:
+        try:
+            client.set_protection(on, op, reason)
+            st.session_state["flash"] = ("Protection is on" if on else "Protection is off: monitor-only mode", "✅")
+        except CoreError as exc:
+            st.session_state["flash"] = (f"Could not switch protection: {exc}", "⚠️")
+        _get.clear()
+        st.rerun()
+
+    if p.get("monitor_only"):
+        c1, c2 = st.columns([3, 1], vertical_alignment="center")
+        c1.markdown(f'{pill("Protection off", sh.BAND_COLORS["amber"])} Monitor only: incidents are scored '
+                    f'and alerted, nothing is blocked.', unsafe_allow_html=True)
+        if c2.button("Turn protection on", icon=":material/shield:", type="primary", width="stretch",
+                     help="Incidents already over the threshold are contained right away."):
+            switch(True)
+        return
+    c1, c2 = st.columns([3, 1], vertical_alignment="bottom")
+    reason = c1.text_input("Protection is on. To test without blocking anything, turn it off (monitor only).",
+                           key="protect_reason", placeholder="Reason, recorded in the audit trail (required)",
+                           help="POST /protection. CactAI keeps collecting, classifying and scoring, but applies "
+                                "no containment, autonomous or approved, until it is turned back on.")
+    if c2.button("Turn protection off", icon=":material/remove_moderator:", width="stretch"):
+        if not reason.strip():
+            st.error("Write why protection is being turned off; it goes into the audit trail.")
+        else:
+            switch(False, reason.strip())
 
 
 def preset_settings(current: dict[str, str]) -> dict[str, str]:

@@ -6,6 +6,7 @@ All state is in memory (fresh per process / per /demo/reset); the audit chain is
 from __future__ import annotations
 
 import copy
+import json
 import math
 import threading
 import time
@@ -104,6 +105,8 @@ class Saguaro(Agent):
         self.scribe = Scribe(self.audit, self.clock)
         self.helpdesk = HelpDesk()
         self.lock = threading.RLock()
+        self._protection_file = s.db_path.parent / "protection.json"
+        self._load_protection()
         self._init_state()
         self.scribe.record(self.name, "core_started", self._config_summary())
 
@@ -142,6 +145,7 @@ class Saguaro(Agent):
             "ttl_hours": s.ttl_hours,
             "on_duty": s.on_duty,
             "jev": self.jev.status,
+            "monitor_only": self.monitor_only,
         }
 
     def layer_agents(self) -> list[LayerAgent]:
@@ -412,6 +416,17 @@ class Saguaro(Agent):
                 if i["status"] == "open" and not i["acked"] and not i["needs_review"]
                 and not i["_autonomous_denied"] and not self._active_actions(i, now)
             ]
+            if self.monitor_only:
+                for inc in candidates:
+                    if inc.get("_monitor_skipped"):
+                        continue
+                    inc["_monitor_skipped"] = True
+                    self.scribe.record(self.name, "containment_skipped", {
+                        "incident": inc["id"], "risk_index": r["risk_index"], "threshold": self.settings.threshold,
+                        "reason": "monitor-only mode", "would_apply": inc["recommended_action"]})
+                    self._timeline(inc, now, "monitor_only", f"Monitor-only: would have contained "
+                                                             f"({inc['recommended_action']}), nothing applied")
+                candidates = []
             for inc in candidates:
                 self._contain(inc, "autonomous", self.needle.name, now, r["risk_index"])
             if candidates:
@@ -419,6 +434,79 @@ class Saguaro(Agent):
                 self._band_changes(now, r)
         if r["risk_index"] < self.settings.threshold:
             self._above_threshold = False
+
+    # -------------------------------------------------------------- protection
+    def _load_protection(self) -> None:
+        """Start in the mode the operator last chose (kept across restarts and demo resets)."""
+        saved: dict[str, Any] = {}
+        try:
+            saved = json.loads(self._protection_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            pass
+        env = self.settings.monitor_only
+        if env is not None and env.strip() != "":
+            self.monitor_only = env.strip().lower() in ("1", "true", "yes", "on")
+            saved = {"changed_by": "CACTAI_MONITOR_ONLY", "reason": "set in the environment"}
+        else:
+            self.monitor_only = bool(saved.get("monitor_only", False))
+        self._protection_meta = {k: saved.get(k) for k in ("changed_at", "changed_by", "reason")}
+
+    def protection(self) -> dict[str, Any]:
+        with self.lock:
+            now = self.clock.now()
+            return {
+                "protection": "off" if self.monitor_only else "on",
+                "monitor_only": self.monitor_only,
+                **self._protection_meta,
+                "active_actions": sorted(a["action_id"] for a in self.actions if self._is_active(a, now)),
+            }
+
+    def set_protection(self, on: bool, operator: str, reason: str | None) -> dict[str, Any]:
+        """The operator switch. Off = monitor-only: collect, classify and score, but apply no containment."""
+        reason = (reason or "").strip()
+        with self.lock:
+            if not on and not reason:
+                raise BadRequestError("turning protection off requires a reason")
+            if self.monitor_only == (not on):
+                return self.protection()
+            now = self.clock.now()
+            s = self.settings
+            self.monitor_only = not on
+            self._protection_meta = {"changed_at": self.clock.iso(now), "changed_by": operator, "reason": reason or None}
+            try:
+                self._protection_file.parent.mkdir(parents=True, exist_ok=True)
+                self._protection_file.write_text(json.dumps({"monitor_only": self.monitor_only, **self._protection_meta},
+                                                            indent=2) + "\n", encoding="utf-8")
+            except OSError:
+                pass  # still switched for this run; the audit record below is the proof
+            still = [a["action_id"] for a in self.actions if self._is_active(a, now)]
+            self.scribe.record(self.name, "protection_changed", {
+                "protection": "on" if on else "off", "monitor_only": self.monitor_only, "operator": operator,
+                "reason": reason or None, "active_actions_left_in_force": still})
+            open_ids = [i["id"] for i in self.incidents.values() if i["status"] in RISK_STATUSES]
+            for inc in self.incidents.values():
+                if inc["status"] in RISK_STATUSES:
+                    inc["_monitor_skipped"] = False
+                    self._timeline(inc, now, "protection", f"Protection turned {'on' if on else 'off'} by {operator}"
+                                                           + (f": {reason}" if reason else ""))
+            if on:
+                self._notify(now, "protection_on", None, [s.on_duty, s.it_manager], "Protection is back on",
+                             f"{operator} turned CactAI protection back on. Incidents over the threshold "
+                             f"({len(open_ids)} open) can be contained again.", [])
+            else:
+                self._notify(now, "protection_off", None, [s.on_duty, s.it_manager, s.cxo],
+                             "Protection is off: monitor-only mode",
+                             f"{operator} turned CactAI protection off: {reason}\nCactAI keeps collecting, classifying "
+                             f"and scoring, but applies no containment, autonomous or approved, until it is turned "
+                             f"back on. {len(still)} action(s) already in force stay until they expire or are rolled back.",
+                             [])
+            self._evaluate(now)
+        return self.protection()
+
+    def _refuse_if_monitor_only(self, what: str) -> None:
+        if self.monitor_only:
+            raise ConflictError(f"Protection is off (monitor-only mode), so {what} is not applied. "
+                                f"Turn protection back on first.")
 
     # ----------------------------------------------------------- notifications
     def _notify(self, now: float, kind: str, incident_id: str | None, recipients: list[str], title: str,
@@ -697,6 +785,8 @@ class Saguaro(Agent):
                                                            "justification": justification})
                 self._timeline(inc, now, "decision", f"Rejected by {operator}: {justification}", -inc["points"])
             elif decision == "approve":
+                if not self._active_actions(inc, now):
+                    self._refuse_if_monitor_only("an approved hotpatch")
                 self._set_acked(inc, operator, "decision", now)
                 inc["decisions"].append({"operator": operator, "decision": "approve", "justification": justification,
                                          "at": self.clock.iso(now)})
@@ -742,6 +832,8 @@ class Saguaro(Agent):
             targets = [a for a in inc["actions"] if a["status"] in ("active", "expired")]
             if not targets:
                 raise ConflictError(f"{iid} has no active or expired hotpatch to make permanent")
+            if any(a["status"] == "expired" for a in targets):
+                self._refuse_if_monitor_only("putting an expired hotpatch back in force")
             self._set_acked(inc, operator, "permanent", now)
             for a in targets:
                 if a["status"] == "expired":
@@ -798,6 +890,7 @@ class Saguaro(Agent):
                 "open_incidents": [i["id"] for i in self.incidents.values() if i["status"] in RISK_STATUSES],
                 "needs_review": [i["id"] for i in self.incidents.values() if i["needs_review"] and i["status"] in RISK_STATUSES],
                 "contained_incidents": [i["id"] for i in self.incidents.values() if i["status"] == "contained"],
+                "monitor_only": self.monitor_only,
                 "demo_speed": self.settings.demo_speed,
                 "demo_hours_elapsed": round(self.clock.demo_hours(self._started_ts, now), 2),
                 "timestamp": self.clock.iso(now),

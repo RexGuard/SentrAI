@@ -66,3 +66,6 @@ class Settings:
     jev_budget_s: float = field(default_factory=lambda: _f("JEV_BUDGET_S", 2.0))
     public_url: str = field(default_factory=lambda: os.getenv("CACTAI_PUBLIC_URL", "http://127.0.0.1:8000").rstrip("/"))
     background: bool = field(default_factory=lambda: os.getenv("CACTAI_BACKGROUND", "1") != "0")
+    # Monitor-only ("protection off") at start: "1" or "0" wins over the last switch saved in
+    # data/protection.json; unset keeps whatever the operator last chose (protection on for a new install).
+    monitor_only: str | None = field(default_factory=lambda: os.getenv("CACTAI_MONITOR_ONLY"))

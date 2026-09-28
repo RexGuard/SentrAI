@@ -148,5 +148,12 @@ class CoreClient:
     def watch_log(self, file_id: str, operator: str, layer: str | None = None) -> dict:
         return self.post_json("/log-sources", {"file_id": file_id, "operator": operator, "layer": layer})
 
+    def protection(self) -> dict:
+        return self.get_json("/protection")
+
+    def set_protection(self, on: bool, operator: str, reason: str = "") -> dict:
+        """Off = monitor-only: the core keeps scoring but applies no containment (reason required)."""
+        return self.post_json("/protection", {"operator": operator, "on": on, "reason": reason})
+
     def reset_demo(self) -> Any:
         return self.post_json("/demo/reset", {})
