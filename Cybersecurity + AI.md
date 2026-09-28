@@ -410,7 +410,7 @@ Everything runs natively on one Windows laptop (Python, no Docker, no Redis). On
 
 **Components**
 1. **Target app** (`lab/target_app/`, port 5000): the fictional "Aegis Academy Student Portal". It writes web, login, database and OS logs, and it enforces CactAI's blocklist by answering blocked IPs and accounts with HTTP 403 "Blocked by CactAI".
-2. **Core** (`core/`, port 8000): FastAPI with the risk engine, the agents (Saguaro, Root, Reservoir, Areole, Needle, Watchdog, Scribe, Help Desk) as Python classes in one process, TTL hotpatches, the hash-chained audit log and the evidence reports.
+2. **Core** (`core/`, port 8000): FastAPI with the risk engine, the agents (Saguaro, Root, Spine-Net, Reservoir, Areole, Needle, Watchdog, Scribe, Help Desk) as Python classes in one process, TTL hotpatches, the hash-chained audit log and the evidence reports. The generated report is still titled "Executive Negligence & Non-Repudiation Report" in the MVP code; renaming it there is a follow-up.
 3. **Dashboard** (`dashboard/`, port 8501): Streamlit console (see below).
 4. **Notifier** (`notifier/`): Telegram bot with Approve / Reject buttons, or console output when no bot token is set.
 5. **Attack and replay scripts** (`lab/attacks/`, `lab/replay/`): benign traffic, brute force, SQL injection, bulk export and a simulated shell. They refuse any target other than localhost:5000.
@@ -447,7 +447,7 @@ A sidebar menu, opening on Configuration:
 **Demo script (about 1 minute of video at `-DemoSpeed 600`, run by `lab/scenario.py`)**
 1. Benign staff traffic: no incidents, gauge green.
 2. Brute force from `203.0.113.45`: incident `RSK-2026-081`, risk about 39 (amber), operator alert on Telegram or in the notifier window, Collector and Classifier bubbles light up.
-3. Nobody acknowledges: demo time runs fast (1 real minute = 10 demo hours), the inaction penalty adds +5 per demo hour, SLA reminders go out and the team lead is copied at red.
+3. Nobody acknowledges: demo time runs fast (1 real minute = 10 demo hours) and the inaction penalty adds +5 per demo hour. The script's default 6-second pause is only about 1 demo hour, under the 2-hour SLA, so no SLA reminder fires; run `scenario.py --pause 15` (about 2.5 demo hours) to show one on camera.
 4. SQL injection from `198.51.100.23`: risk crosses 80, Needle approves, both attacker IPs are blocked and `admin` is locked for 2 demo hours. The portal returns "Blocked by CactAI" (403). The demo machine itself (127.0.0.1) is never blocked.
 5. The evidence report shows the timeline of inaction, "Ack: none" and the audit chain hash.
 6. The operator presses **Rollback** or **Make Permanent** on the Approvals page, and it appears in the audit trail.
@@ -457,7 +457,7 @@ A sidebar menu, opening on Configuration:
 - Simulated: rate limit, WAF rule, kill process and revoke ACL are recorded but have no effect. No firewall, OS or network setting is ever changed.
 - Not yet tested live: Jev (no TypeSafe API key yet; the fallback heuristic classifies what the rules cannot) and a real Telegram bot.
 
-**Fallbacks:** if Jev is unavailable during recording, the rules engine runs with a fixed confidence and we say so. If the live attack is flaky, `lab/replay/simulate.py` replays recorded attack logs, and we say in the video that it is a replay.
+**Fallbacks:** if Jev is unavailable during recording, the chain still runs the rules first and then a keyword fallback classifier (its confidence depends on what matched, and unmatched events count as benign), and we say so. If the live attack is flaky, `lab/replay/simulate.py` posts a scripted incident (benign, brute force, SQL injection, simulated shell) straight to the core, and we say in the video that it is a replay.
 
 **Tests:** core 27, lab 36, dashboard 25, notifier 8 and one end-to-end story test, all passing.
 
