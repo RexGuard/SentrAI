@@ -58,10 +58,11 @@ def build_sequence() -> list[dict]:
         seq.append(_ev(off, "web", "flask_access", STAFF_IP, "admin",
                        "POST /login 200 user=admin", 1.0))
         off += 1
-    # 2) Brute force burst
+    # 2) Brute force burst. Same line the portal's access log writes for a wrong
+    #    password; the rules count these toward the brute-force threshold.
     for _ in range(10):
-        seq.append(_ev(off, "web", "flask_auth", BRUTE_IP, "admin",
-                       "login fail user=admin", 1.0))
+        seq.append(_ev(off, "web", "flask_access", BRUTE_IP, "admin",
+                       "POST /login 401 user=admin", 1.0))
         off += 1
     # 3) SQL injection on /search
     for payload in ["' OR '1'='1", "' UNION SELECT username, password FROM users --",
