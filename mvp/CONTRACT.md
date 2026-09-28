@@ -39,6 +39,37 @@ mvp/
 ```
 `POST /events` also accepts a JSON list of events. Returns `{"accepted": n, "risk_index": int}`.
 
+#### Parsed fields (optional `parsed` object on an Event)
+
+The collector adds `parsed` when it understands the line. `raw` stays the original line (for
+journald: the message). Rules should read `parsed` first and fall back to `raw`. Missing values are
+`null`. `timestamp` is the log's own time when the line has one, and `host` is the host named in the
+line (syslog/journald) or the collector machine's name (`CACTAI_HOST`); demo portal events keep
+`web-01`.
+
+Every `parsed` has `format` and `kind`:
+
+| format | kind | fields |
+| --- | --- | --- |
+| `nginx_access` | `http_request` | `method`, `path` (URL-decoded, no query), `query` (as sent), `protocol`, `status` (int), `bytes` (int), `referrer`, `user_agent`, `request` (the whole request line), `malformed_request` (true for empty/binary/TLS-on-port-80 requests: scanners) |
+| `nginx_error` | `http_error` | `level` (error, crit, ...), `pid`, `message`, `request`, `method`, `path`, `query`, `server`, `vhost` |
+| `syslog`, `journald` | `ssh` (program sshd, sshd-session, sshd-auth) | `program`, `pid`, `message`, `ssh_event`, `outcome` (`success`, `failure`, `info`), `auth_method` (password, publickey, keyboard-interactive), `invalid_user` (bool: the account does not exist), `preauth` (bool), `port` (client port), sometimes `reason`, `count`; journald adds `unit` |
+| `syslog`, `journald` | `log` (any other program) | `program`, `pid`, `message` |
+| `cactai_demo` | `http_request` / `web_login` / `db_query` / `log` | demo portal: `method`, `path`, `status` / `outcome` / `rows` |
+| `jsonl`, `text` | `log` | nothing else; `src_ip` and `user` are taken from JSON keys or guessed from the text |
+
+`ssh_event` values (`src_ip` and `user` are set on the Event where the line has them):
+`accepted`, `failed_auth` ("Failed password/publickey for [invalid user] X"), `invalid_user`
+("Invalid user X from IP"), `max_auth_exceeded`, `auth_failure_pam` and `auth_failures_more` (PAM
+repeats of the same attempts), `pam_check_pass`, `user_not_allowed`, `connection_closed`,
+`disconnected`, `disconnecting`, `received_disconnect`, `connection_reset`, `no_identification`,
+`banner_error`, `negotiation_failed`, `timeout_preauth`, `bad_protocol`, `connection_from`,
+`session_opened`, `session_closed`, `other`.
+
+For counting SSH guesses: one failed attempt shows up as `failed_auth` (password servers) or as
+`invalid_user` (every server, once per connection); PAM lines repeat them, so don't add them on
+top. `src_ip` + `port` identifies one connection.
+
 ### Categories (exact strings)
 `benign, brute_force, sql_injection, xss, port_scan, privilege_escalation, data_exfiltration, misconfiguration`
 
@@ -85,6 +116,9 @@ that signature (HMAC of the path with the token), which fits that one report onl
 | GET | `/ai` | the AI model Cyanide and the chat use now: `{"engine","planner","chat","online","provider","model","key_source","off_reason"}`; `off_reason` says why it is off (no key, missing model, package not installed...) |
 | POST | `/ai/reload` | reads the saved AI settings again and switches Cyanide and the chat to them (no restart); returns the same shape as `GET /ai` |
 | POST | `/ai/test` | one real request to the provider. Body `{"provider","api_key","base_url","model"}` tests those values (saved or not) without switching anything; no body tests what Cyanide uses now. Returns `{"ok","provider","model","ms","error","hint","tested"}` |
+| GET | `/log-sources` | extra log files the collector watches (approved from a process scan, or from Scout) |
+| GET | `/log-sources/pending` | Scout proposals waiting for an operator: `[{"id","name","path","layer","format","why","goal","proposed_at"}]` |
+| POST | `/log-sources/pending/{id}` | `{"operator", "approve": bool, "layer": optional, "reason": optional}`: approve adds the file to the collector list, reject drops it; audited as `log_source_added` / `log_source_rejected` |
 | POST | `/demo/reset` | clears state for a fresh take |
 
 ### Incident

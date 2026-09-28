@@ -191,3 +191,30 @@ def test_latest_scan_shows_an_approved_file_as_watched(client, tmp_path, monkeyp
     d.approve(fid, "erick")
     s = d.latest()["suggestions"][0]
     assert s["files"][0]["watched"] and s["already_watched"]
+
+
+def test_scout_proposals_wait_for_an_operator_over_http(client, tmp_path, monkeypatch):
+    monkeypatch.setenv("CACTAI_SCOUT_SOURCES", str(tmp_path / "sources.json"))
+    log = tmp_path / "auth.log"
+    log.write_text("Sep 28 10:00:01 web sshd[1]: Failed password for admin from 203.0.113.45\n")
+    gone = tmp_path / "gone.log"
+    pending = [{"id": "p1", "path": str(log), "layer": "os", "format": "text", "why": "logins", "goal": "login logs"},
+               {"id": "p2", "path": str(gone), "layer": "web", "format": "text", "why": "old"},
+               {"id": "p3", "path": str(tmp_path / "x.log"), "layer": "web", "format": "text", "why": "x"}]
+    (tmp_path / "pending.json").write_text(json.dumps(pending))
+    assert [p["id"] for p in client.get("/log-sources/pending").json()] == ["p1", "p2", "p3"]
+    assert client.post("/log-sources/pending/nope", json={"operator": "erick", "approve": True}).status_code == 404
+    assert client.post("/log-sources/pending/p2", json={"operator": "erick", "approve": True}).status_code == 409
+    bad = client.post("/log-sources/pending/p1", json={"operator": "erick", "approve": True, "layer": "mars"})
+    assert bad.status_code == 409
+    ok = client.post("/log-sources/pending/p1", json={"operator": "erick", "approve": True}).json()
+    assert ok["approved"] and ok["file"] == "auth.log"
+    saved = json.loads((tmp_path / "sources.json").read_text())
+    assert [(s["path"], s["layer"], s["found_by"], s["confirmed_by"]) for s in saved] == [(str(log), "os", "Scout", "erick")]
+    assert client.post("/log-sources/pending/p2", json={"operator": "erick", "approve": False,
+                                                        "reason": "old server"}).json()["approved"] is False
+    assert client.post("/log-sources/pending/p3", json={"operator": "erick", "approve": False}).status_code == 200
+    assert client.get("/log-sources/pending").json() == []
+    assert not (tmp_path / "pending.json").exists()
+    types = [rec["type"] for rec in client.core.audit.records()]
+    assert types.count("log_source_rejected") == 2 and "log_source_added" in types

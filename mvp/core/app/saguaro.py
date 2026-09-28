@@ -32,6 +32,7 @@ from .classifier import Classification, default_chain
 from .clock import DemoClock, fmt_demo_hours
 from .config import Settings, sign
 from .jev_client import JevClient
+from .netlogs import enrich
 from .responders import BlocklistResponder, Responders, SimulatedResponder
 from .risk import SEVERITY, band, band_rank, inaction_penalty, risk_index
 from .rules import RulesEngine
@@ -44,7 +45,7 @@ TITLES = {
     "brute_force": "Brute force",
     "sql_injection": "SQL injection",
     "xss": "Cross-site scripting",
-    "port_scan": "Port scan",
+    "port_scan": "Port or web scan",
     "privilege_escalation": "Shell spawned / privilege escalation",
     "data_exfiltration": "Bulk data export",
     "misconfiguration": "Misconfiguration",
@@ -87,7 +88,9 @@ class Saguaro(Agent):
         self.settings = s = settings or Settings()
         self.clock = DemoClock(s.demo_speed)
         self.audit = AuditLog(s.db_path)
-        self.rules = RulesEngine(s.brute_force_count, s.brute_force_window_s, s.export_rows_threshold)
+        self.rules = RulesEngine(s.brute_force_count, s.brute_force_window_s, s.export_rows_threshold,
+                                 ssh_count=s.ssh_brute_force_count, ssh_window_s=s.ssh_brute_force_window_s,
+                                 scan_4xx_count=s.web_scan_4xx_count, scan_window_s=s.web_scan_window_s)
         self.jev = JevClient(s.jev_timeout_s)
         # The three parts: events arrive from collectors via POST /events, the classifier
         # chain labels them, and the responders carry out approved containment.
@@ -173,7 +176,7 @@ class Saguaro(Agent):
         # Cap the total time one request may spend waiting on Jev; the rest use the fallback.
         self.jev_step.deadline = time.monotonic() + self.settings.jev_budget_s
         for raw_ev in events:
-            ev = dict(raw_ev)
+            ev = enrich(dict(raw_ev))
             now = self.clock.now()
             ev["event_id"] = str(ev.get("event_id") or f"evt-core-{uuid.uuid4().hex[:12]}")
             ev["host"] = ev.get("host") or "unknown"
@@ -296,6 +299,7 @@ class Saguaro(Agent):
             "timeline": [],
             "decisions": [],
             "_opened_ts": now,
+            "_last_event_ts": now,
             "_acked_ts": None,
             "_reminders": 0,
             "_sla_flag": False,
@@ -332,6 +336,7 @@ class Saguaro(Agent):
             inc["explanation"] += " The classifier is uncertain: needs human review (never auto-contained)."
 
     def _attach(self, inc: dict[str, Any], ev: dict[str, Any], cls: Classification, needs_review: bool, now: float) -> None:
+        inc["_last_event_ts"] = now
         for eid in [*cls.related_event_ids, ev["event_id"]]:
             if eid not in inc["event_ids"]:
                 inc["event_ids"].append(eid)
@@ -356,7 +361,7 @@ class Saguaro(Agent):
 
     # ------------------------------------------------------------- risk engine
     def _refresh_incident(self, inc: dict[str, Any], now: float) -> None:
-        end = inc["_acked_ts"] if inc["_acked_ts"] is not None else now
+        end = inc["_acked_ts"] if inc["_acked_ts"] is not None else (inc.get("_closed_ts") or now)
         hours = self.clock.demo_hours(inc["_opened_ts"], end)
         inc["time_unaddressed_hours"] = round(hours, 2)
         inc["inaction_penalty"] = inaction_penalty(hours, self.settings.penalty_per_hour, self.settings.penalty_cap)
@@ -391,6 +396,7 @@ class Saguaro(Agent):
 
     def _evaluate(self, now: float) -> None:
         self._expire_actions(now)
+        self._auto_close_quiet(now)
         r = self._compute(now)
         self._sla_reminders(now, r)
         self._notify_open_incidents(now, r)
@@ -653,6 +659,32 @@ class Saguaro(Agent):
                                      f"{inc['id']}: temporary hotpatch expired",
                                      f"The temporary hotpatch for {inc['id']} expired after {a['ttl_hours']:g} h. "
                                      f"Make it permanent or leave it expired.", BUTTONS_AFTER_ACTION)
+
+    def _auto_close_quiet(self, now: float) -> None:
+        """Resolve scan / brute-force incidents that went quiet, so a public server's background noise
+        does not pile up forever. Never touches an incident with containment in force."""
+        quiet_s = self.settings.auto_close_quiet_min * 60.0
+        if quiet_s <= 0:
+            return
+        for inc in self.incidents.values():
+            if (inc["status"] not in RISK_STATUSES or inc["category"] not in self.settings.auto_close_categories
+                    or self._active_actions(inc, now)):
+                continue
+            last = inc.get("_last_event_ts") or inc["_opened_ts"]
+            if now - last < quiet_s:
+                continue
+            minutes = int((now - last) // 60)
+            was_acked = inc["acked"]
+            inc["status"] = "resolved"
+            inc["resolved_by"] = "auto-close"
+            inc["_closed_ts"] = now
+            self._refresh_incident(inc, now)
+            note = "" if was_acked else " It was never acknowledged; the inaction record stays in the report."
+            self._timeline(inc, now, "auto_closed", f"Closed automatically: no new events for {minutes} min.{note}")
+            self.scribe.record(self.name, "incident_auto_closed", {
+                "incident": inc["id"], "category": inc["category"], "src_ip": inc.get("src_ip"),
+                "quiet_minutes": minutes, "acked": was_acked, "sla_breached": inc["sla_breached"],
+                "events": len(inc["event_ids"])})
 
     # --------------------------------------------------------- operator verbs
     def _get(self, iid: str) -> dict[str, Any]:

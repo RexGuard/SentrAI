@@ -57,6 +57,16 @@ class Settings:
     brute_force_count: int = field(default_factory=lambda: _i("BRUTE_FORCE_COUNT", 5))
     brute_force_window_s: float = field(default_factory=lambda: _f("BRUTE_FORCE_WINDOW_S", 60.0))
     export_rows_threshold: int = field(default_factory=lambda: _i("EXPORT_ROWS_THRESHOLD", 100))
+    # Real public-server traffic: SSH guesses are slower than the demo's web brute force.
+    ssh_brute_force_count: int = field(default_factory=lambda: _i("SSH_BRUTE_FORCE_COUNT", 5))
+    ssh_brute_force_window_s: float = field(default_factory=lambda: _f("SSH_BRUTE_FORCE_WINDOW_S", 600.0))
+    web_scan_4xx_count: int = field(default_factory=lambda: _i("WEB_SCAN_4XX_COUNT", 10))
+    web_scan_window_s: float = field(default_factory=lambda: _f("WEB_SCAN_WINDOW_S", 120.0))
+    # Close scan / brute-force incidents that have had no new event for this many real minutes (0 = never).
+    auto_close_quiet_min: float = field(default_factory=lambda: _f("AUTO_CLOSE_QUIET_MIN", 60.0))
+    auto_close_categories: set[str] = field(
+        default_factory=lambda: {x.strip() for x in os.getenv("AUTO_CLOSE_CATEGORIES", "port_scan,brute_force").split(",") if x.strip()}
+    )
     watchdog_silence_s: float = field(default_factory=lambda: _f("WATCHDOG_SILENCE_S", 30.0))
     tick_s: float = field(default_factory=lambda: _f("TICK_S", 1.0))
     id_year: int = field(default_factory=lambda: _i("ID_YEAR", 2026))

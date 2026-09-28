@@ -72,7 +72,8 @@ TOOLS: list[dict[str, Any]] = [
 class Scout:
     def __init__(self, fs: SafeFS, provider: cactai_llm.Provider | None = None,
                  trails_dir: Path = TRAILS_DIR, ask: Callable[[str], str] = input,
-                 say: Callable[[str], None] = print, max_steps: int = MAX_STEPS) -> None:
+                 say: Callable[[str], None] = print, max_steps: int = MAX_STEPS,
+                 on_propose: Callable[[dict[str, str]], None] | None = None) -> None:
         if provider is None:
             provider = cactai_llm.from_env(effort=os.getenv("SCOUT_EFFORT", "medium"))
             if provider is None:
@@ -80,6 +81,7 @@ class Scout:
             provider.model = os.getenv("SCOUT_MODEL") or provider.model
         self.provider = provider
         self.fs, self.trails_dir, self.ask, self.say, self.max_steps = fs, trails_dir, ask, say, max_steps
+        self.on_propose = on_propose  # saves each proposal at once (sources.propose), so a stop loses nothing
         self.proposals: list[dict[str, str]] = []
         self.steps: list[dict[str, str]] = []  # the route, saved as a trail afterwards
 
@@ -131,6 +133,9 @@ class Scout:
                 raise ValueError(f"layer must be one of {', '.join(LAYERS)}")
             if any(x["path"] == str(p) for x in self.proposals):
                 return "Already proposed."
-            self.proposals.append({"path": str(p), "layer": a["layer"], "format": a["format"], "why": a["why"]})
+            proposal = {"path": str(p), "layer": a["layer"], "format": a["format"], "why": a["why"]}
+            self.proposals.append(proposal)
+            if self.on_propose:
+                self.on_propose(proposal)
             return "Proposed. The technician will confirm it at the end."
         raise ValueError(f"unknown tool {name}")

@@ -78,6 +78,13 @@ class LogSourceIn(BaseModel):
     layer: Optional[str] = None
 
 
+class PendingDecisionIn(BaseModel):
+    operator: str
+    approve: bool
+    layer: Optional[str] = None
+    reason: str = ""
+
+
 class AITestIn(BaseModel):
     provider: str
     api_key: str = ""
@@ -296,6 +303,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def post_log_source(body: LogSourceIn) -> dict[str, Any]:
         try:
             return discovery.approve(body.file_id, body.operator, body.layer)
+        except KeyError as e:
+            raise HTTPException(404, str(e).strip("'\""))
+        except ValueError as e:
+            raise HTTPException(409, str(e))
+
+    # Scout proposals (python -m scout find) wait here until an operator approves or rejects them.
+    @app.get("/log-sources/pending")
+    def get_pending_sources() -> list[dict[str, Any]]:
+        return discovery.pending()
+
+    @app.post("/log-sources/pending/{pid}")
+    def decide_pending_source(pid: str, body: PendingDecisionIn) -> dict[str, Any]:
+        try:
+            return discovery.decide_pending(pid, body.operator, body.approve, body.layer, body.reason)
         except KeyError as e:
             raise HTTPException(404, str(e).strip("'\""))
         except ValueError as e:
