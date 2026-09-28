@@ -20,10 +20,12 @@ class CoreError(Exception):
 
 
 class CoreClient:
-    def __init__(self, base_url: str, timeout: float = DEFAULT_TIMEOUT) -> None:
+    def __init__(self, base_url: str, timeout: float = DEFAULT_TIMEOUT, token: str = "") -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.session = requests.Session()
+        if token:  # the core's API token (cactai_config.api_token())
+            self.session.headers["Authorization"] = f"Bearer {token}"
 
     def _url(self, path: str) -> str:
         return f"{self.base_url}/{path.lstrip('/')}"
@@ -150,6 +152,14 @@ class CoreClient:
 
     def watch_log(self, file_id: str, operator: str, layer: str | None = None) -> dict:
         return self.post_json("/log-sources", {"file_id": file_id, "operator": operator, "layer": layer})
+
+    def pending_log_sources(self) -> list[dict]:
+        """Log files Scout proposed that wait for an operator's yes or no."""
+        return list(self.get_json("/log-sources/pending") or [])
+
+    def decide_log_source(self, proposal_id: str, operator: str, approve: bool, reason: str = "") -> dict:
+        return self.post_json(f"/log-sources/pending/{proposal_id}",
+                              {"operator": operator, "approve": approve, "reason": reason})
 
     def reset_demo(self) -> Any:
         return self.post_json("/demo/reset", {})

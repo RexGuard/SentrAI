@@ -1,0 +1,3 @@
+{"__CURSOR": "s=abc;i=1", "__REALTIME_TIMESTAMP": "1790575321000000", "_HOSTNAME": "vps-journal", "SYSLOG_IDENTIFIER": "sshd-session", "_PID": "5000", "_SYSTEMD_UNIT": "ssh.service", "MESSAGE": "Invalid user test from 203.0.113.60 port 52000"}
+{"__CURSOR": "s=abc;i=2", "__REALTIME_TIMESTAMP": "1790575322000000", "_HOSTNAME": "vps-journal", "SYSLOG_IDENTIFIER": "sshd-session", "_PID": "5001", "_SYSTEMD_UNIT": "ssh.service", "MESSAGE": "Failed password for invalid user test from 203.0.113.60 port 52000 ssh2"}
+{"__CURSOR": "s=abc;i=3", "__REALTIME_TIMESTAMP": "1790575323000000", "_HOSTNAME": "vps-journal", "SYSLOG_IDENTIFIER": "sshd", "_PID": "5002", "_SYSTEMD_UNIT": "ssh.service", "MESSAGE": "Accepted password for alice from 192.0.2.20 port 52100 ssh2"}

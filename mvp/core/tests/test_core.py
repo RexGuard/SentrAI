@@ -282,7 +282,7 @@ def test_protected_user_not_locked(tmp_path):
     from app.config import Settings
     from app.main import create_app
     s = Settings(db_path=tmp_path / "p.db", background=False, protected_users={"admin"})
-    with TestClient(create_app(s)) as c:
+    with TestClient(create_app(s), headers={"Authorization": "Bearer test-token"}) as c:
         brute_force(c)
         c.post("/events", json=ev(20, "GET /search?q=' OR 1=1 -- 200", source="flask_access"))
         bl = c.get("/blocklist").json()
@@ -301,4 +301,4 @@ def test_routine_db_query_and_ordinary_words_are_benign(client):
 def test_notification_report_url_is_absolute(client):
     brute_force(client)
     n = next(n for n in client.get("/notifications/pending").json() if n["incident"])
-    assert n["report_url"].startswith("http://") and n["report_url"].endswith(".md")
+    assert n["report_url"].startswith("http://") and ".md?sig=" in n["report_url"]

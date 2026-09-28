@@ -84,6 +84,7 @@ class State:
         self.chat: list[dict] = []
         self.scan: dict | None = None
         self.log_sources: list[dict] = []
+        self.pending: list[dict] = []  # Scout proposals; seed one with POST /_fake/scout-proposal
 
 
 S = State()
@@ -488,6 +489,40 @@ def post_log_source(body: dict = Body(...)):
         audit("log_source_added", "Cyanide", operator=body.get("operator"), file=f["name"],
               summary=f"{body.get('operator')} added {f['name']} to the collector")
         return {"ok": True, "file": f["name"], "layer": "web", "watching": len(S.log_sources)}
+
+
+@app.get("/log-sources/pending")
+def get_pending_sources():
+    return S.pending
+
+
+@app.post("/_fake/scout-proposal")
+def fake_scout_proposal(body: dict = Body(None)):
+    """Dev/test only: pretend `python -m scout find` proposed a file."""
+    with lock:
+        n = len(S.pending) + 1
+        p = {"id": f"p{n:010d}", "name": "auth.log", "path": "/var/log/auth.log", "layer": "os", "format": "text",
+             "why": "SSH logins with the source address, so password guessing shows up.",
+             "goal": "where are the login logs?", "proposed_at": iso(now()), **(body or {})}
+        S.pending.append(p)
+        return p
+
+
+@app.post("/log-sources/pending/{pid}")
+def decide_pending_source(pid: str, body: dict = Body(...)):
+    with lock:
+        p = next((x for x in S.pending if x["id"] == pid), None)
+        if p is None:
+            raise HTTPException(404, f"{pid} is not a pending Scout proposal")
+        S.pending.remove(p)
+        if body.get("approve"):
+            S.log_sources.append({"path": p["path"], "layer": p["layer"], "format": p["format"],
+                                  "found_by": "Scout", "confirmed_by": body.get("operator")})
+        audit("log_source_added" if body.get("approve") else "log_source_rejected", "Cyanide",
+              operator=body.get("operator"), file=p["name"],
+              summary=f"{body.get('operator')} {'added' if body.get('approve') else 'rejected'} {p['name']} "
+                      f"(proposed by Scout)")
+        return {"ok": True, "file": p["name"], "layer": p["layer"], "approved": bool(body.get("approve"))}
 
 
 @app.post("/chat/clear")

@@ -35,10 +35,12 @@ def _write(filename: str, record: dict[str, Any]) -> None:
 
 
 def log_access(src_ip: str, method: str, path_: str, status: int,
-               user: str | None = None, pii: bool = False) -> None:
+               user: str | None = None, pii: bool = False, blocked: bool = False) -> None:
     raw = f"{method} {path_} {status}"
     if user:
         raw += f" user={user}"
+    if blocked:  # refused by containment: core rules treat it as benign, not as a new attack
+        raw += " blocked by CactAI"
     _write(paths.ACCESS_LOG, {
         "ts": now_iso(),
         "src_ip": src_ip,
@@ -84,4 +86,18 @@ def log_os(src_ip: str, user: str | None, message: str) -> None:
         "user": user,
         "simulated": True,
         "raw": message,
+    })
+
+
+def log_spine(kind: str, layer: str, src_ip: str, user: str | None, detail: str,
+              pii: bool = False) -> None:
+    """A cactus spine was touched (spines.py). Always an attack signal, never routine."""
+    _write(paths.DECEPTION_LOG, {
+        "ts": now_iso(),
+        "src_ip": src_ip,
+        "user": user,
+        "kind": kind,
+        "layer": layer,
+        "pii": pii,
+        "raw": f"cactus-spine {kind}: {detail}",
     })

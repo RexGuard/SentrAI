@@ -310,6 +310,8 @@ What the "prick" actually is (all inside our own perimeter):
 - **Deception:** honeypot login pages, honeytoken DB rows and credentials. Any touch is a near-certain alert.
 - **Evidence:** preserve logs and hand them to SingCERT or the police. The attacker is pricked by attribution and prosecution, not retaliation.
 
+**In the MVP:** the demo portal has a honeypot login page, a planted credential, bait member rows and a tarpit, all off by default (`run_demo -Spines`). Any touch becomes a confidence 1.0 incident (see `mvp/lab/README.md`).
+
 ---
 
 ## 12. Agentic Multi-Agent Design

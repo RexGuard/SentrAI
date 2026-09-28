@@ -17,12 +17,14 @@ Run (any venv, stdlib only):
     python cactai_config.py              set up if this is a new machine, then show settings
     python cactai_config.py setup        run the wizard again (current values as defaults)
     python cactai_config.py get NAME     print one value, for scripts
+    python cactai_config.py token        print the core API token (made and saved on first use)
 """
 from __future__ import annotations
 
 import getpass
 import json
 import os
+import secrets
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -45,6 +47,7 @@ class Field:
     kind: type = str  # str, int or float; used only to validate the answer
     secret: bool = False
     choices: tuple[str, ...] = ()  # when set, the answer must be one of these
+    generated: bool = False  # never asked: the wizard keeps the saved value or makes a new one
 
 
 @dataclass(frozen=True)
@@ -125,9 +128,16 @@ SECTIONS = (
         Field("CACTAI_LLM_BASE_URL", "Base URL (only for another OpenAI-compatible service)"),
         Field("CACTAI_LLM_MODEL", "Model name, blank for the provider's default"),
     )),
+    Section("access", "6. Access", "Who may use the core API and the dashboard.", (
+        Field("CACTAI_API_TOKEN", "Core API token (shared by the collector, dashboard and Telegram bot)",
+              secret=True, generated=True),
+        Field("CACTAI_DASHBOARD_PASSWORD", "Dashboard password, blank for no login screen", secret=True),
+    )),
 )
 FIELDS = {f.env: f for s in SECTIONS for f in s.fields}
 MODEL_ENV = "CACTAI_LLM_MODEL"
+TOKEN_ENV = "CACTAI_API_TOKEN"
+PASSWORD_ENV = "CACTAI_DASHBOARD_PASSWORD"
 
 
 def _one_ai_key(values: dict[str, str]) -> dict[str, str]:
@@ -210,6 +220,8 @@ def save(values: dict[str, str]) -> Path:
     path = config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     values = settle_preset(dict(values))
+    if not values.get(TOKEN_ENV):  # a form that leaves the token out must not wipe it
+        values[TOKEN_ENV] = read().get(TOKEN_ENV, "")
     data = {s.key: {f.env: values.get(f.env, f.default) for f in s.fields} for s in SECTIONS}
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     return path
@@ -234,6 +246,27 @@ def load(refresh: bool = False) -> dict[str, str]:
         if value != "" and name not in os.environ:
             os.environ[name] = _LOADED[name] = value
     return values
+
+
+def new_token() -> str:
+    return secrets.token_urlsafe(32)
+
+
+def api_token() -> str:
+    """The token every client sends to the core, and the core requires.
+
+    An explicit CACTAI_API_TOKEN wins. Otherwise the saved one is used, and a machine without
+    one gets a new token saved to the settings file, so every component finds the same value.
+    """
+    token = os.environ.get(TOKEN_ENV, "").strip()
+    if token:
+        return token
+    values = read()
+    if not values.get(TOKEN_ENV):
+        values[TOKEN_ENV] = new_token()
+        save(values)
+        values = read()  # another component may have saved one at the same moment; use what is on disk
+    return values[TOKEN_ENV]
 
 
 def valid(field: Field, answer: str) -> bool:
@@ -274,6 +307,10 @@ def wizard(ask: Callable[[str], str] | None = None, ask_secret: Callable[[str], 
         for f in section.fields:
             if f.env in PRESET_FIELDS and not advanced:
                 values[f.env] = preset[f.env]
+                continue
+            if f.generated:
+                values[f.env] = current[f.env] or new_token()
+                say(f"  {f.prompt}: {'kept' if current[f.env] else 'generated'} (python cactai_config.py token shows it)")
                 continue
             shown = ("set" if current[f.env] else "not set") if f.secret else current[f.env]
             prompt = f.prompt
@@ -341,6 +378,9 @@ def main(argv: list[str]) -> int:
     if argv[:1] == ["get"] and len(argv) == 2:
         field = FIELDS.get(argv[1])
         print(os.environ.get(argv[1]) or read().get(argv[1]) or (field.default if field else ""))
+        return 0
+    if argv == ["token"]:
+        print(api_token())
         return 0
     if argv[:1] == ["setup"]:
         setup()
