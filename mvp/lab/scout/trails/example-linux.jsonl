@@ -1,0 +1,9 @@
+{"action": "goal", "actor": "example", "text": "find the login and web logs on a Linux web server"}
+{"action": "ls", "path": "/var/log"}
+{"action": "peek", "path": "/var/log/auth.log"}
+{"action": "pick", "path": "/var/log/auth.log", "layer": "os", "why": "sshd and sudo logins with source IPs; Red Hat calls it /var/log/secure"}
+{"action": "ls", "path": "/var/log/nginx"}
+{"action": "peek", "path": "/var/log/nginx/access.log"}
+{"action": "pick", "path": "/var/log/nginx/access.log", "layer": "web", "why": "every web request with client IP, path and status; shows SQLi and brute force"}
+{"action": "note", "text": "skip rotated copies like access.log.1 and .gz; watch only the live file"}
+{"action": "note", "text": "apache uses /var/log/apache2 (Debian) or /var/log/httpd (Red Hat)"}

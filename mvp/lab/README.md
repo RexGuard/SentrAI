@@ -82,6 +82,18 @@ The demo "attacker" IP is sent in the `X-Demo-Src-IP` header (brute
 
 Prints a `REPLAY MODE` banner — say on camera that it is a replay.
 
+## Scout: find the security logs on a new system
+
+On a real network nobody hands you a list of log files. Scout finds them for a novice technician, and it learns from how experienced people find them.
+
+1. **An expert shows the way once** (optional). They browse with simple read-only commands (`ls`, `cd`, `peek`, `find`), then `pick` the files that matter and say why. Each step is saved as a trail in `scout/trails/`.
+   `python -m scout record --root C:\ "find the IIS web logs"`
+2. **A novice asks in plain words.** Claude reads the trails and browses the same way, explaining each step. It asks the technician when only a person can know, then proposes log files.
+   `python -m scout find --root C:\ "where are the login logs on this server?"`
+3. **The technician confirms each file.** Confirmed files go into `scout/sources.json`, and the collector watches them on its next start. Every yes or no is saved as a new trail, so the next search starts smarter.
+
+Scout can only read files under the `--root` folders, never write. It masks `password=`, `token=` and similar values before Claude sees a line, and treats log text as data, never as instructions. Two example trails (a Linux web server and Windows IIS) ship in `scout/trails/`. `python -m scout list` shows what the collector will watch. Scout needs `ANTHROPIC_API_KEY`; `SCOUT_MODEL` and `SCOUT_EFFORT` change the model and effort.
+
 ## Tests
 
 ```powershell

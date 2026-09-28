@@ -15,5 +15,6 @@ sys.path.insert(0, str(LAB_DIR))
 _TMP = tempfile.mkdtemp(prefix="cactai-lab-test-")
 os.environ.setdefault("CACTAI_LAB_LOGS", str(Path(_TMP) / "logs"))
 os.environ.setdefault("CACTAI_LAB_DB", str(Path(_TMP) / "portal.sqlite3"))
+os.environ["CACTAI_SCOUT_SOURCES"] = str(Path(_TMP) / "scout-sources.json")
 os.environ["CACTAI_CONFIG"] = str(Path(_TMP) / "no-config.json")  # ignore this machine's saved settings
 # Keep the real seed dir (holds the admin password) — do not override it.

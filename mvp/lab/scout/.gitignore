@@ -1,0 +1,3 @@
+sources.json
+trails/*.jsonl
+!trails/example-*.jsonl

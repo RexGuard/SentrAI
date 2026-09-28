@@ -1,0 +1,6 @@
+{"action": "goal", "actor": "example", "text": "find the web logs on a Windows IIS server"}
+{"action": "ls", "path": "C:\\inetpub\\logs\\LogFiles"}
+{"action": "ls", "path": "C:\\inetpub\\logs\\LogFiles\\W3SVC1"}
+{"action": "peek", "path": "C:\\inetpub\\logs\\LogFiles\\W3SVC1\\u_ex260928.log"}
+{"action": "pick", "path": "C:\\inetpub\\logs\\LogFiles\\W3SVC1\\u_ex260928.log", "layer": "web", "why": "IIS W3C log: client IP, URL, status; one file per day, newest has today's date"}
+{"action": "note", "text": "Windows logon events are in the Security event log (C:\\Windows\\System32\\winevt\\Logs\\Security.evtx), a binary file that needs admin rights and an exporter, not a text tail"}

@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import time
 import uuid
@@ -184,8 +185,53 @@ class HeartbeatSource(Source):
         return [heartbeat_event()]
 
 
+IPV4 = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
+USER = re.compile(r"(?i)\b(?:user(?:name)?|for(?: invalid user)?)[=: ]+([\w.@-]+)")
+
+
+class DiscoveredLogSource(Source):
+    """A log file Scout found and the technician approved (``scout/sources.json``).
+
+    Any format: each new line becomes one event carrying the raw text. The source IP and
+    user are taken from JSON fields when present, otherwise guessed from the text."""
+
+    def __init__(self, path: Path, layer: str, fmt: str = "text") -> None:
+        self.name = path.name
+        self.layer, self.fmt = layer, fmt
+        self.source = f"scout:{path.name}"
+        self.tailer = Tailer(path)
+
+    def poll(self) -> list[dict[str, Any]]:
+        events = []
+        for line in self.tailer.read_new_lines():
+            src_ip = user = ts = None
+            if self.fmt == "jsonl":
+                try:
+                    rec = json.loads(line)
+                except json.JSONDecodeError:
+                    rec = None
+                if isinstance(rec, dict):
+                    src_ip = next((str(rec[k]) for k in ("src_ip", "ip", "client_ip", "remote_addr") if rec.get(k)), None)
+                    user = next((str(rec[k]) for k in ("user", "username", "account") if rec.get(k)), None)
+                    ts = rec.get("ts") or rec.get("timestamp")
+            if src_ip is None and (m := IPV4.search(line)):
+                src_ip = m.group(0)
+            if user is None and (m := USER.search(line)):
+                user = m.group(1)
+            events.append(make_event(self.layer, self.source, line[:2000], src_ip=src_ip, user=user,
+                                     ts=ts if isinstance(ts, str) else None))
+        return events
+
+
+def discovered_sources() -> list[Source]:
+    from scout import sources as scout_sources
+
+    return [DiscoveredLogSource(Path(s["path"]), s["layer"], s.get("format", "text")) for s in scout_sources.load()]
+
+
 def default_sources(logs_dir: Path, heartbeat_interval: float = 10.0) -> list[Source]:
-    return [*(JsonLogSource(logs_dir / name) for name in SOURCE_MAP), HeartbeatSource(heartbeat_interval)]
+    return [*(JsonLogSource(logs_dir / name) for name in SOURCE_MAP), *discovered_sources(),
+            HeartbeatSource(heartbeat_interval)]
 
 
 class Collector:
