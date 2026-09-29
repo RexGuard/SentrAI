@@ -1,4 +1,4 @@
-"""Generate chart and illustration PNGs for the CactAI deck (matplotlib)."""
+"""Generate chart and illustration PNGs for the SentrAI deck (matplotlib)."""
 import math
 from pathlib import Path
 

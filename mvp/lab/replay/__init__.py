@@ -1,1 +1,1 @@
-"""Replay tooling for the CactAI demo."""
+"""Replay tooling for the SentrAI demo."""

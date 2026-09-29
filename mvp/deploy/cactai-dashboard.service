@@ -1,5 +1,5 @@
 [Unit]
-Description=CactAI dashboard (Streamlit)
+Description=SentrAI dashboard (Streamlit)
 PartOf=cactai.target
 After=cactai-core.service
 Wants=cactai-core.service

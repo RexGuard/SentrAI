@@ -1,4 +1,4 @@
-# CactAI classifier accuracy: public-server replay
+# SentrAI classifier accuracy: public-server replay
 
 1808 labelled synthetic events (1454 nginx access lines, 354 sshd lines). Built by `eval/realworld/build_replay.py`, scored by `eval/realworld/score_replay.py`. Jev not run.
 

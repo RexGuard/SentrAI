@@ -508,12 +508,12 @@ class Saguaro(Agent):
                                                            + (f": {reason}" if reason else ""))
             if on:
                 self._notify(now, "protection_on", None, [s.on_duty, s.it_manager], "Protection is back on",
-                             f"{operator} turned CactAI protection back on. Incidents over the threshold "
+                             f"{operator} turned SentrAI protection back on. Incidents over the threshold "
                              f"({len(open_ids)} open) can be contained again.", [])
             else:
                 self._notify(now, "protection_off", None, [s.on_duty, s.it_manager, s.cxo],
                              "Protection is off: monitor-only mode",
-                             f"{operator} turned CactAI protection off: {reason}\nCactAI keeps collecting, classifying "
+                             f"{operator} turned SentrAI protection off: {reason}\nSentrAI keeps collecting, classifying "
                              f"and scoring, but applies no containment, autonomous or approved, until it is turned "
                              f"back on. {len(still)} action(s) already in force stay until they expire or are rolled back.",
                              [])
@@ -735,7 +735,7 @@ class Saguaro(Agent):
         if mode == "autonomous":
             self._notify(now, "autonomous_action", inc["id"], [s.on_duty, s.it_manager, s.cxo],
                          f"{inc['id']}: autonomous containment engaged",
-                         f"\U0001f335 CactAI autonomous override on {inc['id']} (risk {risk_idx}/100 >= {s.threshold}, "
+                         f"\U0001f335 SentrAI autonomous override on {inc['id']} (risk {risk_idx}/100 >= {s.threshold}, "
                          f"no acknowledgement). Approved by Needle. Applied for {s.ttl_hours:g} h: {summary}.\n"
                          f"Evidence report: {s.public_url}/reports/{inc['id']}.md", BUTTONS_AFTER_ACTION)
         else:
@@ -962,7 +962,7 @@ class Saguaro(Agent):
                 if a["target"] == target and a["incident"] not in ids:
                     ids.append(a["incident"])
             if not ids:
-                return {"target": target, "answer": f"{target} is not in any CactAI containment record."}
+                return {"target": target, "answer": f"{target} is not in any SentrAI containment record."}
             return {"target": target, "incidents": ids, "answer": "\n\n".join(self.why(i) for i in ids)}
 
     def agents_status(self) -> list[dict[str, Any]]:

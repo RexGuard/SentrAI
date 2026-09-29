@@ -1,4 +1,4 @@
-"""Which AI model CactAI talks to. One small interface over several providers.
+"""Which AI model SentrAI talks to. One small interface over several providers.
 
 Cyanide (core) and Scout (lab) only need two things from a model:
   * ``complete_json(system, user, schema)``: one answer as JSON matching a schema
@@ -120,7 +120,7 @@ def build(name: str, key: str | None, model: str | None = None, base_url: str | 
         return OpenAIProvider(name=name, model=model, api_key=key, base_url=base_url, timeout_s=timeout_s)
     except ImportError as e:
         package = "anthropic" if name == "anthropic" else "openai"
-        raise LLMError(f"the '{package}' Python package is not installed for this part of CactAI. Run "
+        raise LLMError(f"the '{package}' Python package is not installed for this part of SentrAI. Run "
                        f"stop_demo.ps1, then run_demo.ps1 again: it installs new packages when it starts") from e
 
 
@@ -136,7 +136,7 @@ def check(provider: "Provider") -> dict[str, Any]:
     started = time.monotonic()
     error = None
     try:
-        provider.complete_json("You are a connection test for CactAI.", 'Reply with {"ok": true}.', PING_SCHEMA)
+        provider.complete_json("You are a connection test for SentrAI.", 'Reply with {"ok": true}.', PING_SCHEMA)
     except LLMError as e:
         error = str(e)[:600]
     return {"ok": error is None, "provider": provider.name, "model": provider.model,

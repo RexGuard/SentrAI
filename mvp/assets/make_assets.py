@@ -1,4 +1,4 @@
-"""Generate CactAI video/slide B-roll PNGs (1920x1080, dark theme).
+"""Generate SentrAI video/slide B-roll PNGs (1920x1080, dark theme).
 
 Run:  .venv\\Scripts\\python make_assets.py   (from mvp\\assets)
 """
@@ -61,7 +61,7 @@ def accent_bar(fig, y=0.06, x0=0.06, w=0.06):
 
 
 def brand(fig, x=0.94, y=0.05):
-    fig.text(x, y, "CactAI", ha="right", va="center", fontsize=22, weight="bold", color=GREEN)
+    fig.text(x, y, "SentrAI", ha="right", va="center", fontsize=22, weight="bold", color=GREEN)
 
 
 def cactus(ax, cx=0.0, cy=0.0, s=1.0, color=GREEN, spine=TEXT):
@@ -249,8 +249,8 @@ def timeline():
 # ---- 4. ethics ------------------------------------------------------------
 def ethics():
     fig = canvas()
-    fig.text(0.5, 0.87, "A cactus doesn't chase you.", fontsize=58, weight="bold", ha="center")
-    fig.text(0.5, 0.8, "It just makes touching it a bad idea.", fontsize=28, color=GREEN, ha="center")
+    fig.text(0.5, 0.87, "A sentry doesn't chase you.", fontsize=58, weight="bold", ha="center")
+    fig.text(0.5, 0.8, "It just guards the gate.", fontsize=28, color=GREEN, ha="center")
 
     def column(x0, title, color, mark, items):
         w = 0.42
@@ -355,9 +355,9 @@ def cactus_axis(fig, rect):
 def title_card():
     fig = canvas()
     cactus_axis(fig, [0.62, 0.2, 0.32, 0.6])
-    fig.text(0.07, 0.62, "CactAI", fontsize=120, weight="bold", color=TEXT, va="bottom")
+    fig.text(0.07, 0.62, "SentrAI", fontsize=120, weight="bold", color=TEXT, va="bottom")
     fig.text(0.07, 0.54, "Accountability-based security for small teams", fontsize=34, color=GREEN)
-    fig.text(0.07, 0.44, "A cactus doesn't chase you.\nIt just makes touching it a bad idea.", fontsize=28,
+    fig.text(0.07, 0.44, "A sentry doesn't chase you.\nIt just guards the gate.", fontsize=28,
              color=MUTED, style="italic", va="top", linespacing=1.4)
     accent_bar(fig, y=0.25, x0=0.07, w=0.08)
     fig.text(0.07, 0.19, "Cybersecurity + AI  ·  Hackathon 2026", fontsize=22, color=TEXT)
@@ -368,8 +368,8 @@ def title_card():
 def end_card():
     fig = canvas()
     cactus_axis(fig, [0.70, 0.5, 0.22, 0.4])
-    fig.text(0.07, 0.8, "CactAI", fontsize=80, weight="bold", color=TEXT, va="center")
-    fig.text(0.07, 0.69, "Alerts tell you something is wrong.\nCactAI makes sure someone answers,\nand proves it when they don't.",
+    fig.text(0.07, 0.8, "SentrAI", fontsize=80, weight="bold", color=TEXT, va="center")
+    fig.text(0.07, 0.69, "Alerts tell you something is wrong.\nSentrAI makes sure someone answers,\nand proves it when they don't.",
              fontsize=30, color=GREEN, va="top", linespacing=1.35)
     team = [("Erick Sientaro", "Developer"), ("Ishmail", "CEO"), ("Hozen", "Notetaker")]
     w, gap = 0.27, 0.025

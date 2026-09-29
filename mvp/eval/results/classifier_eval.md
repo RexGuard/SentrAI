@@ -1,4 +1,4 @@
-# CactAI classifier accuracy
+# SentrAI classifier accuracy
 
 178 labelled events (116 lab, 17 replay, 45 handcrafted). Built by `eval/build_dataset.py`, scored by `eval/evaluate.py`.
 Jev: disabled: TYPESAFE_API_KEY not set (fallback classifier in use).

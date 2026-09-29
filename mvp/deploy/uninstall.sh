@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Stops and removes the CactAI services and code that install.sh added.
+# Stops and removes the SentrAI services and code that install.sh added.
 #
 #   sudo ./deploy/uninstall.sh                 keeps /etc/cactai and /var/lib/cactai (settings, audit trail)
 #   sudo ./deploy/uninstall.sh --purge         also deletes those and the cactai user
@@ -28,7 +28,7 @@ rm -f /usr/local/bin/cactai-scout
 if [ "$PURGE" = 1 ]; then
     rm -rf /etc/cactai /var/lib/cactai
     if id "$SVC_USER" >/dev/null 2>&1; then userdel "$SVC_USER"; fi
-    echo "CactAI removed, with its settings, audit trail and user."
+    echo "SentrAI removed, with its settings, audit trail and user."
 else
-    echo "CactAI removed. Settings and the audit trail are still in /etc/cactai and /var/lib/cactai (--purge deletes them)."
+    echo "SentrAI removed. Settings and the audit trail are still in /etc/cactai and /var/lib/cactai (--purge deletes them)."
 fi

@@ -40,7 +40,7 @@ def log_access(src_ip: str, method: str, path_: str, status: int,
     if user:
         raw += f" user={user}"
     if blocked:  # refused by containment: core rules treat it as benign, not as a new attack
-        raw += " blocked by CactAI"
+        raw += " blocked by SentrAI"
     _write(paths.ACCESS_LOG, {
         "ts": now_iso(),
         "src_ip": src_ip,

@@ -71,7 +71,7 @@ def test_config_defaults_from_env():
 
 def test_email_has_the_telegram_alert_content():
     subject, text, html = format_email(NOTE, INCIDENT, None, "http://dash.test")
-    assert subject.startswith("[CactAI] Reminder") and "INC-7" in subject and "risk 72" in subject
+    assert subject.startswith("[SentrAI] Reminder") and "INC-7" in subject and "risk 72" in subject
     for part in ("Still unacknowledged", "Brute force (portal)", "72/100", "203.0.113.9", "admin",
                  "block_ip 203.0.113.9", "+10 pts", "SLA BREACHED", "Approve & Patch", "http://dash.test"):
         assert part in text, part

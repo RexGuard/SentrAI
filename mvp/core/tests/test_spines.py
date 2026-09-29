@@ -55,6 +55,6 @@ def test_spine_touch_joining_an_open_incident_leads_its_explanation(client):
 
 def test_refused_export_opens_no_incident(client):
     client.post("/events", json=ev(1, "GET /export 403", ip="203.0.113.99", user=None, source="flask_access"))
-    client.post("/events", json=ev(2, "GET /export 403 blocked by CactAI", ip="203.0.113.98", user=None,
+    client.post("/events", json=ev(2, "GET /export 403 blocked by SentrAI", ip="203.0.113.98", user=None,
                                    source="flask_access"))
     assert client.get("/incidents").json() == []

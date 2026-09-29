@@ -11,7 +11,7 @@
 ## Not done
 - Assets not generated / not visually checked.
 - `build.py` (python-pptx, 13 slides 16:9, dark theme BG 0F1B14 / cards 182A1F / green 3FAE6A, speaker notes) not written.
-- `CactAI.pptx`, `CactAI.pdf`, slide renders, visual QA.
+- `SentrAI.pptx`, `SentrAI.pdf`, slide renders, visual QA.
 
 ## How to resume
 1. `.venv\Scripts\python.exe make_assets.py` and inspect `assets\*.png`.

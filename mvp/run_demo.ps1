@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Starts the whole CactAI demo on this laptop (Windows PowerShell 5.1 compatible).
+  Starts the whole SentrAI demo on this laptop (Windows PowerShell 5.1 compatible).
 
 .DESCRIPTION
   Opens one titled window per component:
@@ -103,7 +103,7 @@ if (-not $env:CACTAI_PUBLIC_URL) { $env:CACTAI_PUBLIC_URL = $Core }
 $started = @()
 
 function Start-Component([string]$Title, [string]$WorkDir, [string]$Command) {
-    $full = "`$host.UI.RawUI.WindowTitle = 'CactAI - $Title'; Set-Location '$WorkDir'; $Command"
+    $full = "`$host.UI.RawUI.WindowTitle = 'SentrAI - $Title'; Set-Location '$WorkDir'; $Command"
     $proc = Start-Process powershell -PassThru -WorkingDirectory $WorkDir -ArgumentList @("-NoExit", "-NoProfile", "-Command", $full)
     Write-Host ("  started {0,-10} (window pid {1})" -f $Title, $proc.Id)
     return @{ name = $Title; pid = $proc.Id }
@@ -122,11 +122,11 @@ function Wait-Http([string]$Url, [int]$Seconds = 40) {
 }
 
 Write-Host ""
-Write-Host "CactAI demo  (mode: $Mode, DEMO_SPEED=$DemoSpeed -> 1 real minute = $([math]::Round($DemoSpeed/60,2)) demo hours)" -ForegroundColor Green
+Write-Host "SentrAI demo  (mode: $Mode, DEMO_SPEED=$DemoSpeed -> 1 real minute = $([math]::Round($DemoSpeed/60,2)) demo hours)" -ForegroundColor Green
 
 $started += Start-Component "core" (Join-Path $Root "core") "& '$pyCore' -m uvicorn app.main:app --host 127.0.0.1 --port $CorePort"
 if (-not (Wait-Http "$Core/health")) {
-    Write-Host "Core did not come up on :$CorePort. Check the 'CactAI - core' window." -ForegroundColor Red
+    Write-Host "Core did not come up on :$CorePort. Check the 'SentrAI - core' window." -ForegroundColor Red
 }
 # Fresh audit chain and incident state for this take.
 try { Invoke-RestMethod -Method Post -Uri "$Core/demo/reset" -TimeoutSec 5 | Out-Null } catch { }
@@ -137,7 +137,7 @@ if ((Test-Path $logsDir) -and ($logsDir -like "*$labDir*")) { Get-ChildItem $log
 
 $started += Start-Component "target" $labDir "& '$pyLab' -m target_app"
 if (-not (Wait-Http "http://127.0.0.1:5000/healthz")) {
-    Write-Host "Target app did not come up on :5000. Check the 'CactAI - target' window." -ForegroundColor Red
+    Write-Host "Target app did not come up on :5000. Check the 'SentrAI - target' window." -ForegroundColor Red
 }
 
 if ($Mode -eq "live") {

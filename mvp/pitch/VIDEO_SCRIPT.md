@@ -1,4 +1,4 @@
-# CactAI: Video Script
+# SentrAI: Video Script
 
 **Assumed length: 5:00.** The plan does not state a video length, so this script targets 5 minutes. Lines tagged **[CUT-3]** can be removed to reach about 3:00 (see the trim plan at the bottom).
 
@@ -29,14 +29,14 @@
 | 0:35 | Ishmail | "Under the PDPA, the penalty can reach ten percent of annual Singapore turnover, or one million dollars." | PDPA penalty figure with PDPC source line (Hozen verified). |
 | 0:42 | Ishmail | "And after a breach, nobody can prove who knew what, and when." | Question marks over a blank timeline. |
 
-## 0:50 to 1:20 · Solution and cactus metaphor
+## 0:50 to 1:20 · Solution and sentry metaphor
 
 | Time | Speaker | Line | On screen |
 | --- | --- | --- | --- |
-| 0:50 | Ishmail | "We built CactAI. An accountability-based security system that gives leaders proof, not just alerts." | Slide 3: CactAI logo and tagline. |
-| 0:58 | Ishmail | "A cactus doesn't chase you. It just makes touching it a bad idea." | Cactus illustration, quote in large type. |
-| 1:04 | Ishmail | "CactAI watches your web app, database and servers, and scores your risk from zero to one hundred." | Gauge graphic 0 to 100 with four colour bands. |
-| 1:10 | Ishmail | "Humans stay in charge. But if the risk crosses the limit your own organisation set, CactAI applies a temporary, reversible fix, and records exactly who was warned and when." | Flow: Warn → Remind → Contain (temporary) → Report. |
+| 0:50 | Ishmail | "We built SentrAI. An accountability-based security system that gives leaders proof, not just alerts." | Slide 3: SentrAI logo and tagline. |
+| 0:58 | Ishmail | "A sentry doesn't chase you. It just guards the gate." | Sentry shield illustration, quote in large type. |
+| 1:04 | Ishmail | "SentrAI watches your web app, database and servers, and scores your risk from zero to one hundred." | Gauge graphic 0 to 100 with four colour bands. |
+| 1:10 | Ishmail | "Humans stay in charge. But if the risk crosses the limit your own organisation set, SentrAI applies a temporary, reversible fix, and records exactly who was warned and when." | Flow: Warn → Remind → Contain (temporary) → Report. |
 
 ## 1:20 to 1:40 · CIA + NA **[CUT-3]**
 
@@ -51,7 +51,7 @@ Erick narrates. Screen layout: dashboard (left, large), Telegram on phone mirror
 
 | Time | Speaker | Line | On screen |
 | --- | --- | --- | --- |
-| 1:40 | Erick | "Here is our lab. A small login app with fake member data, and the CactAI dashboard. Risk is {8}. Green." | Dashboard full screen, gauge green, empty incident queue. |
+| 1:40 | Erick | "Here is our lab. A small login app with fake member data, and the SentrAI dashboard. Risk is {8}. Green." | Dashboard full screen, gauge green, empty incident queue. |
 | 1:48 | Erick | "Everything runs on this one laptop. The clock is sped up: one real minute is one hour of demo time." | Zoom on demo clock indicator. |
 | 1:55 | Erick | "Now I'm the attacker. I start a brute-force attack on the admin login." | Attacker terminal: brute-force command running, 401 responses scrolling. |
 | 2:02 | Erick | **[REPLAY]** "For reliability this is a replay of a recorded attack, fed through the same pipeline." | Same terminal, replay script output. |
@@ -64,7 +64,7 @@ Erick narrates. Screen layout: dashboard (left, large), Telegram on phone mirror
 | 2:40 | Erick | "Two hours pass. The SLA is breached. A reminder goes out, the team lead is copied. Still no answer." | Reminder alert in Telegram; incident shows `sla_breached: true`; gauge in red around {70}. **[CUT-3: shorten to one sentence]** |
 | 2:50 | Erick | "Now the attacker tries SQL injection on the search page." | Attacker terminal: `/search?q=' OR 1=1 --` style request. |
 | 2:56 | Erick | "Second incident, SQL injection. The risk crosses eighty. Critical." | Gauge jumps past 80, turns critical colour. Risk history chart shows the 80 line crossed. |
-| 3:02 | Erick | "CactAI takes a snapshot, picks a pre-approved playbook, and asks Needle, our reviewer agent, to approve. Two keys, always." | Audit feed: `snapshot`, `playbook_selected`, `needle_approved`. |
+| 3:02 | Erick | "SentrAI takes a snapshot, picks a pre-approved playbook, and asks Needle, our reviewer agent, to approve. Two keys, always." | Audit feed: `snapshot`, `playbook_selected`, `needle_approved`. |
 | 3:10 | Erick | "The attacker IP is blocked for two hours. Not forever. Two hours." | Blocklist panel: IP, TTL 2h, expires_at. |
 | 3:14 | Erick | "The attacker tries again. Forbidden." | Attacker terminal: HTTP 403. |
 | 3:18 | Erick | "And here is the evidence report. Alert delivered at {14:00}. Acknowledged: none. SLA overdue. Action taken. Every line is hash-chained, and the chain is valid." | Report page: timeline, "Ack: none", SLA breach, action, `chain_valid: true`. |
@@ -75,7 +75,7 @@ Erick narrates. Screen layout: dashboard (left, large), Telegram on phone mirror
 
 | Time | Speaker | Line | On screen |
 | --- | --- | --- | --- |
-| 3:40 | Hozen | "One rule we never break: CactAI does not attack back. The spines stay on the cactus." | Slide: crossed-out "hack back" icon. |
+| 3:40 | Hozen | "One rule we never break: SentrAI does not attack back. It holds the line and never crosses it." | Slide: crossed-out "hack back" icon. |
 | 3:46 | Hozen | "Hacking the attacker is an offence under Singapore's Computer Misuse Act. [SOURCE PENDING: section number.] And the IP is often a hijacked, innocent computer." | Three reasons: illegal, wrong target, escalation. |
 | 3:54 | Hozen | "So we block, slow down, deceive with honeypots, and hand evidence to SingCERT or the police." | Four icons: block, tarpit, honeypot, evidence. |
 
@@ -99,8 +99,8 @@ Erick narrates. Screen layout: dashboard (left, large), Telegram on phone mirror
 | Time | Speaker | Line | On screen |
 | --- | --- | --- | --- |
 | 4:40 | Ishmail | "We are Erick, our developer. Hozen, who keeps our notes and sources honest. And I'm Ishmail." | Team slide, three names and roles. |
-| 4:48 | Ishmail | "Alerts tell you something is wrong. CactAI makes sure someone answers, and proves it when they don't." | Gauge returning to green. |
-| 4:55 | Ishmail | "CactAI. A cactus doesn't chase you. It just makes touching it a bad idea." | Logo and tagline, hold 3 seconds. |
+| 4:48 | Ishmail | "Alerts tell you something is wrong. SentrAI makes sure someone answers, and proves it when they don't." | Gauge returning to green. |
+| 4:55 | Ishmail | "SentrAI. A sentry doesn't chase you. It just guards the gate." | Logo and tagline, hold 3 seconds. |
 
 ---
 

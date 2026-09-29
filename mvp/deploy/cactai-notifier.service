@@ -1,5 +1,5 @@
 [Unit]
-Description=CactAI notifier (Telegram alerts, or the journal when no bot is set)
+Description=SentrAI notifier (Telegram alerts, or the journal when no bot is set)
 PartOf=cactai.target
 After=cactai-core.service
 Wants=cactai-core.service

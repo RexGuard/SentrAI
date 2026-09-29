@@ -172,7 +172,7 @@ def to_markdown(res: dict[str, Any], before: dict[str, Any] | None = None) -> st
         cols.append("before")
         heads["before"] = "Chain before this change"
     lines = [
-        "# CactAI classifier accuracy: public-server replay",
+        "# SentrAI classifier accuracy: public-server replay",
         "",
         f"{res['events']} labelled synthetic events ({res['by_origin'].get('web', 0)} nginx access lines, "
         f"{res['by_origin'].get('ssh', 0)} sshd lines). Built by `eval/realworld/build_replay.py`, scored by "

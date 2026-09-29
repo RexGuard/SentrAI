@@ -1,4 +1,4 @@
-"""CactAI notifier: delivers core alerts to Telegram (or the console) and relays operator decisions.
+"""SentrAI notifier: delivers core alerts to Telegram (or the console) and relays operator decisions.
 
 Env:
   CACTAI_CORE_URL      core API base URL (default http://127.0.0.1:8000)
@@ -109,7 +109,7 @@ def console_sender(out=None, color: bool | None = None) -> SendFn:
     def send(n: dict, incident: dict | None, risk: dict | None) -> str:
         counter["n"] += 1
         stamp = datetime.now().strftime("%H:%M:%S")
-        print(f"\n🌵 [{stamp}] alert {n.get('id')} for {incident_id_of(n) or '-'}", file=stream)
+        print(f"\n🛡️ [{stamp}] alert {n.get('id')} for {incident_id_of(n) or '-'}", file=stream)
         print(format_console(n, incident, risk, color=use_color), file=stream, flush=True)
         return f"console-{int(time.time())}-{counter['n']}"
 
@@ -117,7 +117,7 @@ def console_sender(out=None, color: bool | None = None) -> SendFn:
 
 
 def run_console(core: Core, poll: float, once: bool = False) -> None:
-    print("🌵 CactAI notifier · CONSOLE mode (set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID for Telegram)")
+    print("🛡️ SentrAI notifier · CONSOLE mode (set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID for Telegram)")
     print(f"   polling {core.base_url}/notifications/pending every {poll:g} s. Ctrl+C to stop.")
     email_cfg, email = email_from_env()
     print(f"   email alerts to {', '.join(email_cfg.recipients)} via {email_cfg.host}" if email_cfg
@@ -194,13 +194,13 @@ def run_telegram(core: Core, token: str, chat_id: str, poll: float, fallback_ope
     async def post_init(app: Application) -> None:
         app.bot_data["poller"] = asyncio.create_task(poll_loop(app))
         app.bot_data.setdefault("reject_prompts", {})
-        log.info("CactAI notifier online in TELEGRAM mode, chat %s, core %s", allowed_chat, core.base_url)
+        log.info("SentrAI notifier online in TELEGRAM mode, chat %s, core %s", allowed_chat, core.base_url)
         log.info("email alerts: %s", email_cfg.describe() if email_cfg else "off (no SMTP_HOST / ALERT_EMAIL_TO)")
 
     async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         query = update.callback_query
         if not is_allowed(update):
-            await query.answer("This chat is not authorised for CactAI.", show_alert=True)
+            await query.answer("This chat is not authorised for SentrAI.", show_alert=True)
             return
         parsed = parse_callback(query.data or "")
         if not parsed:
@@ -273,7 +273,7 @@ def run_telegram(core: Core, token: str, chat_id: str, poll: float, fallback_ope
 
     async def on_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(
-            f"🌵 CactAI notifier is running.\nThis chat id: {update.effective_chat.id}\n"
+            f"🛡️ SentrAI notifier is running.\nThis chat id: {update.effective_chat.id}\n"
             + ("Alerts are delivered here." if is_allowed(update) else "This chat is NOT the configured alert chat."))
 
     app = Application.builder().token(token).post_init(post_init).build()
@@ -290,7 +290,7 @@ def main(argv: list[str] | None = None) -> int:
     import cactai_config
     cactai_config.load()  # saved settings (bot token, chat id, operator) as env defaults
 
-    p = argparse.ArgumentParser(description="CactAI notifier")
+    p = argparse.ArgumentParser(description="SentrAI notifier")
     p.add_argument("--core", default=os.environ.get("CACTAI_CORE_URL", DEFAULT_CORE))
     p.add_argument("--console", action="store_true", help="force console mode")
     p.add_argument("--once", action="store_true", help="console mode: deliver pending once and exit")

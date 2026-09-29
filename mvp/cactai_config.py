@@ -1,4 +1,4 @@
-"""CactAI settings file and first-run setup wizard.
+"""SentrAI settings file and first-run setup wizard.
 
 Every component already reads its settings from environment variables. This module keeps
 those values in one JSON file per machine and, on `load()`, sets each variable that is not
@@ -8,7 +8,7 @@ A machine is "new" when it has no settings file yet. There, `ensure()` walks the
 through one short section per part of the pipeline (collector, classifier, responder,
 notifications). Pressing Enter keeps the default, which is exactly what the demo uses.
 
-The security values (when an event counts as an attack, when CactAI acts, for how long) come
+The security values (when an event counts as an attack, when SentrAI acts, for how long) come
 from a preset: Strict, Moderate or Balanced, or Advanced to set each value yourself. The saved
 file keeps the preset's name and every value. Values that no longer match their preset are saved
 as Advanced (see `settle_preset()`).
@@ -107,7 +107,7 @@ SECTIONS = (
         Field("EXPORT_ROWS_THRESHOLD", "Rows in one export that count as bulk exfiltration", "100", int),
         Field("TYPESAFE_API_KEY", "TypeSafe (Jev) API key, blank to use rules only", secret=True),
     )),
-    Section("responder", "3. Responder", "When CactAI acts, for how long, and what it never touches.", (
+    Section("responder", "3. Responder", "When SentrAI acts, for how long, and what it never touches.", (
         Field("RISK_THRESHOLD", "Risk index (0-100) at which temporary blocks start", "80", int),
         Field("HOTPATCH_TTL_HOURS", "Hours before an automatic block expires", "2", float),
         Field("SLA_HOURS", "Hours a human has to respond before escalation", "2", float),
@@ -246,7 +246,7 @@ def load(refresh: bool = False) -> dict[str, str]:
     """Copy saved values into os.environ, without overriding anything already set.
 
     refresh=True first takes back the values an earlier load() copied in (unless something else
-    changed them since), so edits saved while CactAI runs win over the old saved values.
+    changed them since), so edits saved while SentrAI runs win over the old saved values.
     """
     if refresh:
         for name, value in _LOADED.items():
@@ -311,7 +311,7 @@ def wizard(ask: Callable[[str], str] | None = None, ask_secret: Callable[[str], 
     """
     ask, ask_secret = ask or input, ask_secret or getpass.getpass
     current = {f.env: f.default for f in FIELDS.values()} | read()
-    say("\nCactAI setup. Press Enter to keep the value in [brackets].")
+    say("\nSentrAI setup. Press Enter to keep the value in [brackets].")
     values: dict[str, str] = {}
     preset, advanced = preset_values(DEFAULT_PRESET), False
     for section in SECTIONS:
@@ -402,7 +402,7 @@ def main(argv: list[str]) -> int:
         return 2
     ensure()
     values = read()
-    print(f"CactAI settings ({config_path()}):")
+    print(f"SentrAI settings ({config_path()}):")
     for f in FIELDS.values():
         value = values.get(f.env, f.default)
         print(f"  {f.env:<22} {('***' if value else '') if f.secret else value}")

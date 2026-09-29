@@ -1,5 +1,5 @@
 [Unit]
-Description=CactAI core (risk engine, agents, API)
+Description=SentrAI core (risk engine, agents, API)
 PartOf=cactai.target
 After=network-online.target
 Wants=network-online.target

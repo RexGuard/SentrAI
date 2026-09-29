@@ -1,7 +1,7 @@
-"""Aegis Academy Student Portal — the CactAI demo target app.
+"""Aegis Academy Student Portal — the SentrAI demo target app.
 
 A deliberately small, FICTIONAL student portal (Flask, 127.0.0.1:5000). It
-produces realistic-looking logs for the collector and honors CactAI's
+produces realistic-looking logs for the collector and honors SentrAI's
 containment blocklist. Nothing here is a real system and no user input is
 ever executed as a command.
 """
@@ -175,7 +175,7 @@ def create_app(start_polling: bool = False, core_url: str | None = None,
 def main() -> None:
     core = os.environ.get("CACTAI_CORE_URL", DEFAULT_CORE_URL)
     app = create_app(start_polling=True, core_url=core)
-    print("Aegis Academy Student Portal (CactAI demo target)")
+    print("Aegis Academy Student Portal (SentrAI demo target)")
     print(f"  serving  http://127.0.0.1:5000")
     print(f"  logs     {paths.logs_dir()}")
     print(f"  core     {core} (blocklist poll every 2s, fail-open)")

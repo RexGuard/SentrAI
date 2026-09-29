@@ -1,1 +1,1 @@
-"""CactAI core service."""
+"""SentrAI core service."""

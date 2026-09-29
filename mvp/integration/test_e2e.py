@@ -1,4 +1,4 @@
-"""End-to-end test of the CactAI demo story against the REAL components.
+"""End-to-end test of the SentrAI demo story against the REAL components.
 
 Starts core (:8000), the target app (:5000) and the collector as subprocesses using each
 component's own venv, then runs the lab attack scripts and checks the whole chain:

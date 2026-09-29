@@ -1,7 +1,7 @@
 ---
 layout: null
-title: CactAI
-description: CactAI watches your systems, scores risk from 0 to 100, applies temporary fixes when nobody acts, and keeps tamper-evident proof of who knew what and when.
+title: SentrAI
+description: SentrAI watches your systems, scores risk from 0 to 100, applies temporary fixes when nobody acts, and keeps tamper-evident proof of who knew what and when.
 ---
 <!doctype html>
 <html lang="en">
@@ -18,15 +18,15 @@ description: CactAI watches your systems, scores risk from 0 to 100, applies tem
       <div>
         <p class="eyebrow">Cybersecurity + AI for small organizations</p>
         <h1>Alerts don't stop breaches. <em>Acting on them does.</em></h1>
-        <p class="lede">CactAI watches the web, database and OS layers, turns every anomaly into a live 0 to 100 risk score that grows while nobody acts, applies a temporary fix when your tolerance is crossed, and keeps tamper-evident proof of who knew what and when.</p>
+        <p class="lede">SentrAI watches the web, database and OS layers, turns every anomaly into a live 0 to 100 risk score that grows while nobody acts, applies a temporary fix when your tolerance is crossed, and keeps tamper-evident proof of who knew what and when.</p>
         <div class="cta">
           <a class="btn btn-primary" href="#how">See how it works</a>
           <a class="btn btn-ghost" href="https://github.com/RexGuard/cactai/tree/main/mvp">Explore the prototype</a>
         </div>
-        <p class="quote">"A cactus doesn't chase you. It just makes touching it a bad idea."</p>
+        <p class="quote">"A sentry doesn't chase you. It just guards the gate."</p>
       </div>
 
-      <div class="gauge-card" aria-label="Example incident: risk rose to 82 and CactAI applied a temporary block">
+      <div class="gauge-card" aria-label="Example incident: risk rose to 82 and SentrAI applied a temporary block">
         <div class="top"><span>Student portal · live risk</span><span class="pill">Red band</span></div>
         <svg class="gauge" viewBox="0 0 200 120" role="img" aria-label="Risk index 82 out of 100">
           <defs>
@@ -85,7 +85,7 @@ description: CactAI watches your systems, scores risk from 0 to 100, applies tem
         <li><h3>Collect</h3><p>Web, database and OS logs are gathered per layer. Scout helps a novice technician find where logs live on unfamiliar systems.</p></li>
         <li><h3>Classify</h3><p>Rules plus AI categorize each event (brute force, SQL injection, exfiltration, misconfiguration) with a confidence that feeds the score.</p></li>
         <li><h3>Score</h3><p>A live 0 to 100 risk index with an inaction penalty, so an ignored alert gets louder every hour instead of fading away.</p></li>
-        <li><h3>Respond</h3><p>Past your threshold, CactAI blocks or locks with a time limit, escalates up the ladder, and writes every step to a hash-chained log.</p></li>
+        <li><h3>Respond</h3><p>Past your threshold, SentrAI blocks or locks with a time limit, escalates up the ladder, and writes every step to a hash-chained log.</p></li>
       </ol>
     </div>
   </section>
@@ -131,15 +131,15 @@ description: CactAI watches your systems, scores risk from 0 to 100, applies tem
     </div>
   </section>
 
-  <!-- Cactus ethics -->
+  <!-- Sentry ethics -->
   <section id="cactus">
     <div class="wrap">
-      <p class="eyebrow">The cactus principle</p>
-      <h2 class="section-title">Left alone, it does no harm. Attack it, and it pricks you.</h2>
-      <p class="lede">CactAI never hacks back. Striking an attacker's machine is an offence under Singapore's Computer Misuse Act, and attacks usually come through hijacked computers owned by other victims. The spines stay on the cactus.</p>
+      <p class="eyebrow">The sentry principle</p>
+      <h2 class="section-title">Left alone, it does no harm. Cross the line, and it stops you.</h2>
+      <p class="lede">SentrAI never hacks back. Striking an attacker's machine is an offence under Singapore's Computer Misuse Act, and attacks usually come through hijacked computers owned by other victims. It holds the line and never crosses it.</p>
       <div class="split">
         <div class="do">
-          <h3>What CactAI does, inside your network</h3>
+          <h3>What SentrAI does, inside your network</h3>
           <ul>
             <li>Blocks IPs, locks accounts and rate-limits logins</li>
             <li>Slows attackers down with tarpits</li>
@@ -148,7 +148,7 @@ description: CactAI watches your systems, scores risk from 0 to 100, applies tem
           </ul>
         </div>
         <div class="dont">
-          <h3>What CactAI never does</h3>
+          <h3>What SentrAI never does</h3>
           <ul>
             <li>Access, scan or disrupt the attacker's systems</li>
             <li>Make a fix permanent without a human decision</li>
@@ -160,15 +160,15 @@ description: CactAI watches your systems, scores risk from 0 to 100, applies tem
     </div>
   </section>
 
-  <!-- Why CactAI -->
+  <!-- Why SentrAI -->
   <section class="alt" id="why">
     <div class="wrap">
-      <p class="eyebrow">Why CactAI</p>
+      <p class="eyebrow">Why SentrAI</p>
       <h2 class="section-title">Three tools you'd otherwise buy separately, in one product.</h2>
       <p class="lede">Automated response, on-call escalation and compliance evidence all exist today, but as separate products sized for larger teams.</p>
       <div class="table-scroll">
         <table class="compare">
-          <thead><tr><th>Need</th><th>Usually</th><th>CactAI</th></tr></thead>
+          <thead><tr><th>Need</th><th>Usually</th><th>SentrAI</th></tr></thead>
           <tbody>
             <tr><td>Contain an attack</td><td>Enterprise auto-response tools, fixes can stay forever</td><td>Temporary fixes that expire without a human decision</td></tr>
             <tr><td>Make sure someone acts</td><td>A separate on-call paging service</td><td>Risk that grows with inaction, plus an escalation ladder</td></tr>
@@ -183,10 +183,10 @@ description: CactAI watches your systems, scores risk from 0 to 100, applies tem
   <section id="demo">
     <div class="wrap">
       <p class="eyebrow">Working prototype</p>
-      <h2 class="section-title">A fictional student portal gets attacked. CactAI handles it.</h2>
-      <p class="lede">The MVP runs on one Windows laptop: attack scripts hit the demo portal, CactAI scores the risk, alerts the operator, blocks the attackers when the score crosses 80, and writes a hash-chained evidence report. One script starts everything, and automated tests cover the full story end to end.</p>
+      <h2 class="section-title">A fictional student portal gets attacked. SentrAI handles it.</h2>
+      <p class="lede">The MVP runs on one Windows laptop: attack scripts hit the demo portal, SentrAI scores the risk, alerts the operator, blocks the attackers when the score crosses 80, and writes a hash-chained evidence report. One script starts everything, and automated tests cover the full story end to end.</p>
       <div class="figure">
-        <img src="{{ '/mvp/pitch/architecture.svg' | relative_url }}" alt="CactAI architecture: collector, classifier and responder around the risk engine, with the agents, dashboard and notifier" loading="lazy" width="1400" height="900">
+        <img src="{{ '/mvp/pitch/architecture.svg' | relative_url }}" alt="SentrAI architecture: collector, classifier and responder around the risk engine, with the agents, dashboard and notifier" loading="lazy" width="1400" height="900">
       </div>
       <p class="figcap">Architecture: collector, classifier and responder around a deterministic risk engine.</p>
       <div class="cta" style="margin-top:24px">
@@ -224,7 +224,7 @@ description: CactAI watches your systems, scores risk from 0 to 100, applies tem
   <section id="team">
     <div class="wrap">
       <p class="eyebrow">Team</p>
-      <h2 class="section-title">The people behind CactAI.</h2>
+      <h2 class="section-title">The people behind SentrAI.</h2>
       <div class="team" style="margin-top:28px">
         <div class="member"><div class="avatar" aria-hidden="true">ES</div><div><b>Erick Sientaro</b><span>Developer, builds the prototype</span></div></div>
         <div class="member"><div class="avatar" aria-hidden="true">I</div><div><b>Ishmail</b><span>CEO, pitch and narration</span></div></div>

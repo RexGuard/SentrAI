@@ -1,4 +1,4 @@
-"""Fake CactAI core for UI development (implements the endpoints in mvp/CONTRACT.md).
+"""Fake SentrAI core for UI development (implements the endpoints in mvp/CONTRACT.md).
 
 NOT the real core. In-memory, single process, plays a scripted demo scenario:
   t≈4 s   brute_force incident opens (risk ≈ 40, amber) + notification
@@ -57,7 +57,7 @@ RECOMMEND = {
     "misconfiguration": "Remove the public ACL and enable default encryption",
 }
 
-app = FastAPI(title="CactAI FAKE core (dev only)")
+app = FastAPI(title="SentrAI FAKE core (dev only)")
 lock = threading.RLock()
 
 
@@ -463,7 +463,7 @@ def post_chat(body: dict = Body(...)):
 FAKE_SCAN = {
     "platform": "Windows", "enabled": True, "scanned": 142, "skipped_protected": 3, "recognised": 3, "error": None,
     "notes": ["MySQL / MariaDB database: The error log shows failed logins only when log_error_verbosity is 3."],
-    "processes": [{"pid": 1200, "name": "python.exe", "program": "CactAI lab: fake student portal", "layer": "web",
+    "processes": [{"pid": 1200, "name": "python.exe", "program": "SentrAI lab: fake student portal", "layer": "web",
                    "path": "~\\cactai\\mvp\\lab\\.venv\\Scripts\\python.exe", "account": "(user)", "service": "",
                    "log_options": []},
                   {"pid": 1300, "name": "nginx.exe", "program": "nginx web server", "layer": "web",
@@ -473,7 +473,7 @@ FAKE_SCAN = {
          "format": "text", "reasons": ["next to the program"], "files_found": 2, "already_watched": False,
          "files": [{"id": "s1f1", "name": "access.log", "size": 20480, "modified": "2026-09-28T20:01:00", "watched": False},
                    {"id": "s1f2", "name": "error.log", "size": 512, "modified": "2026-09-28T19:00:00", "watched": False}]},
-        {"id": "s2", "path": "~\\cactai\\mvp\\lab\\logs", "kind": "folder", "program": "CactAI lab: fake student portal",
+        {"id": "s2", "path": "~\\cactai\\mvp\\lab\\logs", "kind": "folder", "program": "SentrAI lab: fake student portal",
          "layer": "web", "format": "jsonl", "reasons": ["logs folder of the app"], "files_found": 1, "already_watched": True,
          "files": [{"id": "s2f1", "name": "access.jsonl", "size": 4096, "modified": "2026-09-28T20:02:00", "watched": True}]},
     ],

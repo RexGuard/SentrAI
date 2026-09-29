@@ -1,4 +1,4 @@
-"""CactAI core API (FastAPI, http://127.0.0.1:8000). Endpoints follow mvp/CONTRACT.md."""
+"""SentrAI core API (FastAPI, http://127.0.0.1:8000). Endpoints follow mvp/CONTRACT.md."""
 
 from __future__ import annotations
 
@@ -155,7 +155,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                                 "(python cactai_config.py token shows it)",
                                 headers={"WWW-Authenticate": "Bearer"})
 
-    app = FastAPI(title="CactAI core", version="0.1.0", lifespan=lifespan, dependencies=[Depends(require_token)])
+    app = FastAPI(title="SentrAI core", version="0.1.0", lifespan=lifespan, dependencies=[Depends(require_token)])
     app.state.core = core
     app.state.chat = chat
     app.state.discovery = discovery

@@ -1,6 +1,6 @@
 # Classifier evaluation
 
-How well CactAI's classifier (part 2 of 3) labels events, per category.
+How well SentrAI's classifier (part 2 of 3) labels events, per category.
 
 ```
 python eval/evaluate.py          # scores eval/events.jsonl, writes eval/results/

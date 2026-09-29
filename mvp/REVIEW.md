@@ -1,4 +1,4 @@
-# CactAI MVP review (PARTIAL)
+# SentrAI MVP review (PARTIAL)
 
 Status: PARTIAL. The user asked to stop early. When the review stopped, no component had a README.md yet, so none was marked finished.
 Reviewed so far: `core/app/*.py` only (main, saguaro, agents, rules, classifier, jev_client, audit, clock, risk, config, part of reports) against `CONTRACT.md`.

@@ -1,4 +1,4 @@
-"""Minimal CactAI core API client for the notifier (see mvp/CONTRACT.md)."""
+"""Minimal SentrAI core API client for the notifier (see mvp/CONTRACT.md)."""
 from __future__ import annotations
 
 from typing import Any

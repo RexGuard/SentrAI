@@ -74,7 +74,7 @@ def guard_or_exit(host: str, port: int) -> str:
 
 def banner(name: str, base: str, src_ip: str, count: int, delay: float) -> None:
     print("=" * 62)
-    print(f"  CactAI lab attack: {name}")
+    print(f"  SentrAI lab attack: {name}")
     print(f"  target   : {base}")
     print(f"  attacker : {src_ip}  (X-Demo-Src-IP)")
     print(f"  count    : {count}   delay: {delay}s")

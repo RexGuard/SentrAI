@@ -86,7 +86,7 @@ def format_email(notification: dict, incident: dict | None = None, risk: dict | 
     """(subject, plain text, HTML) with the same content as the Telegram alert."""
     f = alert_fields(notification, incident, risk)
     risk_txt = f"{f['risk_index']}/100 {f['band'].upper()}" if f["risk_index"] is not None else "-"
-    subject = f"[CactAI] {f['header']}: {f['incident_id']} {f['title']}"
+    subject = f"[SentrAI] {f['header']}: {f['incident_id']} {f['title']}"
     if f["risk_index"] is not None:
         subject += f" · risk {f['risk_index']}"
 
@@ -100,8 +100,8 @@ def format_email(notification: dict, incident: dict | None = None, risk: dict | 
         rows.append(("Inaction penalty", f"+{f['penalty']} pts" + (" · SLA BREACHED" if f["sla_breached"] else "")))
     rows.append(("Recommended", str(f["recommended"])))
     actions = [label.split(" ", 1)[-1] for label, _ in button_specs(notification, incident)]
-    act = (f"To {' or '.join(actions)}, open the CactAI dashboard: {dashboard_url}" if actions
-           else f"Details on the CactAI dashboard: {dashboard_url}")
+    act = (f"To {' or '.join(actions)}, open the SentrAI dashboard: {dashboard_url}" if actions
+           else f"Details on the SentrAI dashboard: {dashboard_url}")
     if f["kind"] in ("autonomous_action", "containment"):
         note = "Temporary, reversible fix with TTL. Choose Rollback or Make Permanent."
     else:

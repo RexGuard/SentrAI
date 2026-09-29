@@ -1,6 +1,6 @@
-# CactAI Lab (target app · collector · attacks · replay)
+# SentrAI Lab (target app · collector · attacks · replay)
 
-The **lab** half of the CactAI MVP: a fictional victim web app, a log
+The **lab** half of the SentrAI MVP: a fictional victim web app, a log
 collector that feeds the core, scripted attacks for the demo, and a replay
 fallback. Everything runs natively on Windows, on localhost, no Docker.
 

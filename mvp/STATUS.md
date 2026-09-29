@@ -1,4 +1,4 @@
-# CactAI MVP status (27 Sep 2026)
+# SentrAI MVP status (27 Sep 2026)
 
 **The MVP is complete and verified end to end.** See [README.md](README.md) to run it.
 

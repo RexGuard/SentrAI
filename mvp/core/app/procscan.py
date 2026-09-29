@@ -2,7 +2,7 @@
 
 Scout (``lab/scout``) finds log files by following a technician through the folders. This is
 the automatic half: list the running processes, recognise the known ones (web servers,
-databases, app servers, remote access, CactAI's own lab), and point at their log files.
+databases, app servers, remote access, SentrAI's own lab), and point at their log files.
 The result is only a list of *suggestions*. Nothing is watched until an operator approves a
 path (``POST /log-sources``), which the collector then picks up.
 
@@ -369,16 +369,16 @@ def match(p: Proc) -> Program | None:
     return None
 
 
-# CactAI's own parts: listed, but their logs are not suggested (they are not the systems it defends).
-OWN = ("CactAI core", "CactAI collector", "CactAI dashboard", "CactAI notifier")
+# SentrAI's own parts: listed, but their logs are not suggested (they are not the systems it defends).
+OWN = ("SentrAI core", "SentrAI collector", "SentrAI dashboard", "SentrAI notifier")
 
 
 def _describe(prog: Program | None, p: Proc) -> str:
     if prog and prog.key == "python":
         args = " ".join([p.exe, *p.cmdline[:6]]).lower().replace("\\", "/")
-        for key, text in (("target_app", "CactAI lab: fake student portal"), ("app.main:app", "CactAI core"),
-                          ("collector.collector", "CactAI collector"), ("dashboard/", "CactAI dashboard"),
-                          ("notifier.py", "CactAI notifier"), ("uvicorn", "Python web server (uvicorn)"),
+        for key, text in (("target_app", "SentrAI lab: fake student portal"), ("app.main:app", "SentrAI core"),
+                          ("collector.collector", "SentrAI collector"), ("dashboard/", "SentrAI dashboard"),
+                          ("notifier.py", "SentrAI notifier"), ("uvicorn", "Python web server (uvicorn)"),
                           ("streamlit", "Python dashboard (Streamlit)"),
                           ("gunicorn", "Python web server (gunicorn)"), ("flask", "Python web app (Flask)")):
             if key in args or key in _short(p.name):
