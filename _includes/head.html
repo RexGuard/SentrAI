@@ -2,8 +2,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% if page.title and page.title != site.title %}{{ page.title }} · {{ site.title }}{% else %}{{ site.title }} · {{ site.description }}{% endif %}</title>
 <meta name="description" content="{{ page.description | default: site.description }}">
-<meta name="theme-color" content="#1f5e3b">
+<meta name="theme-color" content="#f5f7fb" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0b111d" media="(prefers-color-scheme: dark)">
 <meta property="og:title" content="{{ page.title | default: site.title }}">
 <meta property="og:description" content="{{ page.description | default: site.description }}">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
+<meta property="og:image" content="{{ '/assets/brand/social-card.png' | absolute_url }}">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="{{ '/assets/brand/favicon.svg' | relative_url }}" type="image/svg+xml">
+<link rel="icon" href="{{ '/assets/brand/favicon.ico' | relative_url }}" sizes="any">
+<link rel="apple-touch-icon" href="{{ '/assets/brand/apple-touch-icon.png' | relative_url }}">
+<link rel="stylesheet" href="{{ '/assets/brand/tokens.css' | relative_url }}">
 <link rel="stylesheet" href="{{ '/assets/cactai.css' | relative_url }}">

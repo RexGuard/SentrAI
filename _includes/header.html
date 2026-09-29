@@ -1,7 +1,7 @@
 <a class="skip" href="#main">Skip to content</a>
 <header class="site-header">
   <div class="wrap">
-    <a class="brand" href="{{ '/' | relative_url }}"><span class="mark" aria-hidden="true">🛡️</span> SentrAI</a>
+    <a class="brand" href="{{ '/' | relative_url }}" aria-label="SentrAI home"><picture><source srcset="{{ '/assets/brand/logo-dark.svg' | relative_url }}" media="(prefers-color-scheme: dark)"><img src="{{ '/assets/brand/logo.svg' | relative_url }}" alt="SentrAI" width="128" height="34"></picture></a>
     <button class="menu-btn" aria-expanded="false" aria-controls="nav">Menu</button>
     <nav class="nav" id="nav" aria-label="Main">
       <a href="{{ '/#how' | relative_url }}">How it works</a>
@@ -9,7 +9,7 @@
       <a href="{{ '/#demo' | relative_url }}">Prototype</a>
       <a href="{{ '/Cybersecurity%20+%20AI.html' | relative_url }}"{% if page.nav == 'plan' %} aria-current="page"{% endif %}>Plan</a>
       <a href="{{ '/ROADMAP.html' | relative_url }}"{% if page.nav == 'roadmap' %} aria-current="page"{% endif %}>Roadmap</a>
-      <a class="gh" href="https://github.com/RexGuard/cactai">GitHub</a>
+      <a class="gh" href="https://github.com/RexGuard/SentrAI">GitHub</a>
     </nav>
   </div>
 </header>

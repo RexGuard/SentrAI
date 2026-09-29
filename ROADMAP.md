@@ -6,7 +6,7 @@ title: SentrAI Roadmap
 
 From the working hackathon MVP (27 Sep 2026) to a product a Singapore SME or private school can run in production.
 
-[← Home](./) · [Full plan](https://rexguard.github.io/cactai/Cybersecurity%20+%20AI.html) · [MVP code](https://github.com/RexGuard/cactai/tree/main/mvp)
+[← Home](./) · [Full plan](https://rexguard.github.io/SentrAI/Cybersecurity%20+%20AI.html) · [MVP code](https://github.com/RexGuard/SentrAI/tree/main/mvp)
 
 **How to read this:** 9 phases, each with a goal, the features it adds, a done-when check, the owner, and a rough effort in developer-days for one developer (Erick). Effort figures are estimates made from the current codebase, not measurements; treat them as ±50%. Phases 2 to 6 can overlap once Phase 1 is done.
 
