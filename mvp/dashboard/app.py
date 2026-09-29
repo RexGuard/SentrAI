@@ -21,6 +21,7 @@ from typing import Any
 import streamlit as st
 
 from cactai_ui import shaping as sh
+from cactai_ui import signin
 from cactai_ui.api import CoreClient, CoreError
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
@@ -51,28 +52,60 @@ st.markdown(f"<style>{CSS}</style>", unsafe_allow_html=True)
 
 # ------------------------------------------------------------------ login
 
+def _client_ip() -> str:
+    try:
+        ip = st.context.ip_address
+    except Exception:  # noqa: BLE001 - no browser behind this run
+        ip = None
+    return ip if isinstance(ip, str) and ip else "local"  # a test run has no real address
+
+
+def check_login(email: str, password: str, account: dict[str, str]) -> bool:
+    if not hmac.compare_digest(email.strip().lower().encode(), account["email"].strip().lower().encode()):
+        cfg.check_password(password, cfg.hash_password("x"))  # same work either way, so timing tells nothing
+        return False
+    if account["plain"]:
+        return hmac.compare_digest(password.encode(), account["plain"].encode())
+    return cfg.check_password(password, account["hash"])
+
+
 def login() -> None:
-    """Ask for the dashboard password (setup wizard, section 6) once per browser session.
+    """Ask for the dashboard email and password (setup wizard section 6) once per browser session.
 
-    Without a password the console opens straight away, as it did before; the core API
-    still needs its token either way.
+    run_demo and deploy/install.sh make the sign-in on first run (python cactai_config.py admin).
+    CACTAI_DASHBOARD_LOGIN=off skips it, for local testing only. The core API needs its token either way.
     """
-    password = os.environ.get(cfg.PASSWORD_ENV, "")
-    if not password or st.session_state.get("signed_in"):
+    if not cfg.login_required() or st.session_state.get("signed_in"):
         return
+    account = cfg.dashboard_login()
     _, mid, _ = st.columns([1, 1.2, 1])
+    brand = ('<div class="brand"><div class="brand-mark">' + SHIELD + '</div><div>'
+             '<div class="brand-name">Sentr<span>AI</span></div>'
+             '<div class="brand-tag">Risk Console</div></div></div>')
+    if not account["hash"] and not account["plain"]:
+        with mid.container(border=True):
+            st.markdown(brand, unsafe_allow_html=True)
+            st.warning("No dashboard sign-in is set up yet. On this machine, run "
+                       "`python cactai_config.py admin` (on a server: `sudo cactai-admin`), then reload this page.")
+        st.stop()
     with mid.form("login"):
-        st.markdown('<div class="brand"><div class="brand-mark">' + SHIELD + '</div><div>'
-                    '<div class="brand-name">Sentr<span>AI</span></div>'
-                    '<div class="brand-tag">Risk Console</div></div></div>', unsafe_allow_html=True)
-        typed = st.text_input("Password", type="password")
+        st.markdown(brand, unsafe_allow_html=True)
+        email = st.text_input("Email", autocomplete="username",
+                              placeholder=account["email"] if account["email"].endswith(".local") else "")
+        typed = st.text_input("Password", type="password", autocomplete="current-password")
         if st.form_submit_button("Sign in", type="primary", width="stretch"):
-            if hmac.compare_digest(typed.encode(), password.encode()):
-                st.session_state.signed_in = True
+            ip = _client_ip()
+            wait = signin.wait_seconds(ip)
+            if wait:
+                st.error(f"Too many wrong tries. Wait {int(wait) // 60 + 1} min and try again.")
+            elif check_login(email, typed, account):
+                signin.succeeded(ip)
+                st.session_state.signed_in = account["email"]
                 st.rerun()
-            st.error("Wrong password.")
+            else:
+                signin.failed(ip)
+                st.error("Wrong email or password.")
     st.stop()
-
 
 login()
 
@@ -260,7 +293,8 @@ with st.sidebar:
                  help="POST /demo/reset: clears state for a fresh take"):
         run_action("Demo reset", lambda: client.reset_demo(), rerun=False)
         st.session_state.seen = {}
-    if st.session_state.get("signed_in") and st.button("Sign out", icon=":material/logout:", width="stretch"):
+    if st.session_state.get("signed_in") and st.button("Sign out", icon=":material/logout:", width="stretch",
+                                                       help=f"Signed in as {st.session_state.signed_in}"):
         st.session_state.signed_in = False
         st.rerun()
     st.markdown('<div class="side-foot">A sentry doesn\'t chase you. It just guards the gate.</div>',
@@ -434,7 +468,7 @@ def page_config() -> None:
     if o2.button("Set up with Cyanide", icon=":material/forum:", width="stretch"):
         start_setup()
     current = {f.env: f.default for f in cfg.FIELDS.values()} | cfg.read()
-    values = {}
+    values, new_password = {}, ""
     preset = cfg.SECTIONS[0]
     with st.container(border=True):
         section(preset.title, preset.about, "verified_user")
@@ -466,6 +500,16 @@ def page_config() -> None:
                                            disabled=True, help=f"Environment variable {f.env}. Generated by setup; "
                                            "python cactai_config.py token prints it.")
                     continue
+                if f.hashed:  # never shown: a new one replaces it, blank keeps it
+                    typed = cols[n % 2].text_input("New dashboard password (blank keeps the current one)",
+                                                   key=f"cfg_{f.env}", type="password",
+                                                   help=f"At least {cfg.MIN_PASSWORD} characters. Saved only as a "
+                                                        "hash; applies at the next sign-in.")
+                    if typed and len(typed) < cfg.MIN_PASSWORD:
+                        cols[n % 2].error(f"Use at least {cfg.MIN_PASSWORD} characters; the old password stays.")
+                        typed = ""
+                    values[f.env], new_password = current[f.env], typed
+                    continue
                 values[f.env] = cols[n % 2].text_input(
                     f.prompt, value=current[f.env], key=f"cfg_{f.env}", help=f"Environment variable {f.env}",
                     type="password" if f.secret else "default").strip()
@@ -474,6 +518,8 @@ def page_config() -> None:
         if bad:
             st.error("Please enter a number for: " + "; ".join(bad))
         else:
+            if new_password:  # hashed only on Save: hashing is slow on purpose
+                values[cfg.HASH_ENV] = cfg.hash_password(new_password)
             path = cfg.save(values)
             cfg.mark_setup_done("dashboard")
             ai, err = safe(client.ai_reload)

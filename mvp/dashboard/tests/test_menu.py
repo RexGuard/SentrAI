@@ -249,21 +249,63 @@ def test_preset_fills_the_values_and_a_change_by_hand_switches_to_advanced(fake_
     assert at.text_input(key="cfg_SLA_HOURS").value == cfg.preset_values("balanced")["SLA_HOURS"]
 
 
-def test_login_asks_for_the_dashboard_password(fake_core, tmp_path, monkeypatch):
+def _login_app(fake_core, tmp_path, monkeypatch):
     from streamlit.testing.v1 import AppTest
 
     monkeypatch.setenv("CACTAI_CONFIG", str(tmp_path / "config.json"))
-    monkeypatch.setenv(cfg.PASSWORD_ENV, "cactus")
+    monkeypatch.delenv("CACTAI_DASHBOARD_LOGIN")
     at = AppTest.from_file(APP, default_timeout=20)
     at.session_state["core_url"] = fake_core
     at.session_state["auto_refresh"] = False
+    return at
+
+
+def test_login_asks_for_email_and_password(fake_core, tmp_path, monkeypatch):
+    at = _login_app(fake_core, tmp_path, monkeypatch)
+    email, password = cfg.ensure_admin("erick@example.com")
+    assert password and "pbkdf2_sha256$" in (tmp_path / "config.json").read_text()
+    assert password not in (tmp_path / "config.json").read_text()
     at.run()
     assert not at.sidebar.button  # nothing but the login form
-    at.text_input[0].input("wrong")
+    at.text_input[0].input(email)
+    at.text_input[1].input("wrong-password")
     at.button[0].click().run()
-    assert "Wrong password." in [e.value for e in at.error]
-    at.text_input[0].input("cactus")
+    assert "Wrong email or password." in [e.value for e in at.error]
+    at.text_input[0].input("ERICK@example.com ")
+    at.text_input[1].input(password)
     at.button[0].click().run()
     assert not at.exception, at.exception
     assert any("Collector" in b.label for b in at.sidebar.button)
+    assert any(b.label == "Sign out" for b in at.sidebar.button)
+
+
+def test_login_locks_after_repeated_wrong_tries(fake_core, tmp_path, monkeypatch):
+    at = _login_app(fake_core, tmp_path, monkeypatch)
+    email, password = cfg.ensure_admin("lock@example.com")
+    at.run()
+    for _ in range(5):
+        at.text_input[0].input(email)
+        at.text_input[1].input("nope-nope")
+        at.button[0].click().run()
+    at.text_input[0].input(email)
+    at.text_input[1].input(password)
+    at.button[0].click().run()
+    assert any("Too many wrong tries" in e.value for e in at.error)
+    assert not any("Collector" in b.label for b in at.sidebar.button)
+
+
+def test_without_a_sign_in_the_dashboard_says_how_to_make_one(fake_core, tmp_path, monkeypatch):
+    at = _login_app(fake_core, tmp_path, monkeypatch)
+    at.run()
+    assert not at.sidebar.button
+    assert any("cactai_config.py admin" in w.value for w in at.warning)
+
+
+def test_plain_password_from_the_environment_still_works(fake_core, tmp_path, monkeypatch):
+    at = _login_app(fake_core, tmp_path, monkeypatch)
+    monkeypatch.setenv(cfg.PASSWORD_ENV, "cactus-cactus")
+    at.run()
+    at.text_input[0].input(cfg.FIELDS[cfg.EMAIL_ENV].default)
+    at.text_input[1].input("cactus-cactus")
+    at.button[0].click().run()
     assert any(b.label == "Sign out" for b in at.sidebar.button)
