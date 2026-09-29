@@ -16,7 +16,7 @@
 - lab target app exposes `/healthz`, not `/health`. `run_demo.ps1` should probe `/healthz` on :5000 (contract does not define a target health route).
 - core rules: brute force is detected from access-log lines `POST /login 401` (5 in 60 s per src_ip). The auth-log line `login fail user=admin` does not match any rule and falls through to Jev/fallback classifier (possible extra/odd incidents).
 - lab `blocklist.poll_once` keeps the last list when core is unreachable (does not strictly "allow" on core down if a block was active before). Minor contract deviation.
-- Autonomous path in core: containment only for incidents that are `open`, not acked, not `needs_review`, and approved by Needle. Acking an incident before risk >= 80 prevents the autonomous block for it; the e2e test must ack only after the block appears.
+- Autonomous path in core: containment only for incidents that are `open`, not acked, not `needs_review`, and approved by Countersign. Acking an incident before risk >= 80 prevents the autonomous block for it; the e2e test must ack only after the block appears.
 - Report `.md` always contains "Ack: ..." ("Ack: none" when unacked).
 
 ## How to resume

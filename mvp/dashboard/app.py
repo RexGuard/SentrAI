@@ -639,7 +639,7 @@ def page_approvals() -> None:
         st.warning(f"Could not load incidents: {err}")
     waiting = sh.pending_approvals(incidents or [])
     if not waiting:
-        empty("Nothing waiting for a decision. The desert is quiet.", "check_circle", good=True)
+        empty("Nothing waiting for a decision. All quiet at the gate.", "check_circle", good=True)
         return
     for n, inc in enumerate(waiting):
         can = sh.available_actions(inc)
@@ -978,7 +978,7 @@ def page_responder() -> None:
         section("Action history", "every action is reversible and expires unless a person keeps it", "history")
         table(history, "No actions taken yet.")
     with right, st.container(border=True):
-        section("Needle reviews", "two-key check before any autonomous action", "key")
+        section("Countersign reviews", "two-key check before any autonomous action", "key")
         render_feed(sh.build_activity_feed(sh.records_of(records, "needle_review", "action_applied",
                                                          "auto_rollback", "action_rolled_back"), limit=15))
 
@@ -1030,7 +1030,7 @@ def page_review() -> None:
                 "index = 100·(1−e^(−raw/60))", "calculate")
         if inc_err:
             st.warning(f"Could not load incidents: {inc_err}")
-        table(sh.risk_breakdown(incidents), "Quiet desert. No incidents.", column_config={
+        table(sh.risk_breakdown(incidents), "All quiet at the gate. No incidents.", column_config={
             "Confidence": st.column_config.ProgressColumn("Confidence", min_value=0, max_value=1, format="%.2f"),
             "Inaction penalty": st.column_config.NumberColumn("Inaction penalty", format="+%.0f pts")})
 

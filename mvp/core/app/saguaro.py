@@ -1,4 +1,4 @@
-"""Saguaro: lead orchestrator. Owns incidents, the risk index, notifications and the hotpatch workflow.
+"""Warden (class Saguaro): lead orchestrator. Owns incidents, the risk index, notifications and the hotpatch workflow.
 
 Incidents, actions (blocks) and notifications are saved to SQLite next to the audit chain after
 every change and restored on startup (state.py), so a restart keeps them. POST /demo/reset clears both.
@@ -38,7 +38,7 @@ from .jev_client import JevClient
 from .netlogs import enrich
 from .responders import BlocklistResponder, Responders, SimulatedResponder
 from .risk import SEVERITY, band, band_rank, inaction_penalty, risk_index
-from .rules import RulesEngine
+from .rules import TRIPWIRE_REASONS, RulesEngine
 from .state import StateStore
 
 RISK_STATUSES = ("open", "acknowledged")  # count toward raw score
@@ -84,8 +84,13 @@ def public(obj: Any) -> Any:
     return copy.deepcopy(obj)
 
 
+# Agent names used before the SentrAI sentry theme, still found in saved incidents and audit records.
+LEGACY_AGENT_NAMES = {"Saguaro": "Warden", "Root": "Gatehouse", "Reservoir": "Vault", "SpineNet": "Watchtower",
+                      "AreoleLinux": "Garrison-Linux", "AreoleWin": "Garrison-Win", "Needle": "Countersign"}
+
+
 class Saguaro(Agent):
-    name = "Saguaro"
+    name = "Warden"
     role = "lead orchestrator: routes events, merges findings, owns the risk index"
 
     def __init__(self, settings: Settings | None = None) -> None:
@@ -177,6 +182,7 @@ class Saguaro(Agent):
         return self.root
 
     def _agent(self, name: str) -> LayerAgent:
+        name = LEGACY_AGENT_NAMES.get(name, name)  # incidents saved before the sentry names
         for a in self.layer_agents():
             if a.name == name:
                 return a
@@ -367,7 +373,7 @@ class Saguaro(Agent):
             inc["malicious_probability"] = max(inc["malicious_probability"], cls.malicious)
             inc["_autonomous_denied"] = False
             changed = True
-        if cls.reason.startswith("Cactus spine:") and not str(inc.get("classification_reason")).startswith("Cactus spine:"):
+        if cls.reason.startswith(TRIPWIRE_REASONS) and not str(inc.get("classification_reason")).startswith(TRIPWIRE_REASONS):
             inc["classification_reason"] = cls.reason  # a decoy touch is the strongest evidence: lead with it
         if changed:
             inc["points"] = round(inc["base_points"] * inc["ai_confidence"] * inc["asset_criticality"], 1)
@@ -692,8 +698,8 @@ class Saguaro(Agent):
                 inc["_autonomous_denied"] = True
                 self._timeline(inc, now, "needle_denied", review.reasoning)
                 self._notify(now, "needs_operator", inc["id"], [s.on_duty, s.team_lead],
-                             f"{inc['id']}: autonomous action denied by Needle",
-                             f"{self._headline(inc, self._last_risk)}\nNeedle denied autonomous action: {review.reasoning}\n"
+                             f"{inc['id']}: autonomous action denied by Countersign",
+                             f"{self._headline(inc, self._last_risk)}\nCountersign denied autonomous action: {review.reasoning}\n"
                              f"A human must decide. Recommended: {inc['recommended_action']}.", BUTTONS_DECIDE)
                 return False
             approved = review.approved_proposals
@@ -702,7 +708,7 @@ class Saguaro(Agent):
             self.scribe.record(self.needle.name, "needle_review", {
                 "incident": inc["id"], "approved": True, "operator": approver,
                 "reasoning": f"Operator {approver} approved; the human decision is the second key. "
-                             f"Needle checked the allowlist only ({len(approved)} action(s)).",
+                             f"Countersign checked the allowlist only ({len(approved)} action(s)).",
                 "justification": justification})
         if not approved:
             self._timeline(inc, now, "no_playbook", "No allowlisted playbook applies")
@@ -736,7 +742,7 @@ class Saguaro(Agent):
             self._notify(now, "autonomous_action", inc["id"], [s.on_duty, s.it_manager, s.cxo],
                          f"{inc['id']}: autonomous containment engaged",
                          f"\U0001f335 SentrAI autonomous override on {inc['id']} (risk {risk_idx}/100 >= {s.threshold}, "
-                         f"no acknowledgement). Approved by Needle. Applied for {s.ttl_hours:g} h: {summary}.\n"
+                         f"no acknowledgement). Approved by Countersign. Applied for {s.ttl_hours:g} h: {summary}.\n"
                          f"Evidence report: {s.public_url}/reports/{inc['id']}.md", BUTTONS_AFTER_ACTION)
         else:
             self._notify(now, "operator_action", inc["id"], [s.on_duty],

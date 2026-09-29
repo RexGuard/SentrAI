@@ -4,7 +4,7 @@ A working prototype of SentrAI that runs natively on one Windows laptop or Linux
 
 | Component | Folder | What it does | URL |
 | --- | --- | --- | --- |
-| Core | `core/` | FastAPI risk engine, rules + Jev classifier, agents (Saguaro, Root, Reservoir, Areole, Needle, Watchdog, Scribe, HelpDesk), TTL hotpatches, hash-chained audit log, evidence reports (Markdown/JSON/PDF) | http://127.0.0.1:8000 |
+| Core | `core/` | FastAPI risk engine, rules + Jev classifier, agents (Warden, Gatehouse, Vault, Garrison, Countersign, Watchdog, Scribe, HelpDesk), TTL hotpatches, hash-chained audit log, evidence reports (Markdown/JSON/PDF) | http://127.0.0.1:8000 |
 | Target app | `lab/target_app/` | Fictional "Aegis Academy Student Portal" that writes logs and enforces SentrAI's blocklist (HTTP 403) | http://127.0.0.1:5000 |
 | Collector | `lab/collector/` | Tails the portal's web, DB and OS logs and sends normalized events to core | |
 | Attacks / replay | `lab/attacks/`, `lab/replay/` | Localhost-only attack scripts and a scripted replay for backup recordings | |
@@ -72,7 +72,7 @@ The dashboard opens on Configuration. Open **Review** for the gauge; the Collect
 1. Benign traffic: no incidents, gauge green.
 2. Brute force from `203.0.113.45`: incident `RSK-2026-081`, risk about 39 (amber), operator alert (Telegram or the notifier window).
 3. Nobody acknowledges: +5 per demo hour, SLA reminders, escalation to the team lead at red.
-4. SQL injection from `198.51.100.23`: risk crosses 80, Needle approves, both attackers are blocked and `admin` is locked for 2 demo hours. The portal returns "Blocked by SentrAI" (403) to them. Your own machine (127.0.0.1) is never blocked.
+4. SQL injection from `198.51.100.23`: risk crosses 80, Countersign approves, both attackers are blocked and `admin` is locked for 2 demo hours. The portal returns "Blocked by SentrAI" (403) to them. Your own machine (127.0.0.1) is never blocked.
 5. The report (dashboard **Reports** page, or `http://127.0.0.1:8000/reports/RSK-2026-081.md`) shows the timeline of inaction, "Ack: none" and the audit chain hash.
 6. Roll back or make the fix permanent from the dashboard **Approvals** page.
 
@@ -146,7 +146,7 @@ behind an arrow.
 | `CACTAI_LOG_ACCESS`, `_AUTH`, `_DB`, `_OS` | `access.jsonl`, `auth.jsonl`, `db.jsonl`, `os.jsonl` | lab: log file names |
 | `BRUTE_FORCE_COUNT` / `BRUTE_FORCE_WINDOW_S` | 5 / 60 | core: failed logins that count as brute force |
 | `EXPORT_ROWS_THRESHOLD` | 100 | core: rows in one export that count as exfiltration |
-| `NEEDLE_MIN_CONFIDENCE` | 0.6 | core: AI confidence Needle needs before approving an autonomous action |
+| `NEEDLE_MIN_CONFIDENCE` | 0.6 | core: AI confidence Countersign needs before approving an autonomous action |
 | `CACTAI_PRESET` | `moderate` | wizard and dashboard: `strict`, `moderate`, `balanced` or `advanced` |
 | `CACTAI_OPERATOR` | `operator` | notifier: name shown on approvals |
 | `CACTAI_CONFIG` | `~\.cactai\config.json` | all: where the setup wizard saves settings |
@@ -200,8 +200,8 @@ one job; to add a new one, subclass it and add it to the list shown.
 | 3. Responder | `Responder` in `core/app/responders.py` | `apply(action)` returns True when in force; `revert(action)` undoes it | `BlocklistResponder` (block_ip, lock_user), `SimulatedResponder` (the rest) | `Saguaro.__init__` |
 
 Events travel from part 1 to part 2 over `POST /events` as plain dicts (`CONTRACT.md`).
-Between parts 2 and 3 sit the risk engine and Needle: an action only reaches a responder
-after an operator approves it, or after Needle approves it above the risk threshold. The
+Between parts 2 and 3 sit the risk engine and Countersign: an action only reaches a responder
+after an operator approves it, or after Countersign approves it above the risk threshold. The
 allowlist of action types is whatever the registered responders handle, and every action
 goes back through its responder when it expires or is rolled back.
 

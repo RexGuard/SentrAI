@@ -20,7 +20,7 @@ From the working hackathon MVP (27 Sep 2026) to a product a Singapore SME or pri
 | Classification | Rules engine + fallback heuristic; Jev client written | Jev never called live (no API key); no accuracy measurement |
 | Risk engine | 0 to 100 index, inaction penalty, SLA, bands, threshold | Per-organization settings, on-duty roster |
 | Containment | IP block and account lock via the portal's blocklist (real 403), TTL, rollback, make permanent | Firewall, WAF, AD, DB, cloud actions are only recorded; no tarpit or honeytokens |
-| Agents | Saguaro, Root, Reservoir, Areole, Needle, Watchdog, Scribe, HelpDesk as Python classes in one process | Separate services, separate keys, LLM-assisted HelpDesk |
+| Agents | Warden, Gatehouse, Vault, Garrison, Countersign, Watchdog, Scribe, HelpDesk as Python classes in one process | Separate services, separate keys, LLM-assisted HelpDesk |
 | Notifications | Dashboard, console, Telegram code with buttons | Telegram untested live; no email, SMS, Teams/Slack |
 | Accountability | Hash-chained audit log, security evidence report (Markdown/JSON/PDF) | Signatures, fair-process features, board reporting |
 | Platform | Runs on one Windows laptop; in-memory state; no login | Persistence, auth, multi-tenant, installer, CI |
@@ -35,7 +35,7 @@ From the working hackathon MVP (27 Sep 2026) to a product a Singapore SME or pri
 | 1 | Harden the core | 10 | Oct wk 1–2 |
 | 2 | Real data collection on every layer | 18 | Oct wk 2 – Nov wk 1 |
 | 3 | AI classification that can be trusted | 10 | Oct wk 3 – Nov wk 1 |
-| 4 | Real containment and cactus defenses | 16 | Nov |
+| 4 | Real containment and tripwires | 16 | Nov |
 | 5 | Notifications and escalation | 7 | Nov (parallel) |
 | 6 | Accountability and evidence reporting | 9 | Nov – Dec wk 1 |
 | 7 | Agents as separate services | 12 | Dec |
@@ -135,9 +135,9 @@ P0 ■
 
 ---
 
-## Phase 4 · Real containment and cactus defenses (≈16 days)
+## Phase 4 · Real containment and tripwires (≈16 days)
 
-**Goal:** replace "recorded (simulated)" actions with real, reversible enforcement, and add the cactus spines (plan sections 8 and 11). Every adapter follows the same contract: dry-run → snapshot → apply with TTL → verify → rollback.
+**Goal:** replace "recorded (simulated)" actions with real, reversible enforcement, and add the tripwires (plan sections 8 and 11). Every adapter follows the same contract: dry-run → snapshot → apply with TTL → verify → rollback.
 
 | # | Feature | Detail | Days |
 | --- | --- | --- | --- |
@@ -200,14 +200,14 @@ P0 ■
 
 | # | Feature | Detail | Days |
 | --- | --- | --- | --- |
-| 7.1 | Message bus | Redis Streams or NATS between Saguaro and the agents; events and proposals as typed messages. | 3 |
-| 7.2 | Agent identity | Each agent has its own key and permissions; Areole can only execute signed, Needle-approved actions. | 2 |
-| 7.3 | Needle as a separate service | True two-key rule: Needle runs apart from Saguaro, with its own key and policy file. | 2 |
+| 7.1 | Message bus | Redis Streams or NATS between Warden and the agents; events and proposals as typed messages. | 3 |
+| 7.2 | Agent identity | Each agent has its own key and permissions; Garrison can only execute signed, Countersign-approved actions. | 2 |
+| 7.3 | Countersign as a separate service | True two-key rule: Countersign runs apart from Warden, with its own key and policy file. | 2 |
 | 7.4 | Watchdog for agents | Heartbeats from every agent and collector; alert when any goes silent or is tampered with. | 1 |
 | 7.5 | HelpDesk chat | Operators ask "why was this blocked?" in Telegram/Teams; Claude answers only from the incident record and audit chain. | 2 |
 | 7.6 | Per-agent budgets and limits | Token and action budgets per agent; pause on overspend. | 2 |
 
-**Done when:** stopping Needle stops all autonomous actions (fail-safe), and no single agent key can both propose and approve.
+**Done when:** stopping Countersign stops all autonomous actions (fail-safe), and no single agent key can both propose and approve.
 
 **Depends on:** 1.x, 4.1.
 
@@ -240,7 +240,7 @@ P0 ■
 | Risk grows with inaction, so ignored alerts get louder | MVP; tuned in P1.3 |
 | Every automatic fix expires unless a human keeps it | MVP; real enforcement in P4 |
 | Evidence built for the PDPC's "reasonable security arrangements" question | P6 |
-| Two-key autonomous actions (Needle) and no hack-back, ever | MVP; hardened in P7 |
+| Two-key autonomous actions (Countersign) and no hack-back, ever | MVP; hardened in P7 |
 | Fair to staff: context, workload and role-based visibility | P6.3 |
 
 ---
