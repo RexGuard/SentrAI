@@ -21,10 +21,12 @@ from typing import Any
 import streamlit as st
 
 from cactai_ui import shaping as sh
+from cactai_ui import signin
 from cactai_ui.api import CoreClient, CoreError
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 import cactai_config as cfg  # noqa: E402
+import setup_chat  # noqa: E402
 
 cfg.load()
 
@@ -50,28 +52,60 @@ st.markdown(f"<style>{CSS}</style>", unsafe_allow_html=True)
 
 # ------------------------------------------------------------------ login
 
+def _client_ip() -> str:
+    try:
+        ip = st.context.ip_address
+    except Exception:  # noqa: BLE001 - no browser behind this run
+        ip = None
+    return ip if isinstance(ip, str) and ip else "local"  # a test run has no real address
+
+
+def check_login(email: str, password: str, account: dict[str, str]) -> bool:
+    if not hmac.compare_digest(email.strip().lower().encode(), account["email"].strip().lower().encode()):
+        cfg.check_password(password, cfg.hash_password("x"))  # same work either way, so timing tells nothing
+        return False
+    if account["plain"]:
+        return hmac.compare_digest(password.encode(), account["plain"].encode())
+    return cfg.check_password(password, account["hash"])
+
+
 def login() -> None:
-    """Ask for the dashboard password (setup wizard, section 6) once per browser session.
+    """Ask for the dashboard email and password (setup wizard section 6) once per browser session.
 
-    Without a password the console opens straight away, as it did before; the core API
-    still needs its token either way.
+    run_demo and deploy/install.sh make the sign-in on first run (python cactai_config.py admin).
+    CACTAI_DASHBOARD_LOGIN=off skips it, for local testing only. The core API needs its token either way.
     """
-    password = os.environ.get(cfg.PASSWORD_ENV, "")
-    if not password or st.session_state.get("signed_in"):
+    if not cfg.login_required() or st.session_state.get("signed_in"):
         return
+    account = cfg.dashboard_login()
     _, mid, _ = st.columns([1, 1.2, 1])
+    brand = ('<div class="brand"><div class="brand-mark">' + SHIELD + '</div><div>'
+             '<div class="brand-name">Sentr<span>AI</span></div>'
+             '<div class="brand-tag">Risk Console</div></div></div>')
+    if not account["hash"] and not account["plain"]:
+        with mid.container(border=True):
+            st.markdown(brand, unsafe_allow_html=True)
+            st.warning("No dashboard sign-in is set up yet. On this machine, run "
+                       "`python cactai_config.py admin` (on a server: `sudo cactai-admin`), then reload this page.")
+        st.stop()
     with mid.form("login"):
-        st.markdown('<div class="brand"><div class="brand-mark">' + SHIELD + '</div><div>'
-                    '<div class="brand-name">Sentr<span>AI</span></div>'
-                    '<div class="brand-tag">Risk Console</div></div></div>', unsafe_allow_html=True)
-        typed = st.text_input("Password", type="password")
+        st.markdown(brand, unsafe_allow_html=True)
+        email = st.text_input("Email", autocomplete="username",
+                              placeholder=account["email"] if account["email"].endswith(".local") else "")
+        typed = st.text_input("Password", type="password", autocomplete="current-password")
         if st.form_submit_button("Sign in", type="primary", width="stretch"):
-            if hmac.compare_digest(typed.encode(), password.encode()):
-                st.session_state.signed_in = True
+            ip = _client_ip()
+            wait = signin.wait_seconds(ip)
+            if wait:
+                st.error(f"Too many wrong tries. Wait {int(wait) // 60 + 1} min and try again.")
+            elif check_login(email, typed, account):
+                signin.succeeded(ip)
+                st.session_state.signed_in = account["email"]
                 st.rerun()
-            st.error("Wrong password.")
+            else:
+                signin.failed(ip)
+                st.error("Wrong email or password.")
     st.stop()
-
 
 login()
 
@@ -139,7 +173,7 @@ def show_flash() -> None:
 st.session_state.setdefault("core_url", DEFAULT_CORE)
 st.session_state.setdefault("operator", DEFAULT_OPERATOR)
 st.session_state.setdefault("auto_refresh", True)
-st.session_state.setdefault("page", "config")
+st.session_state.setdefault("page", "config" if cfg.setup_done() else "chat")  # new machine: guided setup
 st.session_state.setdefault("seen", {})
 TOKEN = cfg.api_token()
 client = CoreClient(st.session_state.core_url, token=TOKEN)
@@ -259,7 +293,8 @@ with st.sidebar:
                  help="POST /demo/reset: clears state for a fresh take"):
         run_action("Demo reset", lambda: client.reset_demo(), rerun=False)
         st.session_state.seen = {}
-    if st.session_state.get("signed_in") and st.button("Sign out", icon=":material/logout:", width="stretch"):
+    if st.session_state.get("signed_in") and st.button("Sign out", icon=":material/logout:", width="stretch",
+                                                       help=f"Signed in as {st.session_state.signed_in}"):
         st.session_state.signed_in = False
         st.rerun()
     st.markdown('<div class="side-foot">A sentry doesn\'t chase you. It just guards the gate.</div>',
@@ -428,8 +463,12 @@ def decision_controls(inc: dict) -> None:
 
 def page_config() -> None:
     header("Configuration", f"Saved to {cfg.config_path()} · read by every part when it starts")
+    o1, o2 = st.columns([4, 1], vertical_alignment="center")
+    o1.caption("Rather answer a few questions? Cyanide can walk you through setup in the Chat page instead.")
+    if o2.button("Set up with Cyanide", icon=":material/forum:", width="stretch"):
+        start_setup()
     current = {f.env: f.default for f in cfg.FIELDS.values()} | cfg.read()
-    values = {}
+    values, new_password = {}, ""
     preset = cfg.SECTIONS[0]
     with st.container(border=True):
         section(preset.title, preset.about, "verified_user")
@@ -461,6 +500,16 @@ def page_config() -> None:
                                            disabled=True, help=f"Environment variable {f.env}. Generated by setup; "
                                            "python cactai_config.py token prints it.")
                     continue
+                if f.hashed:  # never shown: a new one replaces it, blank keeps it
+                    typed = cols[n % 2].text_input("New dashboard password (blank keeps the current one)",
+                                                   key=f"cfg_{f.env}", type="password",
+                                                   help=f"At least {cfg.MIN_PASSWORD} characters. Saved only as a "
+                                                        "hash; applies at the next sign-in.")
+                    if typed and len(typed) < cfg.MIN_PASSWORD:
+                        cols[n % 2].error(f"Use at least {cfg.MIN_PASSWORD} characters; the old password stays.")
+                        typed = ""
+                    values[f.env], new_password = current[f.env], typed
+                    continue
                 values[f.env] = cols[n % 2].text_input(
                     f.prompt, value=current[f.env], key=f"cfg_{f.env}", help=f"Environment variable {f.env}",
                     type="password" if f.secret else "default").strip()
@@ -469,7 +518,10 @@ def page_config() -> None:
         if bad:
             st.error("Please enter a number for: " + "; ".join(bad))
         else:
+            if new_password:  # hashed only on Save: hashing is slow on purpose
+                values[cfg.HASH_ENV] = cfg.hash_password(new_password)
             path = cfg.save(values)
+            cfg.mark_setup_done("dashboard")
             ai, err = safe(client.ai_reload)
             if err:
                 st.success(f"Saved to {path}. Start the demo (run_demo.ps1) so the core picks them up.")
@@ -670,7 +722,21 @@ def page_chat() -> None:
     Not auto-refreshed, so a rerun never interrupts typing.
     """
     show_flash()
-    if header("Chat", "ask the orchestrator what it sees and why it acted · it suggests, you decide") is None:
+    online = header("Chat", "ask the orchestrator what it sees and why it acted · it suggests, you decide") is not None
+    if st.session_state.get("setup_chat"):  # scripted, so it works with the core offline too
+        setup_conversation()
+        return
+    if not cfg.setup_done() and not st.session_state.get("setup_later"):
+        with st.container(border=True):
+            s1, s2, s3 = st.columns([6, 2, 1], vertical_alignment="center")
+            s1.markdown("**New here?** Cyanide can set SentrAI up with you in a few plain questions, "
+                        "so you don't need the Configuration page.")
+            if s2.button("Set up with Cyanide", icon=":material/forum:", type="primary", width="stretch"):
+                start_setup()
+            if s3.button("Not now", width="stretch"):
+                st.session_state.setup_later = True
+                st.rerun()
+    if not online:
         return
     hist, err = safe(client.chat_history, {})
     if err:
@@ -681,7 +747,9 @@ def page_chat() -> None:
     incidents, _ = fetch("incidents", [])
     by_id = {str(i.get("id")): i for i in incidents or [] if i.get("id")}
 
-    c1, c2, c3 = st.columns([4, 6, 2], vertical_alignment="bottom")
+    c1, c2, c4, c3 = st.columns([4, 5, 2, 2], vertical_alignment="bottom")
+    if c4.button("Setup", icon=":material/tune:", width="stretch", help="Let Cyanide walk you through setup"):
+        start_setup()
     about = c1.selectbox("Talk about", [""] + sorted(by_id, reverse=True), key="chat_about",
                          format_func=lambda i: f"{i} · {sh.category_label(by_id[i].get('category'))}" if i
                          else "The whole operation")
@@ -709,6 +777,89 @@ def page_chat() -> None:
         if err:
             st.session_state["flash"] = (f"Chat failed: {err}", "⚠️")
         st.rerun()
+
+
+def start_setup() -> None:
+    st.session_state.setup_chat = setup_chat.SetupChat()
+    go("chat")
+
+
+def setup_conversation() -> None:
+    """Cyanide asks the setup questions (mvp/setup_chat.py); the user answers with a button or by typing.
+
+    Kept in this browser session only, never in the core's chat history, because some answers are
+    secrets. Nothing is saved until the user confirms the summary.
+    """
+    sc: setup_chat.SetupChat = st.session_state.setup_chat
+    t1, t2 = st.columns([5, 1], vertical_alignment="center")
+    t1.caption("Guided setup · nothing is saved until you confirm the summary · the Configuration page "
+               "shows the same settings")
+    if t2.button("Close setup" if sc.state in ("saved", "cancelled") else "Leave setup",
+                 icon=":material/close:", width="stretch"):
+        del st.session_state.setup_chat
+        st.session_state.setup_later = True
+        st.rerun()
+    with st.container(height=540, border=True):
+        for m in sc.messages:
+            mine = m["role"] == "user"
+            with st.chat_message("user" if mine else "assistant", avatar="👤" if mine else "🧪"):
+                st.markdown(m["text"].replace("\n", "  \n") if mine else m["text"])
+    answer = None
+    options = sc.options()
+    if options:
+        cols = st.columns(min(len(options), 4))
+        for n, (value, label) in enumerate(options):
+            if cols[n % len(cols)].button(label, key=f"setup_{len(sc.messages)}_{value}", width="stretch",
+                                          type="primary" if n == 0 and sc.state == "review" else "secondary"):
+                answer = value
+    if sc.secret:
+        with st.form(f"setup_secret_{len(sc.messages)}", clear_on_submit=True, border=False):
+            f1, f2 = st.columns([5, 1], vertical_alignment="bottom")
+            typed = f1.text_input("Your answer (hidden; it is never shown in the chat)", type="password")
+            if f2.form_submit_button("Send", type="primary", width="stretch") and typed:
+                answer = typed
+    elif sc.state in ("asking", "review"):
+        answer = st.chat_input("Type your answer…") or answer
+    if not answer:
+        return
+    with st.spinner("Cyanide is reading your answer…"):
+        sc.answer(answer, interpret=setup_interpreter)
+    if sc.state == "save":
+        save_setup(sc)
+    st.rerun()
+
+
+def setup_interpreter(question: str, options: list[tuple[str, str]], answer: str) -> dict | None:
+    """The AI model's reading of an answer the script could not match; None when the core is offline."""
+    result, err = safe(lambda: client.setup_interpret(question, options, answer))
+    return None if err or not isinstance(result, dict) else result
+
+
+def save_setup(sc: "setup_chat.SetupChat") -> None:
+    values = sc.values()
+    bad = [f.prompt for f in cfg.FIELDS.values() if not cfg.valid(f, values.get(f.env, f.default))]
+    if bad:
+        sc.state = "review"
+        sc.messages.append({"role": "assistant", "text": "I can't save yet; these values are not valid: "
+                            + "; ".join(bad) + ". Fix them on the Configuration page, or start over."})
+        return
+    path = cfg.save(values)
+    cfg.mark_setup_done("chat")
+    for key in [k for k in st.session_state if str(k).startswith("cfg_")]:  # Configuration shows the new values
+        del st.session_state[key]
+    st.session_state.operator = values.get("CACTAI_OPERATOR") or st.session_state.operator
+    ai, err = safe(client.ai_reload)
+    note = f"Saved to {path}. "
+    note += ("The core isn't running, so start SentrAI (run_demo) and every part will use these settings."
+             if err else f"I've switched to the new AI settings ({ai.get('chat')}). Restart SentrAI "
+                         "(stop_demo, then run_demo) so the other parts pick up the rest.")
+    deploy = setup_chat.deploy_command(sc)
+    if deploy:
+        note += ("\n\nWho can open the dashboard is a firewall setting, which needs admin rights. On a Linux "
+                 f"server, run this once from the `mvp` folder to apply it:\n\n```\n{deploy}\n```\n\n"
+                 "It keeps everything you saved here. On Windows or a demo machine the dashboard stays on this "
+                 "computer" + (f"; start run_demo with `--dashboard-port {sc.notes['port']}` (Windows: `-DashboardPort {sc.notes['port']}`)" if sc.notes.get("port", "8501") != "8501" else "") + ".")
+    sc.saved(note + "\n\nYou can change anything later here or on the Configuration page.")
 
 
 def chat_message(m: dict, assistant: str, by_id: dict[str, dict]) -> None:

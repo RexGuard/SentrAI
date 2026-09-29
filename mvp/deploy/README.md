@@ -5,8 +5,24 @@ clock runs fast. On a real Linux server, install SentrAI as systemd services ins
 
 ```bash
 git clone https://github.com/RexGuard/SentrAI && cd SentrAI/mvp
-sudo ./deploy/install.sh --protect 203.0.113.10       # your own admin IP, so SentrAI never blocks it
+sudo ./deploy/install.sh --protect 203.0.113.10 --admin-email you@example.com
 ```
+
+Run from a terminal, the installer then asks about the web dashboard, with the answer in
+[brackets] kept when you press Enter:
+
+```text
+  Dashboard port [8501]:
+  Allowed IPs [203.0.113.10]:            the IPs that may open it (defaults to --protect, or the
+                                          address your SSH session comes from); "local" = tunnel only
+  Dashboard sign-in email [admin@sentrai.local]:
+  Dashboard password (Enter to make one for you):   typed twice, at least 8 characters
+```
+
+It skips any question the command line already answers (`--dashboard-port`, `--dashboard-allow`,
+`--dashboard-local`, `--admin-email`), and all of them with `--no-questions` or without a terminal.
+On an upgrade the brackets hold the current values. At the end it prints the dashboard address and
+the sign-in; a password it made is shown only then. `sudo cactai-admin --reset` makes a new one.
 
 Needs systemd and Python 3.10+ with the `venv` module (Debian/Ubuntu: `sudo apt install python3-venv`).
 Run the same command again from a newer checkout to upgrade: settings and state are kept, and
@@ -38,7 +54,12 @@ The demo portal and attack scripts are not installed as services.
 ```text
 --core-port N / --dashboard-port N     when 8000 or 8501 is taken
 --core-bind ADDR / --dashboard-bind ADDR
---protect IP                           add to PROTECTED_IPS (repeatable)
+--protect IP                           add to PROTECTED_IPS (repeatable); the dashboard opens to it too
+--dashboard-allow IP                   open the dashboard to this IP or network only (repeatable)
+--dashboard-local                      keep the dashboard on the server (SSH tunnel only)
+--admin-email EMAIL                    dashboard sign-in email (asked on a first install)
+--reset-password                       new dashboard password, printed at the end
+--no-questions (-y)                    never ask (what a script or CI run gets anyway)
 --no-notifier                          leave the Telegram notifier off
 --no-start                             install and enable without starting
 --prefix DIR / --user NAME
@@ -48,14 +69,33 @@ On an upgrade only the options you pass change `cactai.env`; everything else sta
 
 ## Reaching the dashboard
 
-Both the core and the dashboard listen on `127.0.0.1` only. From your own computer:
+With `--protect` or `--dashboard-allow`, the installer sets up access by itself:
+
+- The dashboard listens on all addresses (`CACTAI_DASHBOARD_HOST=0.0.0.0`), and a firewall rule
+  drops every address on its port except the allowed ones (`CACTAI_DASHBOARD_ALLOW` in
+  `cactai.env`). The rule lives in its own nftables table `inet cactai_dashboard` (or iptables
+  chain `CACTAI-DASH`); the dashboard service puts it back each time it starts, and refuses to
+  start without nft or iptables rather than run open. When ufw or firewalld is active, the
+  installer also allows the port there for those addresses.
+- It serves HTTPS with a self-signed certificate made in `/etc/cactai/tls/`. The browser warns
+  about it once.
+- It asks for the email and password on every new browser session.
+
+Open `https://<server address>:8501` from the allowed IP and sign in. When your IP changes, run
+the installer again with the new one (`--dashboard-allow` replaces the list).
+
+The core API always stays on `127.0.0.1`. `--dashboard-local` keeps the dashboard there too, and
+removes the firewall rule; reach it through a tunnel from your own computer:
 
 ```bash
 ssh -L 8501:127.0.0.1:8501 you@your-server     # then open http://127.0.0.1:8501
 ```
 
-`--dashboard-bind 0.0.0.0` makes it reachable from outside. Only do that with a dashboard login
-set up and the port limited to your own IP in the firewall.
+```bash
+sudo cactai-admin                                  # show the sign-in email
+sudo cactai-admin --reset                          # new password, printed once
+sudo cactai-admin --email you@example.com --reset  # new email and password
+```
 
 ## Finding the logs to watch
 
@@ -78,6 +118,7 @@ systemctl status 'cactai-*'
 journalctl -u cactai-core -f          # or -u cactai-collector, -u cactai-dashboard
 sudo systemctl restart cactai.target
 sudo ./deploy/uninstall.sh            # keeps /etc/cactai and /var/lib/cactai; --purge removes them
+                                      # (also removes the dashboard firewall rule)
 ```
 
 ## Not covered yet

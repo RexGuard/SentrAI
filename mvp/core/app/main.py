@@ -91,6 +91,17 @@ class PendingDecisionIn(BaseModel):
     reason: str = ""
 
 
+class SetupOption(BaseModel):
+    value: str
+    label: str = ""
+
+
+class SetupInterpretIn(BaseModel):
+    question: str
+    options: list[SetupOption]
+    answer: str
+
+
 class AITestIn(BaseModel):
     provider: str
     api_key: str = ""
@@ -306,6 +317,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return chat.ask(body.operator, body.message, body.incident)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
+
+    @app.post("/chat/setup/interpret")
+    def post_setup_interpret(body: SetupInterpretIn) -> dict[str, Any]:
+        return chat.interpret_setup(body.question, [o.model_dump() for o in body.options], body.answer)
 
     @app.post("/chat/clear")
     def clear_chat() -> dict[str, Any]:

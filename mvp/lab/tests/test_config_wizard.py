@@ -27,7 +27,8 @@ def test_enter_everywhere_keeps_the_demo_defaults(config_file):
     values = cfg.wizard(ask=scripted([]), ask_secret=scripted([]), say=lambda _: None)
     token = values.pop(cfg.TOKEN_ENV)
     assert len(token) >= 40  # generated, never asked
-    assert values == {f.env: f.default for f in cfg.FIELDS.values() if f.env != cfg.TOKEN_ENV}
+    assert values.pop(cfg.HASH_ENV).startswith("pbkdf2_sha256$")  # a password is made and only its hash kept
+    assert values == {f.env: f.default for f in cfg.FIELDS.values() if f.env not in (cfg.TOKEN_ENV, cfg.HASH_ENV)}
 
 
 def test_answers_are_saved_per_part_and_loaded_as_env_defaults(config_file, monkeypatch):
@@ -188,3 +189,58 @@ def test_token_command_prints_it(config_file, monkeypatch, capsys):
     monkeypatch.delenv(cfg.TOKEN_ENV, raising=False)
     assert cfg.main(["token"]) == 0
     assert capsys.readouterr().out.strip() == cfg.api_token()
+
+
+def test_wizard_password_is_typed_twice_and_saved_as_a_hash(config_file):
+    said = []
+    secrets_typed = ["short", "long-enough-1", "different-1", "long-enough-1", "long-enough-1"]
+    # every secret field before section 6 takes "" first; then the password rounds above
+    before = sum(1 for f in cfg.FIELDS.values() if f.secret and not f.hashed and not f.generated
+                 and f.env not in cfg.EMAIL_FIELDS)
+    values = cfg.wizard(ask=scripted([]), ask_secret=scripted([""] * before + secrets_typed), say=said.append)
+    assert "    Use at least 8 characters." in said
+    assert "    The two passwords differ; try again." in said
+    assert cfg.check_password("long-enough-1", values[cfg.HASH_ENV])
+    assert not cfg.check_password("long-enough-2", values[cfg.HASH_ENV])
+
+
+def test_admin_makes_a_sign_in_once_and_reset_replaces_it(config_file, monkeypatch):
+    for name in (cfg.EMAIL_ENV, cfg.HASH_ENV, cfg.PASSWORD_ENV):  # left behind by load() in other tests
+        monkeypatch.delenv(name, raising=False)
+    email, first = cfg.ensure_admin()
+    assert email == "admin@sentrai.local" and len(first) >= 12
+    assert first not in config_file.read_text()
+    assert cfg.ensure_admin() == (email, "")  # kept
+    email, second = cfg.ensure_admin("erick@example.com", reset=True)
+    assert email == "erick@example.com" and second and second != first
+    login = cfg.dashboard_login()
+    assert login["email"] == "erick@example.com" and cfg.check_password(second, login["hash"])
+
+
+def test_old_plain_dashboard_password_is_kept_only_as_a_hash(config_file):
+    config_file.write_text(json.dumps({"access": {cfg.TOKEN_ENV: "t", cfg.PASSWORD_ENV: "cactus-cactus"}}))
+    values = cfg.read()
+    assert cfg.PASSWORD_ENV not in values and cfg.check_password("cactus-cactus", values[cfg.HASH_ENV])
+    cfg.save(values)
+    assert "cactus-cactus" not in config_file.read_text()
+    assert cfg.ensure_admin()[1] == ""  # the old password still signs in; nothing new made
+
+
+def test_admin_takes_a_chosen_password(config_file, monkeypatch):
+    for name in (cfg.EMAIL_ENV, cfg.HASH_ENV, cfg.PASSWORD_ENV):
+        monkeypatch.delenv(name, raising=False)
+    with pytest.raises(ValueError):
+        cfg.ensure_admin("me@example.com", password="short")
+    assert cfg.ensure_admin("me@example.com", password="chosen-pass-1") == ("me@example.com", "chosen-pass-1")
+    assert cfg.check_password("chosen-pass-1", cfg.dashboard_login()["hash"])
+
+
+def test_admin_command_reads_the_password_from_stdin(config_file, monkeypatch, capsys):
+    import io
+    for name in (cfg.EMAIL_ENV, cfg.HASH_ENV, cfg.PASSWORD_ENV):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr("sys.stdin", io.StringIO("from-stdin-pass\n"))
+    assert cfg.main(["admin", "--email", "ops@example.com", "--password-stdin"]) == 0
+    out = capsys.readouterr().out
+    assert "ops@example.com" in out and "from-stdin-pass" not in out
+    assert cfg.check_password("from-stdin-pass", cfg.dashboard_login()["hash"])

@@ -63,7 +63,8 @@ If port 8000 or 8501 is taken, pick others: `./run_demo.sh --core-port 8100 --da
 ### On a server (systemd services)
 
 To keep SentrAI running on a Linux server, install it as services instead of running the demo:
-`sudo ./deploy/install.sh --protect <your admin IP>`. See [deploy/README.md](deploy/README.md).
+`sudo ./deploy/install.sh --protect <your admin IP>`. It opens the dashboard over HTTPS to that IP
+only and prints the address and the sign-in. See [deploy/README.md](deploy/README.md).
 
 ### What you should see
 
@@ -102,6 +103,25 @@ python cactai_config.py setup      # change them
 The file holds the TypeSafe key and Telegram token in plain text, so keep it in your own
 user folder. `run_demo.ps1` only clears old `.jsonl` logs when the logs directory is inside
 `mvp\lab`, so pointing it at real logs never deletes them.
+
+### Set up with Cyanide (no Configuration page)
+
+The dashboard's **Chat** page can do the same setup as a conversation. Until a machine has
+been set up, the dashboard opens on Chat with a **Set up with Cyanide** offer (the **Setup**
+button on Chat, or **Set up with Cyanide** on Configuration, starts it any time). Cyanide asks
+what SentrAI guards and suggests a preset, then the logs folder, IPs and accounts never to
+touch, your name, how to alert you (Telegram and/or email), the AI key, and the dashboard:
+who may open it (this computer, or named IP addresses), its port, and the sign-in email and
+password (saved only as a hash, used from the next sign-in). Opening the dashboard to other
+computers changes the firewall, so Cyanide ends with the one `sudo ./deploy/install.sh
+--dashboard-allow ...` command that applies it on a Linux server. Answer with the buttons or by typing. Keys and passwords go in a hidden field and are
+never shown in the chat. Nothing is saved until you confirm the summary; it then saves through
+the same settings file, switches Cyanide to the new AI settings, and says what needs a restart.
+
+It is scripted, so it works without an AI key (and with the core stopped). With an AI model
+set, Cyanide also understands answers that match no button ("we're a dental clinic") and
+answers questions asked along the way (`POST /chat/setup/interpret`; secrets are never sent).
+The settings file records how setup was finished (`"setup_done"`).
 
 ### Security presets
 
@@ -151,7 +171,9 @@ behind an arrow.
 | `CACTAI_OPERATOR` | `operator` | notifier: name shown on approvals |
 | `CACTAI_CONFIG` | `~\.cactai\config.json` | all: where the setup wizard saves settings |
 | `CACTAI_API_TOKEN` | generated | all: the token the core API requires (`python cactai_config.py token` prints it) |
-| `CACTAI_DASHBOARD_PASSWORD` | blank | dashboard: asks for this password first; blank opens without a login |
+| `CACTAI_DASHBOARD_EMAIL` | `admin@sentrai.local` | dashboard: the sign-in email |
+| `CACTAI_DASHBOARD_PASSWORD_HASH` | made on first run | dashboard: the sign-in password, saved only as a salted PBKDF2 hash |
+| `CACTAI_DASHBOARD_LOGIN` | on | dashboard: `off` opens it without signing in (local testing only) |
 
 ### Access
 
@@ -166,8 +188,21 @@ $t = python cactai_config.py token
 Invoke-RestMethod http://127.0.0.1:8000/incidents -Headers @{ Authorization = "Bearer $t" }
 ```
 
-Set a dashboard password in section 6 of `python cactai_config.py setup` to put a login screen in
-front of the dashboard. Leave it blank for the recording if you do not want to type it on camera.
+The dashboard asks for an email and password. The first run makes them: the wizard asks for
+both (Enter makes a random password), and `run_demo` prints the sign-in at the end, with the
+password shown only that once. Only a salted hash of the password is saved. After five wrong
+tries from one address, that address waits five minutes.
+
+```bash
+python cactai_config.py admin                                  # show the sign-in email (makes one if missing)
+python cactai_config.py admin --reset                          # new password, printed once
+python cactai_config.py admin --email you@example.com --reset  # new email and password
+```
+
+You can also change the password on the dashboard: Configuration, section 6. For a recording
+where you do not want to sign in on camera, start the demo with `CACTAI_DASHBOARD_LOGIN=off`
+(`$env:CACTAI_DASHBOARD_LOGIN = "off"` in PowerShell). Settings saved with the older plain
+dashboard password keep working; the file then keeps only its hash.
 
 ### Telegram setup (optional)
 

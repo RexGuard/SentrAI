@@ -430,6 +430,11 @@ def ai_test(body: dict = Body(None)):
             "error": "the fake core does not call AI providers; start the real core to test"}
 
 
+@app.post("/chat/setup/interpret")
+def setup_interpret(body: dict = Body(...)):
+    return {"ai": False, "choice": "", "reply": ""}  # like a core without an AI key: the setup stays scripted
+
+
 @app.get("/chat")
 def get_chat():
     with lock:
