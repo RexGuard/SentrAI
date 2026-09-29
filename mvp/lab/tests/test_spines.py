@@ -96,6 +96,9 @@ def test_export_returns_bait_rows_and_alerts():
     assert "STF-0007" in hit["raw"] and "STF-0012" in hit["raw"]
 
 
+CLOCK_SLACK = 0.02  # Windows clocks tick every ~16 ms, so a 0.3 s sleep can measure as 0.297 s
+
+
 def test_tarpit_slows_only_pricked_ips():
     app, c = _client(True, tarpit_s=0.3)
     t0 = time.monotonic()
@@ -105,7 +108,7 @@ def test_tarpit_slows_only_pricked_ips():
     assert "tarpit engaged" in _spine_log()[0]["raw"]
     t0 = time.monotonic()
     c.get("/", headers=ATTACKER)
-    assert time.monotonic() - t0 >= 0.3
+    assert time.monotonic() - t0 >= 0.3 - CLOCK_SLACK
     t0 = time.monotonic()
     c.get("/", headers=STAFF)
     assert time.monotonic() - t0 < 0.3
