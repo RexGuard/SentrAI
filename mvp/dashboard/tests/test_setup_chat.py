@@ -62,7 +62,7 @@ def test_walkthrough_with_buttons_and_typing(tmp_path):
     assert "s3cret-password" not in json.dumps(sc.messages) + json.dumps(sc.values()) and values_hash
     assert sc.values()[cfg.EMAIL_ENV] == "erick@example.com"
     assert setup_chat.deploy_command(sc) == ("sudo ./deploy/install.sh --dashboard-allow 192.168.1.20 "
-                                             "--dashboard-allow 10.0.0.0/24 --dashboard-port 8600")
+                                             "--dashboard-allow 10.0.0.0/24 --dashboard-port 8600 --no-questions")
     assert "Strict" in last(sc)
     # the bot token is never echoed in the transcript
     assert all("AAAAAAAAAA" not in m["text"] for m in sc.messages)
@@ -109,7 +109,7 @@ def test_review_and_restart():
     sc.answer("short")
     assert "at least 8" in last(sc)
     sc.answer("long-enough-pw")
-    assert sc.state == "review" and setup_chat.deploy_command(sc) == "sudo ./deploy/install.sh --dashboard-local"
+    assert sc.state == "review" and setup_chat.deploy_command(sc) == "sudo ./deploy/install.sh --dashboard-local --no-questions"
     sc.answer("restart")
     assert sc.state == "asking" and sc.step.key == "kind" and not sc.answers
 

@@ -465,7 +465,7 @@ def deploy_command(s: SetupChat) -> str:
         args.append("--dashboard-local")
     if port != DEFAULT_PORT:
         args.append(f"--dashboard-port {port}")
-    return " ".join(args)
+    return " ".join(args + ["--no-questions"])  # the chat already asked them
 
 
 def _web(s: SetupChat, choice: str) -> str:
