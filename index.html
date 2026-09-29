@@ -21,30 +21,48 @@ description: SentrAI watches your systems, scores risk from 0 to 100, applies te
         <p class="lede">SentrAI watches the web, database and OS layers, turns every anomaly into a live 0 to 100 risk score that grows while nobody acts, applies a temporary fix when your tolerance is crossed, and keeps tamper-evident proof of who knew what and when.</p>
         <div class="cta">
           <a class="btn btn-primary" href="#how">See how it works</a>
-          <a class="btn btn-ghost" href="https://github.com/RexGuard/cactai/tree/main/mvp">Explore the prototype</a>
+          <a class="btn btn-ghost" href="https://github.com/RexGuard/SentrAI/tree/main/mvp">Explore the prototype</a>
         </div>
         <p class="quote">"A sentry doesn't chase you. It just guards the gate."</p>
       </div>
 
-      <div class="gauge-card" aria-label="Example incident: risk rose to 82 and SentrAI applied a temporary block">
-        <div class="top"><span>Student portal · live risk</span><span class="pill">Red band</span></div>
-        <svg class="gauge" viewBox="0 0 200 120" role="img" aria-label="Risk index 82 out of 100">
+      <div class="watch">
+        <svg class="shield-art" viewBox="0 0 400 400" aria-hidden="true">
           <defs>
-            <linearGradient id="gaugeGrad" x1="0" x2="1">
-              <stop offset="0" stop-color="#2e8b57"/><stop offset=".55" stop-color="#e0a030"/><stop offset="1" stop-color="#b03a2e"/>
-            </linearGradient>
+            <radialGradient id="sweepGrad" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(200 200) scale(190)">
+              <stop offset="0" stop-color="#7fb2ff" stop-opacity=".0"/><stop offset="1" stop-color="#7fb2ff" stop-opacity=".22"/>
+            </radialGradient>
+            <clipPath id="shieldClip"><path d="M200 14 L352 66 V186 C352 286 288 360 200 396 C112 360 48 286 48 186 V66 Z"/></clipPath>
           </defs>
-          <path class="track" d="M20 105 A80 80 0 0 1 180 105" fill="none" stroke-width="16" stroke-linecap="round"/>
-          <path class="fill" d="M20 105 A80 80 0 0 1 180 105" fill="none" stroke-width="16" stroke-linecap="round" pathLength="100"/>
-          <text class="num" x="100" y="96" text-anchor="middle">82</text>
-          <text class="cap" x="100" y="116" text-anchor="middle">RISK INDEX · THRESHOLD 80</text>
+          <circle class="ring" cx="200" cy="200" r="190"/>
+          <circle class="ring" cx="200" cy="200" r="140"/>
+          <circle class="ring" cx="200" cy="200" r="90"/>
+          <path class="outline" d="M200 14 L352 66 V186 C352 286 288 360 200 396 C112 360 48 286 48 186 V66 Z"/>
+          <g clip-path="url(#shieldClip)"><path class="sweep" d="M200 200 L200 0 A200 200 0 0 1 341 59 Z" fill="url(#sweepGrad)"/></g>
         </svg>
-        <ol class="events">
-          <li><time>14:00</time><span>SQL injection attempts on /login</span><b class="up">+25</b></li>
-          <li><time>16:00</time><span>No acknowledgement after 2 h SLA</span><b class="up">+10</b></li>
-          <li><time>16:40</time><span>Brute force from 3 IPs</span><b class="up">+47</b></li>
-          <li><time>16:40</time><span>Attackers blocked, expires in 2 h</span><b class="act">fix</b></li>
-        </ol>
+        <div class="gauge-card" aria-label="Example incident: risk rose to 82 and SentrAI applied a temporary block">
+          <div class="top"><span class="live">Student portal · on watch</span><span class="pill">Red band</span></div>
+          <svg class="gauge" viewBox="0 0 200 120" role="img" aria-label="Risk index 82 out of 100, threshold 80">
+            <defs>
+              <linearGradient id="gaugeGrad" x1="0" x2="1">
+                <stop offset="0" stop-color="#6fcf97"/><stop offset=".55" stop-color="#e8b34a"/><stop offset="1" stop-color="#e5484d"/>
+              </linearGradient>
+            </defs>
+            <path class="track" d="M20 105 A80 80 0 0 1 180 105" fill="none" stroke-width="14" stroke-linecap="round"/>
+            <path class="fill" d="M20 105 A80 80 0 0 1 180 105" fill="none" stroke-width="14" stroke-linecap="round" pathLength="100"/>
+            <path class="ticks" d="M34.0 105.0L29.0 105.0M37.2 84.6L32.5 83.1M46.6 66.2L42.6 63.3M61.2 51.6L58.3 47.6M79.6 42.2L78.1 37.5M100.0 39.0L100.0 34.0M120.4 42.2L121.9 37.5M138.8 51.6L141.7 47.6M153.4 66.2L157.4 63.3M162.8 84.6L167.5 83.1M166.0 105.0L171.0 105.0" stroke-width="1.2"/>
+            <path class="limit" d="M155.0 65.0L175.2 50.3"/>
+            <text class="limit-lbl" x="181.7" y="45.6" text-anchor="middle">80</text>
+            <text class="num" x="100" y="98" text-anchor="middle" data-count="82">82</text>
+            <text class="cap" x="100" y="117" text-anchor="middle">RISK INDEX · LINE AT 80</text>
+          </svg>
+          <ol class="events">
+            <li><time>14:00</time><span>SQL injection attempts on /login</span><b class="up">+25</b></li>
+            <li><time>16:00</time><span>No acknowledgement after 2 h SLA</span><b class="up">+10</b></li>
+            <li><time>16:40</time><span>Brute force from 3 IPs</span><b class="up">+47</b></li>
+            <li><time>16:40</time><span>Held at the gate, block expires in 2 h</span><b class="act">hold</b></li>
+          </ol>
+        </div>
       </div>
     </div>
   </section>
@@ -82,10 +100,10 @@ description: SentrAI watches your systems, scores risk from 0 to 100, applies te
       <h2 class="section-title">From log line to accountable decision, in four steps.</h2>
       <p class="lede">A collector reads what your systems already log, AI classifies it, the risk engine scores it, and the responder acts only inside your own network, always reversibly.</p>
       <ol class="steps">
-        <li><h3>Collect</h3><p>Web, database and OS logs are gathered per layer. Scout helps a novice technician find where logs live on unfamiliar systems.</p></li>
-        <li><h3>Classify</h3><p>Rules plus AI categorize each event (brute force, SQL injection, exfiltration, misconfiguration) with a confidence that feeds the score.</p></li>
-        <li><h3>Score</h3><p>A live 0 to 100 risk index with an inaction penalty, so an ignored alert gets louder every hour instead of fading away.</p></li>
-        <li><h3>Respond</h3><p>Past your threshold, SentrAI blocks or locks with a time limit, escalates up the ladder, and writes every step to a hash-chained log.</p></li>
+        <li><div class="post"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/></svg></span></div><h3>Collect</h3><p>Web, database and OS logs are gathered per layer. Scout helps a novice technician find where logs live on unfamiliar systems.</p></li>
+        <li><div class="post"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h10M4 18h6"/><circle cx="18" cy="16" r="3"/><path d="M20.2 18.2L22 20"/></svg></span></div><h3>Classify</h3><p>Rules plus AI categorize each event (brute force, SQL injection, exfiltration, misconfiguration) with a confidence that feeds the score.</p></li>
+        <li><div class="post"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18a8 8 0 1116 0"/><path d="M12 18l4-6"/></svg></span></div><h3>Score</h3><p>A live 0 to 100 risk index with an inaction penalty, so an ignored alert gets louder every hour instead of fading away.</p></li>
+        <li><div class="post"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 5-3 8.5-7 10-4-1.5-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg></span></div><h3>Respond</h3><p>Past your threshold, SentrAI blocks or locks with a time limit, escalates up the ladder, and writes every step to a hash-chained log.</p></li>
       </ol>
     </div>
   </section>
@@ -108,12 +126,12 @@ description: SentrAI watches your systems, scores risk from 0 to 100, applies te
           <p>Automatic blocks carry a time limit (default 2 hours). A person must make them permanent, extend them, or roll them back.</p>
         </div>
         <div class="card">
-          <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg></div>
+          <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h9l3 3v15H6z"/><path d="M9 11h6M9 15h6M9 7h3"/></svg></div>
           <h3>Tamper-evident evidence</h3>
           <p>A hash-chained audit log and evidence report show what was detected, who was told, and what was done, for PDPA Protection Obligation reviews.</p>
         </div>
         <div class="card">
-          <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 4.9 5.4.8-3.9 3.8.9 5.4L12 14.4 7.2 16.9l.9-5.4L4.2 7.7l5.4-.8z"/><path d="M5 21h14"/></svg></div>
+          <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="8" width="14" height="11" rx="3"/><path d="M12 4v4M9 13h.01M15 13h.01M9.5 16.5h5"/></svg></div>
           <h3>Cyanide, the AI planner</h3>
           <p>An AI incident planner picks containment steps for your system profile, while scoring, time limits and the audit trail stay deterministic.</p>
         </div>
@@ -131,15 +149,16 @@ description: SentrAI watches your systems, scores risk from 0 to 100, applies te
     </div>
   </section>
 
-  <!-- Sentry ethics -->
-  <section id="cactus">
+  <!-- Sentry principle -->
+  <section id="sentry">
     <div class="wrap">
       <p class="eyebrow">The sentry principle</p>
-      <h2 class="section-title">Left alone, it does no harm. Cross the line, and it stops you.</h2>
-      <p class="lede">SentrAI never hacks back. Striking an attacker's machine is an offence under Singapore's Computer Misuse Act, and attacks usually come through hijacked computers owned by other victims. It holds the line and never crosses it.</p>
-      <div class="split">
-        <div class="do">
-          <h3>What SentrAI does, inside your network</h3>
+      <h2 class="section-title">It guards the gate. It never walks through it.</h2>
+      <p class="lede">SentrAI never hacks back. Striking an attacker's machine is an offence under Singapore's Computer Misuse Act, and attacks usually come through hijacked computers owned by other victims. Everything it does happens on your side of the line.</p>
+      <div class="perimeter">
+        <div class="zone inside">
+          <span class="tag">Your network</span>
+          <h3>What SentrAI does, inside the gate</h3>
           <ul>
             <li>Blocks IPs, locks accounts and rate-limits logins</li>
             <li>Slows attackers down with tarpits</li>
@@ -147,7 +166,12 @@ description: SentrAI watches your systems, scores risk from 0 to 100, applies te
             <li>Preserves evidence for SingCERT or the police</li>
           </ul>
         </div>
-        <div class="dont">
+        <div class="line" aria-hidden="true">
+          <div class="post-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/></svg></div>
+          <span>The line</span>
+        </div>
+        <div class="zone outside">
+          <span class="tag">Beyond the gate</span>
           <h3>What SentrAI never does</h3>
           <ul>
             <li>Access, scan or disrupt the attacker's systems</li>
@@ -157,6 +181,7 @@ description: SentrAI watches your systems, scores risk from 0 to 100, applies te
           </ul>
         </div>
       </div>
+      <p class="quote">"It holds the line and never crosses it."</p>
     </div>
   </section>
 
@@ -190,9 +215,9 @@ description: SentrAI watches your systems, scores risk from 0 to 100, applies te
       </div>
       <p class="figcap">Architecture: collector, classifier and responder around a deterministic risk engine.</p>
       <div class="cta" style="margin-top:24px">
-        <a class="btn btn-primary" href="https://github.com/RexGuard/cactai/tree/main/mvp">MVP code and how to run it</a>
-        <a class="btn btn-ghost" href="https://github.com/RexGuard/cactai/blob/main/mvp/pitch/VIDEO_SCRIPT.md">Video script</a>
-        <a class="btn btn-ghost" href="https://github.com/RexGuard/cactai/blob/main/mvp/research/SOURCES.md">Sources</a>
+        <a class="btn btn-primary" href="https://github.com/RexGuard/SentrAI/tree/main/mvp">MVP code and how to run it</a>
+        <a class="btn btn-ghost" href="https://github.com/RexGuard/SentrAI/blob/main/mvp/pitch/VIDEO_SCRIPT.md">Video script</a>
+        <a class="btn btn-ghost" href="https://github.com/RexGuard/SentrAI/blob/main/mvp/research/SOURCES.md">Sources</a>
       </div>
     </div>
   </section>
@@ -247,5 +272,19 @@ description: SentrAI watches your systems, scores risk from 0 to 100, applies te
 
 </main>
 {% include footer.html %}
+<script>
+  (function () {
+    var n = document.querySelector('.gauge .num');
+    if (!n || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    var end = +n.getAttribute('data-count'), t0 = null;
+    function step(t) {
+      if (!t0) t0 = t;
+      var p = Math.min((t - t0) / 2400, 1), e = 1 - Math.pow(1 - p, 3);
+      n.textContent = Math.round(end * e);
+      if (p < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  })();
+</script>
 </body>
 </html>

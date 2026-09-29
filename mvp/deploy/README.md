@@ -4,7 +4,7 @@
 clock runs fast. On a real Linux server, install SentrAI as systemd services instead.
 
 ```bash
-git clone https://github.com/RexGuard/cactai && cd cactai/mvp
+git clone https://github.com/RexGuard/SentrAI && cd SentrAI/mvp
 sudo ./deploy/install.sh --protect 203.0.113.10       # your own admin IP, so SentrAI never blocks it
 ```
 

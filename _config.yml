@@ -1,7 +1,8 @@
 theme: jekyll-theme-cayman
 title: SentrAI
 description: Accountability-based cybersecurity + AI
-baseurl: /cactai
+url: https://rexguard.github.io
+baseurl: /SentrAI
 # Pages turns these on by default; listed so the plan (no front matter) always renders.
 plugins:
   - jekyll-optional-front-matter

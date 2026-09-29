@@ -21,16 +21,16 @@ Small organizations already get security alerts. Breaches happen because nobody 
 
 ## Documentation
 
-📄 **[Full project plan](https://rexguard.github.io/cactai/Cybersecurity%20+%20AI.html)**: problem, data collection per layer, risk formula, Jev pipeline, hotpatch workflow, notifications, accountability reports, ethics, agent design, stack, I/O schemas and MVP demo script. ([Markdown source](https://github.com/RexGuard/cactai/blob/main/Cybersecurity%20%2B%20AI.md))
+📄 **[Full project plan](https://rexguard.github.io/SentrAI/Cybersecurity%20+%20AI.html)**: problem, data collection per layer, risk formula, Jev pipeline, hotpatch workflow, notifications, accountability reports, ethics, agent design, stack, I/O schemas and MVP demo script. ([Markdown source](https://github.com/RexGuard/SentrAI/blob/main/Cybersecurity%20%2B%20AI.md))
 
 ## Working prototype
 
 The MVP runs on one Windows laptop: a fictional student portal gets attacked, SentrAI scores the risk, alerts the operator, auto-blocks the attackers when the risk crosses 80, and writes a hash-chained evidence report.
 
-- 🛠️ **[MVP code and how to run it](https://github.com/RexGuard/cactai/tree/main/mvp)**: `run_demo.ps1` starts everything; 74 automated tests including an end-to-end run of the demo story.
-- 🎬 **[Video script](https://github.com/RexGuard/cactai/blob/main/mvp/pitch/VIDEO_SCRIPT.md)**, [slide outline](https://github.com/RexGuard/cactai/blob/main/mvp/pitch/SLIDES.md), [judge Q&A](https://github.com/RexGuard/cactai/blob/main/mvp/pitch/QA_PREP.md) and [sources](https://github.com/RexGuard/cactai/blob/main/mvp/research/SOURCES.md).
+- 🛠️ **[MVP code and how to run it](https://github.com/RexGuard/SentrAI/tree/main/mvp)**: `run_demo.ps1` starts everything; 74 automated tests including an end-to-end run of the demo story.
+- 🎬 **[Video script](https://github.com/RexGuard/SentrAI/blob/main/mvp/pitch/VIDEO_SCRIPT.md)**, [slide outline](https://github.com/RexGuard/SentrAI/blob/main/mvp/pitch/SLIDES.md), [judge Q&A](https://github.com/RexGuard/SentrAI/blob/main/mvp/pitch/QA_PREP.md) and [sources](https://github.com/RexGuard/SentrAI/blob/main/mvp/research/SOURCES.md).
 
-- 🗺️ **[Roadmap](https://rexguard.github.io/cactai/ROADMAP.html)**: 9 phases from the MVP to a pilot, with effort, owners and done-when checks.
+- 🗺️ **[Roadmap](https://rexguard.github.io/SentrAI/ROADMAP.html)**: 9 phases from the MVP to a pilot, with effort, owners and done-when checks.
 
 ![SentrAI architecture](mvp/pitch/architecture.svg)
 
