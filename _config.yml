@@ -1,5 +1,5 @@
 theme: jekyll-theme-cayman
-title: CactAI
+title: SentrAI
 description: Accountability-based cybersecurity + AI
 baseurl: /cactai
 # Pages turns these on by default; listed so the plan (no front matter) always renders.

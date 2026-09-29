@@ -14,7 +14,7 @@ Guardrails, in order:
   1. Claude may only pick action types the installed responders handle, and entity targets
      (IP, account, host) must have been seen in this incident's own events.
   2. Needle still reviews every autonomous action (confidence, threshold, allowlist,
-     protected assets). Cyanide can make CactAI more careful, never less.
+     protected assets). Cyanide can make SentrAI more careful, never less.
   3. Every action still expires after the TTL unless a human makes it permanent.
   4. No API key, a timeout or a bad answer: Cyanide falls back to Saguaro's playbooks.
 
@@ -24,6 +24,7 @@ plan arrives the incident carries the playbook recommendation.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 import os
@@ -71,15 +72,15 @@ PLAN_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
 }
 
-SYSTEM_PROMPT = """You are Cyanide, the incident-response orchestrator inside CactAI, a defensive security \
+SYSTEM_PROMPT = """You are Cyanide, the incident-response orchestrator inside SentrAI, a defensive security \
 tool for small organisations with one or two IT staff.
 
 For each incident you receive the organisation's system profile, the incident, the raw log lines behind it \
 and the containment actions installed on this system. Choose the containment steps that fit THIS system, \
-and decide whether CactAI may apply them on its own when the operator has not responded.
+and decide whether SentrAI may apply them on its own when the operator has not responded.
 
 Rules:
-- CactAI only defends inside its own network. Never propose counter-attacks or anything aimed outside it.
+- SentrAI only defends inside its own network. Never propose counter-attacks or anything aimed outside it.
 - Only use action types from the installed list. For block_ip, lock_user, kill_process and revoke_public_acl \
 the target must be an IP, account or host that appears in the incident.
 - Every action is temporary (it expires unless a human makes it permanent), so prefer the smallest set of steps \
@@ -171,6 +172,8 @@ class Cyanide(Saguaro):
         self._pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="cyanide")
         self._generation = 0  # bumped on reset so late plans for old incidents are ignored
         super().__init__(settings)
+
+    def _configure(self) -> None:
         # The profile can protect more assets; Needle enforces them deterministically.
         self.needle.protected_ips |= set(self.profile.get("protected_ips", []))
         self.needle.protected_users |= set(self.profile.get("protected_users", []))
@@ -290,6 +293,20 @@ class Cyanide(Saguaro):
                 text += f". Holds autonomous action: {plan.hold_reason}"
             self._timeline(inc, now, "cyanide_plan", text)
             self._evaluate(now)  # the plan may change what autonomous containment would do
+
+    # --------------------------------------------------------- persistence
+    def _encode_incident(self, inc: dict[str, Any]) -> dict[str, Any]:
+        data = super()._encode_incident(inc)
+        if isinstance(inc.get("_plan"), Plan):
+            data["_plan"] = dataclasses.asdict(inc["_plan"])
+        return data
+
+    def _decode_incident(self, data: dict[str, Any]) -> dict[str, Any]:
+        inc = super()._decode_incident(data)
+        p = inc.get("_plan")
+        if isinstance(p, dict):
+            inc["_plan"] = Plan(**{**p, "proposals": [Proposal(**x) for x in p.get("proposals", [])]})
+        return inc
 
     # --------------------------------------------------------- containment
     def _contain(self, inc: dict[str, Any], mode: str, approver: str, now: float, risk_idx: int,

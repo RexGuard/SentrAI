@@ -1,4 +1,4 @@
-"""CactAI settings file and first-run setup wizard.
+"""SentrAI settings file and first-run setup wizard.
 
 Every component already reads its settings from environment variables. This module keeps
 those values in one JSON file per machine and, on `load()`, sets each variable that is not
@@ -8,7 +8,7 @@ A machine is "new" when it has no settings file yet. There, `ensure()` walks the
 through one short section per part of the pipeline (collector, classifier, responder,
 notifications). Pressing Enter keeps the default, which is exactly what the demo uses.
 
-The security values (when an event counts as an attack, when CactAI acts, for how long) come
+The security values (when an event counts as an attack, when SentrAI acts, for how long) come
 from a preset: Strict, Moderate or Balanced, or Advanced to set each value yourself. The saved
 file keeps the preset's name and every value. Values that no longer match their preset are saved
 as Advanced (see `settle_preset()`).
@@ -17,12 +17,14 @@ Run (any venv, stdlib only):
     python cactai_config.py              set up if this is a new machine, then show settings
     python cactai_config.py setup        run the wizard again (current values as defaults)
     python cactai_config.py get NAME     print one value, for scripts
+    python cactai_config.py token        print the core API token (made and saved on first use)
 """
 from __future__ import annotations
 
 import getpass
 import json
 import os
+import secrets
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -45,6 +47,7 @@ class Field:
     kind: type = str  # str, int or float; used only to validate the answer
     secret: bool = False
     choices: tuple[str, ...] = ()  # when set, the answer must be one of these
+    generated: bool = False  # never asked: the wizard keeps the saved value or makes a new one
 
 
 @dataclass(frozen=True)
@@ -104,7 +107,7 @@ SECTIONS = (
         Field("EXPORT_ROWS_THRESHOLD", "Rows in one export that count as bulk exfiltration", "100", int),
         Field("TYPESAFE_API_KEY", "TypeSafe (Jev) API key, blank to use rules only", secret=True),
     )),
-    Section("responder", "3. Responder", "When CactAI acts, for how long, and what it never touches.", (
+    Section("responder", "3. Responder", "When SentrAI acts, for how long, and what it never touches.", (
         Field("RISK_THRESHOLD", "Risk index (0-100) at which temporary blocks start", "80", int),
         Field("HOTPATCH_TTL_HOURS", "Hours before an automatic block expires", "2", float),
         Field("SLA_HOURS", "Hours a human has to respond before escalation", "2", float),
@@ -113,10 +116,20 @@ SECTIONS = (
         Field("PROTECTED_USERS", "Accounts never to lock (comma-separated)"),
         Field("ON_DUTY", "On-duty responder shown in alerts", "John Doe (SEC-409) / Shift Bravo"),
     )),
-    Section("notifications", "4. Notifications", "Telegram alerts. Leave blank to print alerts to the console.", (
+    Section("notifications", "4. Notifications", "Telegram alerts, with email as the backup. "
+            "Leave both blank to print alerts to the console.", (
         Field("TELEGRAM_BOT_TOKEN", "Telegram bot token", secret=True),
         Field("TELEGRAM_CHAT_ID", "Telegram chat id"),
         Field("CACTAI_OPERATOR", "Your name, as shown on approvals", "operator"),
+        Field("SMTP_HOST", "Email: SMTP server, blank for no email alerts"),
+        Field("SMTP_PORT", "Email: SMTP port (587 STARTTLS, 465 SSL)", "587", int),
+        Field("SMTP_SECURITY", "Email: connection security", "starttls", choices=("starttls", "ssl", "none")),
+        Field("SMTP_USER", "Email: SMTP login, blank if none"),
+        Field("SMTP_PASSWORD", "Email: SMTP password or app password", secret=True),
+        Field("ALERT_EMAIL_FROM", "Email: sender address, blank to use the login"),
+        Field("ALERT_EMAIL_TO", "Email: recipients (comma-separated)"),
+        Field("CACTAI_EMAIL_MODE", "Email: send when Telegram fails, or always", "backup",
+              choices=("backup", "always")),
     )),
     Section("ai", "5. AI model", "Cyanide and Scout. Pick a provider and paste its key; "
             "leave the key blank to run on fixed playbooks.", (
@@ -125,9 +138,18 @@ SECTIONS = (
         Field("CACTAI_LLM_BASE_URL", "Base URL (only for another OpenAI-compatible service)"),
         Field("CACTAI_LLM_MODEL", "Model name, blank for the provider's default"),
     )),
+    Section("access", "6. Access", "Who may use the core API and the dashboard.", (
+        Field("CACTAI_API_TOKEN", "Core API token (shared by the collector, dashboard and Telegram bot)",
+              secret=True, generated=True),
+        Field("CACTAI_DASHBOARD_PASSWORD", "Dashboard password, blank for no login screen", secret=True),
+    )),
 )
 FIELDS = {f.env: f for s in SECTIONS for f in s.fields}
+EMAIL_FIELDS = ("SMTP_PORT", "SMTP_SECURITY", "SMTP_USER", "SMTP_PASSWORD", "ALERT_EMAIL_FROM", "ALERT_EMAIL_TO",
+                "CACTAI_EMAIL_MODE")  # asked only when SMTP_HOST is set
 MODEL_ENV = "CACTAI_LLM_MODEL"
+TOKEN_ENV = "CACTAI_API_TOKEN"
+PASSWORD_ENV = "CACTAI_DASHBOARD_PASSWORD"
 
 
 def _one_ai_key(values: dict[str, str]) -> dict[str, str]:
@@ -210,6 +232,8 @@ def save(values: dict[str, str]) -> Path:
     path = config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     values = settle_preset(dict(values))
+    if not values.get(TOKEN_ENV):  # a form that leaves the token out must not wipe it
+        values[TOKEN_ENV] = read().get(TOKEN_ENV, "")
     data = {s.key: {f.env: values.get(f.env, f.default) for f in s.fields} for s in SECTIONS}
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     return path
@@ -222,7 +246,7 @@ def load(refresh: bool = False) -> dict[str, str]:
     """Copy saved values into os.environ, without overriding anything already set.
 
     refresh=True first takes back the values an earlier load() copied in (unless something else
-    changed them since), so edits saved while CactAI runs win over the old saved values.
+    changed them since), so edits saved while SentrAI runs win over the old saved values.
     """
     if refresh:
         for name, value in _LOADED.items():
@@ -234,6 +258,27 @@ def load(refresh: bool = False) -> dict[str, str]:
         if value != "" and name not in os.environ:
             os.environ[name] = _LOADED[name] = value
     return values
+
+
+def new_token() -> str:
+    return secrets.token_urlsafe(32)
+
+
+def api_token() -> str:
+    """The token every client sends to the core, and the core requires.
+
+    An explicit CACTAI_API_TOKEN wins. Otherwise the saved one is used, and a machine without
+    one gets a new token saved to the settings file, so every component finds the same value.
+    """
+    token = os.environ.get(TOKEN_ENV, "").strip()
+    if token:
+        return token
+    values = read()
+    if not values.get(TOKEN_ENV):
+        values[TOKEN_ENV] = new_token()
+        save(values)
+        values = read()  # another component may have saved one at the same moment; use what is on disk
+    return values[TOKEN_ENV]
 
 
 def valid(field: Field, answer: str) -> bool:
@@ -266,7 +311,7 @@ def wizard(ask: Callable[[str], str] | None = None, ask_secret: Callable[[str], 
     """
     ask, ask_secret = ask or input, ask_secret or getpass.getpass
     current = {f.env: f.default for f in FIELDS.values()} | read()
-    say("\nCactAI setup. Press Enter to keep the value in [brackets].")
+    say("\nSentrAI setup. Press Enter to keep the value in [brackets].")
     values: dict[str, str] = {}
     preset, advanced = preset_values(DEFAULT_PRESET), False
     for section in SECTIONS:
@@ -274,6 +319,10 @@ def wizard(ask: Callable[[str], str] | None = None, ask_secret: Callable[[str], 
         for f in section.fields:
             if f.env in PRESET_FIELDS and not advanced:
                 values[f.env] = preset[f.env]
+                continue
+            if f.generated:
+                values[f.env] = current[f.env] or new_token()
+                say(f"  {f.prompt}: {'kept' if current[f.env] else 'generated'} (python cactai_config.py token shows it)")
                 continue
             shown = ("set" if current[f.env] else "not set") if f.secret else current[f.env]
             prompt = f.prompt
@@ -342,6 +391,9 @@ def main(argv: list[str]) -> int:
         field = FIELDS.get(argv[1])
         print(os.environ.get(argv[1]) or read().get(argv[1]) or (field.default if field else ""))
         return 0
+    if argv == ["token"]:
+        print(api_token())
+        return 0
     if argv[:1] == ["setup"]:
         setup()
         return 0
@@ -350,7 +402,7 @@ def main(argv: list[str]) -> int:
         return 2
     ensure()
     values = read()
-    print(f"CactAI settings ({config_path()}):")
+    print(f"SentrAI settings ({config_path()}):")
     for f in FIELDS.values():
         value = values.get(f.env, f.default)
         print(f"  {f.env:<22} {('***' if value else '') if f.secret else value}")

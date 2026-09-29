@@ -1,4 +1,4 @@
-"""Pure data-shaping helpers for the CactAI dashboard.
+"""Pure data-shaping helpers for the SentrAI dashboard.
 
 Everything here is free of Streamlit so it can be unit tested.
 """
@@ -75,7 +75,7 @@ CATEGORY_LABELS = {
     "brute_force": "Brute force",
     "sql_injection": "SQL injection",
     "xss": "Cross-site scripting",
-    "port_scan": "Port scan",
+    "port_scan": "Port or web scan",
     "privilege_escalation": "Privilege escalation",
     "data_exfiltration": "Data exfiltration",
     "misconfiguration": "Misconfiguration",
@@ -291,7 +291,7 @@ def build_containment_rows(blocklist: dict | None, incidents: Iterable[dict]) ->
 # ---------------------------------------------------------------- audit / agents
 
 AGENTS = {
-    "Saguaro": ("🌵", "#6fcf97"),
+    "Saguaro": ("🛡️", "#6fcf97"),
     "Cyanide": ("🧪", "#6fcf97"),
     "Planner": ("✳️", "#d97757"),
     "Needle": ("📍", "#e0a526"),

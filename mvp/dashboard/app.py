@@ -1,4 +1,4 @@
-"""CactAI operator dashboard (Streamlit, http://127.0.0.1:8501).
+"""SentrAI operator dashboard (Streamlit, http://127.0.0.1:8501).
 
 The sidebar is the menu: Configuration (the home page), Approvals, Chat (talk with the
 orchestrator), one page per part of the pipeline (Collector, Classifier, Action taker), Review,
@@ -9,6 +9,7 @@ Run from this folder:  .venv\\Scripts\\streamlit run app.py
 """
 from __future__ import annotations
 
+import hmac
 import html
 import json
 import os
@@ -31,11 +32,39 @@ DEFAULT_CORE = os.environ.get("CACTAI_CORE_URL", "http://127.0.0.1:8000")
 DEFAULT_OPERATOR = os.environ.get("CACTAI_OPERATOR", "operator")
 REFRESH_SECONDS = 2
 
-st.set_page_config(page_title="CactAI · Risk Console", page_icon="🌵", layout="wide",
+st.set_page_config(page_title="SentrAI · Risk Console", page_icon="🛡️", layout="wide",
                    initial_sidebar_state="expanded")
 
 CSS = (Path(__file__).parent / "cactai_ui" / "console.css").read_text(encoding="utf-8")
 st.markdown(f"<style>{CSS}</style>", unsafe_allow_html=True)
+
+
+# ------------------------------------------------------------------ login
+
+def login() -> None:
+    """Ask for the dashboard password (setup wizard, section 6) once per browser session.
+
+    Without a password the console opens straight away, as it did before; the core API
+    still needs its token either way.
+    """
+    password = os.environ.get(cfg.PASSWORD_ENV, "")
+    if not password or st.session_state.get("signed_in"):
+        return
+    _, mid, _ = st.columns([1, 1.2, 1])
+    with mid.form("login"):
+        st.markdown('<div class="brand"><div class="brand-mark">🛡️</div><div>'
+                    '<div class="brand-name">Cact<span>AI</span></div>'
+                    '<div class="brand-tag">Risk Console</div></div></div>', unsafe_allow_html=True)
+        typed = st.text_input("Password", type="password")
+        if st.form_submit_button("Sign in", type="primary", width="stretch"):
+            if hmac.compare_digest(typed.encode(), password.encode()):
+                st.session_state.signed_in = True
+                st.rerun()
+            st.error("Wrong password.")
+    st.stop()
+
+
+login()
 
 
 # ------------------------------------------------------------------ helpers
@@ -103,14 +132,15 @@ st.session_state.setdefault("operator", DEFAULT_OPERATOR)
 st.session_state.setdefault("auto_refresh", True)
 st.session_state.setdefault("page", "config")
 st.session_state.setdefault("seen", {})
-client = CoreClient(st.session_state.core_url)
+TOKEN = cfg.api_token()
+client = CoreClient(st.session_state.core_url, token=TOKEN)
 AUTO = REFRESH_SECONDS if st.session_state.auto_refresh else None
 AUDIT_WINDOW = 500  # latest records the dashboard reads; the core still verifies the whole chain
 
 
 @st.cache_data(ttl=1, show_spinner=False)
 def _get(base_url: str, what: str) -> Any:
-    c = CoreClient(base_url)
+    c = CoreClient(base_url, token=TOKEN)
     return {"risk": c.risk, "incidents": c.incidents, "blocklist": c.blocklist, "agents": c.agents,
             "audit": lambda: c.audit(AUDIT_WINDOW)}[what]()
 
@@ -118,6 +148,11 @@ def _get(base_url: str, what: str) -> Any:
 def fetch(what: str, default: Any = None) -> tuple[Any, str | None]:
     """One cached read per second, shared by the menu and the page."""
     return safe(lambda: _get(st.session_state.core_url, what), default)
+
+
+def protection_off() -> bool:
+    risk, _ = fetch("risk")
+    return bool(isinstance(risk, dict) and risk.get("monitor_only"))
 
 
 def audit_records() -> tuple[list[dict], bool | None, str | None]:
@@ -169,7 +204,9 @@ def side_risk() -> None:
         f'<div class="num" style="color:{color}">{idx if idx is not None else "-"}<small> / 100</small></div>'
         f'<div class="bar"><i style="width:{pct:.0f}%;background:{color}"></i><b style="left:{threshold:.0f}%"></b></div>'
         f'<div class="foot"><span>threshold {threshold:.0f}</span>'
-        f'<span style="color:{chain[1]}">{icon("link")} {chain[0]}</span></div></div>',
+        f'<span style="color:{chain[1]}">{icon("link")} {chain[0]}</span></div>'
+        + (f'<div class="side-off">{icon("shield")} Protection off · monitor only</div>' if risk.get("monitor_only") else "")
+        + '</div>',
         unsafe_allow_html=True,
     )
 
@@ -201,7 +238,7 @@ def menu() -> None:
 
 with st.sidebar:
     st.markdown(
-        '<div class="brand"><div class="brand-mark">🌵</div><div>'
+        '<div class="brand"><div class="brand-mark">🛡️</div><div>'
         '<div class="brand-name">Cact<span>AI</span></div>'
         '<div class="brand-tag">Risk Console</div></div></div>',
         unsafe_allow_html=True,
@@ -213,7 +250,10 @@ with st.sidebar:
                  help="POST /demo/reset: clears state for a fresh take"):
         run_action("Demo reset", lambda: client.reset_demo(), rerun=False)
         st.session_state.seen = {}
-    st.markdown('<div class="side-foot">A cactus doesn\'t chase you. It just makes touching it a bad idea.</div>',
+    if st.session_state.get("signed_in") and st.button("Sign out", icon=":material/logout:", width="stretch"):
+        st.session_state.signed_in = False
+        st.rerun()
+    st.markdown('<div class="side-foot">A sentry doesn\'t chase you. It just guards the gate.</div>',
                 unsafe_allow_html=True)
 
 
@@ -229,10 +269,15 @@ def header(title: str, note: str = "") -> dict | None:
     else:
         band = sh.resolve_band(risk)
         _, valid, _ = audit_records()
-        chips = (pill(f"Risk {risk.get('risk_index', '-')} · {sh.BAND_LABELS.get(band, band)}", sh.band_color(band))
+        label = sh.BAND_LABELS.get(band, band)
+        if risk.get("monitor_only") and band == "critical":
+            label = "CRITICAL · nothing applied (monitor only)"
+        chips = (pill(f"Risk {risk.get('risk_index', '-')} · {label}", sh.band_color(band))
                  + (pill("Chain valid", sh.BAND_COLORS["green"]) if valid
                     else pill("Chain broken", sh.BAND_COLORS["critical"]) if valid is False
                     else pill("Chain unknown", sh.UNKNOWN_COLOR)))
+        if risk.get("monitor_only"):
+            chips = pill("Protection off", sh.BAND_COLORS["amber"]) + chips
     chips += pill(f"Live · {now_s}" if AUTO else f"Paused · {now_s}", sh.BAND_COLORS["green"] if AUTO else sh.UNKNOWN_COLOR,
                   pulse=bool(AUTO))
     st.markdown(
@@ -251,7 +296,25 @@ def header(title: str, note: str = "") -> dict | None:
             unsafe_allow_html=True,
         )
         return None
+    if risk.get("monitor_only"):
+        protection_banner()
     return risk
+
+
+def protection_banner() -> None:
+    """Shown on every page while protection is off, so nobody mistakes monitoring for protection."""
+    p, _ = safe(client.protection, {})
+    who = f" by {p['changed_by']}" if p.get("changed_by") else ""
+    why = f": {p['reason']}" if p.get("reason") else ""
+    left = len(p.get("active_actions") or [])
+    kept = f" {left} action(s) already in force stay until they expire or are rolled back." if left else ""
+    st.markdown(
+        f'<div class="protect-off">{icon("remove_moderator")}<div><b>Protection is off: monitor-only mode</b><br>'
+        f'<small>Turned off{html.escape(who)}{html.escape(why)}</small><br>'
+        f'SentrAI is still collecting, classifying and scoring, but applies no containment, autonomous or approved.'
+        f'{kept} Turn it back on from the Configuration page.</div></div>',
+        unsafe_allow_html=True,
+    )
 
 
 def table(df, empty_text: str, **kwargs) -> None:
@@ -323,7 +386,10 @@ def decision_controls(inc: dict) -> None:
             just = st.text_area("Justification (required to reject, written to the audit log)", key=f"just_{inc_id}",
                                 height=80, placeholder="e.g. False positive: this IP is our penetration tester")
             c1, c2 = st.columns(2)
-            approve = c1.form_submit_button("Approve & Patch", icon=":material/check:", type="primary", width="stretch")
+            off = protection_off()
+            approve = c1.form_submit_button("Approve & Patch", icon=":material/check:", type="primary", width="stretch",
+                                            disabled=off, help="Protection is off (monitor only): turn it on in "
+                                                               "Configuration to apply a hotpatch." if off else None)
             reject = c2.form_submit_button("Reject with Justification", icon=":material/block:", width="stretch")
         if approve:
             run_action(f"Approved & patched {inc_id}", ack_then("approve", just.strip()))
@@ -359,6 +425,7 @@ def page_config() -> None:
     with st.container(border=True):
         section(preset.title, preset.about, "verified_user")
         values |= preset_settings(current)
+        protection_switch()
 
     # Everything else is folded away; the arrow on each row opens it.
     with st.expander("Dashboard"):  # no icon, so the row shows its arrow
@@ -379,6 +446,12 @@ def page_config() -> None:
                 st.caption("Detection and response values are set under Security preset.")
             cols = st.columns(2)
             for n, f in enumerate(fields):
+                if f.generated:  # shown, never edited here: every part must restart with the same value
+                    values[f.env] = current[f.env]
+                    cols[n % 2].text_input(f.prompt, value=current[f.env], key=f"cfg_{f.env}", type="password",
+                                           disabled=True, help=f"Environment variable {f.env}. Generated by setup; "
+                                           "python cactai_config.py token prints it.")
+                    continue
                 values[f.env] = cols[n % 2].text_input(
                     f.prompt, value=current[f.env], key=f"cfg_{f.env}", help=f"Environment variable {f.env}",
                     type="password" if f.secret else "default").strip()
@@ -394,6 +467,44 @@ def page_config() -> None:
             else:
                 st.success(f"Saved to {path}. Cyanide switched to the new AI settings ({ai.get('chat')}). "
                            "Restart the demo (stop_demo.ps1, then run_demo.ps1) for the other settings.")
+
+
+def protection_switch() -> None:
+    """Protection on/off. Takes effect at once in the running core (no Save) and is kept across restarts."""
+    p, err = safe(client.protection)
+    st.markdown('<div class="side-sep"></div>', unsafe_allow_html=True)
+    if err or not isinstance(p, dict):
+        st.caption(f"Protection switch: the core is not reachable ({err}).")
+        return
+    op = st.session_state.operator
+
+    def switch(on: bool, reason: str = "") -> None:
+        try:
+            client.set_protection(on, op, reason)
+            st.session_state["flash"] = ("Protection is on" if on else "Protection is off: monitor-only mode", "✅")
+        except CoreError as exc:
+            st.session_state["flash"] = (f"Could not switch protection: {exc}", "⚠️")
+        _get.clear()
+        st.rerun()
+
+    if p.get("monitor_only"):
+        c1, c2 = st.columns([3, 1], vertical_alignment="center")
+        c1.markdown(f'{pill("Protection off", sh.BAND_COLORS["amber"])} Monitor only: incidents are scored '
+                    f'and alerted, nothing is blocked.', unsafe_allow_html=True)
+        if c2.button("Turn protection on", icon=":material/shield:", type="primary", width="stretch",
+                     help="Incidents already over the threshold are contained right away."):
+            switch(True)
+        return
+    c1, c2 = st.columns([3, 1], vertical_alignment="bottom")
+    reason = c1.text_input("Protection is on. To test without blocking anything, turn it off (monitor only).",
+                           key="protect_reason", placeholder="Reason, recorded in the audit trail (required)",
+                           help="POST /protection. SentrAI keeps collecting, classifying and scoring, but applies "
+                                "no containment, autonomous or approved, until it is turned back on.")
+    if c2.button("Turn protection off", icon=":material/remove_moderator:", width="stretch"):
+        if not reason.strip():
+            st.error("Write why protection is being turned off; it goes into the audit trail.")
+        else:
+            switch(False, reason.strip())
 
 
 def preset_settings(current: dict[str, str]) -> dict[str, str]:
@@ -459,7 +570,7 @@ def ai_settings(current: dict[str, str]) -> dict[str, str]:
     m1, m2 = st.columns([3, 1], vertical_alignment="bottom")
     model = m1.text_input("Model", key=keys[cfg.MODEL_ENV], placeholder=f"blank for the default ({default})",
                           help="Environment variable CACTAI_LLM_MODEL; a value set in the environment "
-                               "before CactAI starts wins over this one.").strip()
+                               "before SentrAI starts wins over this one.").strip()
     ai = {"CACTAI_LLM_PROVIDER": provider, "CACTAI_LLM_API_KEY": api_key, "CACTAI_LLM_BASE_URL": base_url,
           cfg.MODEL_ENV: model}
     if m2.button("Fetch models", icon=":material/refresh:", width="stretch", disabled=not api_key,
@@ -714,11 +825,35 @@ def page_collector() -> None:
         section("Events per layer agent", "", "hub")
         table(sh.pd.DataFrame([{"Agent": a.get("name"), "Events analysed": a.get("analyzed", 0)} for a in layer]),
               "No agent data.")
+    scout_proposals()
     log_discovery()
     with st.container(border=True):
         section("Malicious events collected", "newest first", "warning")
         table(sh.classification_rows(records)[["Time", "Event", "Category", "Layer agent", "Incident", "Raw log line"]],
               "No malicious events yet.")
+
+
+def scout_proposals() -> None:
+    """Log files Scout proposed (python -m scout find), waiting for the operator's yes or no."""
+    waiting, err = safe(client.pending_log_sources, [])
+    if err or not waiting:
+        return
+    with st.container(border=True):
+        section("Scout proposals", "log files Scout found · nothing is watched until you press Watch",
+                "travel_explore")
+        for p in waiting:
+            c1, c2, c3 = st.columns([6, 1, 1])
+            c1.markdown(f"**{html.escape(str(p.get('name')))}** · `{p.get('path')}` · {p.get('layer')}  \n"
+                        f"<span style='opacity:.7'>{html.escape(str(p.get('why') or ''))}</span>",
+                        unsafe_allow_html=True)
+            pid = p.get("id")
+            for col, approve, label in ((c2, True, "Watch"), (c3, False, "Dismiss")):
+                if col.button(label, key=f"scout_{'yes' if approve else 'no'}_{pid}",
+                              icon=":material/visibility:" if approve else ":material/close:"):
+                    run_action(f"Collector now watches {p.get('name')}" if approve else f"Dismissed {p.get('name')}",
+                               lambda a=approve: client.decide_log_source(pid, st.session_state.operator, a),
+                               rerun=False)
+                    st.rerun()
 
 
 def log_discovery() -> None:
@@ -742,11 +877,11 @@ def log_discovery() -> None:
         known = [s for s in found if s.get("recognised", True)]
         other = [s for s in found if not s.get("recognised", True)]
         if not known:
-            empty("No log files found for the programs CactAI recognises.", "search_off")
+            empty("No log files found for the programs SentrAI recognises.", "search_off")
         for s in known[:10]:
             scan_suggestion(s)
         if other:
-            with st.expander(f"Other log files open by programs CactAI doesn't recognise ({len(other)})"):
+            with st.expander(f"Other log files open by programs SentrAI doesn't recognise ({len(other)})"):
                 for s in other[:10]:
                     scan_suggestion(s)
         for note in latest.get("notes") or []:
@@ -969,12 +1104,16 @@ def report_viewer(inc_id: str) -> None:
     if err or not md:
         empty("No report for this incident yet. Scribe writes one when autonomous containment fires.", "hourglass_empty")
         return
-    d1, d2 = st.columns(2)
-    d1.download_button("Download report (.md)", md, icon=":material/download:", file_name=f"{inc_id}-evidence-report.md",
+    d0, d1, d2 = st.columns(3)
+    pdf, perr = safe(lambda: client.report_pdf(inc_id))
+    if pdf and not perr:
+        d0.download_button("PDF", pdf, icon=":material/picture_as_pdf:", help="Download the evidence report as PDF", file_name=f"{inc_id}-evidence-report.pdf",
+                           mime="application/pdf", type="primary", width="stretch", key=f"dl_pdf_{inc_id}")
+    d1.download_button("Markdown", md, icon=":material/download:", file_name=f"{inc_id}-evidence-report.md",
                        mime="text/markdown", width="stretch", key=f"dl_md_{inc_id}")
     rep_json, jerr = safe(lambda: client.report_json(inc_id))
     if rep_json is not None and not jerr:
-        d2.download_button("Download report (.json)", json.dumps(rep_json, indent=2), icon=":material/data_object:", file_name=f"{inc_id}-evidence-report.json",
+        d2.download_button("JSON", json.dumps(rep_json, indent=2), icon=":material/data_object:", file_name=f"{inc_id}-evidence-report.json",
                            mime="application/json", width="stretch", key=f"dl_json_{inc_id}")
     with st.container(height=520, border=True):
         st.markdown(sh.demote_headings(md))

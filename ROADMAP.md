@@ -1,8 +1,8 @@
 ---
-title: CactAI Roadmap
+title: SentrAI Roadmap
 ---
 
-# 🌵 CactAI Roadmap
+# 🛡️ SentrAI Roadmap
 
 From the working hackathon MVP (27 Sep 2026) to a product a Singapore SME or private school can run in production.
 
@@ -22,7 +22,7 @@ From the working hackathon MVP (27 Sep 2026) to a product a Singapore SME or pri
 | Containment | IP block and account lock via the portal's blocklist (real 403), TTL, rollback, make permanent | Firewall, WAF, AD, DB, cloud actions are only recorded; no tarpit or honeytokens |
 | Agents | Saguaro, Root, Reservoir, Areole, Needle, Watchdog, Scribe, HelpDesk as Python classes in one process | Separate services, separate keys, LLM-assisted HelpDesk |
 | Notifications | Dashboard, console, Telegram code with buttons | Telegram untested live; no email, SMS, Teams/Slack |
-| Accountability | Hash-chained audit log, negligence report (Markdown/JSON) | PDF, signatures, fair-process features, board reporting |
+| Accountability | Hash-chained audit log, security evidence report (Markdown/JSON/PDF) | Signatures, fair-process features, board reporting |
 | Platform | Runs on one Windows laptop; in-memory state; no login | Persistence, auth, multi-tenant, installer, CI |
 
 ---
@@ -39,7 +39,7 @@ From the working hackathon MVP (27 Sep 2026) to a product a Singapore SME or pri
 | 5 | Notifications and escalation | 7 | Nov (parallel) |
 | 6 | Accountability and evidence reporting | 9 | Nov – Dec wk 1 |
 | 7 | Agents as separate services | 12 | Dec |
-| 8 | Product, pilot and security of CactAI itself | 21 | Jan – Feb 2027 |
+| 8 | Product, pilot and security of SentrAI itself | 21 | Jan – Feb 2027 |
 | | **Total** | **≈ 105 dev-days** | ≈ 5 months for one developer |
 
 ```
@@ -67,7 +67,7 @@ P0 ■
 | --- | --- |
 | Build the PowerPoint deck from `mvp/pitch/SLIDES.md` (scripts in `mvp/deck/`) | Hozen, Erick |
 | Generate video title cards and charts (`mvp/assets/make_assets.py`) | Erick |
-| Add a "Why CactAI" competitor slide (Darktrace/Defender, PagerDuty, Vanta vs CactAI) | Ishmail |
+| Add a "Why SentrAI" competitor slide (Darktrace/Defender, PagerDuty, Vanta vs SentrAI) | Ishmail |
 | Reframe the "Negligence Dossier" as a **Security Evidence Report** in the pitch | Ishmail |
 | Record the demo with `run_demo.ps1 -DemoSpeed 600` and `scenario.py --pause 40`; keep a replay take as backup | Erick |
 | Optional: try Jev live with a TypeSafe key and Telegram live with a bot token | Erick |
@@ -78,7 +78,7 @@ P0 ■
 
 ## Phase 1 · Harden the core (≈10 days)
 
-**Goal:** CactAI survives restarts, knows who is using it, and every change is tested automatically.
+**Goal:** SentrAI survives restarts, knows who is using it, and every change is tested automatically.
 
 | # | Feature | Detail | Days |
 | --- | --- | --- | --- |
@@ -110,7 +110,7 @@ P0 ■
 | 2.7 | Cloud config scan | AWS via `boto3`: public S3 buckets, security groups open to 0.0.0.0/0 on admin ports, IAM users without MFA. Scheduled scan, read-only role. Azure/GCP later. | 3 |
 | 2.8 | Asset inventory | Hosts, owners and criticality (1.0 / 1.5 PII / 2.0 crown jewels) managed in core, so criticality is no longer hard-coded in collectors. | 0.5 |
 
-**Done when:** a Linux VM, a Windows VM, a Postgres DB and an AWS test account all report into one CactAI; each layer's example attack from plan section 5 opens the right incident.
+**Done when:** a Linux VM, a Windows VM, a Postgres DB and an AWS test account all report into one SentrAI; each layer's example attack from plan section 5 opens the right incident.
 
 **Depends on:** 1.1, 1.2. **Later:** rewrite the collector in Go or Rust as a single binary (plan section 13), ≈8 extra days, only after the Python version is stable.
 
@@ -181,7 +181,7 @@ P0 ■
 
 | # | Feature | Detail | Days |
 | --- | --- | --- | --- |
-| 6.1 | Security Evidence Report (PDF) | Rename and restyle the negligence report; PDF export with the audit-chain proof. | 1.5 |
+| 6.1 | Security Evidence Report (PDF) | Done in the MVP: renamed from the old negligence report, PDF export with the audit-chain proof. | 1.5 |
 | 6.2 | Signed audit chain | Ed25519 signature on each chain head; periodic external timestamp (RFC 3161) so even an admin with DB access cannot rewrite history unnoticed. | 2 |
 | 6.3 | Fair-process features | Operator can add context before a report is final; report shows the operator's alert load at the time (so an overloaded person is not blamed for a staffing problem); HR-sensitive fields visible only to Executive/Auditor roles. | 2 |
 | 6.4 | Team metrics | Mean time to acknowledge and to resolve, SLA compliance, alerts per person, per week and per month. | 1.5 |
@@ -213,16 +213,16 @@ P0 ■
 
 ---
 
-## Phase 8 · Product, pilot and security of CactAI itself (≈21 days)
+## Phase 8 · Product, pilot and security of SentrAI itself (≈21 days)
 
-**Goal:** a first real customer, and confidence that CactAI is not itself the weakest link.
+**Goal:** a first real customer, and confidence that SentrAI is not itself the weakest link.
 
 | # | Feature | Detail | Days | Owner |
 | --- | --- | --- | --- | --- |
-| 8.1 | Threat model of CactAI | What if core, an agent or the dashboard is compromised? Least privilege for agents, secret storage, signed updates. | 2 | Erick |
+| 8.1 | Threat model of SentrAI | What if core, an agent or the dashboard is compromised? Least privilege for agents, secret storage, signed updates. | 2 | Erick |
 | 8.2 | Installer | Single command install (Docker Compose and a Windows installer); onboarding wizard for assets, contacts and thresholds. | 4 | Erick |
-| 8.3 | Multi-tenant option | One CactAI serving several small organizations (for an MSP), with strict tenant isolation. | 5 | Erick |
-| 8.4 | Independent pentest and SBOM | External test of CactAI; software bill of materials; dependency pinning. | 2 + vendor | Erick, Ishmail |
+| 8.3 | Multi-tenant option | One SentrAI serving several small organizations (for an MSP), with strict tenant isolation. | 5 | Erick |
+| 8.4 | Independent pentest and SBOM | External test of SentrAI; software bill of materials; dependency pinning. | 2 + vendor | Erick, Ishmail |
 | 8.5 | Pilot | One Singapore private education institution or SME, read-only first (monitor + alerts), containment enabled only after 2 weeks of tuning. | 5 | Ishmail |
 | 8.6 | Pricing and packaging | Per-endpoint or per-organization pricing aimed below one security hire; compare with MDR services. | 1 | Ishmail |
 | 8.7 | Documentation site | Setup, admin, operator and auditor guides on GitHub Pages. | 1 | Hozen |
@@ -234,7 +234,7 @@ P0 ■
 
 ## Differentiators and where they are built
 
-| Why someone picks CactAI | Built in |
+| Why someone picks SentrAI | Built in |
 | --- | --- |
 | One product for small teams: detect, escalate, temporarily fix, prove | P2, P4, P5, P6 |
 | Risk grows with inaction, so ignored alerts get louder | MVP; tuned in P1.3 |
@@ -251,7 +251,7 @@ P0 ■
 | --- | --- | --- |
 | False positives trigger blocks | Lost trust, blocked customers | P3 accuracy gates; protected assets; TTL; pilot starts read-only |
 | Staff see it as surveillance / blame | Pushback, HR issues | P6.3 fair-process features; reframe as evidence; staff notice |
-| CactAI itself is compromised | Attacker gets an enforcement tool | P7 separate keys, P8.1 threat model, P8.4 pentest |
+| SentrAI itself is compromised | Attacker gets an enforcement tool | P7 separate keys, P8.1 threat model, P8.4 pentest |
 | Jev API cost or outage | Classification slows or stops | Time budget and fallback already in the MVP; cost tracking in P3.1 |
 | One developer | Schedule slips | Critical path only (P1 → P2 → P4 → P8); other phases are optional for the pilot |
 | Legal questions on active defense | Liability | No action outside our own perimeter (P4 done-when); legal review before the pilot |

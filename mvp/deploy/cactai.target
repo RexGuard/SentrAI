@@ -1,0 +1,7 @@
+[Unit]
+Description=SentrAI (core, collector, dashboard, notifier)
+Documentation=https://github.com/RexGuard/cactai/blob/main/mvp/deploy/README.md
+Wants=cactai-core.service cactai-collector.service cactai-dashboard.service cactai-notifier.service
+
+[Install]
+WantedBy=multi-user.target

@@ -1,12 +1,17 @@
-"""CactAI notifier: delivers core alerts to Telegram (or the console) and relays operator decisions.
+"""SentrAI notifier: delivers core alerts to Telegram (or the console) and relays operator decisions.
 
 Env:
   CACTAI_CORE_URL      core API base URL (default http://127.0.0.1:8000)
+  CACTAI_API_TOKEN     core API token (default: the one saved by the setup wizard)
   TELEGRAM_BOT_TOKEN   bot token from @BotFather  (never hardcode it)
   TELEGRAM_CHAT_ID     chat that receives alerts and is allowed to press buttons
   CACTAI_OPERATOR      fallback operator name (default "operator")
   NOTIFIER_POLL_SECONDS poll interval (default 2)
+  SMTP_HOST, ALERT_EMAIL_TO, ...  email backup channel, see emailer.py
 If TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is missing, runs in CONSOLE mode.
+Email is off until SMTP_HOST and ALERT_EMAIL_TO are set. Then it is sent when Telegram fails
+(CACTAI_EMAIL_MODE=backup, the default), next to every Telegram alert (always), and next to
+the console in CONSOLE mode.
 
 Usage:  python notifier.py [--console] [--once] [--core URL]
 """
@@ -23,6 +28,7 @@ from pathlib import Path
 from typing import Callable
 
 from core import Core, CoreError
+from emailer import EmailConfig, email_sender
 from formatting import (APPROVE, PERMANENT, REJECT, ROLLBACK, button_specs, format_console,
                         format_telegram, incident_id_of, parse_callback)
 
@@ -33,7 +39,8 @@ DEFAULT_CORE = "http://127.0.0.1:8000"
 
 # ------------------------------------------------------------------ shared delivery loop
 
-SendFn = Callable[[dict, "dict | None", "dict | None"], str]
+# A sender returns the message id, or (channel, message id) when the channel it used varies.
+SendFn = Callable[[dict, "dict | None", "dict | None"], "str | tuple[str, str]"]
 
 
 def process_pending(core: Core, send: SendFn, channel: str, seen: set[str] | None = None) -> list[str]:
@@ -46,15 +53,50 @@ def process_pending(core: Core, send: SendFn, channel: str, seen: set[str] | Non
             continue
         iid = incident_id_of(n)
         incident = core.incident(iid) if iid else None
-        message_id = send(n, incident, risk)
+        result = send(n, incident, risk)
+        used, message_id = result if isinstance(result, tuple) else (channel, result)
         try:
-            core.delivered(nid, channel, message_id)
+            core.delivered(nid, used, message_id)
         except CoreError as exc:
             log.warning("could not mark %s delivered: %s", nid, exc)
         if seen is not None:
             seen.add(nid)  # never resend in this process even if marking failed
         delivered.append(nid)
     return delivered
+
+
+# ------------------------------------------------------------------ email alongside or as fallback
+
+def with_email(primary: SendFn, channel: str, email: SendFn | None, always: bool) -> SendFn:
+    """Send by `primary`; also email when `always`, or email instead when `primary` fails.
+
+    A failed extra email is only logged (the alert already went out). When `primary` fails and
+    email fails too, the error is raised so the alert stays pending and is retried next poll.
+    """
+    if email is None:
+        return primary
+
+    def send(n: dict, incident: dict | None, risk: dict | None) -> tuple[str, str]:
+        try:
+            result = primary(n, incident, risk)
+        except Exception as exc:
+            log.warning("%s delivery of %s failed (%s); sending it by email instead", channel, n.get("id"), exc)
+            return "email", email(n, incident, risk)
+        used, message_id = result if isinstance(result, tuple) else (channel, result)
+        if not always:
+            return used, message_id
+        try:
+            return f"{used}+email", f"{message_id} {email(n, incident, risk)}"
+        except Exception as exc:
+            log.warning("email copy of %s failed: %s", n.get("id"), exc)
+            return used, message_id
+
+    return send
+
+
+def email_from_env() -> tuple[EmailConfig | None, SendFn | None]:
+    cfg = EmailConfig.from_env()
+    return cfg, (email_sender(cfg) if cfg else None)
 
 
 # ------------------------------------------------------------------ console mode
@@ -67,7 +109,7 @@ def console_sender(out=None, color: bool | None = None) -> SendFn:
     def send(n: dict, incident: dict | None, risk: dict | None) -> str:
         counter["n"] += 1
         stamp = datetime.now().strftime("%H:%M:%S")
-        print(f"\n🌵 [{stamp}] alert {n.get('id')} for {incident_id_of(n) or '-'}", file=stream)
+        print(f"\n🛡️ [{stamp}] alert {n.get('id')} for {incident_id_of(n) or '-'}", file=stream)
         print(format_console(n, incident, risk, color=use_color), file=stream, flush=True)
         return f"console-{int(time.time())}-{counter['n']}"
 
@@ -75,9 +117,12 @@ def console_sender(out=None, color: bool | None = None) -> SendFn:
 
 
 def run_console(core: Core, poll: float, once: bool = False) -> None:
-    print("🌵 CactAI notifier · CONSOLE mode (set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID for Telegram)")
+    print("🛡️ SentrAI notifier · CONSOLE mode (set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID for Telegram)")
     print(f"   polling {core.base_url}/notifications/pending every {poll:g} s. Ctrl+C to stop.")
-    send = console_sender()
+    email_cfg, email = email_from_env()
+    print(f"   email alerts to {', '.join(email_cfg.recipients)} via {email_cfg.host}" if email_cfg
+          else "   email alerts off (set SMTP_HOST + ALERT_EMAIL_TO to turn them on)")
+    send = with_email(console_sender(), "console", email, always=True)
     seen: set[str] = set()
     down = False
     while True:
@@ -105,6 +150,7 @@ def run_telegram(core: Core, token: str, chat_id: str, poll: float, fallback_ope
 
     allowed_chat = str(chat_id)
     seen: set[str] = set()
+    email_cfg, email = email_from_env()
 
     def operator_of(update: Update) -> str:
         u = update.effective_user
@@ -130,9 +176,10 @@ def run_telegram(core: Core, token: str, chat_id: str, poll: float, fallback_ope
             log.info("delivered %s as telegram message %s", n.get("id"), msg.message_id)
             return str(msg.message_id)
 
+        deliver = with_email(send, "telegram", email, always=bool(email_cfg and email_cfg.mode == "always"))
         while True:
             try:
-                await asyncio.to_thread(process_pending, core, send, "telegram", seen)
+                await asyncio.to_thread(process_pending, core, deliver, "telegram", seen)
                 if down:
                     log.info("core reachable again")
                 down = False
@@ -147,12 +194,13 @@ def run_telegram(core: Core, token: str, chat_id: str, poll: float, fallback_ope
     async def post_init(app: Application) -> None:
         app.bot_data["poller"] = asyncio.create_task(poll_loop(app))
         app.bot_data.setdefault("reject_prompts", {})
-        log.info("CactAI notifier online in TELEGRAM mode, chat %s, core %s", allowed_chat, core.base_url)
+        log.info("SentrAI notifier online in TELEGRAM mode, chat %s, core %s", allowed_chat, core.base_url)
+        log.info("email alerts: %s", email_cfg.describe() if email_cfg else "off (no SMTP_HOST / ALERT_EMAIL_TO)")
 
     async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         query = update.callback_query
         if not is_allowed(update):
-            await query.answer("This chat is not authorised for CactAI.", show_alert=True)
+            await query.answer("This chat is not authorised for SentrAI.", show_alert=True)
             return
         parsed = parse_callback(query.data or "")
         if not parsed:
@@ -225,7 +273,7 @@ def run_telegram(core: Core, token: str, chat_id: str, poll: float, fallback_ope
 
     async def on_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(
-            f"🌵 CactAI notifier is running.\nThis chat id: {update.effective_chat.id}\n"
+            f"🛡️ SentrAI notifier is running.\nThis chat id: {update.effective_chat.id}\n"
             + ("Alerts are delivered here." if is_allowed(update) else "This chat is NOT the configured alert chat."))
 
     app = Application.builder().token(token).post_init(post_init).build()
@@ -242,7 +290,7 @@ def main(argv: list[str] | None = None) -> int:
     import cactai_config
     cactai_config.load()  # saved settings (bot token, chat id, operator) as env defaults
 
-    p = argparse.ArgumentParser(description="CactAI notifier")
+    p = argparse.ArgumentParser(description="SentrAI notifier")
     p.add_argument("--core", default=os.environ.get("CACTAI_CORE_URL", DEFAULT_CORE))
     p.add_argument("--console", action="store_true", help="force console mode")
     p.add_argument("--once", action="store_true", help="console mode: deliver pending once and exit")
@@ -254,7 +302,7 @@ def main(argv: list[str] | None = None) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-    core = Core(args.core)
+    core = Core(args.core, token=cactai_config.api_token())
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
     chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
     operator = os.environ.get("CACTAI_OPERATOR", "operator")

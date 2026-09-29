@@ -168,7 +168,7 @@ def test_audit_chain_valid_and_detects_tampering(client):
     assert audit["chain_valid"] is False and audit["first_invalid_seq"] is not None
 
 
-def test_negligence_report(client):
+def test_evidence_report(client):
     brute_force(client)
     client.post("/demo/advance", json={"demo_hours": 3})
     pending = client.get("/notifications/pending").json()
@@ -189,8 +189,15 @@ def test_negligence_report(client):
     assert rep["audit_proof"]["chain_valid"] is True and rep["audit_proof"]["records"]
     md = client.get("/reports/RSK-2026-081.md")
     assert md.status_code == 200
-    assert "Responsible Entity" in md.text and "Ack: none" in md.text and "Timeline of inaction" in md.text
+    assert "Responsible Entity" in md.text and "Ack: none" in md.text and "Incident timeline" in md.text
+    assert rep["title"] == "Security Evidence Report" and rep["report_id"] == "ER-RSK-2026-081"
+    assert any(a["by"] == "Needle" and a["decision"] == "approved" for a in rep["approvals"])
+    pdf = client.get("/reports/RSK-2026-081.pdf")
+    assert pdf.status_code == 200 and pdf.headers["content-type"] == "application/pdf"
+    assert pdf.content.startswith(b"%PDF-1.4") and pdf.content.rstrip().endswith(b"%%EOF")
+    assert "RSK-2026-081-evidence-report.pdf" in pdf.headers["content-disposition"]
     assert client.get("/reports/RSK-2026-999").status_code == 404
+    assert client.get("/reports/RSK-2026-999.pdf").status_code == 404
 
 
 def test_helpdesk_and_agents(client):
@@ -275,7 +282,7 @@ def test_protected_user_not_locked(tmp_path):
     from app.config import Settings
     from app.main import create_app
     s = Settings(db_path=tmp_path / "p.db", background=False, protected_users={"admin"})
-    with TestClient(create_app(s)) as c:
+    with TestClient(create_app(s), headers={"Authorization": "Bearer test-token"}) as c:
         brute_force(c)
         c.post("/events", json=ev(20, "GET /search?q=' OR 1=1 -- 200", source="flask_access"))
         bl = c.get("/blocklist").json()
@@ -294,4 +301,4 @@ def test_routine_db_query_and_ordinary_words_are_benign(client):
 def test_notification_report_url_is_absolute(client):
     brute_force(client)
     n = next(n for n in client.get("/notifications/pending").json() if n["incident"])
-    assert n["report_url"].startswith("http://") and n["report_url"].endswith(".md")
+    assert n["report_url"].startswith("http://") and ".md?sig=" in n["report_url"]

@@ -1,4 +1,4 @@
-"""Full CactAI demo story against the LIVE target app.
+"""Full SentrAI demo story against the LIVE target app.
 
 Order: benign baseline -> brute force -> pause -> SQL injection.
 Prints narration between phases so it can drive the recording.
@@ -11,13 +11,14 @@ Prerequisites (separate terminals):
 Run:
     python scenario.py
     python scenario.py --pause 6 --host 127.0.0.1
+    python scenario.py --spines      # adds the cactus-spines phase (portal started with spines on)
 """
 from __future__ import annotations
 
 import argparse
 import time
 
-from attacks import benign, brute_force, sqli
+from attacks import benign, brute_force, spines, sqli
 
 
 def narrate(text: str) -> None:
@@ -33,11 +34,13 @@ def countdown(seconds: float, why: str) -> None:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="CactAI live demo scenario")
+    ap = argparse.ArgumentParser(description="SentrAI live demo scenario")
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=5000)
     ap.add_argument("--pause", type=float, default=6.0,
                     help="seconds to wait after brute force (operator 'ignores' it)")
+    ap.add_argument("--spines", action="store_true",
+                    help="add phase 5: an intruder touches the honeypot and honeytokens (tarpit slows them)")
     args = ap.parse_args()
     h, p = args.host, args.port
 
@@ -56,8 +59,14 @@ def main() -> None:
             "Risk should cross into Red/Critical and trigger containment.")
     sqli.run(h, p, count=6, delay=0.4, src_ip="198.51.100.23")
 
+    if args.spines:
+        narrate("PHASE 5 — Cactus spines. A third intruder (203.0.113.99) finds the decoy admin page, "
+                "reuses its planted password and dumps the bait rows. Each touch is a certain alert, "
+                "and the tarpit slows every request after the first.")
+        spines.run(h, p, delay=0.3, src_ip="203.0.113.99")
+
     narrate("SCENARIO COMPLETE — check the dashboard for the incident queue, the "
-            "risk gauge, the negligence report and the audit chain.")
+            "risk gauge, the evidence report and the audit chain.")
 
 
 if __name__ == "__main__":

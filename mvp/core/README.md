@@ -1,4 +1,4 @@
-# CactAI core
+# SentrAI core
 
 This is the FastAPI service on `http://127.0.0.1:8000`. It implements every Core API endpoint in `../CONTRACT.md`. It handles:
 
@@ -10,7 +10,7 @@ This is the FastAPI service on `http://127.0.0.1:8000`. It implements every Core
 - the hotpatch workflow
 - the notifications queue
 - the hash-chained audit log
-- negligence reports
+- evidence reports (Markdown, JSON, PDF)
 
 ## Setup and run (PowerShell)
 
@@ -39,9 +39,16 @@ Tests:
 | `TEAM_LEAD`, `IT_MANAGER`, `CXO` | role names | Escalation recipients. |
 | `TYPESAFE_API_KEY` | unset | Turns on Jev (TypeSafe System One). Without it the fallback classifier is used. |
 | `JEV_TIMEOUT_S` | `3` | Timeout for each Jev call. After 3 failures in a row a 60 s circuit breaker opens. |
+| `PROTECTED_IPS` | `127.0.0.1,::1,localhost` | Addresses never blocked, by the portal or the firewall. Add your own admin IP before turning the firewall on, e.g. `PROTECTED_IPS=127.0.0.1,::1,localhost,198.51.100.200`. |
+| `CACTAI_FIREWALL` | `off` | Mirror `block_ip` into the host firewall: `auto`, `nftables`, `iptables` (Linux) or `netsh` (Windows). `off` keeps blocking portal-only. |
+| `CACTAI_FIREWALL_ENFORCE` | `0` | `0` is a dry run: the command is logged and written to the audit trail, never run. `1` runs it (admin/root). Loopback, link-local, multicast and `PROTECTED_IPS` are never sent to the firewall. |
 | `CACTAI_DB` | `data/cactai.db` | SQLite audit chain. |
 | `BRUTE_FORCE_COUNT` / `BRUTE_FORCE_WINDOW_S` | `5` / `60` | Brute-force rule: this many failed logins from the same IP within this many seconds. |
 | `EXPORT_ROWS_THRESHOLD` | `100` | `/export` with at least this many rows counts as data exfiltration. |
+| `SSH_BRUTE_FORCE_COUNT` / `SSH_BRUTE_FORCE_WINDOW_S` | `5` / `600` | SSH brute force: this many failed guesses (not log lines) from one IP within this many seconds. |
+| `WEB_SCAN_4XX_COUNT` / `WEB_SCAN_WINDOW_S` | `10` / `120` | Web path scanning: this many 4xx replies to one IP within this many seconds (crawlers such as Googlebot, `favicon.ico`, `robots.txt` and ACME challenges do not count). |
+| `AUTO_CLOSE_QUIET_MIN` | `60` | Resolve an open scan or brute-force incident after this many real minutes with no new event and no containment in force. `0` turns it off. |
+| `AUTO_CLOSE_CATEGORIES` | `port_scan,brute_force` | Which categories auto-close. Other incidents always wait for an operator. |
 | `WATCHDOG_SILENCE_S` | `30` | Watchdog flags a collector after this many seconds of silence. |
 | `PROTECTED_IPS` | empty | Comma-separated IPs that Needle will never approve blocking. |
 | `CACTAI_ENGINE` | `cyanide` | Orchestrator. `cyanide` plans with Claude when a key is set; `saguaro` keeps the fixed playbooks only. |
@@ -56,9 +63,9 @@ Tests:
 
 Cyanide (`app/cyanide.py`) replaces Saguaro's fixed judgement with Claude, and keeps everything that must stay predictable.
 
-- **What the model decides.** Claude by default; OpenAI, DeepSeek or any OpenAI-compatible API also work (`mvp/cactai_llm.py`, keys in `python cactai_config.py setup`, section 5). When an incident opens, Cyanide sends the model the system profile, the incident, its log lines and the list of installed actions. The model answers with an assessment in plain words, the containment steps that fit this system, and whether CactAI may act alone or must wait for a human.
+- **What the model decides.** Claude by default; OpenAI, DeepSeek or any OpenAI-compatible API also work (`mvp/cactai_llm.py`, keys in `python cactai_config.py setup`, section 5). When an incident opens, Cyanide sends the model the system profile, the incident, its log lines and the list of installed actions. The model answers with an assessment in plain words, the containment steps that fit this system, and whether SentrAI may act alone or must wait for a human.
 - **What stays fixed.** The risk index, SLA, inaction penalty, notifications, TTLs and the audit chain are Saguaro's code, unchanged. Needle still reviews every autonomous action.
-- **Guardrails.** Claude can only pick installed action types. IP, account and host targets must appear in the incident's own events; anything else is dropped and logged. Accounts and IPs listed as protected in the profile go to Needle, which refuses them. A plan can make CactAI more careful ("hold: exam week, the admin account is shared") but never bypass the threshold or the TTL.
+- **Guardrails.** Claude can only pick installed action types. IP, account and host targets must appear in the incident's own events; anything else is dropped and logged. Accounts and IPs listed as protected in the profile go to Needle, which refuses them. A plan can make SentrAI more careful ("hold: exam week, the admin account is shared") but never bypass the threshold or the TTL.
 - **Fallback.** No key, a timeout or a bad answer means the default playbook is used, and the timeline says so.
 - **Adapting to a new system.** Write a profile (see `profiles/tuition_centre.json`): what the hosts do, which accounts matter, business hours, what must never be touched. A new responder (a new action type) is offered to Claude automatically.
 - **Speed.** Planning runs on a background thread, so ingestion never waits on the model. The playbook text shows until the plan arrives, usually a few seconds later.
@@ -95,7 +102,7 @@ Audit records: `cyanide_plan` (actions, reasons, dropped steps), `cyanide_hold` 
 
 ## Process scan (finding logs automatically)
 
-Scout follows a technician through the folders. The process scan (`app/procscan.py`, `app/discovery.py`) is the automatic half: it lists the programs running on this computer, recognises the known ones (IIS, nginx, Apache, Tomcat, MySQL, PostgreSQL, SQL Server, MongoDB, Redis, SSH, Docker, syslog, Node and Python apps, and the CactAI lab portal) and looks for their log files in the usual places, next to the program, in options such as `--log-file`, and (on Linux) in the files each process has open.
+Scout follows a technician through the folders. The process scan (`app/procscan.py`, `app/discovery.py`) is the automatic half: it lists the programs running on this computer, recognises the known ones (IIS, nginx, Apache, Tomcat, MySQL, PostgreSQL, SQL Server, MongoDB, Redis, SSH, Docker, syslog, Node and Python apps, and the SentrAI lab portal) and looks for their log files in the usual places, next to the program, in options such as `--log-file`, and (on Linux) in the files each process has open.
 
 - **How.** Windows: PowerShell/CIM (`Win32_Process`, plus `Win32_Service` for the service account). Linux: `/proc`. macOS: `ps`. Standard library only, no admin rights needed; processes it cannot read are listed by name only.
 - **Read-only.** It never starts, stops or signals a process and never reads log contents. It only checks which files exist.
@@ -148,10 +155,10 @@ Additions that do not change the contract:
 | `rollback` | Rolls back active actions. The incident becomes `acknowledged`, so its points count again but it will not be auto-contained. Returns 409 if nothing is active. |
 | `permanent` | Makes active or expired actions permanent (no expiry). The incident becomes `resolved`. |
 | `ack` | Records who acknowledged, when and on which channel. Freezes the inaction penalty. Idempotent. |
-| `/demo/reset` | Moves the audit DB to `data/archive/` (the old chain is kept, not destroyed), clears all in-memory state, and starts a new chain. |
+| `/demo/reset` | Moves the audit DB to `data/archive/` (the old chain is kept, not destroyed), clears all state (the saved incident state lives in the same file), and starts a new chain. |
 
 ## Limitations
 
-- State is in memory. Incidents, notifications and actions are lost on restart; only the audit chain persists.
+- Incidents, actions (blocks) and notifications are saved to `state_*` tables in the audit database (WAL mode) after every change, and restored on startup (`app/state.py`). Blocks still in force are put back with their original expiry; blocks whose TTL ran out while the core was down are rolled back, logged as `action_expired` with `while_core_down: true`, and summarised in a `state_restored` audit record. Rules-engine windows, the watchdog, the risk chart history and the chat history are not saved.
 - The only containment with a real effect is `block_ip` and `lock_user`, through `/blocklist`. `rate_limit`, `waf_rule`, `kill_process` and `revoke_public_acl` are recorded and reported as "recorded (simulated)".
 - Claude-written explanations are not used. Explanations and reports come from deterministic templates.

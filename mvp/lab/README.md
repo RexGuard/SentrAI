@@ -1,6 +1,6 @@
-# CactAI Lab (target app · collector · attacks · replay)
+# SentrAI Lab (target app · collector · attacks · replay)
 
-The **lab** half of the CactAI MVP: a fictional victim web app, a log
+The **lab** half of the SentrAI MVP: a fictional victim web app, a log
 collector that feeds the core, scripted attacks for the demo, and a replay
 fallback. Everything runs natively on Windows, on localhost, no Docker.
 
@@ -16,7 +16,8 @@ lab/
   scenario.py             full live demo story (benign -> brute -> pause -> sqli)
   target_app/             Flask "Aegis Academy Student Portal" on :5000
     app.py  db.py  logger.py  blocklist.py  paths.py  templates/
-  collector/collector.py  tails logs/*.jsonl -> POST core /events
+  collector/collector.py  tails logs/*.jsonl + approved server logs -> POST core /events
+  collector/parsers.py    nginx access/error, syslog (sshd), journald line parsers
   attacks/                brute_force, sqli, exfil, shell, benign (+ _common)
   replay/simulate.py      REPLAY MODE: post a scripted incident to core
   logs/                   JSON-lines logs written at runtime (access/auth/db/os)
@@ -73,6 +74,32 @@ The demo "attacker" IP is sent in the `X-Demo-Src-IP` header (brute
 .\.venv\Scripts\python.exe scenario.py            # benign -> brute -> pause -> sqli
 ```
 
+## Cactus spines: honeypot, honeytokens, tarpit (off by default)
+
+Design doc section 11. Everything stays inside the portal; nothing is ever sent to the
+attacker. Turn on with `run_demo.ps1 -Spines` / `run_demo.sh --spines` (or set
+`CACTAI_SPINES=1` before `python -m target_app`).
+
+| Spine | What it is | Touch becomes |
+| --- | --- | --- |
+| Honeypot page | `/admin-legacy`, listed only in `robots.txt` as Disallow | `port_scan` (reconnaissance) |
+| Honeypot login | posting to that page; never signs anyone in | `brute_force` (IP only, no real account is locked) |
+| Honeytoken credential | `svc_backup` planted in an HTML comment on the decoy page, used on the real `/login` | `brute_force` |
+| Honeytoken rows | `STF-0007` and `STF-0012` in `members`; staff searches never match them, `/export` does | `data_exfiltration` |
+| Tarpit | decoy pages, and every request from an IP after its first touch, wait `CACTAI_TARPIT_S` seconds (default 3, max 30) | slows the attack |
+
+Each touch is written to `logs/deception.jsonl` (source `cactus_spine`) and the core
+rules classify it with confidence 1.0.
+
+```powershell
+.\.venv\Scripts\python.exe -m attacks.spines        # intruder walks into every spine (prints each wait)
+.\.venv\Scripts\python.exe scenario.py --spines     # the full story plus a phase 5 for the spines
+```
+
+In the full scenario the risk is already high by phase 5, so the first decoy touch gets
+203.0.113.99 blocked within seconds and the later steps are refused with 403. Run
+`attacks.spines` on its own (fresh start) to show every spine.
+
 ## Replay fallback (if the live attack is flaky on camera)
 
 ```powershell
@@ -90,9 +117,32 @@ On a real network nobody hands you a list of log files. Scout finds them for a n
    `python -m scout record --root C:\ "find the IIS web logs"`
 2. **A novice asks in plain words.** The AI model reads the trails and browses the same way, explaining each step. It asks the technician when only a person can know, then proposes log files.
    `python -m scout find --root C:\ "where are the login logs on this server?"`
-3. **The technician confirms each file.** Confirmed files go into `scout/sources.json`, and the collector watches them on its next start. Every yes or no is saved as a new trail, so the next search starts smarter.
+3. **The technician confirms each file.** Confirmed files go into `scout/sources.json`, and the collector starts watching them within a few seconds. Every yes or no is saved as a new trail, so the next search starts smarter.
+
+Each proposal is saved to `scout/pending.json` the moment Scout makes it, so stopping Scout part way keeps what it found. With no terminal attached (a service, cron, `ssh` without `-t`) or with `--no-input`, Scout never waits for keyboard answers: it decides on its own and leaves its proposals pending. Approve or dismiss them on the dashboard's Collector page ("Scout proposals"), or with `python -m scout pending`, `python -m scout approve <id>` and `python -m scout reject <id> --why "..."`.
 
 Scout can only read files under the `--root` folders, never write. It masks `password=`, `token=` and similar values before the AI sees a line, and treats log text as data, never as instructions. Two example trails (a Linux web server and Windows IIS) ship in `scout/trails/`. `python -m scout list` shows what the collector will watch. Scout needs one AI key: Anthropic, OpenAI, DeepSeek or another OpenAI-compatible service (`python cactai_config.py setup`, section 5). `SCOUT_MODEL` overrides the model.
+
+## Real server logs (nginx, SSH)
+
+On a Linux server, approve its own logs once, then run the collector as a user that can read
+them (root, or a member of the `adm` group on Debian/Ubuntu):
+
+```bash
+python -m collector.collector --add-system-logs   # nginx access/error + auth.log, secure or journald
+python -m collector.collector
+```
+
+- nginx and sshd lines become events with the log's own time, the real host name and a `parsed`
+  object (method, path, status, user agent; or ssh_event, user, port). Fields: `mvp/CONTRACT.md`,
+  "Parsed fields".
+- Read positions are saved in `~/.cactai/collector-state.json` (`CACTAI_COLLECTOR_STATE`) after core
+  accepts each batch, so a restart resumes where it stopped. A rotated file's last lines are read
+  from `<name>.1` first. The first time a file is seen, only its last 256 KB are read
+  (`CACTAI_COLLECTOR_BACKFILL_KB`).
+- Lines with no time zone (auth.log, nginx error.log) use this computer's zone, or `CACTAI_LOG_TZ`
+  (`Asia/Singapore`, `+08:00`, `UTC`). `CACTAI_HOST` overrides the host name.
+- Sample lines for tests are in `tests/samples/` (synthetic, documentation IP ranges only).
 
 ## Tests
 
@@ -109,7 +159,8 @@ temp dir and hit no network.
 
 - `/admin/run?cmd=` **never executes** anything — it only logs a simulated
   `web server spawned shell: <cmd>` OS-layer event.
-- All member data is synthetic (`Member 0001`…, `@example.com`).
+- All member data is synthetic (`Member 0001`…, `@example.com`); the bait rows
+  use `@aegis-academy.example` and are removed again when spines are off.
 - Attack scripts refuse any host other than `127.0.0.1` / `localhost` / `::1`.
 - If core is unreachable the target app **fails open** (allows traffic).
 ```

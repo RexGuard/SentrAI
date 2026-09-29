@@ -16,7 +16,7 @@ def test_console_mode_delivers_and_marks(fake_core):
     ids = process_pending(core, console_sender(buf, color=False), "console", seen)
     assert len(ids) == 1
     text = buf.getvalue()
-    assert "CactAI" in text and "Brute force" in text and "Approve & Patch" in text
+    assert "SentrAI" in text and "Brute force" in text and "Approve & Patch" in text
     assert core.pending() == []
     audit = requests.get(f"{fake_core}/audit", timeout=3).json()["records"]
     rec = [r for r in audit if r["type"] == "notification_delivered"][-1]

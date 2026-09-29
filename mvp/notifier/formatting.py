@@ -1,4 +1,4 @@
-"""Pure formatting helpers for CactAI operator alerts (Telegram HTML + console)."""
+"""Pure formatting helpers for SentrAI operator alerts (Telegram HTML + console)."""
 from __future__ import annotations
 
 import html
@@ -9,7 +9,7 @@ CATEGORY_LABELS = {
     "brute_force": "Brute force",
     "sql_injection": "SQL injection",
     "xss": "Cross-site scripting",
-    "port_scan": "Port scan",
+    "port_scan": "Port or web scan",
     "privilege_escalation": "Privilege escalation",
     "data_exfiltration": "Data exfiltration",
     "misconfiguration": "Misconfiguration",
@@ -20,9 +20,9 @@ KIND_HEADERS = {
     "reminder": ("⏰", "Reminder: still unacknowledged"),
     "sla_breach": ("⏰", "SLA breached"),
     "escalation": ("📣", "Escalation"),
-    "autonomous_action": ("🌵", "Autonomous containment applied"),
-    "containment": ("🌵", "Containment applied"),
-    "report": ("📄", "Negligence report ready"),
+    "autonomous_action": ("🛡️", "Autonomous containment applied"),
+    "containment": ("🛡️", "Containment applied"),
+    "report": ("📄", "Evidence report ready"),
 }
 
 # Callback data: "<verb>:<incident_id>" (Telegram limits callback_data to 64 bytes).
@@ -111,6 +111,8 @@ def format_telegram(notification: dict, incident: dict | None = None, risk: dict
     if f["penalty"]:
         lines.append(f"Inaction penalty: +{e(str(f['penalty']))} pts" + (" · <b>SLA BREACHED</b>" if f["sla_breached"] else ""))
     lines += ["", f"<b>Recommended:</b> {e(str(f['recommended']))}"]
+    if notification.get("report_url"):  # signed by the core, so it opens without the API token
+        lines.append(f'<a href="{e(notification["report_url"], quote=True)}">Open the report</a>')
     if f["kind"] in ("autonomous_action", "containment"):
         lines.append("<i>Temporary, reversible fix with TTL. Choose Rollback or Make Permanent.</i>")
     else:
@@ -167,7 +169,7 @@ def format_console(notification: dict, incident: dict | None = None, risk: dict 
                     + "  (use the dashboard in console mode)")
 
     inner = width - 4
-    top = f"┌─ CactAI · {f['header']} "
+    top = f"┌─ SentrAI · {f['header']} "
     lines = [c[f["band"]] + top + "─" * max(0, width - len(top) - 1) + "┐" + c["reset"]]
     for text in body:
         for chunk in _wrap(text, inner):

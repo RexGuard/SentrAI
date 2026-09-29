@@ -1,4 +1,4 @@
-/* CactAI Risk Console. Same tokens as the website's dark mode (assets/cactai.css). No external fonts,
+/* SentrAI Risk Console. Same tokens as the website's dark mode (assets/cactai.css). No external fonts,
    so the console looks the same offline. */
 :root {
   --bg: #0f1612;
@@ -110,6 +110,13 @@ div[data-testid="stVerticalBlockBorderWrapper"], div[data-testid="stForm"] { bor
 .offline .mi { font-size: 1.6rem; color: var(--red); }
 .offline b { color: #fff; }
 .offline small { color: #c9a9ab; }
+.protect-off { border: 1px solid rgba(232,179,74,.5); background: rgba(232,179,74,.09); border-radius: var(--radius);
+               padding: .9rem 1.2rem; margin-bottom: 1rem; color: #f1e2c2; display: flex; gap: .9rem; }
+.protect-off .mi { font-size: 1.6rem; color: var(--amber); }
+.protect-off b { color: #fff; }
+.protect-off > div { font-size: .9rem; line-height: 1.5; }
+.protect-off small { color: #cdb98f; }
+.side-off { margin-top: .45rem; font-size: .72rem; font-weight: 700; color: var(--amber); }
 
 /* ------------------------------------------------------------ incidents */
 .inc-head { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin-bottom: .6rem; }

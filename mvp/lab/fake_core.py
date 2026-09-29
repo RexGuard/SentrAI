@@ -1,4 +1,4 @@
-"""Tiny fake CactAI core for lab development and demos.
+"""Tiny fake SentrAI core for lab development and demos.
 
 This is NOT the real core (the core agent builds that). It implements just
 enough of the contract for the lab to run end-to-end on its own:

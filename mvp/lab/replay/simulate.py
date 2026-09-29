@@ -23,6 +23,8 @@ from pathlib import Path
 import requests
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.append(str(Path(__file__).resolve().parents[2]))
+import cactai_config  # noqa: E402
 
 SGT = timezone(timedelta(hours=8))
 HOST = "web-01"
@@ -56,10 +58,11 @@ def build_sequence() -> list[dict]:
         seq.append(_ev(off, "web", "flask_access", STAFF_IP, "admin",
                        "POST /login 200 user=admin", 1.0))
         off += 1
-    # 2) Brute force burst
+    # 2) Brute force burst. Same line the portal's access log writes for a wrong
+    #    password; the rules count these toward the brute-force threshold.
     for _ in range(10):
-        seq.append(_ev(off, "web", "flask_auth", BRUTE_IP, "admin",
-                       "login fail user=admin", 1.0))
+        seq.append(_ev(off, "web", "flask_access", BRUTE_IP, "admin",
+                       "POST /login 401 user=admin", 1.0))
         off += 1
     # 3) SQL injection on /search
     for payload in ["' OR '1'='1", "' UNION SELECT username, password FROM users --",
@@ -74,7 +77,7 @@ def build_sequence() -> list[dict]:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="CactAI replay simulator")
+    ap = argparse.ArgumentParser(description="SentrAI replay simulator")
     ap.add_argument("--core", default=os.environ.get("CACTAI_CORE_URL",
                                                       "http://127.0.0.1:8000"))
     ap.add_argument("--speed", type=float, default=6.0,
@@ -95,10 +98,14 @@ def main() -> None:
         return
 
     delay = 1.0 / args.speed if args.speed > 0 else 0.0
+    cactai_config.load()
+    headers = {"Authorization": f"Bearer {cactai_config.api_token()}"}
     sent = 0
     for ev in seq:
         try:
-            r = requests.post(f"{args.core.rstrip('/')}/events", json=ev, timeout=3)
+            r = requests.post(f"{args.core.rstrip('/')}/events", json=ev, headers=headers, timeout=3)
+            if r.status_code == 401:
+                raise SystemExit("  [!] core refused the API token; run through run_demo or set CACTAI_API_TOKEN")
             body = r.json() if r.ok else {}
             sent += 1
             print(f"  [{sent:>2}/{len(seq)}] {ev['source']:<12} {ev['raw'][:44]:<44} "

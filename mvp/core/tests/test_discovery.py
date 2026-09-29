@@ -13,7 +13,7 @@ from .test_chat import FakeProvider, call
 
 @pytest.fixture
 def machine(tmp_path, monkeypatch):
-    """A Windows-shaped computer in a temp folder: the CactAI lab, nginx, MySQL, and things to hide."""
+    """A Windows-shaped computer in a temp folder: the SentrAI lab, nginx, MySQL, and things to hide."""
     lab = tmp_path / "mvp" / "lab"
     (lab / ".venv" / "Scripts").mkdir(parents=True)
     (lab / "logs").mkdir()
@@ -62,9 +62,9 @@ def test_windows_scan_finds_log_folders_per_program(machine):
     r = scan(machine, watched=[str(machine["lab"] / "logs" / "access.jsonl"),
                                str(machine["lab"] / "logs" / "auth.jsonl")])
     by_program = {s["program"]: s for s in r["suggestions"]}
-    assert set(by_program) >= {"CactAI lab: fake student portal", "nginx web server", "MySQL / MariaDB database",
+    assert set(by_program) >= {"SentrAI lab: fake student portal", "nginx web server", "MySQL / MariaDB database",
                                "Node.js app"}
-    lab = by_program["CactAI lab: fake student portal"]
+    lab = by_program["SentrAI lab: fake student portal"]
     assert lab["already_watched"] and lab["reasons"] == ["logs folder of the app"] and lab["format"] == "jsonl"
     nginx = by_program["nginx web server"]
     assert nginx["layer"] == "web" and nginx["reasons"] == ["next to the program"]
@@ -191,3 +191,30 @@ def test_latest_scan_shows_an_approved_file_as_watched(client, tmp_path, monkeyp
     d.approve(fid, "erick")
     s = d.latest()["suggestions"][0]
     assert s["files"][0]["watched"] and s["already_watched"]
+
+
+def test_scout_proposals_wait_for_an_operator_over_http(client, tmp_path, monkeypatch):
+    monkeypatch.setenv("CACTAI_SCOUT_SOURCES", str(tmp_path / "sources.json"))
+    log = tmp_path / "auth.log"
+    log.write_text("Sep 28 10:00:01 web sshd[1]: Failed password for admin from 203.0.113.45\n")
+    gone = tmp_path / "gone.log"
+    pending = [{"id": "p1", "path": str(log), "layer": "os", "format": "text", "why": "logins", "goal": "login logs"},
+               {"id": "p2", "path": str(gone), "layer": "web", "format": "text", "why": "old"},
+               {"id": "p3", "path": str(tmp_path / "x.log"), "layer": "web", "format": "text", "why": "x"}]
+    (tmp_path / "pending.json").write_text(json.dumps(pending))
+    assert [p["id"] for p in client.get("/log-sources/pending").json()] == ["p1", "p2", "p3"]
+    assert client.post("/log-sources/pending/nope", json={"operator": "erick", "approve": True}).status_code == 404
+    assert client.post("/log-sources/pending/p2", json={"operator": "erick", "approve": True}).status_code == 409
+    bad = client.post("/log-sources/pending/p1", json={"operator": "erick", "approve": True, "layer": "mars"})
+    assert bad.status_code == 409
+    ok = client.post("/log-sources/pending/p1", json={"operator": "erick", "approve": True}).json()
+    assert ok["approved"] and ok["file"] == "auth.log"
+    saved = json.loads((tmp_path / "sources.json").read_text())
+    assert [(s["path"], s["layer"], s["found_by"], s["confirmed_by"]) for s in saved] == [(str(log), "os", "Scout", "erick")]
+    assert client.post("/log-sources/pending/p2", json={"operator": "erick", "approve": False,
+                                                        "reason": "old server"}).json()["approved"] is False
+    assert client.post("/log-sources/pending/p3", json={"operator": "erick", "approve": False}).status_code == 200
+    assert client.get("/log-sources/pending").json() == []
+    assert not (tmp_path / "pending.json").exists()
+    types = [rec["type"] for rec in client.core.audit.records()]
+    assert types.count("log_source_rejected") == 2 and "log_source_added" in types
