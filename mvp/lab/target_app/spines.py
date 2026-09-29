@@ -94,5 +94,7 @@ class Tarpit:
             self._pricked.clear()
 
     def hold(self) -> None:
-        if self.delay_s > 0:
-            time.sleep(self.delay_s)
+        # Sleep until the monotonic deadline: on Windows one time.sleep() can wake a few ms early.
+        end = time.monotonic() + self.delay_s
+        while (left := end - time.monotonic()) > 0:
+            time.sleep(left)

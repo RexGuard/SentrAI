@@ -1,6 +1,8 @@
 flask==3.0.3
 requests==2.32.3
 psutil==6.0.0
+# Time zone names (CACTAI_LOG_TZ=Asia/Singapore) on Windows, which has no system tz database.
+tzdata>=2024.1
 pytest==8.3.3
 # Windows has no time zone database of its own; without this CACTAI_LOG_TZ=Asia/Singapore is ignored.
 tzdata; sys_platform == "win32"
