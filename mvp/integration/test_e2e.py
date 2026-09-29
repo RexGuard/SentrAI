@@ -165,7 +165,7 @@ def test_demo_story(stack):
     by_cat = {i["category"]: i for i in incidents()}
     assert by_cat["sql_injection"]["status"] == "contained"
     acts = [a for i in by_cat.values() for a in i["actions"]]
-    assert acts and all(a["approved_by"] == "Needle" and a["mode"] == "autonomous" for a in acts)
+    assert acts and all(a["approved_by"] == "Countersign" and a["mode"] == "autonomous" for a in acts)
     history = requests.get(f"{CORE}/risk?history=600", headers=AUTH, timeout=3).json()["history"]
     assert max(h["risk_index"] for h in history) >= 80, "threshold peak missing from chart history"
 
@@ -178,7 +178,7 @@ def test_demo_story(stack):
 
     # 6. Negligence report and audit chain.
     md = requests.get(f"{CORE}/reports/{bf['id']}.md", headers=AUTH, timeout=3).text
-    assert "Ack: none" in md and "Needle" in md
+    assert "Ack: none" in md and "Countersign" in md
     audit = requests.get(f"{CORE}/audit", headers=AUTH, timeout=3).json()
     assert audit["chain_valid"] is True and audit["count"] > 10
 

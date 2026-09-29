@@ -91,7 +91,7 @@ def log_os(src_ip: str, user: str | None, message: str) -> None:
 
 def log_spine(kind: str, layer: str, src_ip: str, user: str | None, detail: str,
               pii: bool = False) -> None:
-    """A cactus spine was touched (spines.py). Always an attack signal, never routine."""
+    """A tripwire was touched (spines.py). Always an attack signal, never routine."""
     _write(paths.DECEPTION_LOG, {
         "ts": now_iso(),
         "src_ip": src_ip,
@@ -99,5 +99,5 @@ def log_spine(kind: str, layer: str, src_ip: str, user: str | None, detail: str,
         "kind": kind,
         "layer": layer,
         "pii": pii,
-        "raw": f"cactus-spine {kind}: {detail}",
+        "raw": f"tripwire {kind}: {detail}",
     })

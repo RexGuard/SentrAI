@@ -310,7 +310,7 @@ What the "prick" actually is (all inside our own perimeter):
 - **Deception:** honeypot login pages, honeytoken DB rows and credentials. Any touch is a near-certain alert.
 - **Evidence:** preserve logs and hand them to SingCERT or the police. The attacker is pricked by attribution and prosecution, not retaliation.
 
-**In the MVP:** the demo portal has a honeypot login page, a planted credential, bait member rows and a tarpit, all off by default (`run_demo -Spines`). Any touch becomes a confidence 1.0 incident (see `mvp/lab/README.md`).
+**In the MVP:** the demo portal has a honeypot login page, a planted credential, bait member rows and a tarpit, all off by default (`run_demo -Tripwires`). Any touch becomes a confidence 1.0 incident (see `mvp/lab/README.md`).
 
 ---
 
@@ -320,22 +320,22 @@ Each agent specializes in one layer or OS, which gives a different approach for 
 
 | Agent | Equivalent in the reference team | Does | Can execute? |
 | --- | --- | --- | --- |
-| **Saguaro** (Lead / Orchestrator) | Dumbledore (CEO) | Receives incidents, delegates, merges findings, owns the risk index | No |
-| **Root** (Web layer) | Ron (CTO) | Reads web/WAF logs, proposes WAF rules | Propose only |
-| **Spine-Net** (Network / Scanner) | Fred + Scanner | Scans own assets, reads Suricata alerts | Propose only |
-| **Reservoir** (Database / Storage) | George (Storage) | DB audit log, backups, S3 checks | Propose only |
-| **Areole-Linux / Areole-Win** (OS agents) | Arthur Weasley (Security Engineer) | Linux: auditd/iptables. Windows: Event Log/`netsh advfirewall` | Runs allowlisted playbooks |
-| **Needle** (Reviewer) | Mad-Eye Moody | Must approve every autonomous action (two-key rule) | Approve/deny only |
+| **Warden** (Lead / Orchestrator) | Dumbledore (CEO) | Receives incidents, delegates, merges findings, owns the risk index | No |
+| **Gatehouse** (Web layer) | Ron (CTO) | Reads web/WAF logs, proposes WAF rules | Propose only |
+| **Watchtower** (Network / Scanner) | Fred + Scanner | Scans own assets, reads Suricata alerts | Propose only |
+| **Vault** (Database / Storage) | George (Storage) | DB audit log, backups, S3 checks | Propose only |
+| **Garrison-Linux / Garrison-Win** (OS agents) | Arthur Weasley (Security Engineer) | Linux: auditd/iptables. Windows: Event Log/`netsh advfirewall` | Runs allowlisted playbooks |
+| **Countersign** (Reviewer) | Mad-Eye Moody | Must approve every autonomous action (two-key rule) | Approve/deny only |
 | **Watchdog** | Watchdog | Heartbeats; alerts if any agent or collector goes silent | No |
 | **Scribe** (Auditor) | (new) | Writes the hash-chained log and evidence report | Write-only log |
 | **Help Desk** | Help Desk | Answers operator questions in Telegram ("why was my IP blocked?") | No |
 
 **Safety rules**
 - No agent gets a free shell. Execution happens only through allowlisted playbooks with a TTL.
-- Every autonomous action needs Needle's approval.
+- Every autonomous action needs Countersign's approval.
 - Jev and Claude judge and explain; deterministic code scores and executes.
 
-**In the MVP:** the agents are Python classes inside the core, with Saguaro calling them in turn (section 15). Separate agent services are on the roadmap.
+**In the MVP:** the agents are Python classes inside the core, with Warden calling them in turn (section 15). Separate agent services are on the roadmap.
 
 ---
 
@@ -395,7 +395,7 @@ Roadmap: production collectors rewritten in Go or Rust for a small single-binary
 ```json
 { "action_id": "act-0007", "incident": "RSK-2026-081", "type": "block_ip",
   "target": "203.0.113.45", "ttl_hours": 2, "mode": "autonomous",
-  "approved_by": "Needle", "prev_hash": "9f2c…", "hash": "b71a…" }
+  "approved_by": "Countersign", "prev_hash": "9f2c…", "hash": "b71a…" }
 ```
 
 **Output 5: evidence / non-repudiation report** (PDF + JSON): incident timeline, alerts sent, acknowledgements, SLA breach, action taken, rollback status, hash-chain proof.
@@ -412,7 +412,7 @@ Everything runs natively on one Windows laptop (Python, no Docker, no Redis). On
 
 **Components**
 1. **Target app** (`lab/target_app/`, port 5000): the fictional "Aegis Academy Student Portal". It writes web, login, database and OS logs, and it enforces SentrAI's blocklist by answering blocked IPs and accounts with HTTP 403 "Blocked by SentrAI".
-2. **Core** (`core/`, port 8000): FastAPI with the risk engine, the agents (Saguaro, Root, Spine-Net, Reservoir, Areole, Needle, Watchdog, Scribe, Help Desk) as Python classes in one process, TTL hotpatches, the hash-chained audit log and the evidence reports. The generated report is titled "Security Evidence Report" and downloads as Markdown, JSON or PDF.
+2. **Core** (`core/`, port 8000): FastAPI with the risk engine, the agents (Warden, Gatehouse, Watchtower, Vault, Garrison, Countersign, Watchdog, Scribe, Help Desk) as Python classes in one process, TTL hotpatches, the hash-chained audit log and the evidence reports. The generated report is titled "Security Evidence Report" and downloads as Markdown, JSON or PDF.
 3. **Dashboard** (`dashboard/`, port 8501): Streamlit console (see below).
 4. **Notifier** (`notifier/`): Telegram bot with Approve / Reject buttons, or console output when no bot token is set.
 5. **Attack and replay scripts** (`lab/attacks/`, `lab/replay/`): benign traffic, brute force, SQL injection, bulk export and a simulated shell. They refuse any target other than localhost:5000.
@@ -427,7 +427,7 @@ SentrAI is a pipeline of three parts. Each is one small base class with one job,
 | 2. Classifier | Decides what each event is; the first classifier that answers wins | `Classifier` | `RulesClassifier` → `JevClassifier` → `FallbackClassifier` |
 | 3. Action taker (responder) | Applies a temporary fix and undoes it on expiry or rollback | `Responder` | `BlocklistResponder` (block IP, lock account), `SimulatedResponder` (the rest) |
 
-Between parts 2 and 3 sit the risk engine and Needle: an action only reaches a responder after an operator approves it, or after Needle approves it once risk crosses the threshold. This also prepares us for the surprise features at the 2 to 3 Nov hackathon, which can slot in as a new source, classifier or responder.
+Between parts 2 and 3 sit the risk engine and Countersign: an action only reaches a responder after an operator approves it, or after Countersign approves it once risk crosses the threshold. This also prepares us for the surprise features at the 2 to 3 Nov hackathon, which can slot in as a new source, classifier or responder.
 
 **First-run setup wizard**
 
@@ -450,7 +450,7 @@ A sidebar menu, opening on Configuration:
 1. Benign staff traffic: no incidents, gauge green.
 2. Brute force from `203.0.113.45`: incident `RSK-2026-081`, risk about 39 (amber), operator alert on Telegram or in the notifier window, Collector and Classifier bubbles light up.
 3. Nobody acknowledges: demo time runs fast (1 real minute = 10 demo hours) and the inaction penalty adds +5 per demo hour. The script's default 6-second pause is only about 1 demo hour, under the 2-hour SLA, so no SLA reminder fires; run `scenario.py --pause 15` (about 2.5 demo hours) to show one on camera.
-4. SQL injection from `198.51.100.23`: risk crosses 80, Needle approves, both attacker IPs are blocked and `admin` is locked for 2 demo hours. The portal returns "Blocked by SentrAI" (403). The demo machine itself (127.0.0.1) is never blocked.
+4. SQL injection from `198.51.100.23`: risk crosses 80, Countersign approves, both attacker IPs are blocked and `admin` is locked for 2 demo hours. The portal returns "Blocked by SentrAI" (403). The demo machine itself (127.0.0.1) is never blocked.
 5. The evidence report shows the timeline of inaction, "Ack: none" and the audit chain hash.
 6. The operator presses **Rollback** or **Make Permanent** on the Approvals page, and it appears in the audit trail.
 

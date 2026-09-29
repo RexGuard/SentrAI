@@ -7,7 +7,7 @@
   - Jev is only used when `TYPESAFE_API_KEY` is set. It has a timeout and a circuit breaker.
   - It has never been called against the live API, because no key is available.
 - Incident aggregation, the risk engine (curve, bands, inaction penalty, SLA) and a 1 s background tick with risk history.
-- Agents: Saguaro, Root, Reservoir, SpineNet, AreoleLinux/AreoleWin, Needle, Watchdog, Scribe and HelpDesk. Each decision goes to the audit chain.
+- Agents: Warden, Gatehouse, Vault, Watchtower, Garrison-Linux/Garrison-Win, Countersign, Watchdog, Scribe and HelpDesk. Each decision goes to the audit chain.
 - Hotpatch workflow with snapshot, TTL, verify, rollback and permanent. Operator approve and reject work.
 - Notifications with escalation, SLA reminders and delivery receipts.
 - SQLite hash-chained audit log. Append-only triggers are in place, and tampering is detected.

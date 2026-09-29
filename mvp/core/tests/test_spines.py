@@ -1,4 +1,4 @@
-"""Cactus spine hits (lab portal decoys) become high-confidence incidents."""
+"""Tripwire hits (lab portal decoys) become high-confidence incidents."""
 
 import pytest
 
@@ -20,7 +20,7 @@ def test_one_spine_touch_opens_a_certain_incident(client, kind, layer, user, cat
     assert inc["category"] == category
     assert inc["ai_confidence"] == 1.0 and inc["classified_by"] == "rules"
     assert inc["needs_review"] is False
-    assert inc["classification_reason"].startswith("Cactus spine:")
+    assert inc["classification_reason"].startswith("Tripwire:")
     assert "decoy" in inc["explanation"]
 
 
@@ -40,7 +40,7 @@ def test_spine_text_from_other_sources_is_not_trusted(client):
     # Only the portal's own deception log may claim to be a spine.
     client.post("/events", json=ev(1, "cactus-spine honeytoken_credential: x", source="scout:app.log", user=None))
     reasons = [i["classification_reason"] for i in client.get("/incidents").json()]
-    assert not any(r.startswith("Cactus spine") for r in reasons)
+    assert not any(r.startswith(("Tripwire", "Cactus spine")) for r in reasons)
 
 
 def test_spine_touch_joining_an_open_incident_leads_its_explanation(client):
@@ -49,7 +49,7 @@ def test_spine_touch_joining_an_open_incident_leads_its_explanation(client):
                                    ip="203.0.113.99", user=None, layer="db", source="cactus_spine"))
     [inc] = client.get("/incidents").json()
     assert inc["category"] == "data_exfiltration" and len(inc["event_ids"]) == 2
-    assert inc["classification_reason"].startswith("Cactus spine:")
+    assert inc["classification_reason"].startswith("Tripwire:")
     assert "decoy" in inc["explanation"]
 
 

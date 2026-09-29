@@ -262,7 +262,7 @@ def timeline():
     note(4, idx[4], 4.25, 38, "+5 per hour unacknowledged\n(inaction penalty)", RED)
     note(6.5, 76, 5.2, 93.5, "Hour 6.5 · SQL injection\n+≈54 points", RED)
     note(6.5, 80, 3.3, 93.5, "Threshold crossed", TEXT)
-    note(6.6, idx[7], 6.95, 62, "Auto-contain\nNeedle approved\nIP blocked 2h", GREEN)
+    note(6.6, idx[7], 6.95, 62, "Auto-contain\nCountersign approved\nIP blocked 2h", GREEN)
     ax.text(6.62, idx[7] + 2.5, f"{int(idx[7])}", fontsize=20, weight="bold", color=TEXT, va="bottom")
 
     ax.set_xlim(-0.5, 7.6)
@@ -302,8 +302,8 @@ def ethics():
         ("Disrupt or DDoS their system", "CMA s7: unauthorised obstruction of use"),
         ("Retaliate against an IP", "Often a spoofed or hijacked innocent machine"),
     ])
-    column(0.52, "Always: defend in place", BLUE, "✓", [
-        ("Block", "Temporary IP block, 2h TTL, Needle-approved"),
+    column(0.52, "Always: defend in place", GREEN, "✓", [
+        ("Block", "Temporary IP block, 2h TTL, Countersign-approved"),
         ("Tarpit", "Slow the attacker so the attack gets expensive"),
         ("Honeytokens", "Decoy credentials and records that raise alarms"),
         ("Evidence to SingCERT / police", "Hash-chained logs for attribution and prosecution"),
