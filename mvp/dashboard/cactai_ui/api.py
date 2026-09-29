@@ -131,6 +131,12 @@ class CoreClient:
         return self.post_json("/chat", {"operator": operator, "message": message, "incident": incident},
                               timeout=CHAT_TIMEOUT)
 
+    def setup_interpret(self, question: str, options: list[tuple[str, str]], answer: str) -> dict:
+        """Guided setup: let the AI model map an answer the script could not match (never a secret)."""
+        return self.post_json("/chat/setup/interpret", {
+            "question": question, "options": [{"value": v, "label": label} for v, label in options],
+            "answer": answer}, timeout=CHAT_TIMEOUT)
+
     def clear_chat(self) -> Any:
         return self.post_json("/chat/clear", {})
 

@@ -25,6 +25,7 @@ from cactai_ui.api import CoreClient, CoreError
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 import cactai_config as cfg  # noqa: E402
+import setup_chat  # noqa: E402
 
 cfg.load()
 
@@ -139,7 +140,7 @@ def show_flash() -> None:
 st.session_state.setdefault("core_url", DEFAULT_CORE)
 st.session_state.setdefault("operator", DEFAULT_OPERATOR)
 st.session_state.setdefault("auto_refresh", True)
-st.session_state.setdefault("page", "config")
+st.session_state.setdefault("page", "config" if cfg.setup_done() else "chat")  # new machine: guided setup
 st.session_state.setdefault("seen", {})
 TOKEN = cfg.api_token()
 client = CoreClient(st.session_state.core_url, token=TOKEN)
@@ -428,6 +429,10 @@ def decision_controls(inc: dict) -> None:
 
 def page_config() -> None:
     header("Configuration", f"Saved to {cfg.config_path()} · read by every part when it starts")
+    o1, o2 = st.columns([4, 1], vertical_alignment="center")
+    o1.caption("Rather answer a few questions? Cyanide can walk you through setup in the Chat page instead.")
+    if o2.button("Set up with Cyanide", icon=":material/forum:", width="stretch"):
+        start_setup()
     current = {f.env: f.default for f in cfg.FIELDS.values()} | cfg.read()
     values = {}
     preset = cfg.SECTIONS[0]
@@ -470,6 +475,7 @@ def page_config() -> None:
             st.error("Please enter a number for: " + "; ".join(bad))
         else:
             path = cfg.save(values)
+            cfg.mark_setup_done("dashboard")
             ai, err = safe(client.ai_reload)
             if err:
                 st.success(f"Saved to {path}. Start the demo (run_demo.ps1) so the core picks them up.")
@@ -670,7 +676,21 @@ def page_chat() -> None:
     Not auto-refreshed, so a rerun never interrupts typing.
     """
     show_flash()
-    if header("Chat", "ask the orchestrator what it sees and why it acted · it suggests, you decide") is None:
+    online = header("Chat", "ask the orchestrator what it sees and why it acted · it suggests, you decide") is not None
+    if st.session_state.get("setup_chat"):  # scripted, so it works with the core offline too
+        setup_conversation()
+        return
+    if not cfg.setup_done() and not st.session_state.get("setup_later"):
+        with st.container(border=True):
+            s1, s2, s3 = st.columns([6, 2, 1], vertical_alignment="center")
+            s1.markdown("**New here?** Cyanide can set SentrAI up with you in a few plain questions, "
+                        "so you don't need the Configuration page.")
+            if s2.button("Set up with Cyanide", icon=":material/forum:", type="primary", width="stretch"):
+                start_setup()
+            if s3.button("Not now", width="stretch"):
+                st.session_state.setup_later = True
+                st.rerun()
+    if not online:
         return
     hist, err = safe(client.chat_history, {})
     if err:
@@ -681,7 +701,9 @@ def page_chat() -> None:
     incidents, _ = fetch("incidents", [])
     by_id = {str(i.get("id")): i for i in incidents or [] if i.get("id")}
 
-    c1, c2, c3 = st.columns([4, 6, 2], vertical_alignment="bottom")
+    c1, c2, c4, c3 = st.columns([4, 5, 2, 2], vertical_alignment="bottom")
+    if c4.button("Setup", icon=":material/tune:", width="stretch", help="Let Cyanide walk you through setup"):
+        start_setup()
     about = c1.selectbox("Talk about", [""] + sorted(by_id, reverse=True), key="chat_about",
                          format_func=lambda i: f"{i} · {sh.category_label(by_id[i].get('category'))}" if i
                          else "The whole operation")
@@ -709,6 +731,83 @@ def page_chat() -> None:
         if err:
             st.session_state["flash"] = (f"Chat failed: {err}", "⚠️")
         st.rerun()
+
+
+def start_setup() -> None:
+    st.session_state.setup_chat = setup_chat.SetupChat()
+    go("chat")
+
+
+def setup_conversation() -> None:
+    """Cyanide asks the setup questions (mvp/setup_chat.py); the user answers with a button or by typing.
+
+    Kept in this browser session only, never in the core's chat history, because some answers are
+    secrets. Nothing is saved until the user confirms the summary.
+    """
+    sc: setup_chat.SetupChat = st.session_state.setup_chat
+    t1, t2 = st.columns([5, 1], vertical_alignment="center")
+    t1.caption("Guided setup · nothing is saved until you confirm the summary · the Configuration page "
+               "shows the same settings")
+    if t2.button("Close setup" if sc.state in ("saved", "cancelled") else "Leave setup",
+                 icon=":material/close:", width="stretch"):
+        del st.session_state.setup_chat
+        st.session_state.setup_later = True
+        st.rerun()
+    with st.container(height=540, border=True):
+        for m in sc.messages:
+            mine = m["role"] == "user"
+            with st.chat_message("user" if mine else "assistant", avatar="👤" if mine else "🧪"):
+                st.markdown(m["text"].replace("\n", "  \n") if mine else m["text"])
+    answer = None
+    options = sc.options()
+    if options:
+        cols = st.columns(min(len(options), 4))
+        for n, (value, label) in enumerate(options):
+            if cols[n % len(cols)].button(label, key=f"setup_{len(sc.messages)}_{value}", width="stretch",
+                                          type="primary" if n == 0 and sc.state == "review" else "secondary"):
+                answer = value
+    if sc.secret:
+        with st.form(f"setup_secret_{len(sc.messages)}", clear_on_submit=True, border=False):
+            f1, f2 = st.columns([5, 1], vertical_alignment="bottom")
+            typed = f1.text_input("Your answer (hidden; it is never shown in the chat)", type="password")
+            if f2.form_submit_button("Send", type="primary", width="stretch") and typed:
+                answer = typed
+    elif sc.state in ("asking", "review"):
+        answer = st.chat_input("Type your answer…") or answer
+    if not answer:
+        return
+    with st.spinner("Cyanide is reading your answer…"):
+        sc.answer(answer, interpret=setup_interpreter)
+    if sc.state == "save":
+        save_setup(sc)
+    st.rerun()
+
+
+def setup_interpreter(question: str, options: list[tuple[str, str]], answer: str) -> dict | None:
+    """The AI model's reading of an answer the script could not match; None when the core is offline."""
+    result, err = safe(lambda: client.setup_interpret(question, options, answer))
+    return None if err or not isinstance(result, dict) else result
+
+
+def save_setup(sc: "setup_chat.SetupChat") -> None:
+    values = sc.values()
+    bad = [f.prompt for f in cfg.FIELDS.values() if not cfg.valid(f, values.get(f.env, f.default))]
+    if bad:
+        sc.state = "review"
+        sc.messages.append({"role": "assistant", "text": "I can't save yet; these values are not valid: "
+                            + "; ".join(bad) + ". Fix them on the Configuration page, or start over."})
+        return
+    path = cfg.save(values)
+    cfg.mark_setup_done("chat")
+    for key in [k for k in st.session_state if str(k).startswith("cfg_")]:  # Configuration shows the new values
+        del st.session_state[key]
+    st.session_state.operator = values.get("CACTAI_OPERATOR") or st.session_state.operator
+    ai, err = safe(client.ai_reload)
+    note = f"Saved to {path}. "
+    note += ("The core isn't running, so start SentrAI (run_demo) and every part will use these settings."
+             if err else f"I've switched to the new AI settings ({ai.get('chat')}). Restart SentrAI "
+                         "(stop_demo, then run_demo) so the other parts pick up the rest.")
+    sc.saved(note + " You can change anything later here or on the Configuration page.")
 
 
 def chat_message(m: dict, assistant: str, by_id: dict[str, dict]) -> None:

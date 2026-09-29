@@ -235,8 +235,43 @@ def save(values: dict[str, str]) -> Path:
     if not values.get(TOKEN_ENV):  # a form that leaves the token out must not wipe it
         values[TOKEN_ENV] = read().get(TOKEN_ENV, "")
     data = {s.key: {f.env: values.get(f.env, f.default) for f in s.fields} for s in SECTIONS}
+    done = _raw().get(SETUP_DONE_KEY)
+    if done:  # not a setting (read() skips it), so carry it over
+        data[SETUP_DONE_KEY] = done
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     return path
+
+
+SETUP_DONE_KEY = "setup_done"  # top-level marker: how setup was finished (wizard, dashboard or chat)
+
+
+def _raw() -> dict:
+    try:
+        data = json.loads(config_path().read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def setup_done() -> bool:
+    """True once someone has set this machine up: the wizard, the Configuration page or the Chat page
+    saved, or the saved values differ from the defaults (files written before the marker existed).
+    A file holding only the generated API token does not count."""
+    if _raw().get(SETUP_DONE_KEY):
+        return True
+    values = read()
+    return any(not f.generated and not _same(values.get(f.env, f.default), f.default)
+               for f in FIELDS.values() if f.env in values)
+
+
+def mark_setup_done(how: str) -> None:
+    path = config_path()
+    data = _raw()
+    if not data:
+        save({})
+        data = _raw()
+    data[SETUP_DONE_KEY] = how
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
 _LOADED: dict[str, str] = {}  # what load() put into os.environ, so a reload can replace it
@@ -387,6 +422,7 @@ def setup() -> None:
         print("\nSetup cancelled; nothing saved.")
         raise SystemExit(1)
     print(f"[cactai] Saved to {save(values)}.")
+    mark_setup_done("wizard")
 
 
 def main(argv: list[str]) -> int:

@@ -103,6 +103,22 @@ The file holds the TypeSafe key and Telegram token in plain text, so keep it in 
 user folder. `run_demo.ps1` only clears old `.jsonl` logs when the logs directory is inside
 `mvp\lab`, so pointing it at real logs never deletes them.
 
+### Set up with Cyanide (no Configuration page)
+
+The dashboard's **Chat** page can do the same setup as a conversation. Until a machine has
+been set up, the dashboard opens on Chat with a **Set up with Cyanide** offer (the **Setup**
+button on Chat, or **Set up with Cyanide** on Configuration, starts it any time). Cyanide asks
+what SentrAI guards and suggests a preset, then the logs folder, IPs and accounts never to
+touch, your name, how to alert you (Telegram and/or email), the AI key, and the dashboard
+sign-in. Answer with the buttons or by typing. Keys and passwords go in a hidden field and are
+never shown in the chat. Nothing is saved until you confirm the summary; it then saves through
+the same settings file, switches Cyanide to the new AI settings, and says what needs a restart.
+
+It is scripted, so it works without an AI key (and with the core stopped). With an AI model
+set, Cyanide also understands answers that match no button ("we're a dental clinic") and
+answers questions asked along the way (`POST /chat/setup/interpret`; secrets are never sent).
+The settings file records how setup was finished (`"setup_done"`).
+
 ### Security presets
 
 | Value | Strict | Moderate (default) | Balanced |

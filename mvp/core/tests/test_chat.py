@@ -129,3 +129,38 @@ def test_earlier_messages_are_passed_to_the_model(client):
     chat.ask("erick", "and again?")
     prompt = provider.convos[1].sent[0]
     assert "Operator: hello" in prompt and f"{client.core.name}: first" in prompt
+
+
+class SetupProvider(cactai_llm.Provider):
+    name, model = "fake", "fake-1"
+
+    def __init__(self, out=None, error=None):
+        self.out, self.error, self.asked = out, error, []
+
+    def complete_json(self, system, user, schema):
+        if self.error:
+            raise cactai_llm.LLMError(self.error)
+        self.asked.append((user, schema))
+        return self.out
+
+
+SETUP = {"question": "What does SentrAI guard?", "answer": "a dental clinic",
+         "options": [{"value": "sensitive", "label": "Sensitive records"}, {"value": "office", "label": "Office"}]}
+
+
+def test_setup_interpret_without_a_key_leaves_the_script_in_charge(client):
+    r = client.post("/chat/setup/interpret", json=SETUP)
+    assert r.status_code == 200 and r.json() == {"ai": False, "choice": "", "reply": ""}
+
+
+def test_setup_interpret_maps_an_answer_to_an_option(client):
+    chat = client.app.state.chat
+    chat.provider = SetupProvider({"choice": "sensitive", "reply": "Patient records are sensitive."})
+    r = client.post("/chat/setup/interpret", json=SETUP).json()
+    assert r == {"ai": True, "choice": "sensitive", "reply": "Patient records are sensitive."}
+    user, schema = chat.provider.asked[0]
+    assert "a dental clinic" in user and schema["properties"]["choice"]["enum"] == ["sensitive", "office", ""]
+    chat.provider = SetupProvider({"choice": "made-up", "reply": ""})  # never an option that was not offered
+    assert client.post("/chat/setup/interpret", json=SETUP).json()["choice"] == ""
+    chat.provider = SetupProvider(error="boom")
+    assert client.post("/chat/setup/interpret", json=SETUP).json()["ai"] is False
