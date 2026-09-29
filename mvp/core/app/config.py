@@ -87,6 +87,8 @@ class Settings:
         default_factory=lambda: os.getenv("CACTAI_FIREWALL_ENFORCE", "0").strip().lower() in ("1", "true", "yes", "on")
     )
     jev_budget_s: float = field(default_factory=lambda: _f("JEV_BUDGET_S", 2.0))
+    # Protection switch override at start: "1"/"0", or unset to use the last choice saved in protection.json.
+    monitor_only: str | None = field(default_factory=lambda: os.getenv("CACTAI_MONITOR_ONLY"))
     public_url: str = field(default_factory=lambda: os.getenv("CACTAI_PUBLIC_URL", "http://127.0.0.1:8000").rstrip("/"))
     background: bool = field(default_factory=lambda: os.getenv("CACTAI_BACKGROUND", "1") != "0")
     # Every endpoint but /health and /blocklist needs it (see main.py). Made and saved on first use.

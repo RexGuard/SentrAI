@@ -82,6 +82,7 @@ class State:
         self.seq_ntf = 0
         self.script_done: set[str] = set()
         self.chat: list[dict] = []
+        self.protection: dict = {"monitor_only": False, "changed_at": None, "changed_by": None, "reason": None}
         self.scan: dict | None = None
         self.log_sources: list[dict] = []
         self.pending: list[dict] = []  # Scout proposals; seed one with POST /_fake/scout-proposal

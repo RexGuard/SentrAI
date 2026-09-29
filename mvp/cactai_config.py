@@ -320,6 +320,9 @@ def wizard(ask: Callable[[str], str] | None = None, ask_secret: Callable[[str], 
             if f.env in PRESET_FIELDS and not advanced:
                 values[f.env] = preset[f.env]
                 continue
+            if f.env in EMAIL_FIELDS and not values.get("SMTP_HOST"):
+                values[f.env] = current[f.env]  # no SMTP server, so the other email questions are skipped
+                continue
             if f.generated:
                 values[f.env] = current[f.env] or new_token()
                 say(f"  {f.prompt}: {'kept' if current[f.env] else 'generated'} (python cactai_config.py token shows it)")

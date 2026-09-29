@@ -280,7 +280,7 @@ def test_collector_restart_sends_nothing_twice(tmp_path, monkeypatch):
     auth = tmp_path / "auth.log"
     auth.write_text("\n".join(lines("auth.log")[:5]) + "\n")
     sent: list[dict] = []
-    monkeypatch.setattr(collector.requests, "post", lambda url, json, timeout: (sent.extend(json), _Resp())[1])
+    monkeypatch.setattr(collector.requests, "post", lambda url, json, timeout, headers=None: (sent.extend(json), _Resp())[1])
     try:
         c = _collector_for(auth, monkeypatch)
         c.collect()
