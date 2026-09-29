@@ -110,8 +110,11 @@ The dashboard's **Chat** page can do the same setup as a conversation. Until a m
 been set up, the dashboard opens on Chat with a **Set up with Cyanide** offer (the **Setup**
 button on Chat, or **Set up with Cyanide** on Configuration, starts it any time). Cyanide asks
 what SentrAI guards and suggests a preset, then the logs folder, IPs and accounts never to
-touch, your name, how to alert you (Telegram and/or email), the AI key, and the dashboard
-sign-in. Answer with the buttons or by typing. Keys and passwords go in a hidden field and are
+touch, your name, how to alert you (Telegram and/or email), the AI key, and the dashboard:
+who may open it (this computer, or named IP addresses), its port, and the sign-in email and
+password (saved only as a hash, used from the next sign-in). Opening the dashboard to other
+computers changes the firewall, so Cyanide ends with the one `sudo ./deploy/install.sh
+--dashboard-allow ...` command that applies it on a Linux server. Answer with the buttons or by typing. Keys and passwords go in a hidden field and are
 never shown in the chat. Nothing is saved until you confirm the summary; it then saves through
 the same settings file, switches Cyanide to the new AI settings, and says what needs a restart.
 

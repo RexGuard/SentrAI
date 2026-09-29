@@ -171,11 +171,10 @@ class SetupChat:
             lines.append(f"**AI model:** {cfg.cactai_llm.LABEL.get(provider, provider)}, {model} (key set)")
         else:
             lines.append("**AI model:** none, fixed playbooks")
-        if web_fields():
-            lines.append(f"**Dashboard:** {dashboard_address(self)}")
-        if WEB["password"] in cfg.FIELDS:
-            who = f" as {v(WEB['email'])}" if WEB["email"] in cfg.FIELDS and v(WEB["email"]) else ""
-            lines.append(f"**Dashboard sign-in:** {'password' + who if v(WEB['password']) else 'none'}")
+        lines.append(f"**Dashboard:** {dashboard_address(self)}")
+        lines.append(f"**Dashboard sign-in:** {v(cfg.EMAIL_ENV)}, "
+                     + ("new password" if self.answers.get(cfg.HASH_ENV) else
+                        "current password" if v(cfg.HASH_ENV) else "password made on next start"))
         return lines
 
     # ------------------------------------------------------------ helpers
@@ -261,13 +260,7 @@ def _logs(s: SetupChat, answer: str) -> str:
 def _ips(s: SetupChat, answer: str) -> str:
     if answer == "none":
         return "Only this computer stays protected, as before."
-    found = []
-    for token in re.split(r"[\s,;]+", answer):
-        token = token.strip("()[]'\".")
-        try:
-            found.append(str(ipaddress.ip_network(token, strict=False)) if "/" in token else str(ipaddress.ip_address(token)))
-        except ValueError:
-            continue
+    found = _addresses(answer)
     if not found:
         raise Retry("I couldn't find an IP address in that. Type one like 192.168.1.20, or press No.")
     s.set(PROTECTED_IPS=_merge_list(s.value("PROTECTED_IPS"), found))
@@ -426,78 +419,93 @@ def _model(s: SetupChat, answer: str) -> str:
     return "The AI model is set; I'll switch to it as soon as you save."
 
 
-# 8. Web dashboard access. The field names come from cactai_config; a question is asked only when
-# the settings file has that field, so this follows whatever the login and deploy code defines.
-WEB = {"host": "CACTAI_DASHBOARD_HOST", "port": "CACTAI_DASHBOARD_PORT", "url": "CACTAI_PUBLIC_URL",
-       "email": "CACTAI_DASHBOARD_EMAIL", "password": cfg.PASSWORD_ENV}
+# 8. Web dashboard: who may open it, on which port, and the sign-in (email + password, saved as a hash).
+# Opening it to other computers changes the firewall, which needs admin rights, so Cyanide saves the
+# sign-in itself and gives the one install command that applies the rest (deploy/install.sh).
+DEFAULT_PORT = "8501"
 
 
-def web_fields() -> bool:
-    return WEB["host"] in cfg.FIELDS or WEB["port"] in cfg.FIELDS
+def _is_local(ip: str) -> bool:
+    return ip in ("localhost", "::1") or ip.startswith("127.")
 
 
-def _has(name: str) -> Callable[[SetupChat], bool]:
-    return lambda s: WEB[name] in cfg.FIELDS
+def _addresses(text: str) -> list[str]:
+    found = []
+    for token in re.split(r"[\s,;]+", text):
+        token = token.strip("()[]'\".")
+        try:
+            found.append(str(ipaddress.ip_network(token, strict=False)) if "/" in token else str(ipaddress.ip_address(token)))
+        except ValueError:
+            continue
+    return found
+
+
+def _admin_ips(s: SetupChat) -> list[str]:
+    """IPs typed earlier as never-to-block: most likely the admin's own computers."""
+    return [ip for ip in s.value("PROTECTED_IPS").split(",") if ip and not _is_local(ip)
+            and ip not in s.current.get("PROTECTED_IPS", "").split(",")]
 
 
 def dashboard_address(s: SetupChat) -> str:
-    if s.value(WEB["url"]):
-        return s.value(WEB["url"])
-    host = s.value(WEB["host"]) or "127.0.0.1"
-    where = "this computer only" if host in ("127.0.0.1", "localhost", "::1") else "other computers too"
-    return f"port {s.value(WEB['port']) or '8501'}, {where}"
+    port = s.notes.get("port", DEFAULT_PORT)
+    if s.notes.get("web") == "network":
+        return f"open to {', '.join(s.notes.get('allow', []))} on port {port} (HTTPS)"
+    return f"this computer only, port {port}"
 
 
-def _web_host(s: SetupChat, choice: str) -> str:
+def deploy_command(s: SetupChat) -> str:
+    """The install command that applies the dashboard access on a Linux server ("" when nothing to apply)."""
+    port = s.notes.get("port", DEFAULT_PORT)
+    if "web" not in s.notes:
+        return ""
+    args = ["sudo ./deploy/install.sh"]
+    if s.notes["web"] == "network":
+        args += [f"--dashboard-allow {ip}" for ip in s.notes.get("allow", [])]
+    else:
+        args.append("--dashboard-local")
+    if port != DEFAULT_PORT:
+        args.append(f"--dashboard-port {port}")
+    return " ".join(args)
+
+
+def _web(s: SetupChat, choice: str) -> str:
     s.notes["web"] = choice
-    s.set(**{WEB["host"]: "127.0.0.1" if choice == "local" else "0.0.0.0"})
-    return "" if choice != "local" else "Only this computer will reach the dashboard."
+    return "Only this computer will reach the dashboard." if choice == "local" else ""
+
+
+def _web_allow(s: SetupChat, answer: str) -> str:
+    found = _admin_ips(s) if answer == "earlier" else [ip for ip in _addresses(answer) if not _is_local(ip)]
+    if not found:
+        raise Retry("I couldn't find an IP address in that. Type one like 192.168.1.20, or a network like "
+                    "192.168.1.0/24.")
+    s.notes["allow"] = found
+    s.set(PROTECTED_IPS=_merge_list(s.value("PROTECTED_IPS"), found))  # never block the people who run it
+    return f"The dashboard will open to {', '.join(found)} only; everyone else is dropped by the firewall."
 
 
 def _web_port(s: SetupChat, answer: str) -> str:
-    port = (s.value(WEB["port"]) or "8501") if answer == "keep" else answer
+    port = s.notes.get("port", DEFAULT_PORT) if answer == "keep" else answer
     if not port.isdigit() or not 1 <= int(port) <= 65535:
         raise Retry("A port is a number from 1 to 65535, like 8501.")
-    s.set(**{WEB["port"]: port})
+    s.notes["port"] = port
     return ""
-
-
-def _web_url(s: SetupChat, answer: str) -> str:
-    if answer == "none":
-        s.set(**{WEB["url"]: ""})
-        return ""
-    url = _nonblank(answer, "the address").rstrip("/")
-    if not re.match(r"https?://", url):
-        url = "https://" + url
-    if not re.fullmatch(r"https?://[\w.-]+(:\d+)?(/.*)?", url):
-        raise Retry("Type an address like console.example.com or https://console.example.com.")
-    s.set(**{WEB["url"]: url})
-    return f"The dashboard will be at {url}."
 
 
 def _web_email(s: SetupChat, answer: str) -> str:
     if answer != "keep":
         if not re.fullmatch(r"[^@\s]+@[^@\s]+\.\w+", answer.strip()):
             raise Retry("Please type an email address, like admin@example.com.")
-        s.set(**{WEB["email"]: answer.strip()})
+        s.set(**{cfg.EMAIL_ENV: answer.strip()})
     return ""
 
 
 def _web_password(s: SetupChat, answer: str) -> str:
     if answer == "keep":
-        return "The dashboard sign-in stays as it is."
-    if answer == "none":
-        s.set(**{WEB["password"]: ""})
-        return "The dashboard opens without a sign-in."
-    if len(answer) < 8:
-        raise Retry("Please use at least 8 characters.")
-    s.set(**{WEB["password"]: answer})  # the dashboard hashes it on save when the config code can
-    return "The dashboard sign-in is set."
-
-
-def _password_options(s: SetupChat) -> list[Option]:
-    keep = [("keep", "Keep the current password")] if s.current.get(WEB["password"]) else []
-    return keep + ([] if s.notes.get("web") == "network" else [("none", "No sign-in on this computer")])
+        return "The dashboard password stays as it is."
+    if len(answer) < cfg.MIN_PASSWORD:
+        raise Retry(f"Please use at least {cfg.MIN_PASSWORD} characters.")
+    s.set(**{cfg.HASH_ENV: cfg.hash_password(answer)})  # only the hash is kept, here and in the file
+    return "Got it. It's saved only as a hash, and it works at your next sign-in."
 
 
 STEPS: tuple[Step, ...] = (
@@ -553,17 +561,19 @@ STEPS: tuple[Step, ...] = (
     Step("ai_model", lambda s: "Which model should I use?" + (
         "" if _model_options(s) else " This provider has no default, so type its name."), _model, _model_options,
          when=_picked_ai, words={"default": {"default", "yes", "ok"}}),
-    Step("web_host", lambda s: "Who should be able to open this dashboard?", _web_host,
-         lambda s: [("local", "Only this computer"), ("network", "Other computers too")], when=_has("host"),
-         typed=False, words={"local": {"me", "just me", "local", "localhost"},
-                             "network": {"network", "everyone", "lan", "internet", "remote"}}),
+    Step("web", lambda s: "Last part: the dashboard itself. Who should be able to open it?", _web,
+         lambda s: [("local", "Only this computer"), ("network", "Other computers too")], typed=False,
+         words={"local": {"me", "just me", "local", "localhost", "only me"},
+                "network": {"network", "others", "team", "lan", "remote", "other computers"}}),
+    Step("web_allow", lambda s: "Which computers? Type their IP addresses, or a network like 192.168.1.0/24. "
+                                "Everyone else is blocked.", _web_allow,
+         lambda s: [("earlier", f"Use {', '.join(_admin_ips(s))}")] if _admin_ips(s) else [],
+         when=lambda s: s.notes.get("web") == "network"),
     Step("web_port", lambda s: "Which port should it use?", _web_port,
-         lambda s: [("keep", f"Keep {s.value(WEB['port']) or '8501'}")], when=_has("port")),
-    Step("web_url", lambda s: "Does it have a web address people will use, like console.example.com?", _web_url,
-         lambda s: [("none", "No web address")], when=lambda s: _has("url")(s) and s.notes.get("web") == "network",
-         words={"none": NO}),
+         lambda s: [("keep", f"Keep {DEFAULT_PORT}")]),
     Step("web_email", lambda s: "What email will you sign in to the dashboard with?", _web_email,
-         lambda s: _keep(s, WEB["email"], s.current.get(WEB["email"], "")), when=_has("email")),
-    Step("web_password", lambda s: "Choose a password for the dashboard sign-in (at least 8 characters).",
-         _web_password, _password_options, when=_has("password"), secret=True),
+         lambda s: [("keep", f"Keep {s.value(cfg.EMAIL_ENV)}")]),
+    Step("web_password", lambda s: f"Choose a dashboard password (at least {cfg.MIN_PASSWORD} characters).",
+         _web_password, lambda s: [("keep", "Keep the current password")] if s.current.get(cfg.HASH_ENV) else [],
+         secret=True),
 )

@@ -853,7 +853,13 @@ def save_setup(sc: "setup_chat.SetupChat") -> None:
     note += ("The core isn't running, so start SentrAI (run_demo) and every part will use these settings."
              if err else f"I've switched to the new AI settings ({ai.get('chat')}). Restart SentrAI "
                          "(stop_demo, then run_demo) so the other parts pick up the rest.")
-    sc.saved(note + " You can change anything later here or on the Configuration page.")
+    deploy = setup_chat.deploy_command(sc)
+    if deploy:
+        note += ("\n\nWho can open the dashboard is a firewall setting, which needs admin rights. On a Linux "
+                 f"server, run this once from the `mvp` folder to apply it:\n\n```\n{deploy}\n```\n\n"
+                 "It keeps everything you saved here. On Windows or a demo machine the dashboard stays on this "
+                 "computer" + (f"; start run_demo with `--dashboard-port {sc.notes['port']}` (Windows: `-DashboardPort {sc.notes['port']}`)" if sc.notes.get("port", "8501") != "8501" else "") + ".")
+    sc.saved(note + "\n\nYou can change anything later here or on the Configuration page.")
 
 
 def chat_message(m: dict, assistant: str, by_id: dict[str, dict]) -> None:

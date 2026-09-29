@@ -56,10 +56,13 @@ def test_walkthrough_with_buttons_and_typing(tmp_path):
     assert values["PROTECTED_USERS"] == "admin,backup"
     assert values["CACTAI_OPERATOR"] == "Erick" and values["ON_DUTY"] == "Erick"
     assert values["TELEGRAM_CHAT_ID"] == "-1001234" and values["SMTP_HOST"] == ""
-    while sc.state == "asking":  # answer whatever dashboard questions the config defines
-        opts = sc.options()
-        sc.answer(opts[0][0] if opts else "s3cret-password")
+    run(sc, "network", "earlier", "8600", "erick@example.com", "s3cret-password")
     assert sc.state == "review" and "Shall I save it?" in last(sc)
+    assert cfg.check_password("s3cret-password", values_hash := sc.values()[cfg.HASH_ENV])
+    assert "s3cret-password" not in json.dumps(sc.messages) + json.dumps(sc.values()) and values_hash
+    assert sc.values()[cfg.EMAIL_ENV] == "erick@example.com"
+    assert setup_chat.deploy_command(sc) == ("sudo ./deploy/install.sh --dashboard-allow 192.168.1.20 "
+                                             "--dashboard-allow 10.0.0.0/24 --dashboard-port 8600")
     assert "Strict" in last(sc)
     # the bot token is never echoed in the transcript
     assert all("AAAAAAAAAA" not in m["text"] for m in sc.messages)
@@ -101,10 +104,12 @@ def test_ai_maps_an_unclear_answer_but_never_sees_secrets():
 
 
 def test_review_and_restart():
-    sc = run(setup_chat.SetupChat(), "busy", "yes", "demo", "none", "none", "keep", "console", "none")
-    while sc.state == "asking":
-        opts = sc.options()
-        sc.answer(opts[0][0] if opts else "s3cret-password")
+    sc = run(setup_chat.SetupChat(), "busy", "yes", "demo", "none", "none", "keep", "console", "none",
+             "local", "keep", "keep")
+    sc.answer("short")
+    assert "at least 8" in last(sc)
+    sc.answer("long-enough-pw")
+    assert sc.state == "review" and setup_chat.deploy_command(sc) == "sudo ./deploy/install.sh --dashboard-local"
     sc.answer("restart")
     assert sc.state == "asking" and sc.step.key == "kind" and not sc.answers
 
@@ -118,6 +123,11 @@ def test_setup_done_marker(config_file):
     cfg.save(cfg.read())  # saving keeps the marker
     assert json.loads(config_file.read_text())["setup_done"] == "chat"
     assert "setup_done" not in cfg.read()
+
+
+def test_launcher_sign_in_does_not_count_as_setup(config_file):
+    cfg.ensure_admin("me@example.com")  # what run_demo and install.sh do on a first start
+    assert not cfg.setup_done()
 
 
 def test_changed_values_count_as_done(config_file):

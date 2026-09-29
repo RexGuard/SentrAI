@@ -299,12 +299,12 @@ def _raw() -> dict:
 def setup_done() -> bool:
     """True once someone has set this machine up: the wizard, the Configuration page or the Chat page
     saved, or the saved values differ from the defaults (files written before the marker existed).
-    A file holding only the generated API token does not count."""
+    The access section does not count: the launchers fill it in by themselves (API token, sign-in)."""
     if _raw().get(SETUP_DONE_KEY):
         return True
     values = read()
-    return any(not f.generated and not _same(values.get(f.env, f.default), f.default)
-               for f in FIELDS.values() if f.env in values)
+    return any(not _same(values.get(f.env, f.default), f.default)
+               for s in SECTIONS if s.key != "access" for f in s.fields if f.env in values)
 
 
 def mark_setup_done(how: str) -> None:
