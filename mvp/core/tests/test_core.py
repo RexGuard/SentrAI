@@ -73,14 +73,14 @@ def test_threshold_triggers_autonomous_block(client):
     assert "203.0.113.45" in bl["ips"] and "admin" in bl["users"]
     acts = incs["RSK-2026-081"]["actions"]
     assert {a["type"] for a in acts} == {"block_ip", "lock_user", "rate_limit"}
-    assert all(a["mode"] == "autonomous" and a["approved_by"] == "Needle" and a["status"] == "active" for a in acts)
+    assert all(a["mode"] == "autonomous" and a["approved_by"] == "Countersign" and a["status"] == "active" for a in acts)
     assert all(len(a["snapshot_hash"]) == 64 and a["verified"] for a in acts)
     assert r["risk_index"] < 80  # contained incidents no longer count
     audit = client.get("/audit").json()
     types = [x["type"] for x in audit["records"]]
     for t in ("threshold_crossed", "snapshot", "needle_review", "action_applied", "verify"):
         assert t in types
-    assert any(x["type"] == "needle_review" and x["data"]["agent"] == "Needle" and x["data"]["approved"]
+    assert any(x["type"] == "needle_review" and x["data"]["agent"] == "Countersign" and x["data"]["approved"]
                for x in audit["records"])
     pending = client.get("/notifications/pending").json()
     auto = [n for n in pending if n["kind"] == "autonomous_action"]
@@ -161,7 +161,7 @@ def test_audit_chain_valid_and_detects_tampering(client):
         con.execute("UPDATE audit SET data = '{}' WHERE seq = 3")
     # ...and if an attacker drops the trigger and edits a row, verification catches it.
     con.execute("DROP TRIGGER audit_no_update")
-    con.execute("UPDATE audit SET data = replace(data, 'Needle', 'Nobody') WHERE type = 'needle_review'")
+    con.execute("UPDATE audit SET data = replace(data, 'Countersign', 'Nobody') WHERE type = 'needle_review'")
     con.commit()
     con.close()
     audit = client.get("/audit").json()
@@ -191,7 +191,7 @@ def test_evidence_report(client):
     assert md.status_code == 200
     assert "Responsible Entity" in md.text and "Ack: none" in md.text and "Incident timeline" in md.text
     assert rep["title"] == "Security Evidence Report" and rep["report_id"] == "ER-RSK-2026-081"
-    assert any(a["by"] == "Needle" and a["decision"] == "approved" for a in rep["approvals"])
+    assert any(a["by"] == "Countersign" and a["decision"] == "approved" for a in rep["approvals"])
     pdf = client.get("/reports/RSK-2026-081.pdf")
     assert pdf.status_code == 200 and pdf.headers["content-type"] == "application/pdf"
     assert pdf.content.startswith(b"%PDF-1.4") and pdf.content.rstrip().endswith(b"%%EOF")
@@ -204,10 +204,10 @@ def test_helpdesk_and_agents(client):
     brute_force(client)
     client.post("/events", json=ev(10, "GET /search?q=' OR 1=1 -- 200"))
     why = client.get("/incidents/RSK-2026-081/why").json()["answer"]
-    assert "Needle" in why and "failed logins" in why
+    assert "Countersign" in why and "failed logins" in why
     assert "RSK-2026-081" in client.get("/helpdesk/why", params={"target": "203.0.113.45"}).json()["incidents"]
     names = {a["name"] for a in client.get("/agents").json()}
-    assert {"Cyanide", "Root", "Reservoir", "AreoleLinux", "AreoleWin", "SpineNet", "Needle", "Watchdog",
+    assert {"Cyanide", "Gatehouse", "Vault", "Garrison-Linux", "Garrison-Win", "Watchtower", "Countersign", "Watchdog",
             "Scribe", "HelpDesk", "Jev"} <= names
 
 
@@ -259,7 +259,7 @@ def test_jev_path_and_parsing(client):
     client.post("/events", json=ev(1, "SYN to 22,23,80,443,3306 in 2s", ip="198.51.100.20", layer="network"))
     inc = client.get("/incidents").json()[0]
     assert inc["classified_by"] == "jev" and inc["ai_confidence"] == 0.5  # clipped to 0.5-1.0
-    assert inc["needs_review"] is False and inc["analyzed_by"] == "SpineNet"
+    assert inc["needs_review"] is False and inc["analyzed_by"] == "Watchtower"
     core.jev_step.jev = FakeJev(JevResult("misconfiguration", 0.8, 0.5, {}))  # malicious p in 0.4-0.6
     client.post("/events", json=ev(2, "bucket settings changed", ip=None, user=None, host="cloud-01", layer="cloud"))
     inc2 = [i for i in client.get("/incidents").json() if i["category"] == "misconfiguration"][0]

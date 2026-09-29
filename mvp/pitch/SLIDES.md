@@ -91,7 +91,7 @@ Suggested look: light background, dark green `#1F5E3B` for headings, amber `#E0A
 | 6 | No ack, penalty capped at +30 | 72.3 | 70 |
 | 6.5 | SQL injection (40 × ~0.9 × 1.5 ≈ 54) | ≈126 | ≈88 (Critical) → containment |
 
-Place markers on the line: bell icon at 0 ("alert delivered, Ack: none"), bell at 2 ("reminder"), shield at 6.5 ("Needle approved, IP blocked 2h").
+Place markers on the line: bell icon at 0 ("alert delivered, Ack: none"), bell at 2 ("reminder"), shield at 6.5 ("Countersign approved, IP blocked 2h").
 **Speaker note (Erick):** The slope between hour 0 and 6 is entirely caused by inaction. That is the accountability story in one picture. Export this chart from the dashboard's `/risk` history if possible.
 
 ---
@@ -100,7 +100,7 @@ Place markers on the line: bell icon at 0 ("alert delivered, Ack: none"), bell a
 - Lab app with synthetic member data, all on localhost
 - Brute force → Jev tags it → Telegram alert ignored
 - Inaction penalty climbs → SQL injection → crosses 80
-- Needle approves → IP blocked 2h → evidence report → human decides
+- Countersign approves → IP blocked 2h → evidence report → human decides
 
 **Visual:** screenshot of the dashboard at the moment the gauge crosses 80 (used as the title card before the screen recording).
 **Speaker note (Erick):** Say if the attack is a replay and if Jev is in fallback mode. Judges respect honesty more than polish.
@@ -111,7 +111,7 @@ Place markers on the line: bell icon at 0 ("alert delivered, Ack: none"), bell a
 - Responsible entity: on-duty operator and shift
 - SLA violation: overdue by X h (policy 2h)
 - Timeline of inaction: detected → alert delivered (Ack: none) → reminder → threshold crossed
-- Forced action: IP blocked, TTL 2h, approved by Needle
+- Forced action: IP blocked, TTL 2h, approved by Countersign
 - Proof: hash chain valid, each record links to the previous hash
 
 **Visual:** mock report card with fields as rows, "Ack: none" highlighted in red, a small strip of chained hash blocks (`prev_hash → hash`) at the bottom with a green "chain valid" tick. Use the real report from `GET /reports/{id}` for the screenshot.
@@ -132,8 +132,8 @@ Place markers on the line: bell icon at 0 ("alert delivered, Ack: none"), bell a
 
 ## Slide 11 · Agent architecture
 - Collectors (web, DB, OS) → rules → Jev → risk engine
-- Saguaro leads; Root, Reservoir, Areole, Spine-Net specialise by layer
-- Needle must approve every autonomous action (two-key rule)
+- Warden leads; Gatehouse, Vault, Garrison, Watchtower specialise by layer
+- Countersign must approve every autonomous action (two-key rule)
 - Watchdog checks heartbeats; Scribe writes the hash chain; Help Desk answers in Telegram
 - AI judges and explains. Deterministic code scores and executes.
 

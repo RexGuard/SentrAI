@@ -26,6 +26,6 @@ Stopped on request, 2026-09-27 ~23:32. All servers I started (fake core :8900, S
 2. Telegram mode has not been exercised against a real bot (no token available). The imports and handler wiring were checked, but not a live run.
 3. `CONTRACT_REQUESTS.md` is not written. These are the contract gaps I coded around defensively:
    - `/audit` shape: I accept either a bare list or `{"records"|"chain"|"entries": [...], "chain_valid": bool}`. The fake core uses `records`.
-   - Agent names in the audit: I read `data.agent` (or `actor`/`by`) and otherwise infer the agent from `type`. **Request:** the core puts `data.agent` ("Saguaro", "Needle", "Scribe", ...) and `data.operator` on operator records.
+   - Agent names in the audit: I read `data.agent` (or `actor`/`by`) and otherwise infer the agent from `type`. **Request:** the core puts `data.agent` ("Warden", "Countersign", "Scribe", ...) and `data.operator` on operator records.
    - `/notifications/pending` item shape is undefined. I use `id`, `incident_id`, `kind` (`incident_opened`/`reminder`/`autonomous_action`), `text`, `risk_index` and `recommended_action`, and fetch the incident for the rest.
 4. Nice-to-have polish that was not done: column widths in the incident queue table (the Status column is a bit narrow).

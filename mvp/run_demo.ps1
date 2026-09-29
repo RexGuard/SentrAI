@@ -16,12 +16,14 @@
   .\run_demo.ps1 -DemoSpeed 600      # faster inaction penalty (1 real minute = 10 demo hours)
   .\run_demo.ps1 -Mode replay        # no collector; use replay\simulate.py instead of live attacks
   .\run_demo.ps1 -CorePort 8100      # when 8000 is taken (or set CACTAI_CORE_PORT / CACTAI_DASHBOARD_PORT)
+  .\run_demo.ps1 -Tripwires          # tripwires: honeypot, honeytokens, tarpit (-Spines works too)
 #>
 param(
     [ValidateSet("live", "replay")] [string]$Mode = "live",
     [double]$DemoSpeed = 60,
     [switch]$NoDashboard,
     [switch]$NoBrowser,
+    [Alias("Tripwires")] [switch]$Spines,
     [int]$CorePort = $(if ($env:CACTAI_CORE_PORT) { [int]$env:CACTAI_CORE_PORT } else { 8000 }),
     [int]$DashboardPort = $(if ($env:CACTAI_DASHBOARD_PORT) { [int]$env:CACTAI_DASHBOARD_PORT } else { 8501 })
 )
@@ -135,6 +137,7 @@ $labDir = Join-Path $Root "lab"
 $logsDir = (& $pyLab (Join-Path $Root "cactai_config.py") get CACTAI_LAB_LOGS)
 if ((Test-Path $logsDir) -and ($logsDir -like "*$labDir*")) { Get-ChildItem $logsDir -Filter *.jsonl | Remove-Item -Force }
 
+if ($Spines) { $env:CACTAI_SPINES = "1" }  # tripwires in the portal (target_app\spines.py)
 $started += Start-Component "target" $labDir "& '$pyLab' -m target_app"
 if (-not (Wait-Http "http://127.0.0.1:5000/healthz")) {
     Write-Host "Target app did not come up on :5000. Check the 'SentrAI - target' window." -ForegroundColor Red
@@ -163,7 +166,7 @@ if ($Mode -eq "live") {
     Write-Host "  .\.venv\Scripts\python.exe -m attacks.benign"
     Write-Host "  .\.venv\Scripts\python.exe -m attacks.brute_force --count 8 --delay 0.3"
     Write-Host "  .\.venv\Scripts\python.exe -m attacks.sqli --count 3"
-    if ($Spines) { Write-Host "  .\.venv\Scripts\python.exe -m attacks.spines                 # honeypot + honeytokens (or scenario.py --spines)" }
+    if ($Spines) { Write-Host "  .\.venv\Scripts\python.exe -m attacks.spines                 # tripwires: honeypot + honeytokens (or scenario.py --tripwires)" }
 } else {
     Write-Host "  .\.venv\Scripts\python.exe -m replay.simulate                  # scripted replay (say so on camera)"
 }

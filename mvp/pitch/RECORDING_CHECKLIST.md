@@ -58,7 +58,7 @@ Fill in the exact commands from `mvp\run_demo.ps1` once the lead finalises it. P
 | 4 | 2:18 | Telegram alert arrives | do **not** press any button |
 | 5 | 2:30 | Wait for penalty to climb | wait ~2 to 6 real minutes (cut in edit, see section 7) |
 | 6 | 2:50 | SQL injection | `[TBD: SQLi command from mvp\lab]` |
-| 7 | 3:02 | Show Needle approval and the blocks | **Action taker** page (Needle reviews panel) |
+| 7 | 3:02 | Show Countersign approval and the blocks | **Action taker** page (Countersign reviews panel) |
 | 8 | 3:10 | Show blocklist with TTL 2h | **Action taker** page, Active containment |
 | 9 | 3:14 | Attacker retries, gets 403 | `[TBD: retry command]` |
 | 10 | 3:18 | Open evidence report | **Reports** page |
@@ -126,7 +126,7 @@ SentrAI_final_v1_20260929.mp4
 ## 10. Editing
 
 - [ ] Order follows `VIDEO_SCRIPT.md` timestamps.
-- [ ] Captions/subtitles for all speech (auto-generate in Clipchamp/CapCut, then fix names: SentrAI, Jev, Saguaro, Needle, PDPC).
+- [ ] Captions/subtitles for all speech (auto-generate in Clipchamp/CapCut, then fix names: SentrAI, Jev, Warden, Countersign, PDPC).
 - [ ] Zoom in on the gauge, the Telegram "Ack: none" and `chain_valid: true` moments.
 - [ ] Label on screen when footage is sped up, replayed, or uses fallback classification.
 - [ ] Source citations on screen for every factual claim (PDPC case, PDPA penalty, Computer Misuse Act).
