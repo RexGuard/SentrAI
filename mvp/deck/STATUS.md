@@ -1,6 +1,6 @@
 # Deck build status
 
-**29 Sep 2026:** renamed to SentrAI to match the product rename (PR #26): title, taglines, a shield-with-eye mark in place of the cactus (logo and perimeter art), output files `SentrAI.pptx` / `SentrAI.pdf`, and `architecture.png` from the SentrAI diagram. The roadmap slide now lists what merged on 28 Sep (firewall blocking, tarpit and honeypots, protection-off switch, evidence report PDF).
+**29 Sep 2026:** renamed to SentrAI to match the product rename (PR #26): title, taglines, a shield-with-eye mark in place of the cactus (logo and perimeter art), output files `SentrAI.pptx` / `SentrAI.pdf`, and `architecture.png` from the SentrAI diagram. Component names follow PR #30 (Warden, Countersign, Garrison, …). The roadmap slide now lists what merged on 28 Sep (firewall blocking, tarpit and honeypots, protection-off switch, evidence report PDF).
 
 ## Done (28 Sep 2026)
 - `make_assets.py` generates the charts and illustrations into `assets/` (escalation, curve, gauge, bell, logo, perimeter).

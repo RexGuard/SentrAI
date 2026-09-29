@@ -251,7 +251,7 @@ def s07_escalation(prs, n):
         "Brute force detected: index jumps into Amber",
         "Alert delivered, no acknowledgement: +5 every hour",
         "SLA (2h) breached: reminder, team lead copied",
-        "SQL injection lands on a neglected system: crosses 80, Needle approves a 2h block",
+        "SQL injection lands on a neglected system: crosses 80, Countersign approves a 2h block",
     ], size=18, gap=14)
     page_no(s, n)
 
@@ -264,7 +264,7 @@ def s08_demo(prs, n):
         "Lab student portal with synthetic member data, all on localhost",
         "Brute force → classified → operator alert ignored",
         "Inaction penalty climbs → SQL injection → crosses 80",
-        "Needle approves → IP blocked for 2h → evidence report → a human decides",
+        "Countersign approves → IP blocked for 2h → evidence report → a human decides",
     ], size=21, gap=16)
     picture(s, ASSETS / "gauge.png", Inches(8.4), Inches(2.0), w=Inches(4.3))
     page_no(s, n)
@@ -279,14 +279,14 @@ def s09_report(prs, n):
             ("SLA violation", "Overdue by 4h 30m (policy 2h)", AMBER),
             ("Timeline", "Detected → alert delivered → reminder → threshold crossed", TEXT),
             ("Acknowledgement", "Ack: none", RED),
-            ("Forced action", "IP blocked, 2h expiry, approved by Needle", TEXT)]
+            ("Forced action", "IP blocked, 2h expiry, approved by Countersign", TEXT)]
     y = Inches(1.95)
     box(s, MARGIN, y, Inches(11.9), Inches(3.55), CARD, LINE)
     for i, (k, v, col) in enumerate(rows):
         yy = y + Inches(0.2) + i * Inches(0.65)
         text(s, MARGIN + Inches(0.35), yy, Inches(3.3), Inches(0.5), k, size=18, color=MUTED)
         text(s, MARGIN + Inches(3.7), yy, Inches(8), Inches(0.5), v, size=18, bold=(col != TEXT), color=col)
-    chain = ["#41 alert delivered", "#42 Needle approved", "#43 operator rollback"]
+    chain = ["#41 alert delivered", "#42 Countersign approved", "#43 operator rollback"]
     cw = Inches(3.1)
     for i, c in enumerate(chain):
         x = MARGIN + i * (cw + Inches(0.45))

@@ -87,7 +87,7 @@ def escalation_chart():
 
     callout(0, idx[0], 0.25, 20, "Alert delivered\nAck: none", "#F2C14E")
     callout(2, idx[2], 2.2, 32, "SLA breached:\nreminder, lead copied", "#F2C14E")
-    callout(6.5, idx[7], 3.2, 95, "Needle approved, IP blocked 2h", "#E68AAE")
+    callout(6.5, idx[7], 3.2, 95, "Countersign approved, IP blocked 2h", "#E68AAE")
     ax.annotate("", xy=(5.9, 68.5), xytext=(0.3, 49.5),
                 arrowprops=dict(arrowstyle="->", color=MUTED, lw=1.2, ls=":"))
     ax.text(4.7, 47, "+5 per hour, no ack", fontsize=12.5, color=MUTED, rotation=8, ha="center")
