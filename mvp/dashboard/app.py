@@ -35,6 +35,8 @@ REFRESH_SECONDS = 2
 st.set_page_config(page_title="SentrAI · Risk Console", page_icon="🛡️", layout="wide",
                    initial_sidebar_state="expanded")
 
+SHIELD = ('<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5 4.5 5.3v6.1c0 4.6 3.1 8.6 7.5 10.1'
+          ' 4.4-1.5 7.5-5.5 7.5-10.1V5.3z" fill="#4c8dff" fill-opacity=".22" stroke="#7fb2ff" stroke-width="1.6" stroke-linejoin="round"/><path d="m8.4 12.2 2.5 2.5 4.8-5" fill="none" stroke="#e7edf6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>')  # SentrAI brand mark
 CSS = (Path(__file__).parent / "cactai_ui" / "console.css").read_text(encoding="utf-8")
 st.markdown(f"<style>{CSS}</style>", unsafe_allow_html=True)
 
@@ -52,8 +54,8 @@ def login() -> None:
         return
     _, mid, _ = st.columns([1, 1.2, 1])
     with mid.form("login"):
-        st.markdown('<div class="brand"><div class="brand-mark">🛡️</div><div>'
-                    '<div class="brand-name">Cact<span>AI</span></div>'
+        st.markdown('<div class="brand"><div class="brand-mark">' + SHIELD + '</div><div>'
+                    '<div class="brand-name">Sentr<span>AI</span></div>'
                     '<div class="brand-tag">Risk Console</div></div></div>', unsafe_allow_html=True)
         typed = st.text_input("Password", type="password")
         if st.form_submit_button("Sign in", type="primary", width="stretch"):
@@ -238,8 +240,8 @@ def menu() -> None:
 
 with st.sidebar:
     st.markdown(
-        '<div class="brand"><div class="brand-mark">🛡️</div><div>'
-        '<div class="brand-name">Cact<span>AI</span></div>'
+        '<div class="brand"><div class="brand-mark">' + SHIELD + '</div><div>'
+        '<div class="brand-name">Sentr<span>AI</span></div>'
         '<div class="brand-tag">Risk Console</div></div></div>',
         unsafe_allow_html=True,
     )

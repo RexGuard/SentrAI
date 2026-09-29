@@ -34,12 +34,12 @@ BAND_LABELS: dict[str, str] = {
     "red": "RED · escalated",
     "critical": "CRITICAL · autonomous containment",
 }
-UNKNOWN_COLOR = "#8a978e"
+UNKNOWN_COLOR = "#8b96a8"
 
-SURFACE = "#16201a"
-TEXT_PRIMARY = "#e6efe8"
-TEXT_SECONDARY = "#a3b5a8"
-TEXT_MUTED = "#6f8175"
+SURFACE = "#121a29"
+TEXT_PRIMARY = "#e7edf6"
+TEXT_SECONDARY = "#a5b2c6"
+TEXT_MUTED = "#6f7d93"
 FONT = "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif"
 GRID = "rgba(255,255,255,0.07)"
 
@@ -304,7 +304,7 @@ AGENTS = {
     "Watchdog": ("🐕", "#a0a39b"),
     "Help Desk": ("💬", "#d98bb5"),
     "Jev": ("🧠", "#c79bf2"),
-    "Operator": ("👤", "#e6efe8"),
+    "Operator": ("👤", "#e7edf6"),
 }
 
 # Fallback mapping from audit record type to the agent that normally owns it.
