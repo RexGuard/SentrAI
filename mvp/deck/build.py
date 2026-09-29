@@ -362,7 +362,7 @@ def s13_refs(prs, n):
         "PDPC, Guide on Active Enforcement (revised 1 Oct 2022): financial penalties under PDPA s48J",
         "Computer Misuse Act 1993 (2020 Rev. Ed.), sections 3, 5 and 7, Singapore Statutes Online",
         "TypeSafe System One (Jev) documentation, docs.typesafe.ai",
-        "Code and plan: github.com/RexGuard/cactai  ·  rexguard.github.io/cactai",
+        "Code and plan: github.com/RexGuard/SentrAI  ·  rexguard.github.io/SentrAI",
     ], size=17, gap=12)
     page_no(s, n)
 
