@@ -15,6 +15,7 @@
 #   ./run_demo.sh --demo-speed 600      faster inaction penalty (1 real minute = 10 demo hours)
 #   ./run_demo.sh --mode replay         no collector; use replay/simulate.py instead of live attacks
 #   ./run_demo.sh --no-dashboard --no-browser
+#   ./run_demo.sh --tripwires           turn on the tripwires: honeypot, honeytokens, tarpit (--spines works too)
 #   ./run_demo.sh --core-port 8100      when 8000 is taken (or set CACTAI_CORE_PORT; the dashboard
 #                                       port can come from CACTAI_DASHBOARD_PORT the same way)
 #
@@ -27,6 +28,7 @@ MODE=live
 DEMO_SPEED=60
 NO_DASHBOARD=0
 NO_BROWSER=0
+SPINES=0
 CORE_PORT="${CACTAI_CORE_PORT:-8000}"
 DASH_PORT="${CACTAI_DASHBOARD_PORT:-8501}"
 TARGET_PORT=5000  # fixed: the attack scripts refuse any other port
@@ -36,6 +38,7 @@ while [ $# -gt 0 ]; do
         --demo-speed) DEMO_SPEED="$2"; shift 2 ;;
         --no-dashboard) NO_DASHBOARD=1; shift ;;
         --no-browser) NO_BROWSER=1; shift ;;
+        --tripwires|--spines) SPINES=1; shift ;;
         --core-port) CORE_PORT="$2"; shift 2 ;;
         --dashboard-port) DASH_PORT="$2"; shift 2 ;;
         -h|--help) sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
@@ -166,6 +169,7 @@ case "$LOGS_DIR" in
     "$LAB_DIR"*) [ -d "$LOGS_DIR" ] && find "$LOGS_DIR" -maxdepth 1 -name '*.jsonl' -delete ;;
 esac
 
+[ "$SPINES" = 1 ] && export CACTAI_SPINES=1  # tripwires in the portal (target_app/spines.py)
 start_component target "$LAB_DIR" "$PY_LAB" -m target_app
 wait_http "http://127.0.0.1:5000/healthz" || echo "Target app did not come up on :5000. Check .demo_logs/target.log" >&2
 
@@ -191,7 +195,7 @@ if [ "$MODE" = live ]; then
     echo "  .venv/bin/python -m attacks.benign"
     echo "  .venv/bin/python -m attacks.brute_force --count 8 --delay 0.3"
     echo "  .venv/bin/python -m attacks.sqli --count 3"
-    [ "$SPINES" = 1 ] && echo "  .venv/bin/python -m attacks.spines                  # honeypot + honeytokens (or scenario.py --spines)"
+    [ "$SPINES" = 1 ] && echo "  .venv/bin/python -m attacks.spines                  # tripwires: honeypot + honeytokens (or scenario.py --tripwires)"
 else
     echo "  .venv/bin/python -m replay.simulate                  # scripted replay (say so on camera)"
 fi

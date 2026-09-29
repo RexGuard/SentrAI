@@ -34,12 +34,12 @@ BAND_LABELS: dict[str, str] = {
     "red": "RED · escalated",
     "critical": "CRITICAL · autonomous containment",
 }
-UNKNOWN_COLOR = "#8a978e"
+UNKNOWN_COLOR = "#8b96a8"
 
-SURFACE = "#16201a"
-TEXT_PRIMARY = "#e6efe8"
-TEXT_SECONDARY = "#a3b5a8"
-TEXT_MUTED = "#6f8175"
+SURFACE = "#121a29"
+TEXT_PRIMARY = "#e7edf6"
+TEXT_SECONDARY = "#a5b2c6"
+TEXT_MUTED = "#6f7d93"
 FONT = "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif"
 GRID = "rgba(255,255,255,0.07)"
 
@@ -228,7 +228,7 @@ def action_rows(inc: dict) -> pd.DataFrame:
             "Type": str(a.get("type", "-")).replace("_", " "),
             "Target": a.get("target", "-"),
             "Mode": a.get("mode", "-"),
-            "Approved by": a.get("approved_by", "-"),
+            "Approved by": agent_label(a.get("approved_by", "-")),
             "Status": a.get("status", "-"),
             "Expires": short_time(a.get("expires_at")),
             "Snapshot": short_hash(a.get("snapshot_hash")),
@@ -266,7 +266,7 @@ def build_containment_rows(blocklist: dict | None, incidents: Iterable[dict]) ->
                     "Action": str(a.get("type", "block_ip" if kind == "IP" else "lock_user")).replace("_", " "),
                     "Incident": a.get("incident", "-"),
                     "Mode": a.get("mode", "-"),
-                    "Approved by": a.get("approved_by", "-"),
+                    "Approved by": agent_label(a.get("approved_by", "-")),
                     "Expires": "permanent" if a.get("status") == "permanent" else short_time(a.get("expires_at")),
                 }
             )
@@ -281,7 +281,7 @@ def build_containment_rows(blocklist: dict | None, incidents: Iterable[dict]) ->
                 "Action": str(a.get("type", "-")).replace("_", " "),
                 "Incident": a.get("incident", "-"),
                 "Mode": a.get("mode", "-"),
-                "Approved by": a.get("approved_by", "-"),
+                "Approved by": agent_label(a.get("approved_by", "-")),
                 "Expires": short_time(a.get("expires_at")),
             }
         )
@@ -291,36 +291,53 @@ def build_containment_rows(blocklist: dict | None, incidents: Iterable[dict]) ->
 # ---------------------------------------------------------------- audit / agents
 
 AGENTS = {
-    "Saguaro": ("🛡️", "#6fcf97"),
+    "Warden": ("🛡️", "#6fcf97"),
     "Cyanide": ("🧪", "#6fcf97"),
     "Planner": ("✳️", "#d97757"),
-    "Needle": ("📍", "#e0a526"),
+    "Countersign": ("🔑", "#e0a526"),
     "Scribe": ("📜", "#8fa7ff"),
-    "Root": ("🌐", "#4fb3d9"),
-    "Spine-Net": ("📡", "#b88cf0"),
-    "Reservoir": ("🗄️", "#5bc0be"),
-    "Areole-Linux": ("🐧", "#e88a5a"),
-    "Areole-Win": ("🪟", "#e88a5a"),
+    "Gatehouse": ("🌐", "#4fb3d9"),
+    "Watchtower": ("📡", "#b88cf0"),
+    "Vault": ("🗄️", "#5bc0be"),
+    "Garrison-Linux": ("🐧", "#e88a5a"),
+    "Garrison-Win": ("🪟", "#e88a5a"),
     "Watchdog": ("🐕", "#a0a39b"),
     "Help Desk": ("💬", "#d98bb5"),
     "Jev": ("🧠", "#c79bf2"),
-    "Operator": ("👤", "#e6efe8"),
+    "Operator": ("👤", "#e7edf6"),
 }
+
+# Names from before the SentrAI sentry theme, still in older audit records and saved actions.
+LEGACY_AGENTS = {
+    "Saguaro": "Warden", "Needle": "Countersign", "Root": "Gatehouse", "Reservoir": "Vault",
+    "SpineNet": "Watchtower", "Spine-Net": "Watchtower", "AreoleLinux": "Garrison-Linux",
+    "Areole-Linux": "Garrison-Linux", "AreoleWin": "Garrison-Win", "Areole-Win": "Garrison-Win",
+}
+
+
+def agent_label(name: Any) -> Any:
+    """Show an agent under its current name, whatever name the record was saved with."""
+    return LEGACY_AGENTS.get(name, name) if isinstance(name, str) else name
+
+
+# Audit record types keep their stored names; these read better in the feed.
+RECORD_TYPE_LABELS = {"needle_review": "countersign review"}
+
 
 # Fallback mapping from audit record type to the agent that normally owns it.
 TYPE_TO_AGENT = {
-    "event": "Saguaro",
-    "incident_opened": "Saguaro",
-    "incident_updated": "Saguaro",
+    "event": "Warden",
+    "incident_opened": "Warden",
+    "incident_updated": "Warden",
     "classification": "Jev",
-    "risk_update": "Saguaro",
-    "threshold_crossed": "Saguaro",
-    "snapshot": "Areole-Linux",
-    "action_proposed": "Root",
-    "action_approved": "Needle",
-    "review": "Needle",
-    "action_applied": "Areole-Linux",
-    "containment": "Areole-Linux",
+    "risk_update": "Warden",
+    "threshold_crossed": "Warden",
+    "snapshot": "Garrison-Linux",
+    "action_proposed": "Gatehouse",
+    "action_approved": "Countersign",
+    "review": "Countersign",
+    "action_applied": "Garrison-Linux",
+    "containment": "Garrison-Linux",
     "action_expired": "Watchdog",
     "notification_queued": "Scribe",
     "notification_delivered": "Scribe",
@@ -354,7 +371,7 @@ def agent_for(record: dict) -> str:
         if name:
             if str(name).lower() == "operator" and data.get("operator"):
                 return f"Operator:{data['operator']}"
-            return str(name)
+            return agent_label(str(name))
     rtype = str(record.get("type") or "")
     if any(rtype.startswith(t) for t in OPERATOR_TYPES):
         op = data.get("operator") or data.get("acked_by")
@@ -390,7 +407,7 @@ def build_activity_feed(records: list[dict], limit: int = 30) -> list[dict]:
                 "agent": agent.replace("Operator:", "Operator · "),
                 "icon": icon,
                 "color": color,
-                "type": str(rec.get("type") or "-").replace("_", " "),
+                "type": RECORD_TYPE_LABELS.get(str(rec.get("type")), str(rec.get("type") or "-").replace("_", " ")),
                 "summary": summarize_record(rec),
                 "hash": short_hash(rec.get("hash"), 8),
             }

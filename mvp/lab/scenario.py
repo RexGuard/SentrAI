@@ -11,7 +11,7 @@ Prerequisites (separate terminals):
 Run:
     python scenario.py
     python scenario.py --pause 6 --host 127.0.0.1
-    python scenario.py --spines      # adds the cactus-spines phase (portal started with spines on)
+    python scenario.py --tripwires   # adds the tripwires phase (portal started with tripwires on; --spines works too)
 """
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ def main() -> None:
     ap.add_argument("--port", type=int, default=5000)
     ap.add_argument("--pause", type=float, default=6.0,
                     help="seconds to wait after brute force (operator 'ignores' it)")
-    ap.add_argument("--spines", action="store_true",
+    ap.add_argument("--tripwires", "--spines", dest="spines", action="store_true",
                     help="add phase 5: an intruder touches the honeypot and honeytokens (tarpit slows them)")
     args = ap.parse_args()
     h, p = args.host, args.port
@@ -60,7 +60,7 @@ def main() -> None:
     sqli.run(h, p, count=6, delay=0.4, src_ip="198.51.100.23")
 
     if args.spines:
-        narrate("PHASE 5 — Cactus spines. A third intruder (203.0.113.99) finds the decoy admin page, "
+        narrate("PHASE 5 — Tripwires. A third intruder (203.0.113.99) finds the decoy admin page, "
                 "reuses its planted password and dumps the bait rows. Each touch is a certain alert, "
                 "and the tarpit slows every request after the first.")
         spines.run(h, p, delay=0.3, src_ip="203.0.113.99")

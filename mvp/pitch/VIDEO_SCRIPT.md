@@ -64,7 +64,7 @@ Erick narrates. Screen layout: dashboard (left, large), Telegram on phone mirror
 | 2:40 | Erick | "Two hours pass. The SLA is breached. A reminder goes out, the team lead is copied. Still no answer." | Reminder alert in Telegram; incident shows `sla_breached: true`; gauge in red around {70}. **[CUT-3: shorten to one sentence]** |
 | 2:50 | Erick | "Now the attacker tries SQL injection on the search page." | Attacker terminal: `/search?q=' OR 1=1 --` style request. |
 | 2:56 | Erick | "Second incident, SQL injection. The risk crosses eighty. Critical." | Gauge jumps past 80, turns critical colour. Risk history chart shows the 80 line crossed. |
-| 3:02 | Erick | "SentrAI takes a snapshot, picks a pre-approved playbook, and asks Needle, our reviewer agent, to approve. Two keys, always." | Audit feed: `snapshot`, `playbook_selected`, `needle_approved`. |
+| 3:02 | Erick | "SentrAI takes a snapshot, picks a pre-approved playbook, and asks Countersign, our reviewer agent, to approve. Two keys, always." | Audit feed: `snapshot`, `playbook_selected`, `countersign review`. |
 | 3:10 | Erick | "The attacker IP is blocked for two hours. Not forever. Two hours." | Blocklist panel: IP, TTL 2h, expires_at. |
 | 3:14 | Erick | "The attacker tries again. Forbidden." | Attacker terminal: HTTP 403. |
 | 3:18 | Erick | "And here is the evidence report. Alert delivered at {14:00}. Acknowledged: none. SLA overdue. Action taken. Every line is hash-chained, and the chain is valid." | Report page: timeline, "Ack: none", SLA breach, action, `chain_valid: true`. |
@@ -83,8 +83,8 @@ Erick narrates. Screen layout: dashboard (left, large), Telegram on phone mirror
 
 | Time | Speaker | Line | On screen |
 | --- | --- | --- | --- |
-| 4:00 | Erick | "Under the hood, Saguaro, our lead agent, coordinates specialists for the web, database, network and each operating system." | `architecture.svg`, agents row highlighted. |
-| 4:08 | Erick | "No agent gets a free shell. Only allowlisted playbooks, each with a time limit. Needle must approve every autonomous action. Scribe writes the audit chain." | Needle and Scribe boxes highlighted; hash chain strip at bottom. |
+| 4:00 | Erick | "Under the hood, Warden, our lead agent, coordinates specialists for the web, database, network and each operating system." | `architecture.svg`, agents row highlighted. |
+| 4:08 | Erick | "No agent gets a free shell. Only allowlisted playbooks, each with a time limit. Countersign must approve every autonomous action. Scribe writes the audit chain." | Countersign and Scribe boxes highlighted; hash chain strip at bottom. |
 | 4:15 | Erick | "AI judges and explains. Plain code scores and executes." | Caption on diagram. |
 
 ## 4:20 to 4:40 · Roadmap **[CUT-3]**

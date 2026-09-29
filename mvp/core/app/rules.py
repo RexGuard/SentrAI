@@ -59,9 +59,12 @@ FAILED_LOGIN = [
     re.compile(r"\b(failed\s+login|login\s+failed|authentication\s+failure|failed\s+password)\b", re.I),
     re.compile(r"\b4625\b"),  # Windows failed logon
 ]
-# Cactus spines (lab portal spines.py, design doc section 11): decoys no real user touches,
-# so one touch is enough. kind -> (category, reason).
-SPINE = re.compile(r"^cactus-spine (\w+):")
+# Tripwires (lab portal spines.py, design doc section 11; once called "cactus spines"): decoys
+# no real user touches, so one touch is enough. kind -> (category, reason).
+# The older "cactus_spine" source and "cactus-spine" log prefix are still accepted.
+TRIPWIRE_SOURCES = ("tripwire", "cactus_spine")
+TRIPWIRE_REASONS = ("Tripwire:", "Cactus spine:")  # classification_reason prefixes, new and old
+SPINE = re.compile(r"^(?:tripwire|cactus-spine) (\w+):")
 SPINE_KINDS: dict[str, tuple[str, str]] = {
     "honeypot_page": ("port_scan", "reconnaissance: opened a decoy page that is only listed in robots.txt"),
     "honeypot_login": ("brute_force", "sign-in attempted on a decoy login page no real user is sent to"),
@@ -180,9 +183,9 @@ class RulesEngine:
 
         if source == "heartbeat":
             return RuleHit("benign", "collector heartbeat")
-        if source == "cactus_spine" and (m := SPINE.match(raw)) and m.group(1) in SPINE_KINDS:
+        if source in TRIPWIRE_SOURCES and (m := SPINE.match(raw)) and m.group(1) in SPINE_KINDS:
             category, why = SPINE_KINDS[m.group(1)]
-            return RuleHit(category, f"Cactus spine: {why}")
+            return RuleHit(category, f"Tripwire: {why}")
         if BLOCKED.search(text):
             return RuleHit("benign", "request already refused by SentrAI blocklist (403)")
         ssh = parse_sshd(event)

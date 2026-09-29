@@ -1,12 +1,73 @@
-{% extends "base.html" %}
-{% block title %}Blocked by SentrAI{% endblock %}
-{% block content %}
-<div class="card" style="max-width: 520px; border-color: var(--danger);">
-  <h2 style="margin-top:0; color: var(--danger);">Blocked by SentrAI 🛡️ (temporary containment)</h2>
-  <p>Access from <strong>{{ ip }}</strong> is under temporary, reversible containment
-     while a security incident is reviewed.</p>
-  <p style="color:var(--muted); font-size:14px;">If you believe this is a mistake,
-     contact the Aegis Academy help desk. Containment lifts automatically when the
-     incident's time-to-live expires.</p>
-</div>
-{% endblock %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Blocked by SentrAI</title>
+  <style>
+    /* SentrAI brand kit dark tokens (assets/brand/tokens.css) and mark (mark-dark.svg), inlined so the page
+       needs no other file while a visitor is blocked. */
+    :root {
+      --bg: #0b111d; --surface: #121a29; --line: #26324a; --ink: #e7edf6;
+      --ink-soft: #a5b2c6; --ink-muted: #6f7d93; --brand: #7fb2ff; --brand-strong: #4c8dff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+      padding: 32px 16px; color: var(--ink); font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: radial-gradient(900px 500px at 50% -10%, #16264a 0%, var(--bg) 60%) var(--bg);
+    }
+    .card {
+      width: 100%; max-width: 540px; background: var(--surface); border: 1px solid var(--line);
+      border-radius: 16px; overflow: hidden; box-shadow: 0 24px 60px rgba(0, 0, 0, .45);
+    }
+    .top { padding: 34px 32px 26px; text-align: center; border-bottom: 1px solid var(--line); }
+    .shield { width: 76px; height: 76px; display: block; margin: 0 auto 18px; }
+    .eyebrow { font-size: 12px; letter-spacing: 1.6px; text-transform: uppercase; color: var(--brand);
+               font-weight: 600; }
+    h1 { font-size: 28px; font-weight: 750; margin: 8px 0 10px; letter-spacing: -.02em; }
+    .lead { color: var(--ink-soft); font-size: 15px; line-height: 1.55; margin: 0; }
+    .ip { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--ink);
+          background: #0e1522; border: 1px solid var(--line); border-radius: 6px; padding: 1px 7px; }
+    .facts { padding: 18px 32px 6px; }
+    .fact { display: flex; gap: 12px; padding: 10px 0; font-size: 14px; color: var(--ink-soft);
+            line-height: 1.5; }
+    .fact + .fact { border-top: 1px solid #1e293d; }
+    .dot { flex: 0 0 8px; height: 8px; margin-top: 7px; border-radius: 50%; background: var(--brand-strong); }
+    .foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
+            padding: 16px 32px 20px; font-size: 12px; color: var(--ink-muted); }
+    .brand { font-weight: 700; font-size: 14px; color: var(--ink); display: flex; align-items: center; gap: 7px; }
+    .brand span span { color: var(--brand); }
+    .brand svg { width: 20px; height: 20px; }
+  </style>
+</head>
+<body>
+  <main class="card" role="main">
+    <div class="top">
+      <svg class="shield" viewBox="0 0 64 64" aria-hidden="true">
+        <path d="M32 4 L54 11.5 V29 C54 43.5 44.8 54.2 32 60 C19.2 54.2 10 43.5 10 29 V11.5 Z" fill="#16264a" stroke="#7fb2ff" stroke-width="3" stroke-linejoin="round"/>
+        <path d="M17 32 C22.5 24 27 21.5 32 21.5 C37 21.5 41.5 24 47 32 C41.5 40 37 42.5 32 42.5 C27 42.5 22.5 40 17 32 Z" fill="#7fb2ff"/>
+        <circle cx="32" cy="32" r="6" fill="#0b111d"/>
+        <circle cx="34.2" cy="29.8" r="1.8" fill="#e7edf6"/>
+      </svg>
+      <div class="eyebrow">temporary containment</div>
+      <h1>Blocked by SentrAI</h1>
+      <p class="lead">Access from <span class="ip">{{ ip }}</span> is under temporary, reversible
+        containment while a security incident is reviewed.</p>
+    </div>
+    <div class="facts">
+      <div class="fact"><span class="dot"></span><span>If you believe this is a mistake,
+        contact the Aegis Academy help desk.</span></div>
+      <div class="fact"><span class="dot"></span><span>Containment lifts automatically when the
+        incident's time-to-live expires.</span></div>
+    </div>
+    <div class="foot">
+      <div class="brand">
+        <svg viewBox="0 0 64 64" aria-hidden="true"><path d="M32 4 L54 11.5 V29 C54 43.5 44.8 54.2 32 60 C19.2 54.2 10 43.5 10 29 V11.5 Z" fill="#16264a" stroke="#7fb2ff" stroke-width="3" stroke-linejoin="round"/><path d="M17 32 C22.5 24 27 21.5 32 21.5 C37 21.5 41.5 24 47 32 C41.5 40 37 42.5 32 42.5 C27 42.5 22.5 40 17 32 Z" fill="#7fb2ff"/><circle cx="32" cy="32" r="6" fill="#0b111d"/><circle cx="34.2" cy="29.8" r="1.8" fill="#e7edf6"/></svg>
+        <span>Sentr<span>AI</span></span>
+      </div>
+      <div>A sentry doesn't chase you. It just guards the gate.</div>
+    </div>
+  </main>
+</body>
+</html>

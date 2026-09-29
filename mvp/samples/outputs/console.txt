@@ -1,0 +1,10 @@
+┌─ SentrAI · SLA breached ─────────────────────────────────────────────┐
+│ RSK-2026-081 · Brute force (portal)                                  │
+│ Still unacknowledged after 2 h. Team lead copied.                    │
+│ Risk 72/100 RED ■■■■■■■··· · severity HIGH · confidence 0.94 (rules) │
+│ Source 203.0.113.45 · user admin                                     │
+│ Inaction penalty +10 pts · SLA BREACHED                              │
+│ Recommended: Block 203.0.113.45 for 2 h and rate-limit /login        │
+│ Actions: [Approve & Patch] [Reject with Justification] (use the      │
+│ dashboard in console mode)                                           │
+└──────────────────────────────────────────────────────────────────────┘

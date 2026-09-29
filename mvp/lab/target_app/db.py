@@ -65,7 +65,7 @@ def init_db(path: Path | None = None, count: int = 40) -> None:
 
 
 def set_honeytokens(on: bool, path: Path | None = None) -> None:
-    """Add the cactus-spine bait rows (spines.py) when on, remove them when off."""
+    """Add the tripwire bait rows (spines.py) when on, remove them when off."""
     from .spines import HONEYTOKEN_IDS, HONEYTOKEN_ROWS
 
     path = path or paths.db_path()

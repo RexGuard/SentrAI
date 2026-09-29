@@ -4,24 +4,24 @@
       <path d="M0,0 L10,5 L0,10 z" fill="#44536B"/>
     </marker>
     <marker id="arrowRed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-      <path d="M0,0 L10,5 L0,10 z" fill="#C0282E"/>
+      <path d="M0,0 L10,5 L0,10 z" fill="#B03A2E"/>
     </marker>
     <style>
       .box { fill: #FFFFFF; stroke: #B7CBF3; stroke-width: 1.5; }
       .core { fill: #E3ECFD; stroke: #1F4FB8; stroke-width: 2; }
-      .ai { fill: #F1ECFB; stroke: #6B4FC8; stroke-width: 2; }
+      .ai { fill: #EEF0FB; stroke: #4B55A8; stroke-width: 2; }
       .lead { fill: #1F4FB8; stroke: #1F4FB8; }
-      .guard { fill: #FDF1E7; stroke: #B06A00; stroke-width: 2; }
-      .out { fill: #F4F6F8; stroke: #626F86; stroke-width: 1.5; }
+      .guard { fill: #FDF1E7; stroke: #C0661A; stroke-width: 2; }
+      .out { fill: #F4F6F8; stroke: #5C6B78; stroke-width: 1.5; }
       .chain { fill: #FFFFFF; stroke: #1F4FB8; stroke-width: 1.5; }
       .h { font-size: 17px; font-weight: 700; fill: #0F1A2C; }
       .t { font-size: 14px; fill: #0F1A2C; }
       .s { font-size: 12.5px; fill: #44536B; }
       .w { font-size: 17px; font-weight: 700; fill: #FFFFFF; }
-      .ws { font-size: 12.5px; fill: #DBE6FB; }
+      .ws { font-size: 12.5px; fill: #E3ECFD; }
       .lbl { font-size: 12px; fill: #44536B; font-style: italic; }
       .flow { stroke: #44536B; stroke-width: 2; fill: none; }
-      .flowRed { stroke: #C0282E; stroke-width: 2; fill: none; }
+      .flowRed { stroke: #B03A2E; stroke-width: 2; fill: none; }
       .dash { stroke: #44536B; stroke-width: 1.5; fill: none; stroke-dasharray: 6 5; }
     </style>
   </defs>
@@ -87,13 +87,13 @@
   <text x="50" y="296" class="h" fill="#1F4FB8">Agent team</text>
   <text x="50" y="314" class="s">MVP: Python classes in the SentrAI core, called in turn</text>
 
-  <!-- risk engine -> Saguaro -->
+  <!-- risk engine -> Warden -->
   <path d="M995,220 L995,250 L700,250 L700,316" class="flow" marker-end="url(#arrow)"/>
   <text x="1005" y="245" class="lbl">incidents + risk index</text>
 
-  <!-- Saguaro -->
+  <!-- Warden -->
   <rect x="560" y="320" width="280" height="62" rx="10" class="lead"/>
-  <text x="700" y="346" class="w" text-anchor="middle">Saguaro (lead)</text>
+  <text x="700" y="346" class="w" text-anchor="middle">Warden (lead)</text>
   <text x="700" y="367" class="ws" text-anchor="middle">delegates, merges, owns the risk index</text>
 
   <!-- tree to specialists -->
@@ -101,22 +101,22 @@
 
   <!-- Specialists -->
   <rect x="50" y="418" width="170" height="74" rx="9" class="box"/>
-  <text x="135" y="443" class="h" text-anchor="middle">Root</text>
+  <text x="135" y="443" class="h" text-anchor="middle">Gatehouse</text>
   <text x="135" y="462" class="s" text-anchor="middle">Web layer, WAF logs</text>
   <text x="135" y="479" class="s" text-anchor="middle">propose only</text>
 
   <rect x="240" y="418" width="170" height="74" rx="9" class="box"/>
-  <text x="325" y="443" class="h" text-anchor="middle">Reservoir</text>
+  <text x="325" y="443" class="h" text-anchor="middle">Vault</text>
   <text x="325" y="462" class="s" text-anchor="middle">Database, backups</text>
   <text x="325" y="479" class="s" text-anchor="middle">propose only</text>
 
   <rect x="430" y="418" width="170" height="74" rx="9" class="box"/>
-  <text x="515" y="443" class="h" text-anchor="middle">Spine-Net</text>
+  <text x="515" y="443" class="h" text-anchor="middle">Watchtower</text>
   <text x="515" y="462" class="s" text-anchor="middle">Network, own-asset scans</text>
   <text x="515" y="479" class="s" text-anchor="middle">propose only</text>
 
   <rect x="620" y="418" width="170" height="74" rx="9" class="box" stroke="#1F4FB8" stroke-width="2.5"/>
-  <text x="705" y="443" class="h" text-anchor="middle">Areole</text>
+  <text x="705" y="443" class="h" text-anchor="middle">Garrison</text>
   <text x="705" y="462" class="s" text-anchor="middle">OS: Linux / Windows</text>
   <text x="705" y="479" class="s" text-anchor="middle">runs allowlisted playbooks</text>
 
@@ -124,14 +124,14 @@
   <text x="50" y="540" class="s">Execution only via allowlisted playbooks, each with a TTL (default 2 h).</text>
   <text x="50" y="558" class="s">Snapshot before every change; auto-rollback if verification fails.</text>
 
-  <!-- Needle -->
+  <!-- Countersign -->
   <rect x="880" y="320" width="220" height="80" rx="10" class="guard"/>
-  <text x="990" y="346" class="h" text-anchor="middle">Needle (reviewer)</text>
+  <text x="990" y="346" class="h" text-anchor="middle">Countersign (reviewer)</text>
   <text x="990" y="366" class="s" text-anchor="middle">must approve every</text>
   <text x="990" y="383" class="s" text-anchor="middle">autonomous action</text>
   <line x1="840" y1="351" x2="876" y2="351" class="flowRed" marker-end="url(#arrowRed)"/>
   <path d="M990,400 L990,455 L794,455" class="flowRed" marker-end="url(#arrowRed)"/>
-  <text x="850" y="448" class="lbl" fill="#C0282E">two-key approval</text>
+  <text x="850" y="448" class="lbl" fill="#B03A2E">two-key approval</text>
 
   <!-- Watchdog -->
   <rect x="1140" y="320" width="210" height="80" rx="10" class="box"/>
@@ -164,7 +164,7 @@
   <text x="395" y="704" class="s">[Approve &amp; Patch] [Reject]</text>
   <text x="395" y="720" class="s">delivery ID + ack recorded</text>
 
-  <rect x="710" y="640" width="290" height="88" rx="10" class="out" stroke="#C0282E" stroke-width="2"/>
+  <rect x="710" y="640" width="290" height="88" rx="10" class="out" stroke="#B03A2E" stroke-width="2"/>
   <text x="725" y="666" class="h">Target app blocklist</text>
   <text x="725" y="686" class="s">app polls GET /blocklist</text>
   <text x="725" y="704" class="s">blocked IP / user gets HTTP 403</text>
@@ -180,7 +180,7 @@
   <line x1="195" y1="590" x2="195" y2="636" class="flow" marker-end="url(#arrow)"/>
   <line x1="525" y1="590" x2="525" y2="636" class="flow" marker-end="url(#arrow)"/>
   <path d="M705,492 L705,612 L855,612 L855,636" class="flowRed" marker-end="url(#arrowRed)"/>
-  <text x="712" y="606" class="lbl" fill="#C0282E">containment (TTL 2 h)</text>
+  <text x="712" y="606" class="lbl" fill="#B03A2E">containment (TTL 2 h)</text>
   <!-- Telegram <-> operator -->
   <path d="M670,700 L690,700 L690,760 L1195,760 L1195,732" class="dash" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
   <text x="740" y="773" class="lbl">alerts out, button presses back</text>
@@ -201,7 +201,7 @@
   <text x="335" y="858" class="s">hash 9f2c...</text>
 
   <rect x="590" y="800" width="220" height="64" rx="8" class="chain"/>
-  <text x="605" y="822" class="t">#42 Needle approved block</text>
+  <text x="605" y="822" class="t">#42 Countersign approved</text>
   <text x="605" y="842" class="s">prev_hash 9f2c...</text>
   <text x="605" y="858" class="s">hash b71a...</text>
 

@@ -7,17 +7,17 @@ runOnSave = false
 [browser]
 gatherUsageStats = false
 
-# Same palette as the website's dark mode (assets/cactai.css), so the console and the site look like one product.
+# SentrAI night-watch palette: navy surfaces, steel-blue brand accent (matches cactai_ui/console.css).
 [theme]
 base = "dark"
-primaryColor = "#4fb67c"
-backgroundColor = "#0f1612"
-secondaryBackgroundColor = "#16201a"
-textColor = "#e6efe8"
-linkColor = "#6fcf97"
-borderColor = "#2a3a30"
-dataframeBorderColor = "#223027"
-dataframeHeaderBackgroundColor = "#1b2820"
+primaryColor = "#4c8dff"
+backgroundColor = "#0b111d"
+secondaryBackgroundColor = "#121a29"
+textColor = "#e7edf6"
+linkColor = "#7fb2ff"
+borderColor = "#26324a"
+dataframeBorderColor = "#1e293d"
+dataframeHeaderBackgroundColor = "#172134"
 showWidgetBorder = true
 baseRadius = "10px"
 buttonRadius = "9px"
@@ -30,8 +30,8 @@ orangeColor = "#ec835a"
 yellowColor = "#e8b34a"
 
 [theme.sidebar]
-backgroundColor = "#111a15"
-secondaryBackgroundColor = "#16201a"
+backgroundColor = "#0e1524"
+secondaryBackgroundColor = "#121a29"
 
 [client]
 toolbarMode = "minimal"

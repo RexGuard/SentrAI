@@ -26,7 +26,8 @@ from email.message import EmailMessage
 from email.utils import make_msgid
 from typing import Callable
 
-from formatting import BAND_EMOJI, alert_fields, button_specs
+from formatting import (BAND_COLORS, BAND_EMOJI, BRAND_BLUE, BRAND_BLUE_SOFT, BRAND_NAVY, TAGLINE, alert_fields,
+                        button_specs, risk_meter)
 
 log = logging.getLogger("cactai.notifier.email")
 
@@ -108,15 +109,72 @@ def format_email(notification: dict, incident: dict | None = None, risk: dict | 
         note = "Acknowledge on the dashboard or in Telegram; that is what the audit log records. Delivery of this email is logged too."
 
     text = "\n".join([f"{f['icon']} {f['header']}", *([f["text"]] if f["text"] else []), "",
-                      *(f"{k}: {v}" for k, v in rows), "", act, note])
-    e = html.escape
-    body_rows = "".join(f"<tr><td style='padding:2px 12px 2px 0;color:#666'>{e(k)}</td><td>{e(v)}</td></tr>"
-                        for k, v in rows)
-    html_body = (f"<div style='font-family:sans-serif'><h3>{e(f['icon'])} {e(f['header'])}</h3>"
-                 + (f"<p>{e(f['text'])}</p>" if f["text"] else "")
-                 + f"<table>{body_rows}</table>"
-                 + f"<p><a href='{e(dashboard_url)}'>{e(act)}</a></p><p><i>{e(note)}</i></p></div>")
+                      *(f"{k}: {v}" for k, v in rows), "", act, note, "", f"-- SentrAI · {TAGLINE}"])
+    html_body = _email_html(f, rows, act, note, dashboard_url)
     return subject, text, html_body
+
+
+def _email_html(f: dict, rows: list[tuple[str, str]], act: str, note: str, dashboard_url: str) -> str:
+    """The branded HTML part: a navy SentrAI header, a risk gauge and a button to the dashboard.
+
+    Email clients drop <style> blocks and SVG, so everything is inline styles on tables.
+    """
+    e = html.escape
+    band = BAND_COLORS[f["band"]]
+    font = "font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif"  # unquoted: the attributes use single quotes
+    score = "" if f["risk_index"] is None else str(f["risk_index"])
+    filled = risk_meter(f["risk_index"]).count("▰") * 10  # the same 10-step gauge as Telegram
+    gauge = ""
+    if score:
+        gauge = (
+            "<table role='presentation' width='100%' cellpadding='0' cellspacing='0' style='margin:18px 0 6px'><tr>"
+            f"<td style='{font};width:92px;vertical-align:bottom'><span style='font-size:40px;font-weight:700;"
+            f"color:{band};line-height:1'>{e(score)}</span><span style='font-size:14px;color:#626f86'>/100</span></td>"
+            "<td style='vertical-align:bottom;padding-bottom:6px'>"
+            f"<span style='{font};display:inline-block;background:{band};color:#fff;font-size:11px;font-weight:700;"
+            f"letter-spacing:.8px;padding:3px 9px;border-radius:10px'>{e(f['band'].upper())}</span>"
+            "<table role='presentation' width='100%' cellpadding='0' cellspacing='0' style='margin-top:8px'><tr>"
+            + (f"<td width='{filled}%' style='background:{band};height:8px;border-radius:4px 0 0 4px'></td>" if filled else "")
+            + (f"<td style='background:#e4e9f1;height:8px'></td>" if filled < 100 else "")
+            + "</tr></table></td></tr></table>")
+    body_rows = "".join(
+        f"<tr><td style='{font};padding:9px 14px 9px 0;color:#626f86;font-size:13px;white-space:nowrap;"
+        f"vertical-align:top;border-top:1px solid #e4e9f1'>{e(k)}</td>"
+        f"<td style='{font};padding:9px 0;color:#0f1a2c;font-size:14px;border-top:1px solid #e4e9f1'>{e(v)}</td></tr>"
+        for k, v in rows)
+    return (
+        f"<div style='margin:0;padding:24px 12px;background:#f5f7fb'>"
+        "<table role='presentation' align='center' width='100%' cellpadding='0' cellspacing='0' "
+        "style='max-width:580px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;"
+        "border:1px solid #d5dce8'>"
+        # header band
+        f"<tr><td style='background:{BRAND_NAVY};padding:18px 24px'>"
+        "<table role='presentation' width='100%' cellpadding='0' cellspacing='0'><tr>"
+        f"<td style='{font};font-size:20px;font-weight:700;color:#e7edf6'>&#128737;&#65039; Sentr"
+        f"<span style='color:{BRAND_BLUE_SOFT}'>AI</span></td>"
+        f"<td align='right' style='{font};font-size:11px;letter-spacing:1.2px;color:#a5b2c6;text-transform:uppercase'>"
+        f"{e(f['header'])}</td></tr></table></td></tr>"
+        f"<tr><td style='background:{band};height:4px;line-height:4px;font-size:0'>&nbsp;</td></tr>"
+        # body
+        "<tr><td style='padding:22px 24px 8px'>"
+        f"<div style='{font};font-size:12px;color:#626f86;letter-spacing:.6px'>{e(str(f['incident_id']))}</div>"
+        f"<div style='{font};font-size:21px;font-weight:700;color:#0f1a2c;margin-top:2px'>"
+        f"{e(f['icon'])} {e(f['title'])}</div>"
+        + (f"<p style='{font};font-size:14px;color:#44536b;margin:10px 0 0'>{e(f['text'])}</p>" if f["text"] else "")
+        + gauge
+        + f"<table role='presentation' width='100%' cellpadding='0' cellspacing='0' style='margin-top:10px'>{body_rows}</table>"
+        # call to action
+        + "<table role='presentation' cellpadding='0' cellspacing='0' style='margin:22px 0 6px'><tr>"
+        f"<td style='background:{BRAND_BLUE};border-radius:8px'><a href='{e(dashboard_url, quote=True)}' "
+        f"style='{font};display:inline-block;padding:11px 20px;color:#ffffff;font-size:14px;font-weight:600;"
+        "text-decoration:none'>Open the SentrAI dashboard</a></td></tr></table>"
+        f"<p style='{font};font-size:13px;color:#44536b;margin:8px 0 0'>{e(act)}</p>"
+        f"<p style='{font};font-size:12px;color:#626f86;font-style:italic;margin:6px 0 18px'>{e(note)}</p>"
+        "</td></tr>"
+        # footer
+        f"<tr><td style='{font};background:#eef2f8;border-top:1px solid #e4e9f1;padding:12px 24px;font-size:11px;"
+        f"color:#626f86'>&#128737;&#65039; SentrAI &middot; {e(TAGLINE)}</td></tr>"
+        "</table></div>")
 
 
 def build_message(cfg: EmailConfig, notification: dict, incident: dict | None, risk: dict | None) -> EmailMessage:

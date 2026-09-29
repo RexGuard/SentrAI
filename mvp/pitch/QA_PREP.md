@@ -6,7 +6,7 @@ Short answers first (say this), then backup detail (only if they push). Default 
 
 ### 1. What about false positives? You could block a real customer.
 **[Erick]** Three safeguards. Autonomous action only happens above the organisation's own threshold (default 80), which a single noisy event rarely reaches. If Jev is uncertain (0.4 to 0.6) nothing automatic happens; it goes to a human as "needs review". And every fix is temporary, 2 hours by default, with one-click rollback.
-*Backup:* Needle, the reviewer agent, must approve every autonomous action. Playbooks are the least disruptive first: block one IP or rate-limit, not shut down the server. Verification re-runs the check and auto-rolls back if a health check breaks.
+*Backup:* Countersign, the reviewer agent, must approve every autonomous action. Playbooks are the least disruptive first: block one IP or rate-limit, not shut down the server. Verification re-runs the check and auto-rolls back if a health check breaks.
 
 ### 2. Isn't monitoring your own staff a privacy problem?
 **[Hozen]** We monitor systems, not people's private lives. SentrAI reads security logs the systems already produce: logins, queries, processes. It does not read email, chats or screens. The only person-level record is who was on duty, whether an alert was delivered, and whether they acknowledged it.
@@ -25,7 +25,7 @@ Short answers first (say this), then backup detail (only if they push). Default 
 *Backup:* We do not have a production price yet [CHECK TypeSafe pricing]. If Jev is down or over budget, the system keeps working with rules and a fixed confidence; the incident card shows `classified_by: rules`.
 
 ### 6. What if SentrAI itself is compromised?
-**[Erick]** We designed so a compromised brain cannot do much damage. No agent has a shell; it can only trigger allowlisted playbooks like "block this IP for 2 hours". Every action needs Needle's approval, expires by default, and is written to a hash chain, so tampering with history is detectable.
+**[Erick]** We designed so a compromised brain cannot do much damage. No agent has a shell; it can only trigger allowlisted playbooks like "block this IP for 2 hours". Every action needs Countersign's approval, expires by default, and is written to a hash chain, so tampering with history is detectable.
 *Backup:* Watchdog alerts if an agent or collector goes silent. Roadmap: run SentrAI on a separate hardened host, sign the chain head externally (e.g. send daily chain hash to the CXO or a timestamping service), least-privilege credentials per agent.
 
 ### 7. Can an attacker use SentrAI against you, for example by spoofing IPs to get legitimate users blocked?

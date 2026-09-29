@@ -1,4 +1,4 @@
-"""Saguaro: lead orchestrator. Owns incidents, the risk index, notifications and the hotpatch workflow.
+"""Warden (class Saguaro): lead orchestrator. Owns incidents, the risk index, notifications and the hotpatch workflow.
 
 Incidents, actions (blocks) and notifications are saved to SQLite next to the audit chain after
 every change and restored on startup (state.py), so a restart keeps them. POST /demo/reset clears both.
@@ -38,7 +38,7 @@ from .jev_client import JevClient
 from .netlogs import enrich
 from .responders import BlocklistResponder, Responders, SimulatedResponder
 from .risk import SEVERITY, band, band_rank, inaction_penalty, risk_index
-from .rules import RulesEngine
+from .rules import TRIPWIRE_REASONS, RulesEngine
 from .state import StateStore
 
 RISK_STATUSES = ("open", "acknowledged")  # count toward raw score
@@ -84,8 +84,13 @@ def public(obj: Any) -> Any:
     return copy.deepcopy(obj)
 
 
+# Agent names used before the SentrAI sentry theme, still found in saved incidents and audit records.
+LEGACY_AGENT_NAMES = {"Saguaro": "Warden", "Root": "Gatehouse", "Reservoir": "Vault", "SpineNet": "Watchtower",
+                      "AreoleLinux": "Garrison-Linux", "AreoleWin": "Garrison-Win", "Needle": "Countersign"}
+
+
 class Saguaro(Agent):
-    name = "Saguaro"
+    name = "Warden"
     role = "lead orchestrator: routes events, merges findings, owns the risk index"
 
     def __init__(self, settings: Settings | None = None) -> None:
@@ -113,6 +118,7 @@ class Saguaro(Agent):
         self.lock = threading.RLock()
         self._protection_file = s.db_path.parent / "protection.json"
         self._load_protection()
+        self.store = StateStore(self.audit)
         self._init_state()
         self._configure()
         self.scribe.record(self.name, "core_started", self._config_summary())
@@ -177,6 +183,7 @@ class Saguaro(Agent):
         return self.root
 
     def _agent(self, name: str) -> LayerAgent:
+        name = LEGACY_AGENT_NAMES.get(name, name)  # incidents saved before the sentry names
         for a in self.layer_agents():
             if a.name == name:
                 return a
@@ -367,7 +374,7 @@ class Saguaro(Agent):
             inc["malicious_probability"] = max(inc["malicious_probability"], cls.malicious)
             inc["_autonomous_denied"] = False
             changed = True
-        if cls.reason.startswith("Cactus spine:") and not str(inc.get("classification_reason")).startswith("Cactus spine:"):
+        if cls.reason.startswith(TRIPWIRE_REASONS) and not str(inc.get("classification_reason")).startswith(TRIPWIRE_REASONS):
             inc["classification_reason"] = cls.reason  # a decoy touch is the strongest evidence: lead with it
         if changed:
             inc["points"] = round(inc["base_points"] * inc["ai_confidence"] * inc["asset_criticality"], 1)
@@ -692,8 +699,8 @@ class Saguaro(Agent):
                 inc["_autonomous_denied"] = True
                 self._timeline(inc, now, "needle_denied", review.reasoning)
                 self._notify(now, "needs_operator", inc["id"], [s.on_duty, s.team_lead],
-                             f"{inc['id']}: autonomous action denied by Needle",
-                             f"{self._headline(inc, self._last_risk)}\nNeedle denied autonomous action: {review.reasoning}\n"
+                             f"{inc['id']}: autonomous action denied by Countersign",
+                             f"{self._headline(inc, self._last_risk)}\nCountersign denied autonomous action: {review.reasoning}\n"
                              f"A human must decide. Recommended: {inc['recommended_action']}.", BUTTONS_DECIDE)
                 return False
             approved = review.approved_proposals
@@ -702,7 +709,7 @@ class Saguaro(Agent):
             self.scribe.record(self.needle.name, "needle_review", {
                 "incident": inc["id"], "approved": True, "operator": approver,
                 "reasoning": f"Operator {approver} approved; the human decision is the second key. "
-                             f"Needle checked the allowlist only ({len(approved)} action(s)).",
+                             f"Countersign checked the allowlist only ({len(approved)} action(s)).",
                 "justification": justification})
         if not approved:
             self._timeline(inc, now, "no_playbook", "No allowlisted playbook applies")
@@ -736,7 +743,7 @@ class Saguaro(Agent):
             self._notify(now, "autonomous_action", inc["id"], [s.on_duty, s.it_manager, s.cxo],
                          f"{inc['id']}: autonomous containment engaged",
                          f"\U0001f335 SentrAI autonomous override on {inc['id']} (risk {risk_idx}/100 >= {s.threshold}, "
-                         f"no acknowledgement). Approved by Needle. Applied for {s.ttl_hours:g} h: {summary}.\n"
+                         f"no acknowledgement). Approved by Countersign. Applied for {s.ttl_hours:g} h: {summary}.\n"
                          f"Evidence report: {s.public_url}/reports/{inc['id']}.md", BUTTONS_AFTER_ACTION)
         else:
             self._notify(now, "operator_action", inc["id"], [s.on_duty],
@@ -788,6 +795,71 @@ class Saguaro(Agent):
                 "incident": inc["id"], "category": inc["category"], "src_ip": inc.get("src_ip"),
                 "quiet_minutes": minutes, "acked": was_acked, "sla_breached": inc["sla_breached"],
                 "events": len(inc["event_ids"])})
+    # ------------------------------------------------------------ persistence
+    def _encode_incident(self, inc: dict[str, Any]) -> dict[str, Any]:
+        """Incident as saved: actions by id (they are saved in their own table). Cyanide adds its plan."""
+        return {**inc, "actions": [a["action_id"] for a in inc["actions"]]}
+
+    def _decode_incident(self, data: dict[str, Any]) -> dict[str, Any]:
+        return data
+
+    def _save(self) -> None:
+        """Writes whatever changed since the last save. Called at the end of every state change."""
+        linked = {eid for inc in self.incidents.values() for eid in inc["event_ids"]}
+        self.store.save({
+            "incidents": {iid: self._encode_incident(inc) for iid, inc in self.incidents.items()},
+            "actions": {a["action_id"]: a for a in self.actions},
+            "notifications": {n["id"]: n for n in self.notifications},
+            # Only events behind an incident: the chat and Cyanide show them as evidence.
+            "events": {eid: self.events[eid] for eid in linked if eid in self.events},
+            "meta": {"counters": {
+                "next_incident": self._next_incident, "next_action": self._next_action,
+                "next_notif": self._next_notif, "last_band": self._last_band,
+                "above_threshold": self._above_threshold, "started_ts": self._started_ts,
+                "clock_offset": self.clock._offset,
+            }},
+        })
+
+    def _restore(self) -> None:
+        """Loads the saved state (if any), puts blocks still in force back in place, and rolls back
+        and audits the ones whose TTL ran out while the core was down."""
+        saved = self.store.load()
+        if not saved["incidents"] and not saved["actions"]:
+            return
+        with self.lock:
+            c = saved["meta"].get("counters", {})
+            self.clock._offset = float(c.get("clock_offset", 0.0))
+            self._next_incident = max(self._next_incident, int(c.get("next_incident", 0)))
+            self._next_action = int(c.get("next_action", 1))
+            self._next_notif = int(c.get("next_notif", 1))
+            self._last_band = c.get("last_band", "green")
+            self._above_threshold = bool(c.get("above_threshold", False))
+            self._started_ts = float(c.get("started_ts", self._started_ts))
+            self.events = dict(sorted(saved["events"].items(), key=lambda kv: kv[0]))
+            self.actions = sorted(saved["actions"].values(), key=lambda a: a["action_id"])
+            by_id = {a["action_id"]: a for a in self.actions}
+            self.notifications = sorted(saved["notifications"].values(), key=lambda n: n["id"])
+            self.incidents = {}
+            for iid in sorted(saved["incidents"], key=lambda x: saved["incidents"][x]["_opened_ts"]):
+                inc = self._decode_incident(saved["incidents"][iid])
+                inc["actions"] = [by_id[x] for x in inc["actions"] if x in by_id]
+                self.incidents[iid] = inc
+            # The responders start empty: put back everything still in force.
+            in_force = [a for a in self.actions if a["status"] in ("active", "permanent")]
+            for a in in_force:
+                self.responders.apply(a)
+            now = self.clock.now()
+            expiring = [a["action_id"] for a in in_force if a["status"] == "active" and a["_expires_ts"] <= now]
+            self.scribe.record(self.name, "state_restored", {
+                "incidents": len(self.incidents),
+                "open_incidents": [i["id"] for i in self.incidents.values() if i["status"] in RISK_STATUSES],
+                "actions_in_force": [a["action_id"] for a in in_force if a["action_id"] not in expiring],
+                "actions_expired_while_down": expiring,
+                "pending_notifications": sum(1 for n in self.notifications if not n["delivered"]),
+            })
+            self._expire_actions(now, while_down=True)
+            self._evaluate(now)
+            self._record_history(now)
 
     # --------------------------------------------------------- operator verbs
     def _get(self, iid: str) -> dict[str, Any]:

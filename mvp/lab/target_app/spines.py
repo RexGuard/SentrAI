@@ -1,6 +1,6 @@
-"""Cactus spines (design doc section 11): deception and tarpit inside our own portal.
+"""Tripwires (design doc section 11; formerly "cactus spines"): deception and tarpit inside our own portal.
 
-Nothing here touches the attacker's machine. The spines only sit and wait:
+Nothing here touches the attacker's machine. The tripwires only sit and wait:
 
 * **Honeypot login** ``/admin-legacy``: an old-looking staff sign-in page that no real
   user is ever sent to. It is listed only in ``robots.txt`` as "Disallow", which is
@@ -18,8 +18,8 @@ Nothing here touches the attacker's machine. The spines only sit and wait:
 Each touch is written to ``deception.jsonl``; the collector ships it to core, where the
 rules classify it with confidence 1.0.
 
-Off by default. Turn on with ``CACTAI_SPINES=1`` (``run_demo.ps1 -Spines`` /
-``run_demo.sh --spines``). Tarpit delay: ``CACTAI_TARPIT_S`` (default 3 seconds, max 30).
+Off by default. Turn on with ``CACTAI_SPINES=1`` or ``CACTAI_TRIPWIRES=1`` (``run_demo.ps1 -Tripwires`` /
+``run_demo.sh --tripwires``; ``-Spines`` / ``--spines`` still work). Tarpit delay: ``CACTAI_TARPIT_S`` (default 3 seconds, max 30).
 """
 from __future__ import annotations
 
@@ -53,7 +53,7 @@ _TRUE = {"1", "true", "yes", "on"}
 
 
 def enabled_from_env() -> bool:
-    return os.environ.get("CACTAI_SPINES", "").strip().lower() in _TRUE
+    return any(os.environ.get(k, "").strip().lower() in _TRUE for k in ("CACTAI_SPINES", "CACTAI_TRIPWIRES"))
 
 
 def tarpit_delay_from_env(default: float = 3.0) -> float:
@@ -70,7 +70,7 @@ def honeytoken_hits(rows: list[dict]) -> list[str]:
 
 
 class Tarpit:
-    """Remembers which source IPs touched a spine and slows their requests down."""
+    """Remembers which source IPs touched a tripwire and slows their requests down."""
 
     def __init__(self, delay_s: float) -> None:
         self.delay_s = delay_s
@@ -94,5 +94,7 @@ class Tarpit:
             self._pricked.clear()
 
     def hold(self) -> None:
-        if self.delay_s > 0:
-            time.sleep(self.delay_s)
+        # Sleep until the monotonic deadline: on Windows one time.sleep() can wake a few ms early.
+        end = time.monotonic() + self.delay_s
+        while (left := end - time.monotonic()) > 0:
+            time.sleep(left)

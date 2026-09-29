@@ -74,6 +74,12 @@ class CoreClient:
     def risk(self) -> dict:
         return self.get_json("/risk")
 
+    def protection(self) -> dict:
+        return self.get_json("/protection")
+
+    def set_protection(self, on: bool, operator: str, reason: str = "") -> dict:
+        return self.post_json("/protection", {"on": on, "operator": operator, "reason": reason})
+
     def incidents(self) -> list[dict]:
         data = self.get_json("/incidents")
         if isinstance(data, dict):  # tolerate {"incidents": [...]}

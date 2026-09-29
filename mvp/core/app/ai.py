@@ -18,7 +18,7 @@ import cactai_llm  # noqa: E402
 def why_off() -> str | None:
     """Why the core runs without an AI model, or None when a model is configured."""
     if os.getenv("CACTAI_ENGINE", "cyanide").lower() == "saguaro":
-        return "CACTAI_ENGINE=saguaro runs the fixed playbooks only"
+        return "CACTAI_ENGINE=saguaro runs Warden's fixed playbooks only"
     if os.getenv("CYANIDE_ENABLED", "1") == "0":
         return "CYANIDE_ENABLED=0 turns the AI model off"
     if cactai_llm.provider_name() is None:
