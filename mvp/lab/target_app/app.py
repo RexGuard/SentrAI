@@ -40,7 +40,7 @@ def create_app(start_polling: bool = False, core_url: str | None = None,
     app = Flask(__name__)
     app.config["ADMIN_PASSWORD"] = _load_admin_password()
     core = core_url or DEFAULT_CORE_URL
-    # Cactus spines (spines.py): off unless CACTAI_SPINES=1 or spines_on=True.
+    # Tripwires (spines.py): off unless CACTAI_SPINES=1 (or CACTAI_TRIPWIRES=1) or spines_on=True.
     spines_on = spines.enabled_from_env() if spines_on is None else spines_on
     tarpit = spines.Tarpit(spines.tarpit_delay_from_env() if tarpit_s is None else tarpit_s)
     app.config["SPINES"] = spines_on
@@ -53,7 +53,7 @@ def create_app(start_polling: bool = False, core_url: str | None = None,
         start_poller(core)
 
     def prick(kind: str, layer: str, ip: str, user: str | None, detail: str, pii: bool = False) -> None:
-        """Record a spine touch; the first touch from an IP also engages the tarpit."""
+        """Record a tripwire touch; the first touch from an IP also engages the tarpit."""
         if tarpit.prick(ip) and tarpit.delay_s > 0:
             detail += f"; tarpit engaged ({tarpit.delay_s:g} s per request from {ip})"
         logger.log_spine(kind, layer, ip, user, detail, pii=pii)
@@ -70,7 +70,7 @@ def create_app(start_polling: bool = False, core_url: str | None = None,
     @app.before_request
     def _enforce_blocklist():
         ip = client_ip()
-        # Tarpit: slow down decoy pages and anyone who already touched a spine.
+        # Tarpit: slow down decoy pages and anyone who already touched a tripwire.
         if spines_on and (request.path == spines.HONEYPOT_PATH or tarpit.is_pricked(ip)):
             tarpit.hold()
         # The user under contention is whatever login/query is being attempted.
@@ -125,7 +125,7 @@ def create_app(start_polling: bool = False, core_url: str | None = None,
         check_honeytokens(ip, members, "/export")
         return render_template("results.html", q=None, members=members, mode="export")
 
-    # --- Cactus spines (404 unless switched on) ---------------------------
+    # --- Tripwires (404 unless switched on) ------------------------------
     @app.get("/robots.txt")
     def robots():
         if not spines_on:
@@ -181,7 +181,7 @@ def main() -> None:
     print(f"  core     {core} (blocklist poll every 2s, fail-open)")
     if app.config["SPINES"]:
         tarpit = app.extensions["cactai_tarpit"]
-        print(f"  spines   ON: honeypot {spines.HONEYPOT_PATH}, honeytoken rows, tarpit {tarpit.delay_s:g}s")
+        print(f"  tripwires ON: honeypot {spines.HONEYPOT_PATH}, honeytoken rows, tarpit {tarpit.delay_s:g}s")
     app.run(host="127.0.0.1", port=5000, debug=False, use_reloader=False)
 
 

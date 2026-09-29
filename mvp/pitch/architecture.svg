@@ -87,13 +87,13 @@
   <text x="50" y="296" class="h" fill="#1F4FB8">Agent team</text>
   <text x="50" y="314" class="s">MVP: Python classes in the SentrAI core, called in turn</text>
 
-  <!-- risk engine -> Saguaro -->
+  <!-- risk engine -> Warden -->
   <path d="M995,220 L995,250 L700,250 L700,316" class="flow" marker-end="url(#arrow)"/>
   <text x="1005" y="245" class="lbl">incidents + risk index</text>
 
-  <!-- Saguaro -->
+  <!-- Warden -->
   <rect x="560" y="320" width="280" height="62" rx="10" class="lead"/>
-  <text x="700" y="346" class="w" text-anchor="middle">Saguaro (lead)</text>
+  <text x="700" y="346" class="w" text-anchor="middle">Warden (lead)</text>
   <text x="700" y="367" class="ws" text-anchor="middle">delegates, merges, owns the risk index</text>
 
   <!-- tree to specialists -->
@@ -101,22 +101,22 @@
 
   <!-- Specialists -->
   <rect x="50" y="418" width="170" height="74" rx="9" class="box"/>
-  <text x="135" y="443" class="h" text-anchor="middle">Root</text>
+  <text x="135" y="443" class="h" text-anchor="middle">Gatehouse</text>
   <text x="135" y="462" class="s" text-anchor="middle">Web layer, WAF logs</text>
   <text x="135" y="479" class="s" text-anchor="middle">propose only</text>
 
   <rect x="240" y="418" width="170" height="74" rx="9" class="box"/>
-  <text x="325" y="443" class="h" text-anchor="middle">Reservoir</text>
+  <text x="325" y="443" class="h" text-anchor="middle">Vault</text>
   <text x="325" y="462" class="s" text-anchor="middle">Database, backups</text>
   <text x="325" y="479" class="s" text-anchor="middle">propose only</text>
 
   <rect x="430" y="418" width="170" height="74" rx="9" class="box"/>
-  <text x="515" y="443" class="h" text-anchor="middle">Spine-Net</text>
+  <text x="515" y="443" class="h" text-anchor="middle">Watchtower</text>
   <text x="515" y="462" class="s" text-anchor="middle">Network, own-asset scans</text>
   <text x="515" y="479" class="s" text-anchor="middle">propose only</text>
 
   <rect x="620" y="418" width="170" height="74" rx="9" class="box" stroke="#1F4FB8" stroke-width="2.5"/>
-  <text x="705" y="443" class="h" text-anchor="middle">Areole</text>
+  <text x="705" y="443" class="h" text-anchor="middle">Garrison</text>
   <text x="705" y="462" class="s" text-anchor="middle">OS: Linux / Windows</text>
   <text x="705" y="479" class="s" text-anchor="middle">runs allowlisted playbooks</text>
 
@@ -124,9 +124,9 @@
   <text x="50" y="540" class="s">Execution only via allowlisted playbooks, each with a TTL (default 2 h).</text>
   <text x="50" y="558" class="s">Snapshot before every change; auto-rollback if verification fails.</text>
 
-  <!-- Needle -->
+  <!-- Countersign -->
   <rect x="880" y="320" width="220" height="80" rx="10" class="guard"/>
-  <text x="990" y="346" class="h" text-anchor="middle">Needle (reviewer)</text>
+  <text x="990" y="346" class="h" text-anchor="middle">Countersign (reviewer)</text>
   <text x="990" y="366" class="s" text-anchor="middle">must approve every</text>
   <text x="990" y="383" class="s" text-anchor="middle">autonomous action</text>
   <line x1="840" y1="351" x2="876" y2="351" class="flowRed" marker-end="url(#arrowRed)"/>
@@ -201,7 +201,7 @@
   <text x="335" y="858" class="s">hash 9f2c...</text>
 
   <rect x="590" y="800" width="220" height="64" rx="8" class="chain"/>
-  <text x="605" y="822" class="t">#42 Needle approved block</text>
+  <text x="605" y="822" class="t">#42 Countersign approved</text>
   <text x="605" y="842" class="s">prev_hash 9f2c...</text>
   <text x="605" y="858" class="s">hash b71a...</text>
 

@@ -144,7 +144,7 @@ that signature (HMAC of the path with the token), which fits that one report onl
 ```json
 { "action_id": "act-0007", "incident": "RSK-2026-081", "type": "block_ip" | "lock_user" | "rate_limit" | "waf_rule" | "kill_process" | "revoke_public_acl",
   "target": "203.0.113.45", "ttl_hours": 2, "expires_at": "...", "mode": "autonomous" | "operator",
-  "approved_by": "Needle" | "<operator>", "status": "active" | "expired" | "rolled_back" | "permanent",
+  "approved_by": "Countersign" | "<operator>", "status": "active" | "expired" | "rolled_back" | "permanent",
   "snapshot_hash": "..." }
 ```
 Containment is enforced by the target app polling `/blocklist` (real effect: blocked IPs/users get HTTP 403). No host firewall changes by default.
@@ -152,7 +152,7 @@ Containment is enforced by the target app polling `/blocklist` (real effect: blo
 ## Target app (owner: lab)
 - Flask on :5000: `/` , `/login` (POST form user/password), `/search?q=` (deliberately naive, logs SQLi-looking queries; uses SQLite with a fake `members` table of synthetic data), `/export` (bulk export, triggers data_exfiltration events), `/admin/run?cmd=` simulated command endpoint that NEVER executes anything, only logs "shell spawned" style event.
 - Writes JSON-lines logs to `mvp/lab/logs/*.jsonl`. Honors core `/blocklist` (poll every 2 s; if core down, allow).
-- Cactus spines (off unless `CACTAI_SPINES=1`): honeypot `/admin-legacy`, a planted credential, bait `members` rows and a tarpit. Each touch goes to `mvp/lab/logs/deception.jsonl`; the collector sends it with `"source": "cactus_spine"` and a raw text starting `cactus-spine <kind>:`, and core rules turn it into an incident at confidence 1.0 (only for that source).
+- Tripwires (off unless `CACTAI_SPINES=1`): honeypot `/admin-legacy`, a planted credential, bait `members` rows and a tarpit. Each touch goes to `mvp/lab/logs/deception.jsonl`; the collector sends it with `"source": "tripwire"` and a raw text starting `tripwire <kind>:` (the older `cactus_spine` / `cactus-spine` forms are still accepted), and core rules turn it into an incident at confidence 1.0 (only for that source).
 - Because clients are local, the attacker IP is taken from header `X-Demo-Src-IP` when present (demo spoofing so different "attackers" can be shown), else remote_addr.
 
 ## Rules for all agents

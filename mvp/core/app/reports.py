@@ -59,7 +59,7 @@ def build_report(core: "Saguaro", iid: str) -> dict[str, Any]:
         if auto:
             forced = {
                 "taken": True,
-                "summary": "Autonomous override engaged (approved by Needle): "
+                "summary": "Autonomous override engaged (approved by Countersign): "
                            + "; ".join(f"{a['type']} {a['target']} ({a['status']})" for a in auto)
                            + f". Temporary, TTL {s.ttl_hours:g} h, reversible via rollback.",
             }
@@ -86,12 +86,12 @@ def build_report(core: "Saguaro", iid: str) -> dict[str, Any]:
 
         chain_valid, bad_seq = core.audit.verify()
         records = [r for r in core.audit.records() if r["data"].get("incident") == iid]
-        # Approvals: Needle's review of each containment (two-key rule) and every operator decision.
+        # Approvals: Countersign's review of each containment (two-key rule) and every operator decision.
         approvals = []
         for r in records:
             if r["type"] == "needle_review":
                 d = r["data"]
-                approvals.append({"ts": r["ts"], "by": d.get("operator") or "Needle",
+                approvals.append({"ts": r["ts"], "by": d.get("operator") or "Countersign",
                                   "decision": "approved" if d.get("approved") else "denied",
                                   "note": d.get("reasoning") or ""})
         for d in inc.get("decisions", []):

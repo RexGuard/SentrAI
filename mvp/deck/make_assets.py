@@ -24,7 +24,7 @@ BANDS = [(0, 30, "#2E8B57", "Green"), (30, 60, "#E0A100", "Amber"),
 BAND_TXT = {"Green": "#6FD39A", "Amber": "#F2C14E", "Red": "#FF7A66", "Critical": "#E68AAE"}
 
 plt.rcParams.update({
-    "font.family": "Segoe UI",
+    "font.family": ["Segoe UI", "DejaVu Sans"],
     "font.size": 15,
     "text.color": TEXT,
     "axes.labelcolor": MUTED,
@@ -49,7 +49,8 @@ def shade_bands(ax, xmax, labels=True):
     for lo, hi, col, name in BANDS:
         ax.axhspan(lo, hi, color=col, alpha=0.18, lw=0, zorder=0)
         if labels:
-            ax.text(xmax, (lo + hi) / 2, name, ha="right", va="center", fontsize=13,
+            y = (lo + hi) / 2 if name != "Critical" else 83.5
+            ax.text(xmax, y, name, ha="right", va="center", fontsize=13,
                     color=BAND_TXT[name], fontweight="bold", alpha=0.95, zorder=1)
 
 
@@ -73,7 +74,10 @@ def escalation_chart():
     ax.step(hours, idx, where="post", color=GREEN, lw=3.2, zorder=4)
     ax.scatter(hours[:-1], idx[:-1], s=60, color=TEXT, edgecolor=GREEN, lw=2, zorder=5)
     for h, v in zip(hours[:-1], idx[:-1]):
-        ax.text(h, v - 6.5, str(v), ha="center", va="top", fontsize=13, color=TEXT, zorder=6)
+        if v >= 80:  # above the tolerance line: label to the left so it doesn't sit on the dashes
+            ax.text(h - 0.15, v, str(v), ha="right", va="center", fontsize=13, color=TEXT, zorder=6)
+        else:
+            ax.text(h, v - 6.5, str(v), ha="center", va="top", fontsize=13, color=TEXT, zorder=6)
 
     def callout(x, y, tx, ty, txt, col):
         ax.annotate(txt, xy=(x, y), xytext=(tx, ty), fontsize=12.5, color=TEXT, ha="left",
@@ -83,10 +87,10 @@ def escalation_chart():
 
     callout(0, idx[0], 0.25, 20, "Alert delivered\nAck: none", "#F2C14E")
     callout(2, idx[2], 2.2, 32, "SLA breached:\nreminder, lead copied", "#F2C14E")
-    callout(6.5, idx[7], 4.2, 95, "Needle approved, IP blocked 2h", "#E68AAE")
+    callout(6.5, idx[7], 4.2, 95, "Countersign approved, IP blocked 2h", "#E68AAE")
     ax.annotate("", xy=(5.9, 68.5), xytext=(0.3, 49.5),
                 arrowprops=dict(arrowstyle="->", color=MUTED, lw=1.2, ls=":"))
-    ax.text(3.35, 48, "+5 per hour, no ack", fontsize=12.5, color=MUTED, rotation=10, ha="center")
+    ax.text(4.7, 47, "+5 per hour, no ack", fontsize=12.5, color=MUTED, rotation=8, ha="center")
 
     ax.set_xlim(-0.2, 7.5)
     ax.set_ylim(0, 102)
@@ -115,7 +119,10 @@ def curve_chart():
     for r in (35, 70, 97, 140):
         v = risk(r)
         ax.scatter([r], [v], s=60, color=TEXT, edgecolor=GREEN, lw=2, zorder=5)
-        ax.text(r + 4, v - 4, f"raw {r} → {v}", fontsize=12.5, color=TEXT, va="top", zorder=6)
+        if r == 140:  # above-left of the point, clear of the "Critical" band label
+            ax.text(r - 4, v + 2, f"raw {r} → {v}", fontsize=12.5, color=TEXT, ha="right", va="bottom", zorder=6)
+        else:
+            ax.text(r + 4, v - 4, f"raw {r} → {v}", fontsize=12.5, color=TEXT, va="top", zorder=6)
     ax.set_xlim(0, 220)
     ax.set_ylim(0, 108)
     ax.set_yticks([0, 30, 60, 80, 100])
@@ -127,25 +134,18 @@ def curve_chart():
 
 
 # ---------------------------------------------------------------- illustrations
-def draw_cactus(ax, cx, cy, s, col=GREEN, spines=True):
-    def rbox(x, y, w, h):
-        ax.add_patch(FancyBboxPatch((cx + x * s, cy + y * s), w * s, h * s,
-                                    boxstyle=f"round,pad=0,rounding_size={min(w, h) * s / 2}",
-                                    fc=col, ec="none", zorder=5))
-    rbox(-0.17, -0.75, 0.34, 1.45)          # trunk
-    rbox(-0.55, -0.12, 0.42, 0.2)           # left arm horizontal
-    rbox(-0.55, -0.12, 0.2, 0.55)           # left arm up
-    rbox(0.13, -0.3, 0.42, 0.2)             # right arm horizontal
-    rbox(0.35, -0.3, 0.2, 0.6)              # right arm up
-    if spines:
-        for yy in np.linspace(-0.55, 0.55, 6):
-            for sx in (-1, 1):
-                x0 = cx + sx * 0.17 * s
-                ax.plot([x0, x0 + sx * 0.09 * s], [cy + yy * s, cy + (yy + 0.04) * s],
-                        color="#CFF3DC", lw=1.6, zorder=6)
-    ax.add_patch(FancyBboxPatch((cx - 0.5 * s, cy - 0.85 * s), 1.0 * s, 0.12 * s,
-                                boxstyle=f"round,pad=0,rounding_size={0.04 * s}",
-                                fc=MUTED, ec="none", alpha=0.6, zorder=4))
+def draw_sentry(ax, cx, cy, s, col=GREEN):
+    """SentrAI mark: a filled shield with a watching eye."""
+    pts = shield_outline(400) * 0.62 * s + np.array([cx, cy + 0.05 * s])
+    ax.add_patch(Polygon(pts, closed=True, fc=col, ec="none", zorder=5))
+    t = np.linspace(0, np.pi, 60)
+    w, h = 0.42 * s, 0.24 * s
+    ex, ey = cx, cy + 0.08 * s
+    top = np.c_[ex + w * np.cos(t), ey + h * np.sin(t)]
+    bottom = np.c_[ex + w * np.cos(t[::-1]), ey - h * np.sin(t[::-1])]
+    ax.add_patch(Polygon(np.r_[top, bottom], closed=True, fc=BG, ec="none", zorder=6))
+    ax.add_patch(Circle((ex, ey), 0.15 * s, fc="#CFF3DC", ec="none", zorder=7))
+    ax.add_patch(Circle((ex, ey), 0.07 * s, fc=BG, ec="none", zorder=8))
 
 
 def shield_outline(n=400):
@@ -174,17 +174,7 @@ def logo():
     pts = shield_outline(1200)
     ax.plot(np.r_[pts[:, 0], pts[0, 0]], np.r_[pts[:, 1], pts[0, 1]], color=GREEN, lw=2.2, alpha=0.9)
     ax.fill(pts[:, 0], pts[:, 1], color=GREEN_D, alpha=0.35, zorder=1)
-    spikes = shield_outline(46)
-    # outward normals
-    for i, (x, y) in enumerate(spikes):
-        nx_, ny_ = spikes[(i + 1) % len(spikes)] - spikes[i - 1]
-        nrm = np.array([ny_, -nx_])
-        nrm /= np.linalg.norm(nrm)
-        if nrm @ np.array([x, y + 0.1]) < 0:
-            nrm = -nrm
-        ax.plot([x, x + 0.16 * nrm[0]], [y, y + 0.16 * nrm[1]], color="#9FE3BA", lw=2.4,
-                solid_capstyle="round")
-    draw_cactus(ax, 0, 0.05, 1.05)
+    draw_sentry(ax, 0, -0.05, 1.05)
     ax.set_xlim(-1.3, 1.3)
     ax.set_ylim(-1.6, 1.4)
     fig.savefig(OUT / "logo.png", transparent=True, bbox_inches="tight", pad_inches=0.05)
@@ -262,7 +252,7 @@ def perimeter():
         c, s_ = np.cos(a), np.sin(a)
         ax.plot([R * c, (R - 0.22) * c], [R * s_, (R - 0.22) * s_], color="#9FE3BA", lw=2.4,
                 solid_capstyle="round")
-    draw_cactus(ax, 0, 0.05, 1.0)
+    draw_sentry(ax, 0, 0.05, 1.0)
     a = np.radians(35)
     ax.annotate("", xy=(2.25 * np.cos(a), 2.25 * np.sin(a)), xytext=(0.75 * np.cos(a), 0.75 * np.sin(a)),
                 arrowprops=dict(arrowstyle="-|>,head_width=0.5,head_length=0.8", color="#E0533F", lw=5))

@@ -1,0 +1,102 @@
+/* SentrAI brand tokens. Night-watch navy with a steel-blue accent.
+   Dark values match the Risk Console (mvp/dashboard/cactai_ui/console.css).
+   Risk colours (green / amber / red) are for risk bands and status only, never for branding.
+   Use: <link rel="stylesheet" href="assets/brand/tokens.css">, then var(--sn-*). */
+:root {
+  /* Type: system fonts only, so everything renders offline. */
+  --sn-font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --sn-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --sn-weight-body: 400;
+  --sn-weight-strong: 600;
+  --sn-weight-display: 750;
+  --sn-text-xs: .75rem;    /* 12px: timestamps, hashes */
+  --sn-text-sm: .875rem;   /* 14px: labels, table cells */
+  --sn-text-md: 1rem;      /* 16px: body */
+  --sn-text-lg: 1.25rem;   /* 20px: card titles */
+  --sn-text-xl: 1.75rem;   /* 28px: section titles */
+  --sn-text-2xl: 2.5rem;   /* 40px: hero */
+  --sn-leading: 1.6;
+  --sn-leading-tight: 1.15;
+  --sn-tracking-display: -.02em;
+
+  /* Shape */
+  --sn-radius-sm: 8px;
+  --sn-radius: 14px;
+  --sn-radius-pill: 999px;
+
+  /* Fixed brand colours (same in both themes) */
+  --sn-navy-950: #0b111d;
+  --sn-navy-900: #121a29;
+  --sn-navy-800: #172134;
+  --sn-navy-700: #1d2940;
+  --sn-steel-700: #1f4fb8;
+  --sn-steel-500: #4c8dff;
+  --sn-steel-300: #7fb2ff;
+
+  /* Light theme (default) */
+  --sn-bg: #f5f7fb;
+  --sn-surface: #ffffff;
+  --sn-surface-2: #eef2f8;
+  --sn-surface-3: #e3e9f3;
+  --sn-ink: #0f1a2c;
+  --sn-ink-soft: #44536b;
+  --sn-ink-muted: #626f86;
+  --sn-line: #d5dce8;
+  --sn-line-soft: #e4e9f1;
+  --sn-brand: #1f4fb8;       /* links, primary buttons (white text on it: 7.3:1) */
+  --sn-brand-2: #2f6fe0;     /* hover, focus ring, large accents */
+  --sn-brand-soft: #e3ecfd;  /* selected rows, badges */
+  --sn-brand-line: #b7cbf3;
+  --sn-on-brand: #ffffff;
+  --sn-safe: #1a7447;
+  --sn-warn: #8f5d00;
+  --sn-danger: #c0282e;
+  --sn-shadow: 0 1px 2px rgba(15, 26, 44, .06), 0 8px 24px rgba(15, 26, 44, .07);
+  color-scheme: light;
+}
+
+/* Dark theme: follows the OS unless a page forces light with data-theme="light". */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --sn-bg: #0b111d;
+    --sn-surface: #121a29;
+    --sn-surface-2: #172134;
+    --sn-surface-3: #1d2940;
+    --sn-ink: #e7edf6;
+    --sn-ink-soft: #a5b2c6;
+    --sn-ink-muted: #6f7d93;
+    --sn-line: #26324a;
+    --sn-line-soft: #1e293d;
+    --sn-brand: #7fb2ff;
+    --sn-brand-2: #4c8dff;
+    --sn-brand-soft: #16264a;
+    --sn-brand-line: #2d4777;
+    --sn-on-brand: #0b111d;
+    --sn-safe: #6fcf97;
+    --sn-warn: #e8b34a;
+    --sn-danger: #e5484d;
+    --sn-shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px rgba(0, 0, 0, .28);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --sn-bg: #0b111d;
+  --sn-surface: #121a29;
+  --sn-surface-2: #172134;
+  --sn-surface-3: #1d2940;
+  --sn-ink: #e7edf6;
+  --sn-ink-soft: #a5b2c6;
+  --sn-ink-muted: #6f7d93;
+  --sn-line: #26324a;
+  --sn-line-soft: #1e293d;
+  --sn-brand: #7fb2ff;
+  --sn-brand-2: #4c8dff;
+  --sn-brand-soft: #16264a;
+  --sn-brand-line: #2d4777;
+  --sn-on-brand: #0b111d;
+  --sn-safe: #6fcf97;
+  --sn-warn: #e8b34a;
+  --sn-danger: #e5484d;
+  --sn-shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px rgba(0, 0, 0, .28);
+  color-scheme: dark;
+}

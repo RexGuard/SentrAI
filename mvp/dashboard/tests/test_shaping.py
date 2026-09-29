@@ -71,7 +71,7 @@ def test_containment_rows():
     kinds = list(df["Kind"])
     assert kinds.count("IP") == 1 and kinds.count("User") == 1 and kinds.count("Rule") == 1
     ip = df[df["Kind"] == "IP"].iloc[0]
-    assert ip["Incident"] == "RSK-1" and ip["Approved by"] == "Needle"
+    assert ip["Incident"] == "RSK-1" and ip["Approved by"] == "Countersign"  # older records show the new name
     assert sh.build_containment_rows(None, []).empty
 
 
@@ -92,8 +92,8 @@ def test_audit_normalize_and_feed():
     feed = sh.build_activity_feed(recs)
     assert [e["seq"] for e in feed] == [3, 2, 1]
     assert feed[0]["agent"] == "Operator · erick"
-    assert feed[1]["agent"] == "Needle"
-    assert feed[2]["agent"] == "Saguaro"  # inferred from type
+    assert feed[1]["agent"] == "Countersign"  # saved as "Needle"
+    assert feed[2]["agent"] == "Warden"  # inferred from type
 
 
 def test_history_and_figures():

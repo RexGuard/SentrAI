@@ -12,7 +12,7 @@ _Issued by **SentrAI**. A sentry doesn't chase you. It just guards the gate._
 | --- | --- |
 | Responsible Entity | Admin: John Doe (Sample) - ID SEC-409 - Shift Bravo |
 | SLA Violation | Overdue by 4 h 30 min (Policy SLA: 2 hrs); not acknowledged |
-| Forced Action Taken | Autonomous override engaged (approved by Needle): block_ip 203.0.113.45 (active). Temporary, TTL 2 h, reversible via rollback. |
+| Forced Action Taken | Autonomous override engaged (approved by Countersign): block_ip 203.0.113.45 (active). Temporary, TTL 2 h, reversible via rollback. |
 | Proof of Non-Repudiation | Ack: none; 2 alert(s) delivered |
 | Audit chain | VALID, head `b6b6b6b6b6b6b6b6...` |
 
@@ -45,23 +45,23 @@ _Issued by **SentrAI**. A sentry doesn't chase you. It just guards the gate._
 
 | Time | By | Decision | Note |
 | --- | --- | --- | --- |
-| 2026-09-29T14:00:39+08:00 | Needle | approved | Risk 88 is over the tolerance of 80; block is temporary and reversible. |
+| 2026-09-29T14:00:39+08:00 | Countersign | approved | Risk 88 is over the tolerance of 80; block is temporary and reversible. |
 
 ## Containment actions
 
 | Action | Type | Target | Mode | Approved by | Status | Expires | Snapshot |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| ACT-0007 | block_ip | 203.0.113.45 | autonomous | Needle | active | 2026-09-29T14:02:40+08:00 | `070707070707` |
+| ACT-0007 | block_ip | 203.0.113.45 | autonomous | Countersign | active | 2026-09-29T14:02:40+08:00 | `070707070707` |
 
 ## Hash-chain proof
 
 | Seq | Time | Type | Agent | Hash |
 | --- | --- | --- | --- | --- |
 | 1040 | 2026-09-29T13:54:00+08:00 | event | Collector | `0101010101010101...` |
-| 1041 | 2026-09-29T13:54:01+08:00 | incident_opened | Saguaro | `0202020202020202...` |
+| 1041 | 2026-09-29T13:54:01+08:00 | incident_opened | Warden | `0202020202020202...` |
 | 1042 | 2026-09-29T13:54:02+08:00 | notification_delivered | Herald | `0303030303030303...` |
-| 1043 | 2026-09-29T13:54:03+08:00 | needle_review | Needle | `0404040404040404...` |
-| 1044 | 2026-09-29T13:54:04+08:00 | action_applied | Saguaro | `0505050505050505...` |
+| 1043 | 2026-09-29T13:54:03+08:00 | needle_review | Countersign | `0404040404040404...` |
+| 1044 | 2026-09-29T13:54:04+08:00 | action_applied | Warden | `0505050505050505...` |
 
 Chain valid: **True**. Head hash: `b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6`
 
@@ -69,4 +69,4 @@ _Durations are in demo hours (DEMO_SPEED=3600: 1 real minute = 60 demo hour(s)).
 
 ---
 
-<sub>🛡️ SentrAI · ER-RSK-2026-081 · generated 2026-09-29T14:05:00+08:00 · chain head b6b6b6b6b6b6b6b6...</sub>
+_🛡️ SentrAI · ER-RSK-2026-081 · generated 2026-09-29T14:05:00+08:00 · chain head b6b6b6b6b6b6b6b6..._

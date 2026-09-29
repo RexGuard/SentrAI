@@ -1,9 +1,11 @@
 """Specialist agents (design doc section 12). Deterministic Python classes; no LLM calls.
 
-Saguaro (orchestrator) lives in saguaro.py and calls these in turn:
-  Root / Reservoir / AreoleLinux / AreoleWin / SpineNet  -> analyze events, propose playbooks
-  Needle   -> two-key reviewer for every autonomous action
-  Areole*  -> the only agents that execute, through the responders in responders.py
+Display names follow the SentrAI sentry theme; the class names are the older cactus ones.
+Warden (orchestrator, class Saguaro) lives in saguaro.py and calls these in turn:
+  Gatehouse (Root) / Vault (Reservoir) / Garrison-Linux, Garrison-Win (Areole*) /
+  Watchtower (SpineNet)  -> analyze events, propose playbooks
+  Countersign (Needle)   -> two-key reviewer for every autonomous action
+  Garrison-*  -> the only agents that execute, through the responders in responders.py
   Watchdog -> collector heartbeats
   Scribe   -> hash-chained audit + evidence reports
   HelpDesk -> answers "why" questions from incident data
@@ -19,6 +21,7 @@ from .audit import AuditLog, canonical
 from .classifier import Classification, ClassifierChain
 from .clock import DemoClock
 from .responders import Responders
+from .rules import TRIPWIRE_REASONS
 
 if TYPE_CHECKING:
     from .config import Settings
@@ -116,7 +119,7 @@ class LayerAgent(Agent):
     @staticmethod
     def explain(incident: dict[str, Any]) -> str:
         reason = str(incident.get("classification_reason") or "")
-        if reason.startswith("Cactus spine:"):  # a decoy was touched: say so instead of the generic text
+        if reason.startswith(TRIPWIRE_REASONS):  # a decoy was touched: say so instead of the generic text
             src = incident.get("src_ip") or "an unknown source"
             return (f"{src} touched a decoy on {incident.get('host') or 'an unknown host'} "
                     f"({reason.split(':', 1)[1].strip()}). No real user has a reason to be there, "
@@ -131,19 +134,19 @@ class LayerAgent(Agent):
 
 
 class Root(LayerAgent):
-    name = "Root"
+    name = "Gatehouse"
     layers = ("web",)
     role = "web layer: web/WAF logs, proposes WAF rules"
 
 
 class Reservoir(LayerAgent):
-    name = "Reservoir"
+    name = "Vault"
     layers = ("db",)
     role = "database/storage layer: DB audit, bulk exports"
 
 
 class SpineNet(LayerAgent):
-    name = "SpineNet"
+    name = "Watchtower"
     layers = ("network", "cloud")
     role = "network/scanner layer (stub: signature rules only)"
 
@@ -190,15 +193,15 @@ class Areole(LayerAgent):
 
 
 class AreoleLinux(Areole):
-    name = "AreoleLinux"
+    name = "Garrison-Linux"
 
 
 class AreoleWin(Areole):
-    name = "AreoleWin"
+    name = "Garrison-Win"
 
 
 class Needle(Agent):
-    name = "Needle"
+    name = "Countersign"
     role = "reviewer: two-key approval for every autonomous action"
 
     def __init__(self, min_confidence: float, allowlist: set[str], protected_ips: set[str],
@@ -321,7 +324,7 @@ class HelpDesk(Agent):
         else:
             lines.append("Nobody has acknowledged it yet.")
         for a in incident["actions"]:
-            who = "Needle (autonomous, two-key approval)" if a["mode"] == "autonomous" else a["approved_by"]
+            who = "Countersign (autonomous, two-key approval)" if a["mode"] == "autonomous" else a["approved_by"]
             lines.append(
                 f"Action {a['action_id']}: {a['type']} {a['target']} approved by {who}, status {a['status']}, "
                 f"expires {a['expires_at'] or 'never (made permanent)'}."

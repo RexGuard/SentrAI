@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 64" width="240" height="64" role="img" aria-label="SentrAI">
+  <g>
+  <path d="M32 4 L54 11.5 V29 C54 43.5 44.8 54.2 32 60 C19.2 54.2 10 43.5 10 29 V11.5 Z" fill="#16264a" stroke="#7fb2ff" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M17 32 C22.5 24 27 21.5 32 21.5 C37 21.5 41.5 24 47 32 C41.5 40 37 42.5 32 42.5 C27 42.5 22.5 40 17 32 Z" fill="#7fb2ff"/>
+  <circle cx="32" cy="32" r="6" fill="#0b111d"/>
+  <circle cx="34.2" cy="29.8" r="1.8" fill="#e7edf6"/>
+  </g>
+  <text x="74" y="43" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="34" font-weight="750" letter-spacing="-0.5" fill="#e7edf6">Sentr<tspan fill="#7fb2ff">AI</tspan></text>
+</svg>

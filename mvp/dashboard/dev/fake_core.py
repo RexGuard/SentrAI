@@ -3,7 +3,7 @@
 NOT the real core. In-memory, single process, plays a scripted demo scenario:
   t≈4 s   brute_force incident opens (risk ≈ 40, amber) + notification
   ...     nobody acks -> inaction penalty climbs (fast demo clock)
-  t≈40 s  sql_injection incident opens -> risk crosses 80 -> Needle approves
+  t≈40 s  sql_injection incident opens -> risk crosses 80 -> Countersign approves
           autonomous containment (block IP, lock user) + evidence report
 Run:  .venv\\Scripts\\python dev\\fake_core.py   (serves http://127.0.0.1:8900)
 Env:  FAKE_CORE_PORT (8900, so it never collides with the real core on 8000), FAKE_DEMO_SPEED (120 = 30 real s per demo hour),
@@ -145,17 +145,17 @@ def open_incident(category: str, src_ip: str, user: str, conf: float, crit: floa
         "actions": [], "event_ids": [f"evt-{int(time.time())}-{i:03d}" for i in range(3)],
     }
     S.incidents[iid] = inc
-    audit("classification", "Jev" if by == "jev" else "Saguaro", incident=iid, category=category, confidence=conf)
-    audit("incident_opened", "Saguaro", incident=iid, category=category, risk_index=risk_index())
+    audit("classification", "Jev" if by == "jev" else "Warden", incident=iid, category=category, confidence=conf)
+    audit("incident_opened", "Warden", incident=iid, category=category, risk_index=risk_index())
     notify(inc, "incident_opened", f"{category.replace('_', ' ').capitalize()} on web-01 from {src_ip}")
     return inc
 
 
 def apply_containment(inc: dict, mode: str, approver: str) -> None:
     snap = hashlib.sha256(f"snapshot-{inc['id']}-{time.time()}".encode()).hexdigest()
-    audit("snapshot", "Areole-Linux", incident=inc["id"], snapshot_hash=snap[:16])
+    audit("snapshot", "Garrison-Linux", incident=inc["id"], snapshot_hash=snap[:16])
     if mode == "autonomous":
-        audit("action_approved", "Needle", incident=inc["id"], summary=f"Two-key review passed for {inc['id']}")
+        audit("action_approved", "Countersign", incident=inc["id"], summary=f"Two-key review passed for {inc['id']}")
     for atype, tgt in PLAYBOOK.get(inc["category"], []):
         S.seq_act += 1
         target = inc.get(tgt, tgt) if tgt in ("src_ip", "user") else tgt
@@ -164,7 +164,7 @@ def apply_containment(inc: dict, mode: str, approver: str) -> None:
         # expires_at in wall-clock: 2 demo hours
         act["expires_at"] = iso(now() + timedelta(seconds=TTL_SECONDS))
         inc["actions"].append(act)
-        audit("action_applied", "Areole-Linux", incident=inc["id"], target=target, summary=f"{atype} {target} (TTL 2 h)")
+        audit("action_applied", "Garrison-Linux", incident=inc["id"], target=target, summary=f"{atype} {target} (TTL 2 h)")
     inc["status"] = "contained"
 
 
@@ -221,7 +221,7 @@ def tick() -> None:
                     pen = min(30, 5 * int(hrs))
                     if pen != inc["inaction_penalty"]:
                         inc["inaction_penalty"] = pen
-                        audit("risk_update", "Saguaro", incident=inc["id"], summary=f"Inaction penalty +{pen}")
+                        audit("risk_update", "Warden", incident=inc["id"], summary=f"Inaction penalty +{pen}")
                     if hrs > SLA_HOURS and not inc["sla_breached"]:
                         inc["sla_breached"] = True
                         audit("sla_breach", "Watchdog", incident=inc["id"], summary="SLA 2 h breached, no ack")
@@ -233,9 +233,9 @@ def tick() -> None:
             active = [i for i in S.incidents.values() if i["status"] in ("open", "acknowledged")]
             if risk_index() >= THRESHOLD and active and not S.protection["monitor_only"]:
                 S.history.append({"t": iso(now()), "risk_index": risk_index()})  # show the peak
-                audit("threshold_crossed", "Saguaro", risk_index=risk_index(), summary=f"Risk {risk_index()} ≥ {THRESHOLD}")
+                audit("threshold_crossed", "Warden", risk_index=risk_index(), summary=f"Risk {risk_index()} ≥ {THRESHOLD}")
                 for inc in active:
-                    apply_containment(inc, "autonomous", "Needle")
+                    apply_containment(inc, "autonomous", "Countersign")
                     make_report(inc)
                     notify(inc, "autonomous_action", f"Autonomous containment applied for {inc['id']}")
             if not S.history or (now() - datetime.fromisoformat(S.history[-1]["t"])).total_seconds() >= 1:
@@ -372,7 +372,7 @@ def post_protection(body: dict = Body(...)):
             raise HTTPException(400, "turning protection off requires a reason")
         S.protection = {"monitor_only": not on, "changed_at": iso(now()), "changed_by": body.get("operator", "?"),
                         "reason": reason or None}
-        audit("protection_changed", "Saguaro", protection="on" if on else "off", operator=body.get("operator"),
+        audit("protection_changed", "Warden", protection="on" if on else "off", operator=body.get("operator"),
               reason=reason or None)
         return protection_view()
 
@@ -563,7 +563,7 @@ def reset():
     global S
     with lock:
         S = State()
-        audit("demo_reset", "Saguaro", summary="Demo state cleared")
+        audit("demo_reset", "Warden", summary="Demo state cleared")
     return {"ok": True}
 
 
@@ -578,5 +578,5 @@ def trigger(category: str, src_ip: str = "198.51.100.7", user: str = "admin"):
 if __name__ == "__main__":
     threading.Thread(target=tick, daemon=True).start()
     with lock:
-        audit("startup", "Saguaro", summary="FAKE core online")
+        audit("startup", "Warden", summary="FAKE core online")
     uvicorn.run(app, host="127.0.0.1", port=int(os.environ.get("FAKE_CORE_PORT", "8900")), log_level="warning")
