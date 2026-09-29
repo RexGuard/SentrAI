@@ -1,4 +1,4 @@
-"""Generate chart and illustration PNGs for the CactAI deck (matplotlib)."""
+"""Generate chart and illustration PNGs for the SentrAI deck (matplotlib)."""
 import math
 from pathlib import Path
 
@@ -134,25 +134,18 @@ def curve_chart():
 
 
 # ---------------------------------------------------------------- illustrations
-def draw_cactus(ax, cx, cy, s, col=GREEN, spines=True):
-    def rbox(x, y, w, h):
-        ax.add_patch(FancyBboxPatch((cx + x * s, cy + y * s), w * s, h * s,
-                                    boxstyle=f"round,pad=0,rounding_size={min(w, h) * s / 2}",
-                                    fc=col, ec="none", zorder=5))
-    rbox(-0.17, -0.75, 0.34, 1.45)          # trunk
-    rbox(-0.55, -0.12, 0.42, 0.2)           # left arm horizontal
-    rbox(-0.55, -0.12, 0.2, 0.55)           # left arm up
-    rbox(0.13, -0.3, 0.42, 0.2)             # right arm horizontal
-    rbox(0.35, -0.3, 0.2, 0.6)              # right arm up
-    if spines:
-        for yy in np.linspace(-0.55, 0.55, 6):
-            for sx in (-1, 1):
-                x0 = cx + sx * 0.17 * s
-                ax.plot([x0, x0 + sx * 0.09 * s], [cy + yy * s, cy + (yy + 0.04) * s],
-                        color="#CFF3DC", lw=1.6, zorder=6)
-    ax.add_patch(FancyBboxPatch((cx - 0.5 * s, cy - 0.85 * s), 1.0 * s, 0.12 * s,
-                                boxstyle=f"round,pad=0,rounding_size={0.04 * s}",
-                                fc=MUTED, ec="none", alpha=0.6, zorder=4))
+def draw_sentry(ax, cx, cy, s, col=GREEN):
+    """SentrAI mark: a filled shield with a watching eye."""
+    pts = shield_outline(400) * 0.62 * s + np.array([cx, cy + 0.05 * s])
+    ax.add_patch(Polygon(pts, closed=True, fc=col, ec="none", zorder=5))
+    t = np.linspace(0, np.pi, 60)
+    w, h = 0.42 * s, 0.24 * s
+    ex, ey = cx, cy + 0.08 * s
+    top = np.c_[ex + w * np.cos(t), ey + h * np.sin(t)]
+    bottom = np.c_[ex + w * np.cos(t[::-1]), ey - h * np.sin(t[::-1])]
+    ax.add_patch(Polygon(np.r_[top, bottom], closed=True, fc=BG, ec="none", zorder=6))
+    ax.add_patch(Circle((ex, ey), 0.15 * s, fc="#CFF3DC", ec="none", zorder=7))
+    ax.add_patch(Circle((ex, ey), 0.07 * s, fc=BG, ec="none", zorder=8))
 
 
 def shield_outline(n=400):
@@ -181,17 +174,7 @@ def logo():
     pts = shield_outline(1200)
     ax.plot(np.r_[pts[:, 0], pts[0, 0]], np.r_[pts[:, 1], pts[0, 1]], color=GREEN, lw=2.2, alpha=0.9)
     ax.fill(pts[:, 0], pts[:, 1], color=GREEN_D, alpha=0.35, zorder=1)
-    spikes = shield_outline(46)
-    # outward normals
-    for i, (x, y) in enumerate(spikes):
-        nx_, ny_ = spikes[(i + 1) % len(spikes)] - spikes[i - 1]
-        nrm = np.array([ny_, -nx_])
-        nrm /= np.linalg.norm(nrm)
-        if nrm @ np.array([x, y + 0.1]) < 0:
-            nrm = -nrm
-        ax.plot([x, x + 0.16 * nrm[0]], [y, y + 0.16 * nrm[1]], color="#9FE3BA", lw=2.4,
-                solid_capstyle="round")
-    draw_cactus(ax, 0, 0.05, 1.05)
+    draw_sentry(ax, 0, -0.05, 1.05)
     ax.set_xlim(-1.3, 1.3)
     ax.set_ylim(-1.6, 1.4)
     fig.savefig(OUT / "logo.png", transparent=True, bbox_inches="tight", pad_inches=0.05)
@@ -269,7 +252,7 @@ def perimeter():
         c, s_ = np.cos(a), np.sin(a)
         ax.plot([R * c, (R - 0.22) * c], [R * s_, (R - 0.22) * s_], color="#9FE3BA", lw=2.4,
                 solid_capstyle="round")
-    draw_cactus(ax, 0, 0.05, 1.0)
+    draw_sentry(ax, 0, 0.05, 1.0)
     a = np.radians(35)
     ax.annotate("", xy=(2.25 * np.cos(a), 2.25 * np.sin(a)), xytext=(0.75 * np.cos(a), 0.75 * np.sin(a)),
                 arrowprops=dict(arrowstyle="-|>,head_width=0.5,head_length=0.8", color="#E0533F", lw=5))

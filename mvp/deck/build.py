@@ -1,6 +1,6 @@
-"""Build CactAI.pptx (13 slides, 16:9, dark theme) from pitch/SLIDES.md content.
+"""Build SentrAI.pptx (13 slides, 16:9, dark theme) from pitch/SLIDES.md content.
 
-Run make_assets.py first. Usage: python build.py  ->  CactAI.pptx next to this file.
+Run make_assets.py first. Usage: python build.py  ->  SentrAI.pptx next to this file.
 Sources for every number are in ../research/SOURCES.md.
 """
 from pathlib import Path
@@ -13,7 +13,7 @@ from pptx.util import Emu, Inches, Pt
 
 HERE = Path(__file__).parent
 ASSETS = HERE / "assets"
-OUT = HERE / "CactAI.pptx"
+OUT = HERE / "SentrAI.pptx"
 
 BG = RGBColor(0x0F, 0x1B, 0x14)
 CARD = RGBColor(0x18, 0x2A, 0x1F)
@@ -132,11 +132,11 @@ B = {"bold": True}
 def s01_title(prs):
     s = new_slide(prs, "Ishmail: do not read the slide. Go straight into the hook on slide 2.")
     picture(s, ASSETS / "logo.png", Inches(8.9), Inches(1.2), h=Inches(4.6))
-    text(s, MARGIN, Inches(2.0), Inches(8), Inches(1.2), "CactAI", size=72, bold=True)
+    text(s, MARGIN, Inches(2.0), Inches(8), Inches(1.2), "SentrAI", size=72, bold=True)
     text(s, MARGIN, Inches(3.25), Inches(7.8), Inches(1.2),
          "Accountability-based security for small teams", size=26, color=GREEN, bold=True)
     text(s, MARGIN, Inches(4.6), Inches(7.8), Inches(1.0),
-         "A cactus doesn't chase you. It just makes touching it a bad idea.", size=20, color=MUTED)
+         "A sentry doesn't chase you. It just guards the gate.", size=20, color=MUTED)
     text(s, MARGIN, Inches(6.2), Inches(11), Inches(0.5),
          "Cybersecurity + AI  ·  AI For Impact Hackathon 2026  ·  Erick Sientaro · Ishmail · Hozen",
          size=14, color=MUTED)
@@ -183,7 +183,7 @@ def s03_problem(prs, n):
 
 def s04_one_sentence(prs, n):
     s = new_slide(prs, "Ishmail: stress \"your own tolerance line\" and \"temporary\". Humans stay in charge.")
-    title(s, "CactAI in one sentence", "The idea")
+    title(s, "SentrAI in one sentence", "The idea")
     text(s, MARGIN, Inches(1.8), Inches(11.9), Inches(1.0),
          "Scores your risk from 0 to 100 across web, database and OS, warns the people you choose, "
          "and past your own tolerance line applies a temporary, reversible fix, with a tamper-evident record.",
@@ -300,14 +300,14 @@ def s09_report(prs, n):
 
 
 def s10_ethics(prs, n):
-    s = new_slide(prs, "Hozen: the attacker is pricked by attribution and prosecution, not retaliation. "
+    s = new_slide(prs, "Hozen: the attacker is stopped by attribution and prosecution, not retaliation. "
                        "There is no self-defence exception in the Computer Misuse Act.")
-    title(s, "Ethics: no hack back", "The spines stay on the cactus")
+    title(s, "Ethics: no hack back", "It holds the line and never crosses it")
     bullets(s, MARGIN, Inches(2.0), Inches(7.3), Inches(4.6), [
-        [("CactAI never attacks back.", B)],
+        [("SentrAI never attacks back.", B)],
         "Hacking back is a crime in Singapore: Computer Misuse Act s3 (access), s5 (modification), s7 (obstruction)",
         "Attacker IPs are often spoofed or hijacked innocent machines",
-        [("Our “prick”: ", B), ("block, tarpit, honeypots and honeytokens, evidence to SingCERT or the police", {})],
+        [("Our response: ", B), ("block, tarpit, honeypots and honeytokens, evidence to SingCERT or the police", {})],
     ], size=20, gap=16)
     picture(s, ASSETS / "perimeter.png", Inches(8.5), Inches(1.9), h=Inches(4.4))
     footer(s, "Computer Misuse Act 1993 (2020 Rev. Ed.), ss 3, 5, 7: sso.agc.gov.sg/Act/CMA1993")
@@ -328,28 +328,29 @@ def s11_architecture(prs, n, arch_png):
 
 
 def s12_roadmap(prs, n):
-    s = new_slide(prs, "Ishmail closes: \"Alerts tell you something is wrong. CactAI makes sure someone answers, and "
+    s = new_slide(prs, "Ishmail closes: \"Alerts tell you something is wrong. SentrAI makes sure someone answers, and "
                        "proves it when they don't.\"")
     title(s, "Roadmap and team", "What's next")
-    cols = [("Now (MVP)", GREEN, ["Web, DB and OS collectors", "Rules → Jev → fallback classifier",
-                                   "Cyanide AI planner + Needle two-key rule", "Blocklist containment with 2h TTL",
-                                   "Evidence report + hash chain"]),
-            ("Next", AMBER, ["Real firewall blocking (iptables, netsh)", "Tarpit, honeypots, honeytokens",
-                             "Windows Event Log agent", "Cloud config scan (S3, security groups)"]),
+    cols = [("Now (MVP)", GREEN, ["Web, DB, OS and server log collectors", "Rules → Jev → fallback, accuracy measured",
+                                   "AI planner, two-key approval, off switch", "Firewall blocking, dry-run first",
+                                   "Tarpit, honeypots, honeytokens", "Evidence report PDF + hash chain"]),
+            ("Next", AMBER, ["Live Jev and Telegram tests", "Windows Event Log agent",
+                             "Cloud config scan (S3, security groups)", "Teams, Slack and SMS escalation"]),
             ("Later", CRIT, ["Single-binary collectors", "Agents as separate services",
                              "Pilot with a Singapore private school"])]
     cw = Inches(3.8)
     for i, (h, col, items) in enumerate(cols):
         x = MARGIN + i * (cw + Inches(0.25))
-        box(s, x, Inches(1.85), cw, Inches(3.75), CARD, col)
+        box(s, x, Inches(1.85), cw, Inches(4.0), CARD, col)
         text(s, x + Inches(0.3), Inches(2.0), cw, Inches(0.5), h, size=22, bold=True, color=col)
-        bullets(s, x + Inches(0.3), Inches(2.6), cw - Inches(0.5), Inches(2.5), items, size=14, gap=4)
+        bullets(s, x + Inches(0.3), Inches(2.6), cw - Inches(0.5), Inches(2.5), items, size=13, gap=3)
     team = [("Erick Sientaro", "Developer"), ("Ishmail", "CEO, pitch"), ("Hozen", "Slides and sources")]
     for i, (name, role) in enumerate(team):
         x = MARGIN + i * (cw + Inches(0.25))
-        box(s, x, Inches(5.8), cw, Inches(1.0), None, LINE)
-        text(s, x, Inches(5.85), cw, Inches(0.5), name, size=19, bold=True, align=PP_ALIGN.CENTER)
-        text(s, x, Inches(6.3), cw, Inches(0.45), role, size=15, color=MUTED, align=PP_ALIGN.CENTER)
+        box(s, x, Inches(6.05), cw, Inches(0.7), None, LINE)
+        text(s, x, Inches(6.05), cw, Inches(0.7),
+             [[(name, {"bold": True, "size": 17}), ("  ·  " + role, {"color": MUTED, "size": 15})]],
+             align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
     page_no(s, n)
 
 
