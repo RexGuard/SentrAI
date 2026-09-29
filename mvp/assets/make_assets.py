@@ -302,7 +302,7 @@ def ethics():
         ("Disrupt or DDoS their system", "CMA s7: unauthorised obstruction of use"),
         ("Retaliate against an IP", "Often a spoofed or hijacked innocent machine"),
     ])
-    column(0.52, "Always: defend in place", GREEN, "✓", [
+    column(0.52, "Always: defend in place", BLUE, "✓", [
         ("Block", "Temporary IP block, 2h TTL, Countersign-approved"),
         ("Tarpit", "Slow the attacker so the attack gets expensive"),
         ("Honeytokens", "Decoy credentials and records that raise alarms"),

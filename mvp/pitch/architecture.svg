@@ -115,7 +115,7 @@
   <text x="515" y="462" class="s" text-anchor="middle">Network, own-asset scans</text>
   <text x="515" y="479" class="s" text-anchor="middle">propose only</text>
 
-  <rect x="620" y="418" width="170" height="74" rx="9" class="box" stroke="#1F5E3B" stroke-width="2.5"/>
+  <rect x="620" y="418" width="170" height="74" rx="9" class="box" stroke="#1F4FB8" stroke-width="2.5"/>
   <text x="705" y="443" class="h" text-anchor="middle">Garrison</text>
   <text x="705" y="462" class="s" text-anchor="middle">OS: Linux / Windows</text>
   <text x="705" y="479" class="s" text-anchor="middle">runs allowlisted playbooks</text>
