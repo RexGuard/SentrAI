@@ -1,25 +1,28 @@
-/* SentrAI Risk Console. Same tokens as the website's dark mode (assets/cactai.css). No external fonts,
-   so the console looks the same offline. */
+/* SentrAI Risk Console. Night-watch navy with a steel-blue brand accent; risk bands keep their own
+   green / amber / red. No external fonts, so the console looks the same offline. */
 :root {
-  --bg: #0f1612;
-  --surface: #16201a;
-  --surface-2: #1b2820;
-  --surface-3: #213026;
-  --ink: #e6efe8;
-  --ink-soft: #a3b5a8;
-  --ink-muted: #6f8175;
-  --line: #2a3a30;
-  --line-soft: #223027;
+  --bg: #0b111d;
+  --surface: #121a29;
+  --surface-2: #172134;
+  --surface-3: #1d2940;
+  --ink: #e7edf6;
+  --ink-soft: #a5b2c6;
+  --ink-muted: #6f7d93;
+  --line: #26324a;
+  --line-soft: #1e293d;
+  --brand: #7fb2ff;
+  --brand-2: #4c8dff;
+  --brand-soft: #16264a;
+  --brand-line: #2d4777;
   --green: #6fcf97;
-  --green-2: #4fb67c;
-  --green-soft: #1d3326;
+  --green-line: #2e5a41;
   --amber: #e8b34a;
   --red: #e5484d;
   --radius: 14px;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
-.stApp { background: radial-gradient(1100px 520px at 0% -12%, rgba(79,182,124,.09), transparent 62%), var(--bg); }
+.stApp { background: radial-gradient(1100px 520px at 0% -12%, rgba(76,141,255,.10), transparent 62%), var(--bg); }
 .block-container { padding-top: 1.6rem; padding-bottom: 3rem; max-width: 1480px; }
 header[data-testid="stHeader"] { background: transparent; }
 
@@ -34,10 +37,11 @@ section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] { gap: .15re
 section[data-testid="stSidebar"] div[data-testid="stMarkdownContainer"] { margin-bottom: 0; }
 .brand { display: flex; align-items: center; gap: .65rem; margin: -.4rem 0 1rem .2rem; }
 .brand-mark { width: 2.5rem; height: 2.5rem; border-radius: 12px; display: grid; place-items: center; font-size: 1.45rem;
-              background: linear-gradient(145deg, #1f5e3b, #16201a); border: 1px solid #2e5a41;
-              box-shadow: 0 0 0 4px rgba(79,182,124,.08); }
+              background: linear-gradient(145deg, #1f3f7a, #121a29); border: 1px solid var(--brand-line);
+              box-shadow: 0 0 0 4px rgba(76,141,255,.10); }
+.brand-mark svg { width: 1.9rem; height: 1.9rem; display: block; }
 .brand-name { font-size: 1.35rem; font-weight: 800; letter-spacing: -.02em; color: var(--ink); line-height: 1.1; }
-.brand-name span { color: var(--green); }
+.brand-name span { color: var(--brand); }
 .brand-tag { color: var(--ink-muted); font-size: .76rem; }
 
 .side-risk { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: .7rem .8rem .75rem;
@@ -57,9 +61,9 @@ section[data-testid="stSidebar"] .stButton button { justify-content: flex-start;
         color: var(--ink-soft); padding: .35rem .75rem; min-height: 2.25rem; font-weight: 500; transition: background .12s ease; }
 section[data-testid="stSidebar"] .stButton button > div { justify-content: flex-start; width: 100%; }
 section[data-testid="stSidebar"] .stButton button:hover { background: var(--surface-2); color: var(--ink); border-color: transparent; }
-section[data-testid="stSidebar"] .stButton button[kind="primary"] { background: var(--green-soft); color: var(--ink);
-        border: 1px solid #2e5a41; font-weight: 600; }
-section[data-testid="stSidebar"] .stButton button[kind="primary"] span[data-testid="stIconMaterial"] { color: var(--green); }
+section[data-testid="stSidebar"] .stButton button[kind="primary"] { background: var(--brand-soft); color: var(--ink);
+        border: 1px solid var(--brand-line); font-weight: 600; }
+section[data-testid="stSidebar"] .stButton button[kind="primary"] span[data-testid="stIconMaterial"] { color: var(--brand); }
 .side-sep { border-top: 1px solid var(--line-soft); margin: .9rem 0 .7rem; }
 .side-foot { color: var(--ink-muted); font-size: .74rem; line-height: 1.45; margin-top: .4rem; }
 
@@ -68,8 +72,8 @@ section[data-testid="stSidebar"] .stButton button[kind="primary"] span[data-test
              padding-bottom: 1rem; margin-bottom: 1.1rem; border-bottom: 1px solid var(--line-soft); }
 .page-title { display: flex; align-items: center; gap: .8rem; }
 .page-icon { width: 2.6rem; height: 2.6rem; border-radius: 12px; display: grid; place-items: center; font-size: 1.35rem;
-             background: var(--green-soft); color: var(--green); border: 1px solid #2e5a41; }
-.eyebrow { color: var(--green-2); font-size: .68rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
+             background: var(--brand-soft); color: var(--brand); border: 1px solid var(--brand-line); }
+.eyebrow { color: var(--brand-2); font-size: .68rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
 .page-title h1 { font-size: 1.6rem !important; font-weight: 800 !important; letter-spacing: -.02em; margin: 0 !important;
                  padding: 0 !important; line-height: 1.15 !important; color: var(--ink); }
 .page-note { color: var(--ink-soft); font-size: .84rem; margin-top: .1rem; }
@@ -95,14 +99,14 @@ div[data-testid="stVerticalBlockBorderWrapper"], div[data-testid="stForm"] { bor
 
 .sec-title { color: var(--ink); font-weight: 700; font-size: 1rem; margin: .1rem 0 .55rem 0; display: flex; gap: .5rem;
              align-items: center; flex-wrap: wrap; }
-.sec-title .mi { color: var(--green); }
+.sec-title .mi { color: var(--brand); }
 .sec-title small { color: var(--ink-muted); font-weight: 500; font-size: .76rem; }
 
 .empty { display: flex; align-items: center; gap: .6rem; color: var(--ink-soft); font-size: .86rem; padding: .9rem 1rem;
          border: 1px dashed var(--line); border-radius: 12px; background: rgba(255,255,255,.012);
          margin-bottom: .8rem; }
 .empty .mi { color: var(--ink-muted); font-size: 1.3rem; }
-.empty.good { border-color: #2e5a41; background: rgba(79,182,124,.06); color: var(--ink); }
+.empty.good { border-color: var(--green-line); background: rgba(79,182,124,.06); color: var(--ink); }
 .empty.good .mi { color: var(--green); }
 
 .offline { border: 1px solid rgba(229,72,77,.45); background: rgba(229,72,77,.08); border-radius: var(--radius);
@@ -127,10 +131,10 @@ div[data-testid="stVerticalBlockBorderWrapper"], div[data-testid="stForm"] { bor
 .detail-grid b { display: block; color: var(--ink); font-size: .95rem; font-weight: 600; overflow-wrap: anywhere; }
 .detail-grid span { color: var(--ink-muted); font-size: .66rem; text-transform: uppercase; letter-spacing: .09em; font-weight: 700; }
 .explain { color: var(--ink-soft); font-size: .88rem; margin: 0 0 .6rem 0; }
-.reco { border: 1px solid #2e5a41; background: var(--green-soft); padding: .7rem .9rem; border-radius: 12px; color: var(--ink);
+.reco { border: 1px solid var(--brand-line); background: var(--brand-soft); padding: .7rem .9rem; border-radius: 12px; color: var(--ink);
         display: flex; gap: .7rem; align-items: flex-start; }
-.reco .mi { color: var(--green); font-size: 1.3rem; margin-top: .1rem; }
-.reco b { color: var(--green); font-size: .66rem; letter-spacing: .1em; text-transform: uppercase; display: block; margin-bottom: .1rem; }
+.reco .mi { color: var(--brand); font-size: 1.3rem; margin-top: .1rem; }
+.reco b { color: var(--brand); font-size: .66rem; letter-spacing: .1em; text-transform: uppercase; display: block; margin-bottom: .1rem; }
 div[data-testid="stExpander"] details { border-radius: var(--radius); background: var(--surface); }
 div[data-testid="stExpander"] summary { font-weight: 600; }
 
@@ -146,11 +150,11 @@ div[data-testid="stExpander"] summary { font-weight: 600; }
 .agent { font-weight: 700; }
 .feed-type { color: var(--ink); font-weight: 600; }
 .feed-sum { color: var(--ink-soft); }
-.feed-hash { color: #52645a; font-family: var(--mono); font-size: .68rem; }
+.feed-hash { color: #54627a; font-family: var(--mono); font-size: .68rem; }
 
 /* ------------------------------------------------------------ forms */
 div[data-testid="stForm"] { background: rgba(255,255,255,.012); }
-.stButton button[kind="primary"], .stFormSubmitButton button[kind="primaryFormSubmit"] { color: #0f1612; font-weight: 700; }
+.stButton button[kind="primary"], .stFormSubmitButton button[kind="primaryFormSubmit"] { color: #0b111d; font-weight: 700; }
 .field-hint { color: var(--ink-muted); font-size: .76rem; margin: -.3rem 0 .4rem 0; }
 
 @media (max-width: 900px) { .detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
