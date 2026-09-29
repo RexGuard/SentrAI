@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 from app.config import Settings
 from app.main import create_app
 
-from .conftest import brute_force, ev
+from .conftest import AUTH, brute_force, ev
 
 SQLI = "GET /search?q=' OR 1=1 -- 200"
 
@@ -95,13 +95,13 @@ def test_expired_hotpatch_cannot_be_made_permanent_while_off(client):
 
 def test_switch_survives_reset_and_restart(tmp_path):
     s = Settings(db_path=tmp_path / "p.db", background=False)
-    with TestClient(create_app(s)) as c:
+    with TestClient(create_app(s), headers=AUTH) as c:
         turn_off(c)
         c.post("/demo/reset")
         assert c.get("/protection").json()["monitor_only"] is True
-    with TestClient(create_app(Settings(db_path=tmp_path / "p.db", background=False))) as c:
+    with TestClient(create_app(Settings(db_path=tmp_path / "p.db", background=False)), headers=AUTH) as c:
         p = c.get("/protection").json()
         assert p["monitor_only"] is True and p["changed_by"] == "erick"
     # An explicit CACTAI_MONITOR_ONLY wins at start.
-    with TestClient(create_app(Settings(db_path=tmp_path / "p.db", background=False, monitor_only="0"))) as c:
+    with TestClient(create_app(Settings(db_path=tmp_path / "p.db", background=False, monitor_only="0")), headers=AUTH) as c:
         assert c.get("/protection").json()["monitor_only"] is False

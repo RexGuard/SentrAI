@@ -9,7 +9,7 @@ from app.firewall import FirewallResponder, block_commands, from_settings, unsaf
 from app.main import create_app
 from app.responders import BlocklistResponder
 
-from .conftest import brute_force
+from .conftest import AUTH, brute_force
 
 IP = "203.0.113.45"
 
@@ -187,7 +187,7 @@ def fw_client(tmp_path):
                      firewall="iptables", firewall_enforce=enforce)
         app = create_app(s)
         app.state.core.blocklist_responder.runner = runner
-        return TestClient(app)
+        return TestClient(app, headers=AUTH)
     return make
 
 

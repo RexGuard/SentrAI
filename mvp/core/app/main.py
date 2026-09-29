@@ -10,11 +10,11 @@ import os
 from typing import Any, Optional, Union
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, Response
 from pydantic import BaseModel, ConfigDict
 
 from .config import Settings, sign
-from .reports import build_report, render_markdown
+from .reports import build_report, render_markdown, render_pdf
 from . import ai
 from .chat import OperatorChat, default_chat_provider
 from .discovery import Discovery
