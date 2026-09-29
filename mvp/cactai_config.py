@@ -20,6 +20,7 @@ Run (any venv, stdlib only):
     python cactai_config.py token        print the core API token (made and saved on first use)
     python cactai_config.py admin        make the dashboard sign-in if there is none (prints the password once)
     python cactai_config.py admin --email you@example.com --reset   new email and a new password
+    python cactai_config.py admin --password-stdin                  set the password read from stdin
 """
 from __future__ import annotations
 
@@ -381,18 +382,23 @@ def login_required() -> bool:
     return os.environ.get(LOGIN_ENV, "").strip().lower() not in ("off", "0", "no", "false")
 
 
-def ensure_admin(email: str = "", reset: bool = False) -> tuple[str, str]:
-    """Make sure the dashboard has a sign-in. Returns (email, password), password "" when one was kept.
+def ensure_admin(email: str = "", reset: bool = False, password: str = "") -> tuple[str, str]:
+    """Make sure the dashboard has a sign-in. Returns (email, new password), password "" when one was kept.
 
-    A new machine, --reset, or a first --email gets a new random password (saved as a hash only).
+    A given password (at least MIN_PASSWORD characters, else ValueError) is saved as a hash and
+    returned. Otherwise a new machine or reset=True gets a random one. Any setup flow (the wizard,
+    install.sh, a chat) can call this with what it asked for.
     """
+    if password and len(password) < MIN_PASSWORD:
+        raise ValueError(f"the password needs at least {MIN_PASSWORD} characters")
+    if email and "@" not in email:
+        raise ValueError("the sign-in email needs an @")
     values = {f.env: f.default for f in FIELDS.values()} | read()
     changed = False
     if email and email != values.get(EMAIL_ENV):
         values[EMAIL_ENV], changed = email, True
-    password = ""
-    if reset or not values.get(HASH_ENV):
-        password = new_password()
+    if password or reset or not values.get(HASH_ENV):
+        password = password or new_password()
         values[HASH_ENV], changed = hash_password(password), True
     if changed or not config_path().exists():
         save(values)
@@ -539,17 +545,25 @@ def main(argv: list[str]) -> int:
         print(api_token())
         return 0
     if argv[:1] == ["admin"]:
-        rest, email, reset = argv[1:], "", False
+        rest, email, reset, typed = argv[1:], "", False, ""
         while rest:
             if rest[0] == "--email" and len(rest) > 1 and "@" in rest[1]:
                 email, rest = rest[1].strip(), rest[2:]
             elif rest[0] == "--reset":
                 reset, rest = True, rest[1:]
+            elif rest[0] == "--password-stdin":
+                typed, rest = sys.stdin.readline().rstrip("\r\n"), rest[1:]
             else:
-                print("usage: python cactai_config.py admin [--email you@example.com] [--reset]")
+                print("usage: python cactai_config.py admin [--email you@example.com] [--reset | --password-stdin]")
                 return 2
-        email, password = ensure_admin(email, reset)
-        if password:
+        try:
+            email, password = ensure_admin(email, reset, typed)
+        except ValueError as e:
+            print(f"Dashboard sign-in not changed: {e}.", file=sys.stderr)
+            return 2
+        if typed:
+            print(f"Dashboard sign-in: {email}  (the password you chose)")
+        elif password:
             print(f"Dashboard sign-in: {email}  password: {password}")
             print("  (shown once: write it down. Only its hash is saved; admin --reset makes a new one)")
         else:

@@ -23,6 +23,8 @@
 #   --dashboard-local      keep the dashboard on this server only (reach it through an SSH tunnel)
 #   --admin-email EMAIL    the dashboard sign-in email (asked on a first install when not given)
 #   --reset-password       make a new dashboard password (shown once at the end)
+#   --no-questions         never ask; with a terminal and without this, the installer asks for the
+#                          dashboard port, who may open it, and the sign-in email and password
 #   --no-notifier          do not enable the Telegram notifier service
 #   --no-start             install and enable, but do not start or restart anything
 #
@@ -49,6 +51,7 @@ ALLOW=()
 DASH_LOCAL=0
 ADMIN_EMAIL=""
 RESET_PW=0
+ASK=1
 declare -A SET=()  # env values given on the command line
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -63,9 +66,10 @@ while [ $# -gt 0 ]; do
         --dashboard-local) DASH_LOCAL=1; shift ;;
         --admin-email) ADMIN_EMAIL="$2"; shift 2 ;;
         --reset-password) RESET_PW=1; shift ;;
+        --no-questions|-y) ASK=0; shift ;;
         --no-notifier) NOTIFIER=0; shift ;;
         --no-start) START=0; shift ;;
-        -h|--help) sed -n '2,42p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,44p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "Unknown option: $1 (see --help)" >&2; exit 2 ;;
     esac
 done
@@ -90,6 +94,55 @@ ENV_FILE=/etc/cactai/cactai.env
 STATE=/var/lib/cactai
 MVP="$PREFIX/mvp"
 [ "$MVP" != "$SRC" ] || die "--prefix must differ from this checkout"
+
+# --- questions: the web dashboard ------------------------------------------
+# Asked only with a terminal, and only for what the command line left open. Enter keeps the value
+# in [brackets]: the current one on an upgrade, else a sensible default.
+existing() { if [ -f "$ENV_FILE" ]; then sed -n "s/^$1=//p" "$ENV_FILE" | tail -1; fi; }
+saved_config="$(existing CACTAI_CONFIG)"; saved_config="${saved_config:-$STATE/config.json}"
+ADMIN_PASSWORD=""
+if [ "$ASK" = 1 ] && [ -t 0 ]; then
+    echo "SentrAI setup: the web dashboard. Press Enter to keep the value in [brackets]."
+    if [ -z "${SET[CACTAI_DASHBOARD_PORT]:-}" ]; then
+        cur="$(existing CACTAI_DASHBOARD_PORT)"
+        while :; do
+            read -r -p "  Dashboard port [${cur:-8501}]: " a || a=""
+            case "$a" in '') break ;; *[!0-9]*) echo "    Please enter a number." ;; *) SET[CACTAI_DASHBOARD_PORT]="$a"; break ;; esac
+        done
+    fi
+    if [ "${#ALLOW[@]}" = 0 ] && [ "$DASH_LOCAL" = 0 ]; then
+        cur="$(existing CACTAI_DASHBOARD_ALLOW)"
+        if [ -z "$cur" ]; then
+            for ip in "${PROTECT[@]}"; do case "$ip" in 127.*|::1|localhost) ;; *) cur="${cur:+$cur,}$ip" ;; esac; done
+        fi
+        # The address this SSH session comes from is usually the admin's own.
+        if [ -z "$cur" ]; then cur="$(who -m 2>/dev/null | sed -n 's/.*(\([0-9a-fA-F.:]*\)).*/\1/p' | head -1 || true)"; fi
+        echo "  Who may open the dashboard? Your IP address(es), comma-separated. Everyone else is"
+        echo "  blocked. Or type local to keep it on this server (reach it through an SSH tunnel)."
+        read -r -p "  Allowed IPs [${cur:-local}]: " a || a=""
+        a="${a:-${cur:-local}}"
+        if [ "$a" = local ]; then DASH_LOCAL=1; else IFS=', ' read -r -a ALLOW <<< "$a"; fi
+    fi
+    if [ -z "$ADMIN_EMAIL" ]; then
+        cur="$(grep -o '"CACTAI_DASHBOARD_EMAIL": "[^"]*"' "$saved_config" 2>/dev/null | sed 's/.*: "\(.*\)"/\1/' || true)"
+        while :; do
+            read -r -p "  Dashboard sign-in email [${cur:-admin@sentrai.local}]: " a || a=""
+            case "$a" in '') ADMIN_EMAIL="$cur"; break ;; *@*) ADMIN_EMAIL="$a"; break ;; *) echo "    Please enter an email address." ;; esac
+        done
+    fi
+    if grep -q '"CACTAI_DASHBOARD_PASSWORD_HASH": "pbkdf2' "$saved_config" 2>/dev/null; then keep="keep the current one"
+    else keep="make one for you"; fi
+    if [ "$RESET_PW" = 0 ]; then
+        while :; do
+            read -r -s -p "  Dashboard password, at least 8 characters (Enter to $keep): " p1 || p1=""; echo
+            [ -n "$p1" ] || break
+            if [ "${#p1}" -lt 8 ]; then echo "    Use at least 8 characters."; continue; fi
+            read -r -s -p "  Type it again: " p2 || p2=""; echo
+            if [ "$p1" = "$p2" ]; then ADMIN_PASSWORD="$p1"; break; fi
+            echo "    The two passwords differ; try again."
+        done
+    fi
+fi
 
 # --- service account -------------------------------------------------------
 if ! id "$SVC_USER" >/dev/null 2>&1; then
@@ -250,15 +303,16 @@ set -a; . $ENV_FILE; set +a
 exec runuser -u $SVC_USER -- env HOME=$STATE $MVP/lab/.venv/bin/python $MVP/cactai_config.py admin "\$@"
 EOF
 chmod 0755 /usr/local/bin/cactai-admin
-CONFIG="$(get_env CACTAI_CONFIG)"
-if [ -z "$ADMIN_EMAIL" ] && [ -t 0 ] && ! grep -q '"CACTAI_DASHBOARD_PASSWORD_HASH": "pbkdf2' "$CONFIG" 2>/dev/null; then
-    read -r -p "Dashboard sign-in email [admin@sentrai.local]: " ADMIN_EMAIL || true
-    case "$ADMIN_EMAIL" in ''|*@*) ;; *) echo "Not an email address; using admin@sentrai.local"; ADMIN_EMAIL="" ;; esac
-fi
 admin_args=()
 if [ -n "$ADMIN_EMAIL" ]; then admin_args+=(--email "$ADMIN_EMAIL"); fi
 if [ "$RESET_PW" = 1 ]; then admin_args+=(--reset); fi
-SIGN_IN="$(/usr/local/bin/cactai-admin "${admin_args[@]}")" || die "could not set up the dashboard sign-in"
+if [ -n "$ADMIN_PASSWORD" ]; then
+    SIGN_IN="$(printf '%s\n' "$ADMIN_PASSWORD" | /usr/local/bin/cactai-admin "${admin_args[@]}" --password-stdin)" \
+        || die "could not set up the dashboard sign-in"
+else
+    SIGN_IN="$(/usr/local/bin/cactai-admin "${admin_args[@]}" </dev/null)" || die "could not set up the dashboard sign-in"
+fi
+unset ADMIN_PASSWORD
 
 # --- dashboard HTTPS and firewall rule -------------------------------------
 install -m 0755 "$SRC/deploy/dashboard-firewall.sh" /usr/local/sbin/cactai-dashboard-firewall

@@ -224,3 +224,23 @@ def test_old_plain_dashboard_password_is_kept_only_as_a_hash(config_file):
     cfg.save(values)
     assert "cactus-cactus" not in config_file.read_text()
     assert cfg.ensure_admin()[1] == ""  # the old password still signs in; nothing new made
+
+
+def test_admin_takes_a_chosen_password(config_file, monkeypatch):
+    for name in (cfg.EMAIL_ENV, cfg.HASH_ENV, cfg.PASSWORD_ENV):
+        monkeypatch.delenv(name, raising=False)
+    with pytest.raises(ValueError):
+        cfg.ensure_admin("me@example.com", password="short")
+    assert cfg.ensure_admin("me@example.com", password="chosen-pass-1") == ("me@example.com", "chosen-pass-1")
+    assert cfg.check_password("chosen-pass-1", cfg.dashboard_login()["hash"])
+
+
+def test_admin_command_reads_the_password_from_stdin(config_file, monkeypatch, capsys):
+    import io
+    for name in (cfg.EMAIL_ENV, cfg.HASH_ENV, cfg.PASSWORD_ENV):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr("sys.stdin", io.StringIO("from-stdin-pass\n"))
+    assert cfg.main(["admin", "--email", "ops@example.com", "--password-stdin"]) == 0
+    out = capsys.readouterr().out
+    assert "ops@example.com" in out and "from-stdin-pass" not in out
+    assert cfg.check_password("from-stdin-pass", cfg.dashboard_login()["hash"])

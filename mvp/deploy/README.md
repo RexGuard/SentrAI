@@ -8,9 +8,21 @@ git clone https://github.com/RexGuard/SentrAI && cd SentrAI/mvp
 sudo ./deploy/install.sh --protect 203.0.113.10 --admin-email you@example.com
 ```
 
-`--protect` is your own admin IP: SentrAI never blocks it, and the dashboard is opened to it (and
-only it). At the end the installer prints the dashboard address and the sign-in email and password.
-The password is shown only then; `sudo cactai-admin --reset` makes a new one.
+Run from a terminal, the installer then asks about the web dashboard, with the answer in
+[brackets] kept when you press Enter:
+
+```text
+  Dashboard port [8501]:
+  Allowed IPs [203.0.113.10]:            the IPs that may open it (defaults to --protect, or the
+                                          address your SSH session comes from); "local" = tunnel only
+  Dashboard sign-in email [admin@sentrai.local]:
+  Dashboard password (Enter to make one for you):   typed twice, at least 8 characters
+```
+
+It skips any question the command line already answers (`--dashboard-port`, `--dashboard-allow`,
+`--dashboard-local`, `--admin-email`), and all of them with `--no-questions` or without a terminal.
+On an upgrade the brackets hold the current values. At the end it prints the dashboard address and
+the sign-in; a password it made is shown only then. `sudo cactai-admin --reset` makes a new one.
 
 Needs systemd and Python 3.10+ with the `venv` module (Debian/Ubuntu: `sudo apt install python3-venv`).
 Run the same command again from a newer checkout to upgrade: settings and state are kept, and
@@ -47,6 +59,7 @@ The demo portal and attack scripts are not installed as services.
 --dashboard-local                      keep the dashboard on the server (SSH tunnel only)
 --admin-email EMAIL                    dashboard sign-in email (asked on a first install)
 --reset-password                       new dashboard password, printed at the end
+--no-questions (-y)                    never ask (what a script or CI run gets anyway)
 --no-notifier                          leave the Telegram notifier off
 --no-start                             install and enable without starting
 --prefix DIR / --user NAME
