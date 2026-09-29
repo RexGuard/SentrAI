@@ -1,4 +1,4 @@
-"""Pure formatting helpers for CactAI operator alerts (Telegram HTML + console)."""
+"""Pure formatting helpers for SentrAI operator alerts (Telegram HTML + console)."""
 from __future__ import annotations
 
 import html
@@ -20,8 +20,8 @@ KIND_HEADERS = {
     "reminder": ("⏰", "Reminder: still unacknowledged"),
     "sla_breach": ("⏰", "SLA breached"),
     "escalation": ("📣", "Escalation"),
-    "autonomous_action": ("🌵", "Autonomous containment applied"),
-    "containment": ("🌵", "Containment applied"),
+    "autonomous_action": ("🛡️", "Autonomous containment applied"),
+    "containment": ("🛡️", "Containment applied"),
     "report": ("📄", "Evidence report ready"),
 }
 
@@ -169,7 +169,7 @@ def format_console(notification: dict, incident: dict | None = None, risk: dict 
                     + "  (use the dashboard in console mode)")
 
     inner = width - 4
-    top = f"┌─ CactAI · {f['header']} "
+    top = f"┌─ SentrAI · {f['header']} "
     lines = [c[f["band"]] + top + "─" * max(0, width - len(top) - 1) + "┐" + c["reset"]]
     for text in body:
         for chunk in _wrap(text, inner):

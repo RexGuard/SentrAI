@@ -14,7 +14,7 @@ Guardrails, in order:
   1. Claude may only pick action types the installed responders handle, and entity targets
      (IP, account, host) must have been seen in this incident's own events.
   2. Needle still reviews every autonomous action (confidence, threshold, allowlist,
-     protected assets). Cyanide can make CactAI more careful, never less.
+     protected assets). Cyanide can make SentrAI more careful, never less.
   3. Every action still expires after the TTL unless a human makes it permanent.
   4. No API key, a timeout or a bad answer: Cyanide falls back to Saguaro's playbooks.
 
@@ -72,15 +72,15 @@ PLAN_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
 }
 
-SYSTEM_PROMPT = """You are Cyanide, the incident-response orchestrator inside CactAI, a defensive security \
+SYSTEM_PROMPT = """You are Cyanide, the incident-response orchestrator inside SentrAI, a defensive security \
 tool for small organisations with one or two IT staff.
 
 For each incident you receive the organisation's system profile, the incident, the raw log lines behind it \
 and the containment actions installed on this system. Choose the containment steps that fit THIS system, \
-and decide whether CactAI may apply them on its own when the operator has not responded.
+and decide whether SentrAI may apply them on its own when the operator has not responded.
 
 Rules:
-- CactAI only defends inside its own network. Never propose counter-attacks or anything aimed outside it.
+- SentrAI only defends inside its own network. Never propose counter-attacks or anything aimed outside it.
 - Only use action types from the installed list. For block_ip, lock_user, kill_process and revoke_public_acl \
 the target must be an IP, account or host that appears in the incident.
 - Every action is temporary (it expires unless a human makes it permanent), so prefer the smallest set of steps \

@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Stops only the CactAI demo windows started by run_demo.ps1 (PIDs from mvp\.demo_pids.json).
+  Stops only the SentrAI demo windows started by run_demo.ps1 (PIDs from mvp\.demo_pids.json).
 #>
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $PidFile = Join-Path $Root ".demo_pids.json"
@@ -22,4 +22,4 @@ foreach ($item in @($items)) {
     }
 }
 Remove-Item $PidFile -Force
-Write-Host "CactAI demo stopped."
+Write-Host "SentrAI demo stopped."

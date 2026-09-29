@@ -1,11 +1,11 @@
-# Running CactAI as server services
+# Running SentrAI as server services
 
 `run_demo.sh` is for recording the demo: everything stops when you run `stop_demo.sh`, and the
-clock runs fast. On a real Linux server, install CactAI as systemd services instead.
+clock runs fast. On a real Linux server, install SentrAI as systemd services instead.
 
 ```bash
 git clone https://github.com/RexGuard/cactai && cd cactai/mvp
-sudo ./deploy/install.sh --protect 203.0.113.10       # your own admin IP, so CactAI never blocks it
+sudo ./deploy/install.sh --protect 203.0.113.10       # your own admin IP, so SentrAI never blocks it
 ```
 
 Needs systemd and Python 3.10+ with the `venv` module (Debian/Ubuntu: `sudo apt install python3-venv`).
@@ -82,6 +82,6 @@ sudo ./deploy/uninstall.sh            # keeps /etc/cactai and /var/lib/cactai; -
 
 ## Not covered yet
 
-This makes CactAI run properly as services. It does not yet make it understand or stop real
+This makes SentrAI run properly as services. It does not yet make it understand or stop real
 attacks: the rules still expect the demo portal's log format, and a block only reaches the demo
 portal's blocklist, not nginx, sshd or the firewall.

@@ -1,11 +1,11 @@
-# CactAI MVP
+# SentrAI MVP
 
-A working prototype of CactAI that runs natively on one Windows laptop or Linux machine (no Docker).
+A working prototype of SentrAI that runs natively on one Windows laptop or Linux machine (no Docker).
 
 | Component | Folder | What it does | URL |
 | --- | --- | --- | --- |
 | Core | `core/` | FastAPI risk engine, rules + Jev classifier, agents (Saguaro, Root, Reservoir, Areole, Needle, Watchdog, Scribe, HelpDesk), TTL hotpatches, hash-chained audit log, evidence reports (Markdown/JSON/PDF) | http://127.0.0.1:8000 |
-| Target app | `lab/target_app/` | Fictional "Aegis Academy Student Portal" that writes logs and enforces CactAI's blocklist (HTTP 403) | http://127.0.0.1:5000 |
+| Target app | `lab/target_app/` | Fictional "Aegis Academy Student Portal" that writes logs and enforces SentrAI's blocklist (HTTP 403) | http://127.0.0.1:5000 |
 | Collector | `lab/collector/` | Tails the portal's web, DB and OS logs and sends normalized events to core | |
 | Attacks / replay | `lab/attacks/`, `lab/replay/` | Localhost-only attack scripts and a scripted replay for backup recordings | |
 | Dashboard | `dashboard/` | Streamlit console with a sidebar menu: Configuration (home), Approvals, Collector, Classifier, Action taker, Review (gauge, threshold, risk accumulated), Reports, Audit trail. Menu bubbles flag new malicious activity per part | http://127.0.0.1:8501 |
@@ -62,7 +62,7 @@ If port 8000 or 8501 is taken, pick others: `./run_demo.sh --core-port 8100 --da
 
 ### On a server (systemd services)
 
-To keep CactAI running on a Linux server, install it as services instead of running the demo:
+To keep SentrAI running on a Linux server, install it as services instead of running the demo:
 `sudo ./deploy/install.sh --protect <your admin IP>`. See [deploy/README.md](deploy/README.md).
 
 ### What you should see
@@ -72,7 +72,7 @@ The dashboard opens on Configuration. Open **Review** for the gauge; the Collect
 1. Benign traffic: no incidents, gauge green.
 2. Brute force from `203.0.113.45`: incident `RSK-2026-081`, risk about 39 (amber), operator alert (Telegram or the notifier window).
 3. Nobody acknowledges: +5 per demo hour, SLA reminders, escalation to the team lead at red.
-4. SQL injection from `198.51.100.23`: risk crosses 80, Needle approves, both attackers are blocked and `admin` is locked for 2 demo hours. The portal returns "Blocked by CactAI" (403) to them. Your own machine (127.0.0.1) is never blocked.
+4. SQL injection from `198.51.100.23`: risk crosses 80, Needle approves, both attackers are blocked and `admin` is locked for 2 demo hours. The portal returns "Blocked by SentrAI" (403) to them. Your own machine (127.0.0.1) is never blocked.
 5. The report (dashboard **Reports** page, or `http://127.0.0.1:8000/reports/RSK-2026-081.md`) shows the timeline of inaction, "Ack: none" and the audit chain hash.
 6. Roll back or make the fix permanent from the dashboard **Approvals** page.
 
@@ -190,7 +190,7 @@ port 587, and an app password. The audit log records the channel used (`telegram
 
 ## The three parts
 
-CactAI is a pipeline of three pluggable parts. Each part is one small base class with
+SentrAI is a pipeline of three pluggable parts. Each part is one small base class with
 one job; to add a new one, subclass it and add it to the list shown.
 
 | Part | Base class | Implement | Built-in versions | Register in |
@@ -233,7 +233,7 @@ GitHub Actions (`.github/workflows/tests.yml`) runs the core, lab, dashboard and
 
 - Attack scripts refuse any host other than localhost and any port other than 5000.
 - `/admin/run` never executes anything; it only logs a simulated "shell spawned" event.
-- Containment only changes CactAI's own blocklist, which the portal enforces. No firewall, OS or network settings are touched.
+- Containment only changes SentrAI's own blocklist, which the portal enforces. No firewall, OS or network settings are touched.
 - All member data is synthetic.
 
 ## Known limits

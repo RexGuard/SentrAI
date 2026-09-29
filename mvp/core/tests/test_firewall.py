@@ -159,7 +159,7 @@ def test_nftables_sets_up_its_table_once():
 
 def test_netsh_rule_per_address():
     add, check, remove = block_commands("netsh", IP)
-    assert add == ["netsh", "advfirewall", "firewall", "add", "rule", f"name=CactAI-block-{IP}",
+    assert add == ["netsh", "advfirewall", "firewall", "add", "rule", f"name=SentrAI-block-{IP}",
                    "dir=in", "action=block", f"remoteip={IP}"]
     assert check[3:5] == ["show", "rule"] and remove[3:5] == ["delete", "rule"]
 

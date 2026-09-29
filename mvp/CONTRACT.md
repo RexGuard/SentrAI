@@ -1,4 +1,4 @@
-# CactAI MVP: Shared Contract
+# SentrAI MVP: Shared Contract
 
 Every component MUST follow this file. The design source of truth is `../Cybersecurity + AI.md`.
 

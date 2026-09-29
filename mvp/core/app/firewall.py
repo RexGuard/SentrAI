@@ -126,7 +126,7 @@ def block_commands(backend: str, ip: str) -> tuple[list[str], list[str], list[st
         rule = ["INPUT", "-s", ip, "-m", "comment", "--comment", IPT_COMMENT, "-j", "DROP"]
         return [tool, "-I", *rule], [tool, "-C", *rule], [tool, "-D", *rule]
     if backend == "netsh":
-        name = f"name=CactAI-block-{ip}"
+        name = f"name=SentrAI-block-{ip}"
         base = ["netsh", "advfirewall", "firewall"]
         return ([*base, "add", "rule", name, "dir=in", "action=block", f"remoteip={ip}"],
                 [*base, "show", "rule", name],

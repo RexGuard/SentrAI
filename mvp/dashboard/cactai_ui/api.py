@@ -1,4 +1,4 @@
-"""Thin HTTP client for the CactAI core API (see mvp/CONTRACT.md)."""
+"""Thin HTTP client for the SentrAI core API (see mvp/CONTRACT.md)."""
 from __future__ import annotations
 
 from typing import Any

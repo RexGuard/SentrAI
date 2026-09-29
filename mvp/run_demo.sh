@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Starts the whole CactAI demo on Linux or macOS (the bash twin of run_demo.ps1).
+# Starts the whole SentrAI demo on Linux or macOS (the bash twin of run_demo.ps1).
 #
 #   core       FastAPI risk engine + agents     http://127.0.0.1:8000  (--core-port)
 #   target     Aegis Academy portal (fake)      http://127.0.0.1:5000
@@ -18,7 +18,7 @@
 #   ./run_demo.sh --core-port 8100      when 8000 is taken (or set CACTAI_CORE_PORT; the dashboard
 #                                       port can come from CACTAI_DASHBOARD_PORT the same way)
 #
-# For a server that should keep CactAI running, use deploy/install.sh (systemd services) instead.
+# For a server that should keep SentrAI running, use deploy/install.sh (systemd services) instead.
 #
 # Needs python3 with the venv module (Debian/Ubuntu: sudo apt install python3-venv).
 set -euo pipefail
@@ -153,7 +153,7 @@ wait_http() {  # url [seconds]
 }
 
 echo
-echo "CactAI demo  (mode: $MODE, DEMO_SPEED=$DEMO_SPEED -> 1 real minute = $(awk "BEGIN{printf \"%.2f\", $DEMO_SPEED/60}") demo hours)"
+echo "SentrAI demo  (mode: $MODE, DEMO_SPEED=$DEMO_SPEED -> 1 real minute = $(awk "BEGIN{printf \"%.2f\", $DEMO_SPEED/60}") demo hours)"
 
 start_component core "$ROOT/core" "$PY_CORE" -m uvicorn app.main:app --host 127.0.0.1 --port "$CORE_PORT"
 wait_http "$CORE/health" || echo "Core did not come up on :$CORE_PORT. Check .demo_logs/core.log" >&2

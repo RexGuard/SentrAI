@@ -139,7 +139,7 @@ def to_markdown(res: dict[str, Any]) -> str:
     heads = {"rules": "Rules", "fallback": "Keyword fallback", "chain": "Chain (as shipped)",
              "jev": "Jev", "chain+jev": "Chain with Jev"}
     lines = [
-        "# CactAI classifier accuracy",
+        "# SentrAI classifier accuracy",
         "",
         f"{res['events']} labelled events ({', '.join(f'{v} {k}' for k, v in res['by_origin'].items())}). "
         "Built by `eval/build_dataset.py`, scored by `eval/evaluate.py`.",

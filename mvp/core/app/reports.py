@@ -122,7 +122,7 @@ def build_report(core: "Saguaro", iid: str) -> dict[str, Any]:
                 "ack": ack_text,
                 "deliveries": deliveries,
                 "statement": "Delivery receipts prove an alert reached the channel (message id + timestamp) and an "
-                             "acknowledgement proves the operator responded. Without an acknowledgement CactAI cannot "
+                             "acknowledgement proves the operator responded. Without an acknowledgement SentrAI cannot "
                              "prove the alert was read, so it reports 'Delivered <ts>, Ack: none'.",
             },
             "audit_proof": {
@@ -222,7 +222,7 @@ def render_pdf(r: dict[str, Any]) -> bytes:
     inc = r["incident"]
     proof = r["audit_proof"]
     doc = PdfDoc(title=f"{r['title']} {r['report_id']}",
-                 footer=f"CactAI  |  {r['report_id']}  |  generated {r['generated_at']}  |  chain head {proof['chain_head_hash'][:16]}...")
+                 footer=f"SentrAI  |  {r['report_id']}  |  generated {r['generated_at']}  |  chain head {proof['chain_head_hash'][:16]}...")
 
     # Title band across the top of page 1
     top = doc.y + 42

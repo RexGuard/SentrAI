@@ -1,4 +1,4 @@
-"""CactAI operator dashboard (Streamlit, http://127.0.0.1:8501).
+"""SentrAI operator dashboard (Streamlit, http://127.0.0.1:8501).
 
 The sidebar is the menu: Configuration (the home page), Approvals, Chat (talk with the
 orchestrator), one page per part of the pipeline (Collector, Classifier, Action taker), Review,
@@ -32,7 +32,7 @@ DEFAULT_CORE = os.environ.get("CACTAI_CORE_URL", "http://127.0.0.1:8000")
 DEFAULT_OPERATOR = os.environ.get("CACTAI_OPERATOR", "operator")
 REFRESH_SECONDS = 2
 
-st.set_page_config(page_title="CactAI · Risk Console", page_icon="🌵", layout="wide",
+st.set_page_config(page_title="SentrAI · Risk Console", page_icon="🛡️", layout="wide",
                    initial_sidebar_state="expanded")
 
 CSS = (Path(__file__).parent / "cactai_ui" / "console.css").read_text(encoding="utf-8")
@@ -52,7 +52,7 @@ def login() -> None:
         return
     _, mid, _ = st.columns([1, 1.2, 1])
     with mid.form("login"):
-        st.markdown('<div class="brand"><div class="brand-mark">🌵</div><div>'
+        st.markdown('<div class="brand"><div class="brand-mark">🛡️</div><div>'
                     '<div class="brand-name">Cact<span>AI</span></div>'
                     '<div class="brand-tag">Risk Console</div></div></div>', unsafe_allow_html=True)
         typed = st.text_input("Password", type="password")
@@ -238,7 +238,7 @@ def menu() -> None:
 
 with st.sidebar:
     st.markdown(
-        '<div class="brand"><div class="brand-mark">🌵</div><div>'
+        '<div class="brand"><div class="brand-mark">🛡️</div><div>'
         '<div class="brand-name">Cact<span>AI</span></div>'
         '<div class="brand-tag">Risk Console</div></div></div>',
         unsafe_allow_html=True,
@@ -253,7 +253,7 @@ with st.sidebar:
     if st.session_state.get("signed_in") and st.button("Sign out", icon=":material/logout:", width="stretch"):
         st.session_state.signed_in = False
         st.rerun()
-    st.markdown('<div class="side-foot">A cactus doesn\'t chase you. It just makes touching it a bad idea.</div>',
+    st.markdown('<div class="side-foot">A sentry doesn\'t chase you. It just guards the gate.</div>',
                 unsafe_allow_html=True)
 
 
@@ -311,7 +311,7 @@ def protection_banner() -> None:
     st.markdown(
         f'<div class="protect-off">{icon("remove_moderator")}<div><b>Protection is off: monitor-only mode</b><br>'
         f'<small>Turned off{html.escape(who)}{html.escape(why)}</small><br>'
-        f'CactAI is still collecting, classifying and scoring, but applies no containment, autonomous or approved.'
+        f'SentrAI is still collecting, classifying and scoring, but applies no containment, autonomous or approved.'
         f'{kept} Turn it back on from the Configuration page.</div></div>',
         unsafe_allow_html=True,
     )
@@ -498,7 +498,7 @@ def protection_switch() -> None:
     c1, c2 = st.columns([3, 1], vertical_alignment="bottom")
     reason = c1.text_input("Protection is on. To test without blocking anything, turn it off (monitor only).",
                            key="protect_reason", placeholder="Reason, recorded in the audit trail (required)",
-                           help="POST /protection. CactAI keeps collecting, classifying and scoring, but applies "
+                           help="POST /protection. SentrAI keeps collecting, classifying and scoring, but applies "
                                 "no containment, autonomous or approved, until it is turned back on.")
     if c2.button("Turn protection off", icon=":material/remove_moderator:", width="stretch"):
         if not reason.strip():
@@ -570,7 +570,7 @@ def ai_settings(current: dict[str, str]) -> dict[str, str]:
     m1, m2 = st.columns([3, 1], vertical_alignment="bottom")
     model = m1.text_input("Model", key=keys[cfg.MODEL_ENV], placeholder=f"blank for the default ({default})",
                           help="Environment variable CACTAI_LLM_MODEL; a value set in the environment "
-                               "before CactAI starts wins over this one.").strip()
+                               "before SentrAI starts wins over this one.").strip()
     ai = {"CACTAI_LLM_PROVIDER": provider, "CACTAI_LLM_API_KEY": api_key, "CACTAI_LLM_BASE_URL": base_url,
           cfg.MODEL_ENV: model}
     if m2.button("Fetch models", icon=":material/refresh:", width="stretch", disabled=not api_key,
@@ -877,11 +877,11 @@ def log_discovery() -> None:
         known = [s for s in found if s.get("recognised", True)]
         other = [s for s in found if not s.get("recognised", True)]
         if not known:
-            empty("No log files found for the programs CactAI recognises.", "search_off")
+            empty("No log files found for the programs SentrAI recognises.", "search_off")
         for s in known[:10]:
             scan_suggestion(s)
         if other:
-            with st.expander(f"Other log files open by programs CactAI doesn't recognise ({len(other)})"):
+            with st.expander(f"Other log files open by programs SentrAI doesn't recognise ({len(other)})"):
                 for s in other[:10]:
                     scan_suggestion(s)
         for note in latest.get("notes") or []:

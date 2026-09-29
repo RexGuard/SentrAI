@@ -77,7 +77,7 @@ def build_sequence() -> list[dict]:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="CactAI replay simulator")
+    ap = argparse.ArgumentParser(description="SentrAI replay simulator")
     ap.add_argument("--core", default=os.environ.get("CACTAI_CORE_URL",
                                                       "http://127.0.0.1:8000"))
     ap.add_argument("--speed", type=float, default=6.0,

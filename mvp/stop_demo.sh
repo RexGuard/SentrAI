@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Stops only the CactAI demo components started by run_demo.sh (PIDs from mvp/.demo_pids.json).
+# Stops only the SentrAI demo components started by run_demo.sh (PIDs from mvp/.demo_pids.json).
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PID_FILE="$ROOT/.demo_pids.json"
 
@@ -24,4 +24,4 @@ EOF
     fi
 done
 rm -f "$PID_FILE"
-echo "CactAI demo stopped."
+echo "SentrAI demo stopped."

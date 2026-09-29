@@ -1,4 +1,4 @@
-"""Full CactAI demo story against the LIVE target app.
+"""Full SentrAI demo story against the LIVE target app.
 
 Order: benign baseline -> brute force -> pause -> SQL injection.
 Prints narration between phases so it can drive the recording.
@@ -34,7 +34,7 @@ def countdown(seconds: float, why: str) -> None:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="CactAI live demo scenario")
+    ap = argparse.ArgumentParser(description="SentrAI live demo scenario")
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=5000)
     ap.add_argument("--pause", type=float, default=6.0,

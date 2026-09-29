@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Installs CactAI on a Linux server as systemd services (run as root, from a checkout of the repo).
+# Installs SentrAI on a Linux server as systemd services (run as root, from a checkout of the repo).
 #
 #   sudo ./deploy/install.sh                          install or upgrade with the defaults below
 #   sudo ./deploy/install.sh --core-port 8100         when 8000 is taken
@@ -13,7 +13,7 @@
 #                          notifier reach it there)
 #   --dashboard-port N     dashboard port (default 8501)
 #   --dashboard-bind ADDR  dashboard address (default 127.0.0.1: reach it through an SSH tunnel)
-#   --protect IP           add an IP to PROTECTED_IPS, the list CactAI never blocks (repeatable)
+#   --protect IP           add an IP to PROTECTED_IPS, the list SentrAI never blocks (repeatable)
 #   --no-notifier          do not enable the Telegram notifier service
 #   --no-start             install and enable, but do not start or restart anything
 #
@@ -57,7 +57,7 @@ die() { echo "install.sh: $*" >&2; exit 1; }
 [ "$(id -u)" = 0 ] || die "run as root (sudo ./deploy/install.sh)"
 command -v systemctl >/dev/null 2>&1 || die "systemd is required"
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"  # the mvp/ folder of this checkout
-[ -f "$SRC/core/app/main.py" ] || die "run it from a CactAI checkout (mvp/deploy/install.sh)"
+[ -f "$SRC/core/app/main.py" ] || die "run it from a SentrAI checkout (mvp/deploy/install.sh)"
 PYTHON="${PYTHON:-python3}"
 "$PYTHON" -c 'import sys; sys.exit(sys.version_info < (3, 10))' 2>/dev/null || die "python 3.10 or newer is required"
 "$PYTHON" -c 'import ensurepip, venv' 2>/dev/null \
@@ -87,7 +87,7 @@ set_env() {  # KEY VALUE: replace the line or append it
 get_env() { sed -n "s/^$1=//p" "$ENV_FILE" | tail -1; }
 if [ ! -f "$ENV_FILE" ]; then
     cat > "$ENV_FILE" <<EOF
-# CactAI service settings, read by every cactai-* service (systemctl restart cactai.target after a change).
+# SentrAI service settings, read by every cactai-* service (systemctl restart cactai.target after a change).
 # Detection, response, alert and AI settings live in CACTAI_CONFIG and are edited on the dashboard.
 CACTAI_CORE_HOST=127.0.0.1
 CACTAI_CORE_PORT=8000
@@ -225,7 +225,7 @@ fi
 
 cat <<EOF
 
-CactAI is installed.
+SentrAI is installed.
   Status:     systemctl status 'cactai-*'      Logs: journalctl -u cactai-core -f
   Restart:    systemctl restart cactai.target  (after editing $ENV_FILE)
   Core API:   $CORE_URL

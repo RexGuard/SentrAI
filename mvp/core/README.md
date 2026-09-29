@@ -1,4 +1,4 @@
-# CactAI core
+# SentrAI core
 
 This is the FastAPI service on `http://127.0.0.1:8000`. It implements every Core API endpoint in `../CONTRACT.md`. It handles:
 
@@ -63,9 +63,9 @@ Tests:
 
 Cyanide (`app/cyanide.py`) replaces Saguaro's fixed judgement with Claude, and keeps everything that must stay predictable.
 
-- **What the model decides.** Claude by default; OpenAI, DeepSeek or any OpenAI-compatible API also work (`mvp/cactai_llm.py`, keys in `python cactai_config.py setup`, section 5). When an incident opens, Cyanide sends the model the system profile, the incident, its log lines and the list of installed actions. The model answers with an assessment in plain words, the containment steps that fit this system, and whether CactAI may act alone or must wait for a human.
+- **What the model decides.** Claude by default; OpenAI, DeepSeek or any OpenAI-compatible API also work (`mvp/cactai_llm.py`, keys in `python cactai_config.py setup`, section 5). When an incident opens, Cyanide sends the model the system profile, the incident, its log lines and the list of installed actions. The model answers with an assessment in plain words, the containment steps that fit this system, and whether SentrAI may act alone or must wait for a human.
 - **What stays fixed.** The risk index, SLA, inaction penalty, notifications, TTLs and the audit chain are Saguaro's code, unchanged. Needle still reviews every autonomous action.
-- **Guardrails.** Claude can only pick installed action types. IP, account and host targets must appear in the incident's own events; anything else is dropped and logged. Accounts and IPs listed as protected in the profile go to Needle, which refuses them. A plan can make CactAI more careful ("hold: exam week, the admin account is shared") but never bypass the threshold or the TTL.
+- **Guardrails.** Claude can only pick installed action types. IP, account and host targets must appear in the incident's own events; anything else is dropped and logged. Accounts and IPs listed as protected in the profile go to Needle, which refuses them. A plan can make SentrAI more careful ("hold: exam week, the admin account is shared") but never bypass the threshold or the TTL.
 - **Fallback.** No key, a timeout or a bad answer means the default playbook is used, and the timeline says so.
 - **Adapting to a new system.** Write a profile (see `profiles/tuition_centre.json`): what the hosts do, which accounts matter, business hours, what must never be touched. A new responder (a new action type) is offered to Claude automatically.
 - **Speed.** Planning runs on a background thread, so ingestion never waits on the model. The playbook text shows until the plan arrives, usually a few seconds later.
@@ -102,7 +102,7 @@ Audit records: `cyanide_plan` (actions, reasons, dropped steps), `cyanide_hold` 
 
 ## Process scan (finding logs automatically)
 
-Scout follows a technician through the folders. The process scan (`app/procscan.py`, `app/discovery.py`) is the automatic half: it lists the programs running on this computer, recognises the known ones (IIS, nginx, Apache, Tomcat, MySQL, PostgreSQL, SQL Server, MongoDB, Redis, SSH, Docker, syslog, Node and Python apps, and the CactAI lab portal) and looks for their log files in the usual places, next to the program, in options such as `--log-file`, and (on Linux) in the files each process has open.
+Scout follows a technician through the folders. The process scan (`app/procscan.py`, `app/discovery.py`) is the automatic half: it lists the programs running on this computer, recognises the known ones (IIS, nginx, Apache, Tomcat, MySQL, PostgreSQL, SQL Server, MongoDB, Redis, SSH, Docker, syslog, Node and Python apps, and the SentrAI lab portal) and looks for their log files in the usual places, next to the program, in options such as `--log-file`, and (on Linux) in the files each process has open.
 
 - **How.** Windows: PowerShell/CIM (`Win32_Process`, plus `Win32_Service` for the service account). Linux: `/proc`. macOS: `ps`. Standard library only, no admin rights needed; processes it cannot read are listed by name only.
 - **Read-only.** It never starts, stops or signals a process and never reads log contents. It only checks which files exist.

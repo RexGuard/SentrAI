@@ -1,4 +1,4 @@
-# CactAI: Recording Checklist (Windows 11)
+# SentrAI: Recording Checklist (Windows 11)
 
 Deadline: video due **2026-09-29**. Aim to have a usable take by the evening of the 28th and keep the 29th for re-takes and editing.
 
@@ -112,12 +112,12 @@ The inaction penalty needs several real minutes at `DEMO_SPEED=60`.
 Store raw files in a shared folder (not in the git repo; video files are large).
 
 ```
-CactAI_<part>_<take>_<YYYYMMDD>.<ext>
-CactAI_demo_take01_20260928.mkv
-CactAI_demo_replay_take02_20260928.mkv
-CactAI_voice_ishmail_hook_take01_20260928.wav
-CactAI_slides_v3_20260928.pdf
-CactAI_final_v1_20260929.mp4
+SentrAI_<part>_<take>_<YYYYMMDD>.<ext>
+SentrAI_demo_take01_20260928.mkv
+SentrAI_demo_replay_take02_20260928.mkv
+SentrAI_voice_ishmail_hook_take01_20260928.wav
+SentrAI_slides_v3_20260928.pdf
+SentrAI_final_v1_20260929.mp4
 ```
 
 - [ ] Hozen copies every good take to a second location (USB or cloud drive) right after recording.
@@ -126,7 +126,7 @@ CactAI_final_v1_20260929.mp4
 ## 10. Editing
 
 - [ ] Order follows `VIDEO_SCRIPT.md` timestamps.
-- [ ] Captions/subtitles for all speech (auto-generate in Clipchamp/CapCut, then fix names: CactAI, Jev, Saguaro, Needle, PDPC).
+- [ ] Captions/subtitles for all speech (auto-generate in Clipchamp/CapCut, then fix names: SentrAI, Jev, Saguaro, Needle, PDPC).
 - [ ] Zoom in on the gauge, the Telegram "Ack: none" and `chain_valid: true` moments.
 - [ ] Label on screen when footage is sped up, replayed, or uses fallback classification.
 - [ ] Source citations on screen for every factual claim (PDPC case, PDPA penalty, Computer Misuse Act).
@@ -139,6 +139,6 @@ CactAI_final_v1_20260929.mp4
 - [ ] No personal data, real tokens, API keys or notifications visible in any frame.
 - [ ] All `[SOURCE PENDING]` / `[CHECK]` resolved; all `{values}` match what is on screen.
 - [ ] Team names and roles correct on the team slide.
-- [ ] File named `CactAI_final_<date>.mp4`; uploaded to the required platform; the link opens in a private/incognito window.
+- [ ] File named `SentrAI_final_<date>.mp4`; uploaded to the required platform; the link opens in a private/incognito window.
 - [ ] Slides PDF, architecture diagram and repo link attached if the submission form allows.
 - [ ] Submit before the deadline with at least a few hours of margin; screenshot the confirmation.

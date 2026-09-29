@@ -13,7 +13,7 @@ from .test_chat import FakeProvider, call
 
 @pytest.fixture
 def machine(tmp_path, monkeypatch):
-    """A Windows-shaped computer in a temp folder: the CactAI lab, nginx, MySQL, and things to hide."""
+    """A Windows-shaped computer in a temp folder: the SentrAI lab, nginx, MySQL, and things to hide."""
     lab = tmp_path / "mvp" / "lab"
     (lab / ".venv" / "Scripts").mkdir(parents=True)
     (lab / "logs").mkdir()
@@ -62,9 +62,9 @@ def test_windows_scan_finds_log_folders_per_program(machine):
     r = scan(machine, watched=[str(machine["lab"] / "logs" / "access.jsonl"),
                                str(machine["lab"] / "logs" / "auth.jsonl")])
     by_program = {s["program"]: s for s in r["suggestions"]}
-    assert set(by_program) >= {"CactAI lab: fake student portal", "nginx web server", "MySQL / MariaDB database",
+    assert set(by_program) >= {"SentrAI lab: fake student portal", "nginx web server", "MySQL / MariaDB database",
                                "Node.js app"}
-    lab = by_program["CactAI lab: fake student portal"]
+    lab = by_program["SentrAI lab: fake student portal"]
     assert lab["already_watched"] and lab["reasons"] == ["logs folder of the app"] and lab["format"] == "jsonl"
     nginx = by_program["nginx web server"]
     assert nginx["layer"] == "web" and nginx["reasons"] == ["next to the program"]

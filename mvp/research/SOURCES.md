@@ -1,4 +1,4 @@
-# CactAI: verified sources for every [CHECK]
+# SentrAI: verified sources for every [CHECK]
 
 Research date: 2026-09-27. All quotes are under 15 words. Primary sources were fetched and read directly (PDPC PDFs, Singapore Statutes Online PDF, TypeSafe docs).
 
@@ -35,7 +35,7 @@ URLs:
 - **Published:** 14 Oct 2021 (decision summary; PDPC Case No. DP-2103-B7984)
 - **Penalty:** S$10,000 (breach of s24 Protection Obligation)
 - **Facts:** A Dec 2020 pentest found an SQL injection hole. The developer never fixed it. On 24 Feb 2021 the student database was being sold on the dark web. **The company did not know until the PDPC told it.** 4,625 students' names, emails, phone numbers and addresses were affected.
-- **Why it's the hook:** it fits CactAI exactly. The vulnerability was **known** (found in a pentest), it was an **SQL injection** (which CactAI detects), nobody acted on it (**negligence**), and the org **didn't know it had been breached**. It is also an education-sector SME.
+- **Why it's the hook:** it fits SentrAI exactly. The vulnerability was **known** (found in a pentest), it was an **SQL injection** (which SentrAI detects), nobody acted on it (**negligence**), and the org **didn't know it had been breached**. It is also an education-sector SME.
 - Quote: the vulnerability "was left unfixed until the Incident happened." (PDPC decision, para 2)
 - URLs:
   - Decision PDF: https://www.pdpc.gov.sg/-/media/files/pdpc/pdf-files/commissions-decisions/decision--championtutor-inc-private-limited--10082021.pdf
@@ -78,7 +78,7 @@ URLs:
 There is no self-defence or "attacker's machine" exception. Access or interference "without authority" is the offence, whatever the motive.
 
 **Slide wording:**
-> Hacking back is a crime in Singapore. Accessing an attacker's machine without authority is an offence under s3 of the Computer Misuse Act. Disrupting or modifying it is an offence under s5 and s7. CactAI only defends systems its owner is authorised to control.
+> Hacking back is a crime in Singapore. Accessing an attacker's machine without authority is an offence under s3 of the Computer Misuse Act. Disrupting or modifying it is an offence under s5 and s7. SentrAI only defends systems its owner is authorised to control.
 
 URLs:
 - https://sso.agc.gov.sg/Act/CMA1993 (see s3, s5, s7)

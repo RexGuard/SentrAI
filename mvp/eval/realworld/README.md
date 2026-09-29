@@ -1,6 +1,6 @@
 # Public-server replay set
 
-How well CactAI's classifier catches what really hits a small public Linux server: web scanners,
+How well SentrAI's classifier catches what really hits a small public Linux server: web scanners,
 exploit probes, SSH password guessing and SSH banner grabbers, next to normal visitors, crawlers,
 uptime checks and the admin's own logins.
 

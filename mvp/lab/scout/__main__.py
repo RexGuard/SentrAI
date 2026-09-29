@@ -34,7 +34,7 @@ def has_terminal() -> bool:
 
 
 def main(argv: list[str] | None = None) -> None:
-    ap = argparse.ArgumentParser(prog="scout", description="Find security logs for the CactAI collector")
+    ap = argparse.ArgumentParser(prog="scout", description="Find security logs for the SentrAI collector")
     sub = ap.add_subparsers(dest="cmd", required=True)
     for name in ("record", "find"):
         p = sub.add_parser(name)

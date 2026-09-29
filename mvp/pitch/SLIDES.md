@@ -1,4 +1,4 @@
-# CactAI: Slide Deck Content
+# SentrAI: Slide Deck Content
 
 12 slides. Owner: Hozen (content and sources), Ishmail (narration). Keep each slide to what is written here; the voice carries the rest. Numbers marked **[CHECK]** or **[SOURCE PENDING]** must be verified before export.
 
@@ -7,11 +7,11 @@ Suggested look: light background, dark green `#1F5E3B` for headings, amber `#E0A
 ---
 
 ## Slide 1 · Title
-**CactAI: Accountability-based security for small teams**
-- A cactus doesn't chase you. It just makes touching it a bad idea.
+**SentrAI: Accountability-based security for small teams**
+- A sentry doesn't chase you. It just guards the gate.
 - Cybersecurity + AI · Hackathon 2026
 
-**Visual:** cactus icon whose spines form a shield outline; team names small at the bottom.
+**Visual:** SentrAI shield icon; team names small at the bottom.
 **Speaker note (Ishmail):** Do not read the slide. Start straight into the hook on slide 2.
 
 ---
@@ -38,7 +38,7 @@ Suggested look: light background, dark green `#1F5E3B` for headings, amber `#E0A
 
 ---
 
-## Slide 4 · CactAI in one sentence
+## Slide 4 · SentrAI in one sentence
 - Scores your risk from 0 to 100 across web, database and OS
 - Warns, reminds, then escalates to the people you choose
 - Past your own tolerance line: temporary, reversible containment
@@ -120,12 +120,12 @@ Place markers on the line: bell icon at 0 ("alert delivered, Ack: none"), bell a
 ---
 
 ## Slide 10 · Ethics: no hack back
-- CactAI never attacks back. The spines stay on the cactus.
+- SentrAI never attacks back. It holds the line and never crosses it.
 - Hack back is an offence under the Computer Misuse Act [SOURCE PENDING: section]
 - Attacker IPs are often spoofed or hijacked innocent machines
 - Our "prick": block, tarpit, honeypots and honeytokens, evidence to SingCERT or police
 
-**Visual:** cactus with spines pointing inward to a perimeter line; a red crossed-out arrow pointing outward.
+**Visual:** sentry shield standing on a perimeter line; a red crossed-out arrow pointing outward.
 **Speaker note (Hozen):** The attacker is pricked by attribution and prosecution, not retaliation.
 
 ---
@@ -149,7 +149,7 @@ Place markers on the line: bell icon at 0 ("alert delivered, Ack: none"), bell a
 - Team: Erick Sientaro (Developer) · Ishmail (CEO) · Hozen (Notetaker, slides and sources)
 
 **Visual:** three-column timeline (Now / Next / Later) above three team cards.
-**Speaker note (Ishmail):** Close with: "Alerts tell you something is wrong. CactAI makes sure someone answers, and proves it when they don't."
+**Speaker note (Ishmail):** Close with: "Alerts tell you something is wrong. SentrAI makes sure someone answers, and proves it when they don't."
 
 ---
 

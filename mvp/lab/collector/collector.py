@@ -678,7 +678,7 @@ def add_system_logs() -> int:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="CactAI log collector")
+    ap = argparse.ArgumentParser(description="SentrAI log collector")
     ap.add_argument("--core", default=os.environ.get("CACTAI_CORE_URL",
                                                       "http://127.0.0.1:8000"))
     ap.add_argument("--logs", default=str(paths.logs_dir()))

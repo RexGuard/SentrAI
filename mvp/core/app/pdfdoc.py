@@ -212,7 +212,7 @@ class PdfDoc:
                             f"/Resources << /Font << {fonts} >> >> /Contents {content} 0 R >>".encode()))
         objs[catalog - 1] = f"<< /Type /Catalog /Pages {pages_id} 0 R >>".encode()
         objs[pages_id - 1] = f"<< /Type /Pages /Kids [{' '.join(f'{k} 0 R' for k in kids)}] /Count {n} >>".encode()
-        info = add(b"<< /Title (" + _esc(clean(self.title)) + b") /Producer (CactAI Scribe) >>")
+        info = add(b"<< /Title (" + _esc(clean(self.title)) + b") /Producer (SentrAI Scribe) >>")
 
         out = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
         offsets = []

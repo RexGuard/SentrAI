@@ -44,7 +44,7 @@ def test_blocklist_blocks_ip(client):
     blocklist.update(ips=["203.0.113.45"], users=[])
     resp = client.get("/", headers={"X-Demo-Src-IP": "203.0.113.45"})
     assert resp.status_code == 403
-    assert b"Blocked by CactAI" in resp.data
+    assert b"Blocked by SentrAI" in resp.data
 
 
 def test_blocklist_blocks_user_on_login(client):
@@ -73,4 +73,4 @@ def test_blocked_request_is_logged_as_blocked(client):
     blocklist.update(ips=["203.0.113.45"], users=[])
     client.get("/export", headers={"X-Demo-Src-IP": "203.0.113.45"})
     last = (paths.logs_dir() / paths.ACCESS_LOG).read_text(encoding="utf-8").splitlines()[-1]
-    assert json.loads(last)["raw"] == "GET /export 403 blocked by CactAI"
+    assert json.loads(last)["raw"] == "GET /export 403 blocked by SentrAI"

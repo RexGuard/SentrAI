@@ -1,5 +1,5 @@
 [Unit]
-Description=CactAI collector (tails approved logs, sends events to the core)
+Description=SentrAI collector (tails approved logs, sends events to the core)
 PartOf=cactai.target
 After=cactai-core.service
 Wants=cactai-core.service

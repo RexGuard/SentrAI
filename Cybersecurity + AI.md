@@ -1,10 +1,10 @@
-# CactAI
+# SentrAI
 
 ## Cybersecurity + AI
 
 An accountability-based security system that follows **CIANA** and gives CXOs proof, not just alerts.
 
-> *"A cactus doesn't chase you. It just makes touching it a bad idea."*
+> *"A sentry doesn't chase you. It just guards the gate."*
 
 All factual claims were verified on 27 Sep 2026; sources are in `mvp/research/SOURCES.md`. Items marked **[FILL]** still need input.
 
@@ -41,7 +41,7 @@ All factual claims were verified on 27 Sep 2026; sources are in `mvp/research/SO
 
 ## What if humans were not enough
 
-Human errors are bound to happen. Humans stay in charge, but when the risk crosses the tolerance the organization itself set, CactAI applies a **temporary, reversible** fix and records exactly who was warned and when.
+Human errors are bound to happen. Humans stay in charge, but when the risk crosses the tolerance the organization itself set, SentrAI applies a **temporary, reversible** fix and records exactly who was warned and when.
 
 ## Accountability Based System
 
@@ -73,9 +73,9 @@ Erick carries the whole build, so the MVP (section 15) is scoped to what one dev
 
 # Part A: Final Product
 
-The full design CactAI is built toward. Part B (section 15) says which pieces the MVP already runs.
+The full design SentrAI is built toward. Part B (section 15) says which pieces the MVP already runs.
 
-## 4. How CactAI Gets the Data from Each System Layer
+## 4. How SentrAI Gets the Data from Each System Layer
 
 Lightweight collector agents on each host read logs the system already produces. Nothing is installed inside the application code.
 
@@ -293,11 +293,11 @@ Every action taken is stored in a hash-chained audit log: each record carries th
 
 ---
 
-## 11. Ethics of the Cactus Response
+## 11. Ethics of the Sentry Response
 
-*Left alone, a cactus does no harm. Try to attack it, and it pricks you.*
+*Left alone, a sentry does no harm. Try to get past it, and it stops you.*
 
-**Position: CactAI never attacks back. The spines stay on the cactus.**
+**Position: SentrAI never attacks back. It holds the line and never crosses it.**
 
 Why "hack back" is ruled out:
 - **Illegal:** accessing or disrupting the attacker's machine without authorization is an offence under Singapore's Computer Misuse Act 1993, whatever the motive. Unauthorised access is s3 (up to S$5,000 and/or 2 years, first offence). Unauthorised modification is s5, and unauthorised obstruction/interference ("interferes with, or interrupts or obstructs") is s7 (each up to S$10,000 and/or 3 years). https://sso.agc.gov.sg/Act/CMA1993
@@ -411,7 +411,7 @@ What we built for the 29 Sep pitch and what the demo video shows. The code is in
 Everything runs natively on one Windows laptop (Python, no Docker, no Redis). One command, `run_demo.ps1`, starts every component in its own window.
 
 **Components**
-1. **Target app** (`lab/target_app/`, port 5000): the fictional "Aegis Academy Student Portal". It writes web, login, database and OS logs, and it enforces CactAI's blocklist by answering blocked IPs and accounts with HTTP 403 "Blocked by CactAI".
+1. **Target app** (`lab/target_app/`, port 5000): the fictional "Aegis Academy Student Portal". It writes web, login, database and OS logs, and it enforces SentrAI's blocklist by answering blocked IPs and accounts with HTTP 403 "Blocked by SentrAI".
 2. **Core** (`core/`, port 8000): FastAPI with the risk engine, the agents (Saguaro, Root, Spine-Net, Reservoir, Areole, Needle, Watchdog, Scribe, Help Desk) as Python classes in one process, TTL hotpatches, the hash-chained audit log and the evidence reports. The generated report is titled "Security Evidence Report" and downloads as Markdown, JSON or PDF.
 3. **Dashboard** (`dashboard/`, port 8501): Streamlit console (see below).
 4. **Notifier** (`notifier/`): Telegram bot with Approve / Reject buttons, or console output when no bot token is set.
@@ -419,7 +419,7 @@ Everything runs natively on one Windows laptop (Python, no Docker, no Redis). On
 
 **The three pluggable parts**
 
-CactAI is a pipeline of three parts. Each is one small base class with one job, so a new log source, detector or fix can be added without touching the rest.
+SentrAI is a pipeline of three parts. Each is one small base class with one job, so a new log source, detector or fix can be added without touching the rest.
 
 | Part | What it does | Base class | Built-in versions |
 | --- | --- | --- | --- |
@@ -450,7 +450,7 @@ A sidebar menu, opening on Configuration:
 1. Benign staff traffic: no incidents, gauge green.
 2. Brute force from `203.0.113.45`: incident `RSK-2026-081`, risk about 39 (amber), operator alert on Telegram or in the notifier window, Collector and Classifier bubbles light up.
 3. Nobody acknowledges: demo time runs fast (1 real minute = 10 demo hours) and the inaction penalty adds +5 per demo hour. The script's default 6-second pause is only about 1 demo hour, under the 2-hour SLA, so no SLA reminder fires; run `scenario.py --pause 15` (about 2.5 demo hours) to show one on camera.
-4. SQL injection from `198.51.100.23`: risk crosses 80, Needle approves, both attacker IPs are blocked and `admin` is locked for 2 demo hours. The portal returns "Blocked by CactAI" (403). The demo machine itself (127.0.0.1) is never blocked.
+4. SQL injection from `198.51.100.23`: risk crosses 80, Needle approves, both attacker IPs are blocked and `admin` is locked for 2 demo hours. The portal returns "Blocked by SentrAI" (403). The demo machine itself (127.0.0.1) is never blocked.
 5. The evidence report shows the timeline of inaction, "Ack: none" and the audit chain hash.
 6. The operator presses **Rollback** or **Make Permanent** on the Approvals page, and it appears in the audit trail.
 
@@ -471,5 +471,5 @@ A sidebar menu, opening on Configuration:
 2. ~~**Erick:** three pluggable parts, setup wizard, sidebar dashboard.~~ Done 28 Sep.
 3. **Erick:** live Jev test once the TypeSafe API key arrives; real Telegram alerts once a bot token is set. Neither is needed for the video.
 4. **Ishmail:** pitch script and narration, built around section 1 and the demo.
-5. **Hozen:** finalize slides from `mvp/pitch/SLIDES.md` (sources in `mvp/research/SOURCES.md`): problem, cactus ethics, 0 to 100 index, architecture and the three parts, demo, roadmap.
+5. **Hozen:** finalize slides from `mvp/pitch/SLIDES.md` (sources in `mvp/research/SOURCES.md`): problem, sentry ethics, 0 to 100 index, architecture and the three parts, demo, roadmap.
 6. **All:** record the demo, with the replay script as backup.

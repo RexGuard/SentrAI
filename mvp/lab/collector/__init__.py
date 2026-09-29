@@ -1,1 +1,1 @@
-"""CactAI log collector package."""
+"""SentrAI log collector package."""

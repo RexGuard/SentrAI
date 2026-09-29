@@ -184,7 +184,7 @@ class RulesEngine:
             category, why = SPINE_KINDS[m.group(1)]
             return RuleHit(category, f"Cactus spine: {why}")
         if BLOCKED.search(text):
-            return RuleHit("benign", "request already refused by CactAI blocklist (403)")
+            return RuleHit("benign", "request already refused by SentrAI blocklist (403)")
         ssh = parse_sshd(event)
         if ssh is not None:
             return self._sshd(event, ssh, now)
