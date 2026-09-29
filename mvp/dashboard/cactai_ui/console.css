@@ -39,7 +39,7 @@ section[data-testid="stSidebar"] div[data-testid="stMarkdownContainer"] { margin
 .brand-mark { width: 2.5rem; height: 2.5rem; border-radius: 12px; display: grid; place-items: center; font-size: 1.45rem;
               background: linear-gradient(145deg, #1f3f7a, #121a29); border: 1px solid var(--brand-line);
               box-shadow: 0 0 0 4px rgba(76,141,255,.10); }
-.brand-mark svg { width: 1.55rem; height: 1.55rem; display: block; }
+.brand-mark svg { width: 1.9rem; height: 1.9rem; display: block; }
 .brand-name { font-size: 1.35rem; font-weight: 800; letter-spacing: -.02em; color: var(--ink); line-height: 1.1; }
 .brand-name span { color: var(--brand); }
 .brand-tag { color: var(--ink-muted); font-size: .76rem; }

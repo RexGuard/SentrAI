@@ -32,11 +32,18 @@ DEFAULT_CORE = os.environ.get("CACTAI_CORE_URL", "http://127.0.0.1:8000")
 DEFAULT_OPERATOR = os.environ.get("CACTAI_OPERATOR", "operator")
 REFRESH_SECONDS = 2
 
-st.set_page_config(page_title="SentrAI · Risk Console", page_icon="🛡️", layout="wide",
+# SentrAI brand mark: assets/brand/mark-dark.svg (shield with an open eye), inlined so it needs no file.
+SHIELD = ('<svg viewBox="0 0 64 64" aria-hidden="true">'
+          '<path d="M32 4 L54 11.5 V29 C54 43.5 44.8 54.2 32 60 C19.2 54.2 10 43.5 10 29 V11.5 Z" fill="#16264a" '
+          'stroke="#7fb2ff" stroke-width="3" stroke-linejoin="round"/>'
+          '<path d="M17 32 C22.5 24 27 21.5 32 21.5 C37 21.5 41.5 24 47 32 C41.5 40 37 42.5 32 42.5 '
+          'C27 42.5 22.5 40 17 32 Z" fill="#7fb2ff"/><circle cx="32" cy="32" r="6" fill="#0b111d"/>'
+          '<circle cx="34.2" cy="29.8" r="1.8" fill="#e7edf6"/></svg>')
+# Tab icon from the brand kit when it is in the checkout, else the emoji.
+_FAVICON = Path(__file__).resolve().parents[2] / "assets" / "brand" / "favicon-32.png"
+PAGE_ICON = str(_FAVICON) if _FAVICON.exists() else "🛡️"
+st.set_page_config(page_title="SentrAI · Risk Console", page_icon=PAGE_ICON, layout="wide",
                    initial_sidebar_state="expanded")
-
-SHIELD = ('<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5 4.5 5.3v6.1c0 4.6 3.1 8.6 7.5 10.1'
-          ' 4.4-1.5 7.5-5.5 7.5-10.1V5.3z" fill="#4c8dff" fill-opacity=".22" stroke="#7fb2ff" stroke-width="1.6" stroke-linejoin="round"/><path d="m8.4 12.2 2.5 2.5 4.8-5" fill="none" stroke="#e7edf6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>')  # SentrAI brand mark
 CSS = (Path(__file__).parent / "cactai_ui" / "console.css").read_text(encoding="utf-8")
 st.markdown(f"<style>{CSS}</style>", unsafe_allow_html=True)
 
