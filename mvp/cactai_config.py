@@ -18,10 +18,14 @@ Run (any venv, stdlib only):
     python cactai_config.py setup        run the wizard again (current values as defaults)
     python cactai_config.py get NAME     print one value, for scripts
     python cactai_config.py token        print the core API token (made and saved on first use)
+    python cactai_config.py admin        make the dashboard sign-in if there is none (prints the password once)
+    python cactai_config.py admin --email you@example.com --reset   new email and a new password
 """
 from __future__ import annotations
 
 import getpass
+import hashlib
+import hmac
 import json
 import os
 import secrets
@@ -48,6 +52,7 @@ class Field:
     secret: bool = False
     choices: tuple[str, ...] = ()  # when set, the answer must be one of these
     generated: bool = False  # never asked: the wizard keeps the saved value or makes a new one
+    hashed: bool = False  # a password: asked, but only its salted hash is saved
 
 
 @dataclass(frozen=True)
@@ -141,7 +146,9 @@ SECTIONS = (
     Section("access", "6. Access", "Who may use the core API and the dashboard.", (
         Field("CACTAI_API_TOKEN", "Core API token (shared by the collector, dashboard and Telegram bot)",
               secret=True, generated=True),
-        Field("CACTAI_DASHBOARD_PASSWORD", "Dashboard password, blank for no login screen", secret=True),
+        Field("CACTAI_DASHBOARD_EMAIL", "Dashboard sign-in email", "admin@sentrai.local"),
+        Field("CACTAI_DASHBOARD_PASSWORD_HASH", "Dashboard password (blank keeps it, or makes one on a new machine)",
+              secret=True, hashed=True),
     )),
 )
 FIELDS = {f.env: f for s in SECTIONS for f in s.fields}
@@ -149,7 +156,42 @@ EMAIL_FIELDS = ("SMTP_PORT", "SMTP_SECURITY", "SMTP_USER", "SMTP_PASSWORD", "ALE
                 "CACTAI_EMAIL_MODE")  # asked only when SMTP_HOST is set
 MODEL_ENV = "CACTAI_LLM_MODEL"
 TOKEN_ENV = "CACTAI_API_TOKEN"
-PASSWORD_ENV = "CACTAI_DASHBOARD_PASSWORD"
+PASSWORD_ENV = "CACTAI_DASHBOARD_PASSWORD"  # before the sign-in had an email: a plain password (still accepted)
+EMAIL_ENV = "CACTAI_DASHBOARD_EMAIL"
+HASH_ENV = "CACTAI_DASHBOARD_PASSWORD_HASH"
+LOGIN_ENV = "CACTAI_DASHBOARD_LOGIN"  # "off" opens the dashboard without signing in (local testing only)
+MIN_PASSWORD = 8
+_ITERATIONS = 600_000
+
+
+def hash_password(password: str) -> str:
+    """A salted PBKDF2-SHA256 hash, stored as pbkdf2_sha256$iterations$salt$hash (hex)."""
+    salt = secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, _ITERATIONS)
+    return f"pbkdf2_sha256${_ITERATIONS}${salt.hex()}${digest.hex()}"
+
+
+def check_password(password: str, stored: str) -> bool:
+    try:
+        scheme, iterations, salt, digest = stored.split("$")
+        if scheme != "pbkdf2_sha256":
+            return False
+        got = hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt), int(iterations))
+    except (ValueError, TypeError):
+        return False
+    return hmac.compare_digest(got.hex(), digest)
+
+
+def new_password() -> str:
+    return secrets.token_urlsafe(12)
+
+
+def _migrate_password(values: dict[str, str]) -> dict[str, str]:
+    """Settings saved with a plain dashboard password: keep only its hash."""
+    plain = values.pop(PASSWORD_ENV, "")
+    if plain and not values.get(HASH_ENV):
+        values[HASH_ENV] = hash_password(plain)
+    return values
 
 
 def _one_ai_key(values: dict[str, str]) -> dict[str, str]:
@@ -225,15 +267,16 @@ def read() -> dict[str, str]:
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
     values = {k: str(v) for section in data.values() if isinstance(section, dict) for k, v in section.items()}
-    return settle_preset(_one_ai_key(values)) if values else values
+    return settle_preset(_one_ai_key(_migrate_password(values))) if values else values
 
 
 def save(values: dict[str, str]) -> Path:
     path = config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     values = settle_preset(dict(values))
-    if not values.get(TOKEN_ENV):  # a form that leaves the token out must not wipe it
-        values[TOKEN_ENV] = read().get(TOKEN_ENV, "")
+    for keep in (TOKEN_ENV, HASH_ENV):  # a form that leaves the token or password out must not wipe it
+        if not values.get(keep):
+            values[keep] = read().get(keep, "")
     data = {s.key: {f.env: values.get(f.env, f.default) for f in s.fields} for s in SECTIONS}
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     return path
@@ -279,6 +322,46 @@ def api_token() -> str:
         save(values)
         values = read()  # another component may have saved one at the same moment; use what is on disk
     return values[TOKEN_ENV]
+
+
+def _own_env(name: str) -> str:
+    """An environment variable set outside the settings file ("" when load() copied it from the file)."""
+    value = os.environ.get(name, "")
+    return "" if value and _LOADED.get(name) == value else value
+
+
+def dashboard_login() -> dict[str, str]:
+    """Who may sign in to the dashboard, read fresh so a changed password applies without a restart.
+
+    Returns {"email", "hash", "plain"}; "plain" is a CACTAI_DASHBOARD_PASSWORD set in the environment.
+    An environment variable wins over the settings file, as everywhere else.
+    """
+    values = read()
+    return {"email": _own_env(EMAIL_ENV) or values.get(EMAIL_ENV) or FIELDS[EMAIL_ENV].default,
+            "hash": _own_env(HASH_ENV) or values.get(HASH_ENV, ""),
+            "plain": _own_env(PASSWORD_ENV)}
+
+
+def login_required() -> bool:
+    return os.environ.get(LOGIN_ENV, "").strip().lower() not in ("off", "0", "no", "false")
+
+
+def ensure_admin(email: str = "", reset: bool = False) -> tuple[str, str]:
+    """Make sure the dashboard has a sign-in. Returns (email, password), password "" when one was kept.
+
+    A new machine, --reset, or a first --email gets a new random password (saved as a hash only).
+    """
+    values = {f.env: f.default for f in FIELDS.values()} | read()
+    changed = False
+    if email and email != values.get(EMAIL_ENV):
+        values[EMAIL_ENV], changed = email, True
+    password = ""
+    if reset or not values.get(HASH_ENV):
+        password = new_password()
+        values[HASH_ENV], changed = hash_password(password), True
+    if changed or not config_path().exists():
+        save(values)
+    return values[EMAIL_ENV], password
 
 
 def valid(field: Field, answer: str) -> bool:
@@ -327,6 +410,9 @@ def wizard(ask: Callable[[str], str] | None = None, ask_secret: Callable[[str], 
                 values[f.env] = current[f.env] or new_token()
                 say(f"  {f.prompt}: {'kept' if current[f.env] else 'generated'} (python cactai_config.py token shows it)")
                 continue
+            if f.hashed:
+                values[f.env] = _ask_password(f, current[f.env], ask_secret, say)
+                continue
             shown = ("set" if current[f.env] else "not set") if f.secret else current[f.env]
             prompt = f.prompt
             if f.choices:
@@ -368,6 +454,25 @@ def wizard(ask: Callable[[str], str] | None = None, ask_secret: Callable[[str], 
     return values
 
 
+def _ask_password(field: Field, stored: str, ask_secret: Callable[[str], str], say: Callable[[str], None]) -> str:
+    """Ask for a new password twice; blank keeps the saved one or makes one. Returns the hash to save."""
+    while True:
+        typed = ask_secret(f"  {field.prompt} [{'set' if stored else 'not set'}]: ")
+        if not typed:
+            if stored:
+                return stored
+            made = new_password()
+            say(f"    Generated password: {made}  (write it down; it is saved only as a hash)")
+            return hash_password(made)
+        if len(typed) < MIN_PASSWORD:
+            say(f"    Use at least {MIN_PASSWORD} characters.")
+            continue
+        if ask_secret("  Type it again: ") != typed:
+            say("    The two passwords differ; try again.")
+            continue
+        return hash_password(typed)
+
+
 def ensure(interactive: bool | None = None) -> dict[str, str]:
     """Run the wizard on a new machine (when someone is at the keyboard), then load()."""
     if interactive is None:
@@ -396,6 +501,23 @@ def main(argv: list[str]) -> int:
         return 0
     if argv == ["token"]:
         print(api_token())
+        return 0
+    if argv[:1] == ["admin"]:
+        rest, email, reset = argv[1:], "", False
+        while rest:
+            if rest[0] == "--email" and len(rest) > 1 and "@" in rest[1]:
+                email, rest = rest[1].strip(), rest[2:]
+            elif rest[0] == "--reset":
+                reset, rest = True, rest[1:]
+            else:
+                print("usage: python cactai_config.py admin [--email you@example.com] [--reset]")
+                return 2
+        email, password = ensure_admin(email, reset)
+        if password:
+            print(f"Dashboard sign-in: {email}  password: {password}")
+            print("  (shown once: write it down. Only its hash is saved; admin --reset makes a new one)")
+        else:
+            print(f"Dashboard sign-in: {email}  (password already set; admin --reset makes a new one)")
         return 0
     if argv[:1] == ["setup"]:
         setup()

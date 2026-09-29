@@ -7,6 +7,8 @@ Wants=cactai-core.service
 [Service]
 Type=simple
 WorkingDirectory=@PREFIX@/mvp/dashboard
+# "+" runs it as root: when the dashboard is opened to CACTAI_DASHBOARD_ALLOW, only those addresses get through.
+ExecStartPre=+/bin/sh -c 'if grep -q "^CACTAI_DASHBOARD_ALLOW=." /etc/cactai/cactai.env; then exec /usr/local/sbin/cactai-dashboard-firewall; fi'
 ExecStart=@PREFIX@/mvp/dashboard/.venv/bin/python -m streamlit run app.py --server.address ${CACTAI_DASHBOARD_HOST} --server.port ${CACTAI_DASHBOARD_PORT} --server.headless true --browser.gatherUsageStats false
 User=@USER@
 Group=@USER@
