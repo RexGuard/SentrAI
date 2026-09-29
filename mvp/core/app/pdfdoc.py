@@ -27,6 +27,32 @@ _HELV_B = [278, 333, 474, 556, 556, 889, 722, 238, 333, 333, 389, 584, 278, 333,
 FONTS = {"F1": ("Helvetica", _HELV), "F2": ("Helvetica-Bold", _HELV_B), "F3": ("Courier", None)}
 REGULAR, BOLD, MONO = "F1", "F2", "F3"
 
+# SentrAI brand kit (assets/brand/tokens.json): light-theme tokens for the page, fixed navy/steel for the band.
+NAVY = (0.043, 0.067, 0.114)       # navy-950 #0b111d
+NAVY_SOFT = (0.086, 0.149, 0.290)  # dark brand-soft #16264a
+BLUE = (0.122, 0.310, 0.722)       # steel-700 #1f4fb8 (light brand)
+BLUE_SOFT = (0.498, 0.698, 1.0)    # steel-300 #7fb2ff
+INK = (0.059, 0.102, 0.173)        # ink #0f1a2c
+MUTED = (0.384, 0.435, 0.525)      # ink-muted #626f86
+RULE = (0.835, 0.863, 0.910)       # line #d5dce8
+STRIPE = (0.933, 0.949, 0.973)     # surface-2 #eef2f8
+HEAD = NAVY                        # headings and table headers
+ON_DARK = (0.906, 0.929, 0.965)    # dark ink #e7edf6
+
+# The shield-and-eye mark (assets/brand/mark-dark.svg, 64x64 box, y down).
+_SHIELD = [("m", 32, 4), ("l", 54, 11.5), ("l", 54, 29), ("c", 54, 43.5, 44.8, 54.2, 32, 60),
+           ("c", 19.2, 54.2, 10, 43.5, 10, 29), ("l", 10, 11.5)]
+_EYE = [("m", 17, 32), ("c", 22.5, 24, 27, 21.5, 32, 21.5), ("c", 37, 21.5, 41.5, 24, 47, 32),
+        ("c", 41.5, 40, 37, 42.5, 32, 42.5), ("c", 27, 42.5, 22.5, 40, 17, 32)]
+
+
+def _circle(cx: float, cy: float, r: float) -> list[tuple]:
+    k = 0.5523 * r
+    return [("m", cx + r, cy), ("c", cx + r, cy + k, cx + k, cy + r, cx, cy + r),
+            ("c", cx - k, cy + r, cx - r, cy + k, cx - r, cy), ("c", cx - r, cy - k, cx - k, cy - r, cx, cy - r),
+            ("c", cx + k, cy - r, cx + r, cy - k, cx + r, cy)]
+
+
 _SWAPS = {"→": "->", "←": "<-", "✓": "OK", "✅": "OK", "✗": "x", "≥": ">=", "≤": "<=", "\t": "    "}
 
 
@@ -108,11 +134,27 @@ class PdfDoc:
     def rect(self, x: float, y: float, w: float, h: float, fill: tuple[float, float, float]) -> None:
         self._op(f"{_rgb(fill)} rg {x:.2f} {y:.2f} {w:.2f} {h:.2f} re f\n")
 
-    def line(self, x1: float, y1: float, x2: float, y2: float, color=(0.8, 0.82, 0.8), w: float = 0.6) -> None:
+    def line(self, x1: float, y1: float, x2: float, y2: float, color=RULE, w: float = 0.6) -> None:
         self._op(f"{_rgb(color)} RG {w:.2f} w {x1:.2f} {y1:.2f} m {x2:.2f} {y2:.2f} l S\n")
 
+    def shield(self, x: float, y: float, size: float) -> None:
+        """The SentrAI mark (dark variant, for the navy band) with its bottom-left corner at (x, y)."""
+        k = size / 64
+
+        def path(cmds: list[tuple]) -> str:
+            out = []
+            for op, *pts in cmds:
+                xy = " ".join(f"{x + pts[i] * k:.2f} {y + (64 - pts[i + 1]) * k:.2f}" for i in range(0, len(pts), 2))
+                out.append(f"{xy} {op}")
+            return " ".join(out)
+
+        self._op(f"{_rgb(NAVY_SOFT)} rg {_rgb(BLUE_SOFT)} RG {3 * k:.2f} w 1 j {path(_SHIELD)} h B\n")
+        self._op(f"{_rgb(BLUE_SOFT)} rg {path(_EYE)} h f\n")
+        self._op(f"{_rgb(NAVY)} rg {path(_circle(32, 32, 6))} h f\n")
+        self._op(f"{_rgb(ON_DARK)} rg {path(_circle(34.2, 29.8, 1.8))} h f 0 j\n")
+
     def text(self, x: float, y: float, s: str, font: str = REGULAR, size: float = 10,
-             color=(0.1, 0.12, 0.1)) -> None:
+             color=INK) -> None:
         self._op(f"BT {_rgb(color)} rg /{font} {size:g} Tf {x:.2f} {y:.2f} Td (".encode("latin-1")
                  + _esc(clean(s)) + b") Tj ET\n")
 
@@ -124,15 +166,16 @@ class PdfDoc:
     def space(self, h: float) -> None:
         self.y -= h
 
-    def heading(self, s: str, size: float = 13, color=(0.12, 0.37, 0.23)) -> None:
+    def heading(self, s: str, size: float = 13, color=HEAD) -> None:
         self.ensure(size * 2.6)
         self.y -= size * 1.2
-        self.text(MARGIN, self.y, s, BOLD, size, color)
+        self.rect(MARGIN, self.y - 1, 3, size * 0.95, BLUE)  # steel-blue tab before each heading
+        self.text(MARGIN + 9, self.y, s, BOLD, size, color)
         self.y -= 4
-        self.line(MARGIN, self.y, MARGIN + self.width, self.y, color, 0.8)
+        self.line(MARGIN, self.y, MARGIN + self.width, self.y, RULE, 0.8)
         self.y -= size * 0.7
 
-    def paragraph(self, s: object, font: str = REGULAR, size: float = 9.5, color=(0.1, 0.12, 0.1),
+    def paragraph(self, s: object, font: str = REGULAR, size: float = 9.5, color=INK,
                   indent: float = 0.0) -> None:
         lead = size * 1.35
         for ln in wrap(s, font, size, self.width - indent):
@@ -156,7 +199,7 @@ class PdfDoc:
         def header() -> None:
             h = lead + 2 * pad
             self.ensure(h + lead * 2)
-            self.rect(MARGIN, self.y - h, self.width, h, (0.12, 0.37, 0.23))
+            self.rect(MARGIN, self.y - h, self.width, h, HEAD)
             x = MARGIN
             for c, w in zip(columns, widths):
                 self.text(x + pad, self.y - pad - size, c.title, BOLD, size, (1, 1, 1))
@@ -171,8 +214,8 @@ class PdfDoc:
                 self.new_page()
                 header()
             if i % 2:
-                self.rect(MARGIN, self.y - h, self.width, h, (0.95, 0.96, 0.95))
-            color = (colors[i] if colors and colors[i] else (0.1, 0.12, 0.1))
+                self.rect(MARGIN, self.y - h, self.width, h, STRIPE)
+            color = (colors[i] if colors and colors[i] else INK)
             x = MARGIN
             for lines, c, w in zip(cells, columns, widths):
                 for k, ln in enumerate(lines):
@@ -201,11 +244,12 @@ class PdfDoc:
             foot = []
             if self.footer or n > 1:
                 y = MARGIN - 14
-                foot.append(f"0.8 0.82 0.8 RG 0.6 w {MARGIN:.2f} {y + 10:.2f} m {PAGE_W - MARGIN:.2f} {y + 10:.2f} l S\n".encode())
-                foot.append(b"BT 0.45 0.47 0.45 rg /F1 7.5 Tf " + f"{MARGIN:.2f} {y:.2f} Td (".encode() + _esc(clean(self.footer)) + b") Tj ET\n")
+                foot.append(f"{_rgb(RULE)} RG 0.6 w {MARGIN:.2f} {y + 10:.2f} m {PAGE_W - MARGIN:.2f} {y + 10:.2f} l S\n".encode())
+                foot.append(f"{_rgb(BLUE)} rg {MARGIN:.2f} {y + 9.4:.2f} 28 1.4 re f\n".encode())
+                foot.append(f"BT {_rgb(MUTED)} rg /F1 7.5 Tf ".encode() + f"{MARGIN:.2f} {y:.2f} Td (".encode() + _esc(clean(self.footer)) + b") Tj ET\n")
                 label = f"Page {i} of {n}"
                 x = PAGE_W - MARGIN - text_width(label, REGULAR, 7.5)
-                foot.append(f"BT 0.45 0.47 0.45 rg /F1 7.5 Tf {x:.2f} {y:.2f} Td ({label}) Tj ET\n".encode())
+                foot.append(f"BT {_rgb(MUTED)} rg /F1 7.5 Tf {x:.2f} {y:.2f} Td ({label}) Tj ET\n".encode())
             data = zlib.compress(b"".join(ops + foot))
             content = add(f"<< /Length {len(data)} /Filter /FlateDecode >>\nstream\n".encode() + data + b"\nendstream")
             kids.append(add(f"<< /Type /Page /Parent {pages_id} 0 R /MediaBox [0 0 {PAGE_W} {PAGE_H}] "

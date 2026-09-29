@@ -42,6 +42,23 @@ def band_for(index: Any) -> str:
 
 BAND_EMOJI = {"green": "🟢", "amber": "🟠", "red": "🔴", "critical": "🚨", "unknown": "⚪"}
 
+# SentrAI brand kit (assets/brand/tokens.json): navy-950, light brand (buttons) and steel-300 (the "AI" on navy).
+BRAND = "SentrAI"
+TAGLINE = "A sentry doesn't chase you. It just guards the gate."
+BRAND_NAVY, BRAND_BLUE, BRAND_BLUE_SOFT = "#0b111d", "#1f4fb8", "#7fb2ff"
+# Green, amber and red mean risk and nothing else (light-theme safe/warn/danger; critical is a deeper red).
+BAND_COLORS = {"green": "#1a7447", "amber": "#8f5d00", "red": "#c0282e", "critical": "#8a1c22", "unknown": "#626f86"}
+
+
+def risk_meter(index: Any, cells: int = 10, full: str = "▰", empty: str = "▱") -> str:
+    """'▰▰▰▰▱▱▱▱▱▱' for 44/100; empty string when the risk is unknown."""
+    try:
+        v = max(0.0, min(100.0, float(index)))
+    except (TypeError, ValueError):
+        return ""
+    n = int(round(v * cells / 100))
+    return full * n + empty * (cells - n)
+
 
 def incident_id_of(notification: dict) -> str | None:
     return notification.get("incident_id") or notification.get("incident") or (
@@ -97,9 +114,11 @@ def format_telegram(notification: dict, incident: dict | None = None, risk: dict
     f = alert_fields(notification, incident, risk)
     e = html.escape
     risk_txt = f"{f['risk_index']}/100" if f["risk_index"] is not None else "-"
+    meter = risk_meter(f["risk_index"])
     lines = [
-        f"{f['icon']} <b>{e(f['header'])}</b>",
-        f"<b>{e(str(f['incident_id']))}</b> · {e(f['title'])} · Risk <b>{e(risk_txt)}</b> {BAND_EMOJI[f['band']]}",
+        f"{f['icon']} <b>{e(f['header'])}</b>  ·  <i>🛡️ {BRAND}</i>",
+        f"<b>{e(str(f['incident_id']))}</b> · {e(f['title'])}",
+        f"Risk <b>{e(risk_txt)}</b> {BAND_EMOJI[f['band']]}" + (f" <code>{meter}</code>" if meter else ""),
     ]
     if f["text"]:
         lines.append(e(f["text"]))
@@ -153,6 +172,8 @@ def format_console(notification: dict, incident: dict | None = None, risk: dict 
     f = alert_fields(notification, incident, risk)
     c = _ANSI if color else {k: "" for k in _ANSI}
     risk_txt = f"{f['risk_index']}/100 {f['band'].upper()}" if f["risk_index"] is not None else "-"
+    if f["risk_index"] is not None:
+        risk_txt += " " + risk_meter(f["risk_index"], full="■", empty="·")
     body = [
         f"{f['incident_id']} · {f['title']}",
         f"Risk {risk_txt} · severity {f['severity']} · confidence {f['confidence']} ({f['classified_by']})",
