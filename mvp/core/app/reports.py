@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from .clock import fmt_demo_hours, fmt_offset
-from .pdfdoc import BOLD, MONO, Column, PdfDoc
+from .pdfdoc import BLUE, BLUE_SOFT, BOLD, MONO, MUTED, NAVY, ON_DARK, PAGE_W, Column, PdfDoc, text_width
 from .saguaro import public
 
 if TYPE_CHECKING:
@@ -148,8 +148,19 @@ def build_report(core: "Saguaro", iid: str) -> dict[str, Any]:
 
 def render_markdown(r: dict[str, Any]) -> str:
     inc = r["incident"]
+    fa, nr, chain_ok = r["forced_action"], r["non_repudiation"], r["audit_proof"]["chain_valid"]
+    status = " · ".join([
+        "🔴 SLA breached" if r["sla"]["breached"] else "🟢 Within SLA",
+        "🟢 Acknowledged" if nr["acknowledged"] else "🔴 No acknowledgement",
+        "🔵 Autonomous containment" if fa["taken"] else ("🔵 Operator containment" if fa["actions"] else "⚪ No containment"),
+        "🟢 Audit chain valid" if chain_ok else "🔴 Audit chain broken",
+    ])
     lines = [
-        f"# {r['title']}",
+        f"# 🛡️ {r['title']}",
+        "",
+        "_Issued by **SentrAI**. A sentry doesn't chase you. It just guards the gate._",
+        "",
+        f"> {status}",
         "",
         f"**Report:** {r['report_id']}  ",
         f"**Incident:** {r['incident_id']} ({inc['category']}, {inc['severity']}, status {inc['status']})  ",
@@ -205,11 +216,27 @@ def render_markdown(r: dict[str, Any]) -> str:
     for rec in r["audit_proof"]["records"]:
         lines.append(f"| {rec['seq']} | {rec['ts']} | {rec['type']} | {rec['agent']} | `{rec['hash'][:16]}...` |")
     lines += ["", f"Chain valid: **{r['audit_proof']['chain_valid']}**. Head hash: `{r['audit_proof']['chain_head_hash']}`",
-              "", f"_{r['demo_clock']['note']}_", ""]
+              "", f"_{r['demo_clock']['note']}_", "", "---", "",
+              f"_🛡️ SentrAI · {r['report_id']} · generated {r['generated_at']} · "
+              f"chain head {r['audit_proof']['chain_head_hash'][:16]}..._", ""]
     return "\n".join(lines)
 
 
-GREEN, RED = (0.12, 0.45, 0.25), (0.72, 0.13, 0.13)
+GREEN, RED = (0.102, 0.455, 0.278), (0.753, 0.157, 0.180)  # brand kit safe #1a7447, danger #c0282e
+
+
+def _tiles(doc: PdfDoc, tiles: list[tuple[str, str, tuple[float, float, float]]]) -> None:
+    """A row of at-a-glance status tiles (label over a coloured value) under the title band."""
+    gap, h = 8.0, 40.0
+    w = (doc.width - gap * (len(tiles) - 1)) / len(tiles)
+    for i, (label, value, color) in enumerate(tiles):
+        x = 42 + i * (w + gap)
+        tint = tuple(0.93 + 0.07 * c for c in color)  # a pale wash of the value colour
+        doc.rect(x, doc.y - h, w, h, tint)
+        doc.rect(x, doc.y - h, 3, h, color)
+        doc.text(x + 11, doc.y - 15, label.upper(), BOLD, 6.8, MUTED)
+        doc.text(x + 11, doc.y - 31, value, BOLD, 11.5, color)
+    doc.y -= h + 12
 
 
 def _ts(ts: Any) -> str:
@@ -224,17 +251,32 @@ def render_pdf(r: dict[str, Any]) -> bytes:
     doc = PdfDoc(title=f"{r['title']} {r['report_id']}",
                  footer=f"SentrAI  |  {r['report_id']}  |  generated {r['generated_at']}  |  chain head {proof['chain_head_hash'][:16]}...")
 
-    # Title band across the top of page 1
+    # SentrAI title band across the top of page 1: shield + wordmark, report title, incident line
     top = doc.y + 42
-    doc.rect(0, top - 88, 595.28, 88, (0.09, 0.27, 0.17))
-    doc.text(42, top - 46, r["title"], BOLD, 21, (1, 1, 1))
-    doc.text(42, top - 66, f"{r['report_id']}  |  incident {r['incident_id']} ({inc['category']}, {inc['severity']}, "
-                           f"status {inc['status']})  |  generated {r['generated_at']}", size=8.5, color=(0.85, 0.93, 0.87))
-    doc.y = top - 88 - 18
+    band = 112
+    doc.rect(0, top - band, PAGE_W, band, NAVY)
+    doc.rect(0, top - band - 3, PAGE_W, 3, BLUE)
+    doc.shield(40, top - 54, 30)
+    doc.text(74, top - 43, "Sentr", BOLD, 15, ON_DARK)
+    doc.text(74 + text_width("Sentr", BOLD, 15), top - 43, "AI", BOLD, 15, BLUE_SOFT)
+    doc.text(PAGE_W - 42 - text_width(r["report_id"], BOLD, 9), top - 40, r["report_id"], BOLD, 9, BLUE_SOFT)
+    doc.text(42, top - 80, r["title"], BOLD, 21, (1, 1, 1))
+    doc.text(42, top - 98, f"Incident {r['incident_id']} ({inc['category']}, {inc['severity']}, "
+                           f"status {inc['status']})  |  generated {r['generated_at']}", size=8.5,
+             color=(0.647, 0.698, 0.776))
+    doc.y = top - band - 3 - 16
 
     chain_ok = proof["chain_valid"]
     chain_text = "VALID" if chain_ok else f"BROKEN at seq {proof['first_invalid_seq']}"
     delivered = sum(d["delivered"] for d in r["non_repudiation"]["deliveries"])
+    acked = r["non_repudiation"]["acknowledged"]
+    _tiles(doc, [
+        ("SLA", "Breached" if r["sla"]["breached"] else "Within SLA", RED if r["sla"]["breached"] else GREEN),
+        ("Acknowledgement", "Received" if acked else "None", GREEN if acked else RED),
+        ("Containment", "Autonomous" if r["forced_action"]["taken"]
+         else "Operator" if r["forced_action"]["actions"] else "None", BLUE),
+        ("Audit chain", "Valid" if chain_ok else "Broken", GREEN if chain_ok else RED),
+    ])
     doc.table([Column("Field", 1.1, BOLD), Column("Record", 3.4)], [
         ["Responsible entity", r["responsible_entity"]],
         ["SLA", r["sla"]["summary"]],
@@ -264,7 +306,7 @@ def render_pdf(r: dict[str, Any]) -> bytes:
             doc.bullet(f"{d['notification']} ({d['kind']}): {d['line']}")
     else:
         doc.bullet("No alerts were queued for this incident.")
-    doc.paragraph(r["non_repudiation"]["statement"], size=8.5, color=(0.4, 0.42, 0.4))
+    doc.paragraph(r["non_repudiation"]["statement"], size=8.5, color=MUTED)
 
     doc.heading("Approvals")
     if r["approvals"]:
@@ -286,12 +328,12 @@ def render_pdf(r: dict[str, Any]) -> bytes:
 
     doc.heading("Hash-chain proof")
     doc.paragraph("Each audit record stores the hash of the one before it, so changing or deleting any record breaks "
-                  "every hash after it. Re-check at any time with GET /audit.", size=8.5, color=(0.4, 0.42, 0.4))
+                  "every hash after it. Re-check at any time with GET /audit.", size=8.5, color=MUTED)
     doc.table([Column("Seq", 0.4), Column("Time", 1.3), Column("Type", 1.1), Column("Agent", 0.75),
                Column("Previous hash", 1.2, MONO), Column("Hash", 1.2, MONO)],
               [[rec["seq"], _ts(rec["ts"]), rec["type"], rec["agent"], rec["prev_hash"][:16], rec["hash"][:16]]
                for rec in proof["records"]], size=7.5)
     doc.paragraph(f"Chain valid: {proof['chain_valid']}. Head hash: {proof['chain_head_hash']}", BOLD, 9,
                   GREEN if chain_ok else RED)
-    doc.paragraph(r["demo_clock"]["note"], size=8, color=(0.4, 0.42, 0.4))
+    doc.paragraph(r["demo_clock"]["note"], size=8, color=MUTED)
     return doc.to_bytes()

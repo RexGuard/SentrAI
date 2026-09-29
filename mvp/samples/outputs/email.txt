@@ -1,0 +1,16 @@
+Subject: [SentrAI] SLA breached: RSK-2026-081 Brute force (portal) · risk 72
+
+⏰ SLA breached
+Still unacknowledged after 2 h. Team lead copied.
+
+Incident: RSK-2026-081 · Brute force (portal)
+Risk: 72/100 RED 🔴
+Severity: HIGH · AI confidence 0.94 (rules)
+Source: 203.0.113.45 · user admin
+Inaction penalty: +10 pts · SLA BREACHED
+Recommended: Block 203.0.113.45 for 2 h and rate-limit /login
+
+To Approve & Patch or Reject with Justification, open the SentrAI dashboard: http://127.0.0.1:8501
+Acknowledge on the dashboard or in Telegram; that is what the audit log records. Delivery of this email is logged too.
+
+-- SentrAI · A sentry doesn't chase you. It just guards the gate.
