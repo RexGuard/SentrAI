@@ -32,9 +32,18 @@ DEFAULT_CORE = os.environ.get("CACTAI_CORE_URL", "http://127.0.0.1:8000")
 DEFAULT_OPERATOR = os.environ.get("CACTAI_OPERATOR", "operator")
 REFRESH_SECONDS = 2
 
-st.set_page_config(page_title="SentrAI · Risk Console", page_icon="🛡️", layout="wide",
+# SentrAI brand mark: assets/brand/mark-dark.svg (shield with an open eye), inlined so it needs no file.
+SHIELD = ('<svg viewBox="0 0 64 64" aria-hidden="true">'
+          '<path d="M32 4 L54 11.5 V29 C54 43.5 44.8 54.2 32 60 C19.2 54.2 10 43.5 10 29 V11.5 Z" fill="#16264a" '
+          'stroke="#7fb2ff" stroke-width="3" stroke-linejoin="round"/>'
+          '<path d="M17 32 C22.5 24 27 21.5 32 21.5 C37 21.5 41.5 24 47 32 C41.5 40 37 42.5 32 42.5 '
+          'C27 42.5 22.5 40 17 32 Z" fill="#7fb2ff"/><circle cx="32" cy="32" r="6" fill="#0b111d"/>'
+          '<circle cx="34.2" cy="29.8" r="1.8" fill="#e7edf6"/></svg>')
+# Tab icon from the brand kit when it is in the checkout, else the emoji.
+_FAVICON = Path(__file__).resolve().parents[2] / "assets" / "brand" / "favicon-32.png"
+PAGE_ICON = str(_FAVICON) if _FAVICON.exists() else "🛡️"
+st.set_page_config(page_title="SentrAI · Risk Console", page_icon=PAGE_ICON, layout="wide",
                    initial_sidebar_state="expanded")
-
 CSS = (Path(__file__).parent / "cactai_ui" / "console.css").read_text(encoding="utf-8")
 st.markdown(f"<style>{CSS}</style>", unsafe_allow_html=True)
 
@@ -52,8 +61,8 @@ def login() -> None:
         return
     _, mid, _ = st.columns([1, 1.2, 1])
     with mid.form("login"):
-        st.markdown('<div class="brand"><div class="brand-mark">🛡️</div><div>'
-                    '<div class="brand-name">Cact<span>AI</span></div>'
+        st.markdown('<div class="brand"><div class="brand-mark">' + SHIELD + '</div><div>'
+                    '<div class="brand-name">Sentr<span>AI</span></div>'
                     '<div class="brand-tag">Risk Console</div></div></div>', unsafe_allow_html=True)
         typed = st.text_input("Password", type="password")
         if st.form_submit_button("Sign in", type="primary", width="stretch"):
@@ -238,8 +247,8 @@ def menu() -> None:
 
 with st.sidebar:
     st.markdown(
-        '<div class="brand"><div class="brand-mark">🛡️</div><div>'
-        '<div class="brand-name">Cact<span>AI</span></div>'
+        '<div class="brand"><div class="brand-mark">' + SHIELD + '</div><div>'
+        '<div class="brand-name">Sentr<span>AI</span></div>'
         '<div class="brand-tag">Risk Console</div></div></div>',
         unsafe_allow_html=True,
     )
@@ -639,7 +648,7 @@ def page_approvals() -> None:
         st.warning(f"Could not load incidents: {err}")
     waiting = sh.pending_approvals(incidents or [])
     if not waiting:
-        empty("Nothing waiting for a decision. The desert is quiet.", "check_circle", good=True)
+        empty("Nothing waiting for a decision. All quiet at the gate.", "check_circle", good=True)
         return
     for n, inc in enumerate(waiting):
         can = sh.available_actions(inc)
@@ -978,7 +987,7 @@ def page_responder() -> None:
         section("Action history", "every action is reversible and expires unless a person keeps it", "history")
         table(history, "No actions taken yet.")
     with right, st.container(border=True):
-        section("Needle reviews", "two-key check before any autonomous action", "key")
+        section("Countersign reviews", "two-key check before any autonomous action", "key")
         render_feed(sh.build_activity_feed(sh.records_of(records, "needle_review", "action_applied",
                                                          "auto_rollback", "action_rolled_back"), limit=15))
 
@@ -1030,7 +1039,7 @@ def page_review() -> None:
                 "index = 100·(1−e^(−raw/60))", "calculate")
         if inc_err:
             st.warning(f"Could not load incidents: {inc_err}")
-        table(sh.risk_breakdown(incidents), "Quiet desert. No incidents.", column_config={
+        table(sh.risk_breakdown(incidents), "All quiet at the gate. No incidents.", column_config={
             "Confidence": st.column_config.ProgressColumn("Confidence", min_value=0, max_value=1, format="%.2f"),
             "Inaction penalty": st.column_config.NumberColumn("Inaction penalty", format="+%.0f pts")})
 

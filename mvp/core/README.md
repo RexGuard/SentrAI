@@ -50,9 +50,9 @@ Tests:
 | `AUTO_CLOSE_QUIET_MIN` | `60` | Resolve an open scan or brute-force incident after this many real minutes with no new event and no containment in force. `0` turns it off. |
 | `AUTO_CLOSE_CATEGORIES` | `port_scan,brute_force` | Which categories auto-close. Other incidents always wait for an operator. |
 | `WATCHDOG_SILENCE_S` | `30` | Watchdog flags a collector after this many seconds of silence. |
-| `PROTECTED_IPS` | empty | Comma-separated IPs that Needle will never approve blocking. |
+| `PROTECTED_IPS` | empty | Comma-separated IPs that Countersign will never approve blocking. |
 | `CACTAI_ENGINE` | `cyanide` | Orchestrator. `cyanide` plans with Claude when a key is set; `saguaro` keeps the fixed playbooks only. |
-| `CACTAI_LLM_API_KEY` | unset | The one AI key the setup wizard saves; used by whichever provider `CACTAI_LLM_PROVIDER` names. With no key, Cyanide behaves exactly like Saguaro. A provider's own variable (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, `COMMANDCODE_API_KEY`) still works and wins when set. |
+| `CACTAI_LLM_API_KEY` | unset | The one AI key the setup wizard saves; used by whichever provider `CACTAI_LLM_PROVIDER` names. With no key, Cyanide behaves exactly like Warden. A provider's own variable (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, `COMMANDCODE_API_KEY`) still works and wins when set. |
 | `CACTAI_LLM_PROVIDER` | `auto` | `anthropic`, `openai`, `deepseek`, `commandcode` (also set `CACTAI_LLM_MODEL`), or `compatible` (any OpenAI-compatible API: also set `CACTAI_LLM_BASE_URL` and `CACTAI_LLM_MODEL`). `auto` uses the first provider-specific key set. The dashboard's Configuration page has a Fetch models button that lists the models your key can use. |
 | `CYANIDE_PROFILE` | unset | Path to the system profile JSON, e.g. `profiles\tuition_centre.json`. |
 | `CYANIDE_MODEL` / `CYANIDE_EFFORT` / `CYANIDE_TIMEOUT_S` | provider default / `low` / `20` | Model, effort level (Anthropic only) and per-call timeout for planning. Defaults: `claude-opus-5`, `gpt-5`, `deepseek-chat`. |
@@ -61,11 +61,11 @@ Tests:
 
 ## Cyanide (the orchestrator)
 
-Cyanide (`app/cyanide.py`) replaces Saguaro's fixed judgement with Claude, and keeps everything that must stay predictable.
+Cyanide (`app/cyanide.py`) replaces Warden's fixed judgement with Claude, and keeps everything that must stay predictable.
 
 - **What the model decides.** Claude by default; OpenAI, DeepSeek or any OpenAI-compatible API also work (`mvp/cactai_llm.py`, keys in `python cactai_config.py setup`, section 5). When an incident opens, Cyanide sends the model the system profile, the incident, its log lines and the list of installed actions. The model answers with an assessment in plain words, the containment steps that fit this system, and whether SentrAI may act alone or must wait for a human.
-- **What stays fixed.** The risk index, SLA, inaction penalty, notifications, TTLs and the audit chain are Saguaro's code, unchanged. Needle still reviews every autonomous action.
-- **Guardrails.** Claude can only pick installed action types. IP, account and host targets must appear in the incident's own events; anything else is dropped and logged. Accounts and IPs listed as protected in the profile go to Needle, which refuses them. A plan can make SentrAI more careful ("hold: exam week, the admin account is shared") but never bypass the threshold or the TTL.
+- **What stays fixed.** The risk index, SLA, inaction penalty, notifications, TTLs and the audit chain are Warden's code, unchanged. Countersign still reviews every autonomous action.
+- **Guardrails.** Claude can only pick installed action types. IP, account and host targets must appear in the incident's own events; anything else is dropped and logged. Accounts and IPs listed as protected in the profile go to Countersign, which refuses them. A plan can make SentrAI more careful ("hold: exam week, the admin account is shared") but never bypass the threshold or the TTL.
 - **Fallback.** No key, a timeout or a bad answer means the default playbook is used, and the timeline says so.
 - **Adapting to a new system.** Write a profile (see `profiles/tuition_centre.json`): what the hosts do, which accounts matter, business hours, what must never be touched. A new responder (a new action type) is offered to Claude automatically.
 - **Speed.** Planning runs on a background thread, so ingestion never waits on the model. The playbook text shows until the plan arrives, usually a few seconds later.
@@ -74,11 +74,11 @@ Audit records: `cyanide_plan` (actions, reasons, dropped steps), `cyanide_hold` 
 
 ## How it works
 
-1. **Ingest** (`POST /events`). Saguaro sends each event to a layer agent based on its `layer`:
-   - `web` goes to Root
-   - `db` goes to Reservoir
-   - `os` goes to AreoleLinux, or to AreoleWin when the host or source contains "win"
-   - `network` and `cloud` go to SpineNet
+1. **Ingest** (`POST /events`). Warden sends each event to a layer agent based on its `layer`:
+   - `web` goes to Gatehouse
+   - `db` goes to Vault
+   - `os` goes to Garrison-Linux, or to Garrison-Win when the host or source contains "win"
+   - `network` and `cloud` go to Watchtower
 2. **Classify**:
    - **Rules first**, always with confidence 1.0. They cover SQLi, XSS, a shell being spawned, `/export` bulk exports, port scans, misconfigurations, and 5 or more failed logins from one IP within 60 s. Failed logins below that threshold are held as benign; when the threshold is reached, all of them are attached to the incident.
    - **Jev** if the rules cannot decide.
@@ -92,13 +92,27 @@ Audit records: `cyanide_plan` (actions, reasons, dropped steps), `cyanide_hold` 
    - Contained, resolved and rejected incidents no longer count.
 4. **Hotpatch**. When the risk index reaches the threshold, every incident that is open, unacknowledged and not flagged for review goes through these steps:
    1. Snapshot: sha256 of the blocklist state.
-   2. Needle review: the incident needs confidence of at least 0.6, and the action must be on the allowlist.
-   3. Areole applies the playbook with a TTL of 2 demo hours.
+   2. Countersign review: the incident needs confidence of at least 0.6, and the action must be on the allowlist.
+   3. Garrison applies the playbook with a TTL of 2 demo hours.
    4. Verify.
    5. Notify.
 
    This is containment inside the app only. The target app polls `/blocklist`. **No firewall, shell or OS changes are ever made.** Expired actions drop out of `/blocklist`.
 5. **Audit**. Every agent decision is appended to an SQLite hash chain, with the agent's name in `data.agent`. The hash is `sha256(prev_hash + canonical_json({seq, ts, type, data}))`. SQL triggers block UPDATE and DELETE. `/audit` re-verifies the whole chain on each call.
+
+## Agent names
+
+People see the sentry names. The Python classes keep their older cactus names so saved state,
+env vars and imports keep working. Old names in saved incidents and audit records are mapped
+to the new ones (`LEGACY_AGENT_NAMES` in `app/saguaro.py`, `LEGACY_AGENTS` in the dashboard).
+
+| Shown as | Class (file) |
+| --- | --- |
+| Warden | `Saguaro` (`app/saguaro.py`) |
+| Gatehouse, Vault, Watchtower | `Root`, `Reservoir`, `SpineNet` (`app/agents.py`) |
+| Garrison-Linux, Garrison-Win | `AreoleLinux`, `AreoleWin` |
+| Countersign | `Needle` (setting `NEEDLE_MIN_CONFIDENCE`, audit type `needle_review`) |
+| Tripwires | lab `target_app/spines.py`, `CACTAI_SPINES`, `--spines` (alias `--tripwires`) |
 
 ## Process scan (finding logs automatically)
 

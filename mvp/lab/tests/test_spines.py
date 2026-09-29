@@ -1,4 +1,4 @@
-"""Cactus spines: honeypot login, honeytoken credential and rows, tarpit (off by default)."""
+"""Tripwires: honeypot login, honeytoken credential and rows, tarpit (off by default)."""
 from __future__ import annotations
 
 import json
@@ -96,6 +96,9 @@ def test_export_returns_bait_rows_and_alerts():
     assert "STF-0007" in hit["raw"] and "STF-0012" in hit["raw"]
 
 
+CLOCK_SLACK = 0.02  # Windows clocks tick every ~16 ms, so a 0.3 s sleep can measure as 0.297 s
+
+
 def test_tarpit_slows_only_pricked_ips():
     app, c = _client(True, tarpit_s=0.3)
     t0 = time.monotonic()
@@ -105,7 +108,7 @@ def test_tarpit_slows_only_pricked_ips():
     assert "tarpit engaged" in _spine_log()[0]["raw"]
     t0 = time.monotonic()
     c.get("/", headers=ATTACKER)
-    assert time.monotonic() - t0 >= 0.3
+    assert time.monotonic() - t0 >= 0.3 - CLOCK_SLACK
     t0 = time.monotonic()
     c.get("/", headers=STAFF)
     assert time.monotonic() - t0 < 0.3
@@ -117,6 +120,6 @@ def test_collector_ships_spine_events_with_their_layer():
     c.get("/export", headers=ATTACKER)
     c.get(spines.HONEYPOT_PATH, headers=ATTACKER)
     events = [collector.normalize(paths.DECEPTION_LOG, r) for r in _spine_log()]
-    assert [(e["layer"], e["source"]) for e in events] == [("db", "cactus_spine"), ("web", "cactus_spine")]
+    assert [(e["layer"], e["source"]) for e in events] == [("db", "tripwire"), ("web", "tripwire")]
     assert events[0]["asset_criticality"] == 1.5
-    assert events[0]["raw"].startswith("cactus-spine honeytoken_row:")
+    assert events[0]["raw"].startswith("tripwire honeytoken_row:")
