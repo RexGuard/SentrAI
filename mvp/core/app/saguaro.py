@@ -199,7 +199,7 @@ class Saguaro(Agent):
     # --------------------------------------------------------------- ingestion
     def ingest(self, events: list[dict[str, Any]]) -> dict[str, Any]:
         accepted = 0
-        tampering: list[dict[str, Any]] = []  # clock jumps seen in heartbeats, classified after this batch
+        tampering: list[dict[str, Any]] = []  # broken line chains and clock jumps, classified after this batch
         # Cap the total time one request may spend waiting on Jev; the rest use the fallback.
         self.jev_step.deadline = time.monotonic() + self.settings.jev_budget_s
         for raw_ev in events:
@@ -216,6 +216,8 @@ class Saguaro(Agent):
             with self.lock:
                 if ev["event_id"] in self.events:
                     continue  # duplicate delivery
+                if (broken := self.integrity.chained(raw_ev)) is not None:
+                    tampering.append(broken)
                 self.events[ev["event_id"]] = {**ev, "category": None}
                 recovered = self.watchdog.observe(str(ev["host"]), now, heartbeat)
                 if recovered:

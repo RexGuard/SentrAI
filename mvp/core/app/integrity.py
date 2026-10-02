@@ -5,6 +5,8 @@ shrinks or vanishes without being rotated. This part watches what only the core 
 
 * the audit chain: a record changed or removed outside SentrAI breaks it (audit.py), and a deleted
   database file means the record on disk is gone;
+* the collector's line chain: every event a collector sends is sealed to the one before it
+  (CONTRACT.md "Line chain"), so a missing batch or a line changed after it was read shows up;
 * the clock: a wall-clock jump on the core host, or a sudden change in how far a collector's clock
   is from the core's, moves new log lines into the wrong time window.
 
@@ -14,9 +16,12 @@ Each finding becomes an ordinary event (source ``audit_integrity``) that the rul
 
 from __future__ import annotations
 
+import hashlib
+import json
 import socket
 import time
 import uuid
+from collections import OrderedDict
 from datetime import datetime, timezone
 from typing import Any
 
@@ -35,6 +40,16 @@ def integrity_event(text: str, host: str | None = None) -> dict[str, Any]:
         "raw": f"audit-integrity {text}",
         "asset_criticality": 1.0,
     }
+
+
+CHAIN_FIELDS = ("event_id", "timestamp", "host", "layer", "source", "raw")  # same as the collector's
+GENESIS = "0" * 64
+CHAIN_MEMORY = 2000  # recent (seq -> hash) per stream, to recognise a collector replaying after a crash
+
+
+def chain_hash(prev: str, event: dict[str, Any]) -> str:
+    body = json.dumps([event.get(k) for k in CHAIN_FIELDS], separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256((prev + body).encode("utf-8")).hexdigest()
 
 
 def _parse_ts(value: Any) -> float | None:
@@ -72,6 +87,7 @@ class IntegrityGuard:
         self._reported_missing = False
         self._offset = time.time() - _steady()[0]
         self._beats: dict[str, tuple[float, float]] = {}  # host -> (sent ts, arrival on the steady clock)
+        self._streams: dict[str, OrderedDict[int, str]] = {}  # collector stream -> recent seq -> hash
 
     def check(self, force: bool = False) -> list[dict[str, Any]]:
         """Audit chain, audit file and core clock; at most every ``every_s`` seconds unless forced."""
@@ -124,3 +140,36 @@ class IntegrityGuard:
         if d_sent < -self.clock_jump_s:
             return integrity_event(f"clock jumped back by {-d_sent:.0f} s on {host} (collector heartbeat)", host)
         return None
+
+    def chained(self, event: dict[str, Any]) -> dict[str, Any] | None:
+        """Checks the seal on one event from a collector (in arrival order). None when it fits.
+
+        Starts trusting a stream at the first event it sees (the core keeps this in memory, so a
+        core restart starts over). A collector that crashed before saving its place re-sends
+        lines sealed from an earlier record: that fits a hash still remembered, so it is accepted."""
+        c = event.get("chain")
+        if not isinstance(c, dict):
+            return None
+        stream, host = str(c.get("stream") or "?"), str(event.get("host") or "unknown")
+        try:
+            seq = int(c.get("seq"))
+        except (TypeError, ValueError):
+            return integrity_event(f"altered: an event from collector {stream} has an unreadable seal", host)
+        prev, sealed = str(c.get("prev") or ""), str(c.get("hash") or "")
+        if chain_hash(prev, event) != sealed:
+            return integrity_event(f"altered: event #{seq} from collector {stream} does not match its seal "
+                                   f"(changed after the collector read it)", host)
+        seen = self._streams.setdefault(stream, OrderedDict())
+        last = next(reversed(seen), None)
+        fits = (last is None or (seq == 1 and prev == GENESIS) or seen.get(seq - 1) == prev)
+        seen[seq] = sealed
+        seen.move_to_end(seq)
+        while len(seen) > CHAIN_MEMORY:
+            seen.popitem(last=False)
+        if fits:
+            return None
+        if last is not None and seq > last + 1:
+            return integrity_event(f"gap: collector {stream} jumped from record #{last} to #{seq}: "
+                                   f"{seq - last - 1} event(s) never arrived", host)
+        return integrity_event(f"altered: event #{seq} from collector {stream} does not follow the one before "
+                               f"it (inserted, reordered or rewritten)", host)
