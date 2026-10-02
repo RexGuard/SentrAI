@@ -69,6 +69,10 @@ class Settings:
     )
     watchdog_silence_s: float = field(default_factory=lambda: _f("WATCHDOG_SILENCE_S", 30.0))
     tick_s: float = field(default_factory=lambda: _f("TICK_S", 1.0))
+    # Integrity guard (integrity.py): how often the audit chain is re-checked, and how big a clock
+    # jump (seconds) counts as tampering.
+    integrity_check_s: float = field(default_factory=lambda: _f("INTEGRITY_CHECK_S", 30.0))
+    clock_jump_s: float = field(default_factory=lambda: _f("CLOCK_JUMP_S", 120.0))
     id_year: int = field(default_factory=lambda: _i("ID_YEAR", 2026))
     id_start: int = field(default_factory=lambda: _i("ID_START", 81))
     history_len: int = 3600

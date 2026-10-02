@@ -34,6 +34,7 @@ from .audit import AuditLog
 from .classifier import Classification, default_chain
 from .clock import DemoClock, fmt_demo_hours
 from .config import Settings, sign
+from .integrity import IntegrityGuard
 from .jev_client import JevClient
 from .netlogs import enrich
 from .responders import BlocklistResponder, Responders, SimulatedResponder
@@ -53,6 +54,7 @@ TITLES = {
     "privilege_escalation": "Shell spawned / privilege escalation",
     "data_exfiltration": "Bulk data export",
     "misconfiguration": "Misconfiguration",
+    "log_tampering": "Log tampering",
 }
 
 BUTTONS_DECIDE = [
@@ -114,6 +116,7 @@ class Saguaro(Agent):
         self.needle = Needle(s.needle_min_confidence, self.responders.allowlist, s.protected_ips, s.protected_users)
         self.watchdog = Watchdog(s.watchdog_silence_s)
         self.scribe = Scribe(self.audit, self.clock)
+        self.integrity = IntegrityGuard(self.audit, s.integrity_check_s, s.clock_jump_s)
         self.helpdesk = HelpDesk()
         self.lock = threading.RLock()
         self._protection_file = s.db_path.parent / "protection.json"
@@ -192,6 +195,7 @@ class Saguaro(Agent):
     # --------------------------------------------------------------- ingestion
     def ingest(self, events: list[dict[str, Any]]) -> dict[str, Any]:
         accepted = 0
+        tampering: list[dict[str, Any]] = []  # clock jumps seen in heartbeats, classified after this batch
         # Cap the total time one request may spend waiting on Jev; the rest use the fallback.
         self.jev_step.deadline = time.monotonic() + self.settings.jev_budget_s
         for raw_ev in events:
@@ -214,6 +218,8 @@ class Saguaro(Agent):
                     self.scribe.record(self.watchdog.name, "collector_recovered", recovered)
             accepted += 1
             if heartbeat:
+                if (jump := self.integrity.heartbeat(str(ev["host"]), ev.get("timestamp"))) is not None:
+                    tampering.append(jump)
                 with self.lock:
                     self.events[ev["event_id"]].update(category="benign", classified_by="rules", reason="heartbeat")
                 continue
@@ -221,6 +227,8 @@ class Saguaro(Agent):
             cls = agent.analyze(ev, now)  # may call Jev: done outside the lock
             with self.lock:
                 self._apply_classification(ev, cls, agent, now)
+        if tampering:
+            self.ingest(tampering)
         with self.lock:
             self._trim_events()
             now = self.clock.now()
@@ -414,6 +422,9 @@ class Saguaro(Agent):
                              f"Monitoring on that host may be blind.", [])
             self._evaluate(now)
             self._record_history(now)
+            findings = self.integrity.check()
+        if findings:
+            self.ingest(findings)  # a broken audit chain, a deleted audit file or a clock jump
 
     def _evaluate(self, now: float) -> None:
         self._expire_actions(now)

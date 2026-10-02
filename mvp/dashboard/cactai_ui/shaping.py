@@ -79,6 +79,7 @@ CATEGORY_LABELS = {
     "privilege_escalation": "Privilege escalation",
     "data_exfiltration": "Data exfiltration",
     "misconfiguration": "Misconfiguration",
+    "log_tampering": "Log tampering",
 }
 
 STATUS_ICONS = {

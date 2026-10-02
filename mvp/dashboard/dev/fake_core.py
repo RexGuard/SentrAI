@@ -36,7 +36,8 @@ BASELINE_RAW = 5.0
 SEVERITY = {
     "brute_force": ("high", 30), "sql_injection": ("high", 40), "xss": ("medium", 20),
     "port_scan": ("medium", 15), "privilege_escalation": ("critical", 60),
-    "data_exfiltration": ("critical", 70), "misconfiguration": ("medium", 20), "benign": ("low", 0),
+    "data_exfiltration": ("critical", 70), "misconfiguration": ("medium", 20), "log_tampering": ("critical", 55),
+    "benign": ("low", 0),
 }
 PLAYBOOK = {
     "brute_force": [("block_ip", "src_ip"), ("lock_user", "user"), ("rate_limit", "/login")],
@@ -46,6 +47,7 @@ PLAYBOOK = {
     "privilege_escalation": [("kill_process", "sh (pid 4242)"), ("block_ip", "src_ip")],
     "data_exfiltration": [("block_ip", "src_ip"), ("lock_user", "user")],
     "misconfiguration": [("revoke_public_acl", "s3://demo-bucket")],
+    "log_tampering": [("block_ip", "src_ip")],
 }
 RECOMMEND = {
     "brute_force": "Block {src_ip} for 2 h, lock account '{user}' and rate-limit /login",
@@ -55,6 +57,7 @@ RECOMMEND = {
     "privilege_escalation": "Kill the spawned shell and block {src_ip}",
     "data_exfiltration": "Revoke session of '{user}', block {src_ip}",
     "misconfiguration": "Remove the public ACL and enable default encryption",
+    "log_tampering": "Block {src_ip} for 2 h and check the host for compromise",
 }
 
 app = FastAPI(title="SentrAI FAKE core (dev only)")

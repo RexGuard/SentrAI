@@ -29,6 +29,7 @@ CATEGORY_DESCRIPTIONS: dict[str, str] = {
     "privilege_escalation": "A process gaining higher privileges or a web server spawning a shell.",
     "data_exfiltration": "Bulk export or copy of data out of the system.",
     "misconfiguration": "Insecure configuration such as public buckets, open admin ports, default passwords.",
+    "log_tampering": "Deleting, emptying or editing logs or shell history, or stopping logging, to hide activity.",
 }
 assert set(CATEGORY_DESCRIPTIONS) == set(CATEGORIES)
 
