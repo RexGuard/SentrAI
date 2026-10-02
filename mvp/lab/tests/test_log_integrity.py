@@ -9,7 +9,7 @@ from collector.collector import DiscoveredLogSource, Tailer
 
 
 def _write(path, text):
-    path.write_text(text)
+    path.write_bytes(text.encode())  # no newline translation: sizes are the same on Windows
 
 
 def test_truncated_in_place_with_no_rotated_copy(tmp_path):
@@ -17,8 +17,8 @@ def test_truncated_in_place_with_no_rotated_copy(tmp_path):
     _write(log, "one\ntwo\nthree\n")
     t = Tailer(log)
     assert t.read_new_lines() == ["one", "two", "three"]
-    with open(log, "w") as fh:  # ': > auth.log' then the attacker's next line
-        fh.write("x\n")
+    with open(log, "wb") as fh:  # ': > auth.log' then the attacker's next line
+        fh.write(b"x\n")
     assert t.read_new_lines() == ["x"]
     assert len(t.notices) == 1 and t.notices[0].startswith("truncated:") and "from 14 to 2 bytes" in t.notices[0]
 
