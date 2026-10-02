@@ -55,6 +55,22 @@ Tests:
 | `ANCHOR_EVERY_MIN` | `60` | Send the signed record fingerprint to the alert channels this often (real minutes, only when new records exist; 0 = never). |
 | `CACTAI_ANCHOR_KEY` | (made on first use) | Fingerprint signing key. Default: `anchor.key` next to the audit database, mode 0600. |
 
+### Off-box copy
+
+With `CACTAI_REMOTE_COPY_URL` (and the append token in `CACTAI_REMOTE_COPY_TOKEN` or a file named by
+`CACTAI_REMOTE_COPY_TOKEN_FILE`; `CACTAI_REMOTE_COPY_CA` for a self-signed certificate), the core sends every
+audit record and every sealed log line to a SentrAI witness on another machine as it happens (about 4 ms from
+append to stored, measured locally). The witness can only add, and the core's token cannot read the copy back.
+If the witness refuses a record because the chain here no longer continues its copy, the core opens a
+**Log tampering** incident. To see exactly what changed, with the witness's read token:
+
+```
+python -m app.remote_copy compare --url https://198.51.100.20:8600 --read-token-file read.token
+```
+
+Status: `GET /audit/remote-copy`. Setup: `deploy/install-witness.sh` on the second machine, then
+`deploy/install.sh --remote-copy ...` here (deploy/README.md, "Off-box copy").
+
 ### Record fingerprints
 
 The audit chain proves its own consistency, but root on the server could rebuild it. So the core

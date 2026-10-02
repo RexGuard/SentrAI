@@ -114,6 +114,7 @@ that signature (HMAC of the path with the token), which fits that one report onl
 | POST | `/incidents/{id}/ack` | `{"operator", "channel"}` records acknowledgement |
 | GET | `/audit` | hash-chained records `[{"seq","ts","type","data","prev_hash","hash"}]` + `{"chain_valid": bool}` |
 | GET | `/audit/fingerprint` | `{"seq","head","at","line"}`: the current signed fingerprint (`SENTRAI-FP v1 ...`) |
+| GET | `/audit/remote-copy` | `{"enabled", "url", "ok", "audit_seq", "lines_sent", "last_sent_at", "error", ...}`: the off-box copy |
 | GET | `/audit/verify?fingerprint=<line>` | `{"ok": bool, "reason": str}`: does the chain on disk still match a fingerprint sent earlier |
 | GET | `/reports/{incident_id}` | evidence report JSON |
 | GET | `/reports/{incident_id}.md` | same report as Markdown |
@@ -159,6 +160,16 @@ that signature (HMAC of the path with the token), which fits that one report onl
   "snapshot_hash": "..." }
 ```
 Containment is enforced by the target app polling `/blocklist` (real effect: blocked IPs/users get HTTP 403). No host firewall changes by default.
+
+## Witness (owner: core; `witness/witness.py`)
+The off-box copy. The core sends `POST /append {"stream", "items"}` with the append token as it goes:
+- `audit-<host>-<first 12 of record 1's hash>`: audit records exactly as stored (`seq, ts, type, data, prev_hash, hash`).
+  Each must continue the copy (`seq` = last + 1, `prev_hash` = last hash) and match its own hash, else `409`.
+  The same record sent twice is accepted once.
+- `lines-<collector stream>`: events with their `chain` (see "Line chain"). A stream may start mid-chain; one that
+  does not follow is kept with a note.
+`GET /head?stream=` answers `{"stream","seq","hash"}` to either token. `GET /records?stream=&from=` and
+`GET /streams` need the read token. There is no way to change or delete anything (`PUT`/`DELETE`/`PATCH` are `405`).
 
 ## Target app (owner: lab)
 - Flask on :5000: `/` , `/login` (POST form user/password), `/search?q=` (deliberately naive, logs SQLi-looking queries; uses SQLite with a fake `members` table of synthetic data), `/export` (bulk export, triggers data_exfiltration events), `/admin/run?cmd=` simulated command endpoint that NEVER executes anything, only logs "shell spawned" style event.

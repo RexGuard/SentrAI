@@ -30,7 +30,7 @@ from .agents import (
     Watchdog,
 )
 from . import firewall
-from . import anchor
+from . import anchor, remote_copy
 from .audit import AuditLog
 from .classifier import Classification, default_chain
 from .clock import DemoClock, fmt_demo_hours
@@ -118,6 +118,7 @@ class Saguaro(Agent):
         self.watchdog = Watchdog(s.watchdog_silence_s)
         self.scribe = Scribe(self.audit, self.clock)
         self.integrity = IntegrityGuard(self.audit, s.integrity_check_s, s.clock_jump_s)
+        self.remote = remote_copy.from_settings(self.audit, s)  # off-box copy; started by the app (main.py)
         self.anchor_key = anchor.load_key(s.db_path)
         self._anchor_next = time.monotonic() + 60.0 * s.anchor_every_min
         self._anchor_seq = 0
@@ -218,6 +219,8 @@ class Saguaro(Agent):
                     continue  # duplicate delivery
                 if (broken := self.integrity.chained(raw_ev)) is not None:
                     tampering.append(broken)
+                if self.remote is not None:
+                    self.remote.add_line(raw_ev)  # off the box as it arrives
                 self.events[ev["event_id"]] = {**ev, "category": None}
                 recovered = self.watchdog.observe(str(ev["host"]), now, heartbeat)
                 if recovered:
@@ -430,6 +433,11 @@ class Saguaro(Agent):
             self._record_history(now)
             self._send_fingerprint(now)
             findings = self.integrity.check()
+            if self.remote is not None:
+                refused, notes = self.remote.take()
+                findings += refused
+                for rtype, data in notes:
+                    self.scribe.record(self.name, rtype, data)
         if findings:
             self.ingest(findings)  # a broken audit chain, a deleted audit file or a clock jump
 
