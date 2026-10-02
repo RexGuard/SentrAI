@@ -27,7 +27,7 @@ from email.utils import make_msgid
 from typing import Callable
 
 from formatting import (BAND_COLORS, BAND_EMOJI, BRAND_BLUE, BRAND_BLUE_SOFT, BRAND_NAVY, TAGLINE, alert_fields,
-                        button_specs, risk_meter)
+                        button_specs, is_notice, notice_lines, risk_meter)
 
 log = logging.getLogger("cactai.notifier.email")
 
@@ -85,6 +85,16 @@ class EmailConfig:
 def format_email(notification: dict, incident: dict | None = None, risk: dict | None = None,
                  dashboard_url: str = DEFAULT_DASHBOARD) -> tuple[str, str, str]:
     """(subject, plain text, HTML) with the same content as the Telegram alert."""
+    if is_notice(notification):
+        icon, header, lines = notice_lines(notification)
+        subject = f"[SentrAI] {lines[0] if lines else header}"
+        text = "\n".join([f"{icon} {header}", *lines, "", f"-- SentrAI · {TAGLINE}"])
+        body = "".join(f"<p style=\"margin:0 0 8px 0;font-family:{'monospace' if ln.startswith('SENTRAI-FP') else 'Arial,sans-serif'};"
+                       f"font-size:14px;word-break:break-all\">{html.escape(ln)}</p>" for ln in lines)
+        html_body = (f"<div style=\"max-width:640px\"><div style=\"background:{BRAND_NAVY};color:#fff;padding:12px 16px;"
+                     f"font-family:Arial,sans-serif;font-weight:bold\">{icon} {html.escape(header)} · SentrAI</div>"
+                     f"<div style=\"padding:16px\">{body}</div></div>")
+        return subject, text, html_body
     f = alert_fields(notification, incident, risk)
     risk_txt = f"{f['risk_index']}/100 {f['band'].upper()}" if f["risk_index"] is not None else "-"
     subject = f"[SentrAI] {f['header']}: {f['incident_id']} {f['title']}"

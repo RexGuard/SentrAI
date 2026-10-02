@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict
 
 from .config import Settings, sign
 from .reports import build_report, render_markdown, render_pdf
-from . import ai
+from . import ai, anchor
 from .chat import OperatorChat, default_chat_provider
 from .discovery import Discovery
 from .cyanide import Cyanide, default_planner
@@ -242,6 +242,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             records = records[-limit:]
         return {"chain_valid": valid, "first_invalid_seq": bad, "count": total,
                 "head_hash": core.audit.head_hash(), "records": records}
+
+    @app.get("/audit/verify")
+    def get_audit_verify(fingerprint: str = Query(..., description="a SENTRAI-FP line from an alert")) -> dict[str, Any]:
+        ok, why = anchor.verify(core.audit, fingerprint, core.anchor_key)
+        return {"ok": ok, "reason": why}
+
+    @app.get("/audit/fingerprint")
+    def get_audit_fingerprint() -> dict[str, Any]:
+        fp = anchor.fingerprint(core.audit, core.anchor_key)
+        return {"seq": fp.seq, "head": fp.head, "at": fp.at, "line": fp.line()}
 
     # The .md and .pdf routes must be registered before the JSON route.
     @app.get("/reports/{iid}.pdf")

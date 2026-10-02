@@ -116,6 +116,13 @@ class AuditLog:
             row = self._conn.execute("SELECT hash FROM audit ORDER BY seq DESC LIMIT 1").fetchone()
         return row[0] if row else GENESIS_HASH
 
+    def head(self) -> tuple[int, str]:
+        """(seq, hash) of the newest record; (0, GENESIS_HASH) for an empty chain."""
+        with self._lock:
+            assert self._conn is not None
+            row = self._conn.execute("SELECT seq, hash FROM audit ORDER BY seq DESC LIMIT 1").fetchone()
+        return (int(row[0]), row[1]) if row else (0, GENESIS_HASH)
+
     def archive_and_reset(self) -> Path | None:
         """Moves the current DB to data/archive/ (never destroyed) and starts a fresh chain."""
         with self._lock:

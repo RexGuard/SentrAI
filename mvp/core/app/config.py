@@ -73,6 +73,8 @@ class Settings:
     # jump (seconds) counts as tampering.
     integrity_check_s: float = field(default_factory=lambda: _f("INTEGRITY_CHECK_S", 30.0))
     clock_jump_s: float = field(default_factory=lambda: _f("CLOCK_JUMP_S", 120.0))
+    # Send the signed audit fingerprint to the alert channels this often, in real minutes (0 = never; anchor.py).
+    anchor_every_min: float = field(default_factory=lambda: _f("ANCHOR_EVERY_MIN", 60.0))
     id_year: int = field(default_factory=lambda: _i("ID_YEAR", 2026))
     id_start: int = field(default_factory=lambda: _i("ID_START", 81))
     history_len: int = 3600
