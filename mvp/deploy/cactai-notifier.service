@@ -14,12 +14,31 @@ EnvironmentFile=/etc/cactai/cactai.env
 Environment=HOME=/var/lib/cactai PYTHONUNBUFFERED=1 PYTHONUTF8=1 PYTHONIOENCODING=utf-8
 Restart=on-failure
 RestartSec=5
-# Reads logs and /proc, writes only its own state folder.
+# Least privilege: no log access, no capabilities, writes nothing. It only reads alerts from the
+# core's API and sends them out.
 NoNewPrivileges=yes
 PrivateTmp=yes
+PrivateDevices=yes
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/var/lib/cactai
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+UMask=0077
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ProtectProc=invisible
+InaccessiblePaths=-/var/lib/cactai/core -/var/lib/cactai/collector
 
 [Install]
 WantedBy=cactai.target

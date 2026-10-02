@@ -7,6 +7,8 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=@PREFIX@/mvp/core
+# iptables takes this lock file before every change; /run is read-only to the service otherwise.
+ExecStartPre=-+/bin/sh -c 'touch /run/xtables.lock'
 ExecStart=@PREFIX@/mvp/core/.venv/bin/python -m uvicorn app.main:app --host ${CACTAI_CORE_HOST} --port ${CACTAI_CORE_PORT}
 User=@USER@
 Group=@USER@
@@ -14,12 +16,33 @@ EnvironmentFile=/etc/cactai/cactai.env
 Environment=HOME=/var/lib/cactai PYTHONUNBUFFERED=1 PYTHONUTF8=1 PYTHONIOENCODING=utf-8
 Restart=on-failure
 RestartSec=5
-# Reads logs and /proc, writes only its own state folder.
+# Least privilege: the only service that may change the firewall (CACTAI_FIREWALL), and the only
+# one that can open the audit record in /var/lib/cactai/core. Reads logs through the log groups.
 NoNewPrivileges=yes
 PrivateTmp=yes
+PrivateDevices=yes
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/var/lib/cactai
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+UMask=0077
+SupplementaryGroups=@LOGGROUPS@
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+ReadWritePaths=/var/lib/cactai/core /var/lib/cactai/scout -/run/xtables.lock
+InaccessiblePaths=-/var/lib/cactai/collector
 
 [Install]
 WantedBy=cactai.target
