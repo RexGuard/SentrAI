@@ -18,7 +18,6 @@ header[data-testid="stHeader"] { background: transparent; }
 
 /* ------------------------------------------------------------ sidebar */
 section[data-testid="stSidebar"] { border-right: 1px solid var(--line-soft); }
-.brand-mark .l1 { fill: var(--logo-1); } .brand-mark .l2 { fill: var(--logo-2); } .brand-mark .l3 { fill: var(--logo-3); }
 section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] { gap: .15rem; }
 section[data-testid="stSidebar"] div[data-testid="stMarkdownContainer"] { margin-bottom: 0; }
 .brand { display: flex; align-items: center; gap: .65rem; margin: -.4rem 0 1rem .2rem; }

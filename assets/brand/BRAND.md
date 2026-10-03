@@ -58,10 +58,10 @@ Dark values are the Risk Console's own (`mvp/dashboard/cactai_ui/console.css`), 
 | `--sn-danger` | `#dc2626` | `#e5484d` | High risk, blocked |
 
 Fixed shades for slides: black `#0a0a0a` `#141414` `#1b1b1b` `#262626`, white `#ffffff`.
-Logo colours: indigo `#522bbe`, violet `#8057f0`, periwinkle `#697ef5` (colour logo); black and white logo (`logo-bw*.svg`, `mark-bw*.svg`) uses `#0a0a0a` `#656565` `#9f9f9f` on White and `#f5f5f5` `#9c9c9c` `#636363` on Black.
+Logo colours (the logo keeps them in both themes and with every accent): indigo `#522bbe`, violet `#8057f0`, periwinkle `#697ef5`; wordmark ink `#1d212b` on White, `#f3f5fa` on Black.
 
 Rules:
-- Black and white are the brand; violet (or any accent picked in the console) is the only extra colour. Green, amber and red mean risk and nothing else.
+- The UI is black and white; the violet logo and the accent picked in the console are the only other colours. Green, amber and red mean risk and nothing else.
 - The console's accent is set in Configuration > Appearance: Mono, Violet, Blue or a custom colour. `mvp/dashboard/cactai_ui/theme.py` derives readable shades from it.
 - Text colours pass WCAG AA (4.5:1) on `--sn-bg` and `--sn-surface` in both themes.
 - Black is the default for the console, slides and alerts. The website follows the visitor's OS setting.

@@ -123,16 +123,12 @@ def palette(theme: str = DEFAULT_THEME, accent: str = DEFAULT_ACCENT) -> dict[st
     fill = accent_hex(accent)
     if not fill:  # Mono: the accent is the ink itself
         c |= {"brand": ink, "brand-2": c["ink-soft"], "brand-fill": ink, "on-brand": bg,
-              "brand-soft": c["surface-3"], "brand-line": mix(ink, bg, .28), "glow": rgba(ink, t.glow_alpha / 3),
-              "logo-1": ink, "logo-2": mix(ink, bg, .62), "logo-3": mix(ink, bg, .38)}
+              "brand-soft": c["surface-3"], "brand-line": mix(ink, bg, .28), "glow": rgba(ink, t.glow_alpha / 3)}
     else:
         on = "#ffffff" if contrast("#ffffff", fill) >= contrast("#0a0a0a", fill) else "#0a0a0a"
         c |= {"brand": readable(fill, bg), "brand-2": readable(fill, bg, 3), "brand-fill": fill, "on-brand": on,
               "brand-soft": mix(fill, c["surface"], .14), "brand-line": mix(fill, c["surface"], .42),
-              "glow": rgba(fill, t.glow_alpha),
-              # the logo's three arcs: deep, the accent, and a light tint (like indigo / violet / periwinkle)
-              "logo-1": mix(fill, "#000000", .62 if t.base == "light" else .78), "logo-2": fill,
-              "logo-3": mix(fill, "#ffffff", .7)}
+              "glow": rgba(fill, t.glow_alpha)}
     c |= {k: v for k, v in t.risk.items()} | {"green-line": mix(t.risk["green"], c["surface"], .4),
                                               "unknown": t.unknown}
     return c

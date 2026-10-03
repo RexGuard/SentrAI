@@ -41,15 +41,12 @@ LOOK = cfg.appearance()
 THEME = LOOK.get("theme") if LOOK.get("theme") in th.THEMES else th.DEFAULT_THEME
 ACCENT = LOOK.get("accent") or th.DEFAULT_ACCENT
 sh.set_palette(th.chart_colors(THEME))
-LOGO_FILLS = {"#522bbe": "l1", "#8057f0": "l2", "#697ef5": "l3"}  # the mark's three arcs, recoloured by the theme
 
 
 # SentrAI logo: assets/brand/mark.svg and wordmark.svg, copied into cactai_ui so the console needs no other folder.
 def _logo_svg(name: str) -> str:
     svg = (Path(__file__).parent / "cactai_ui" / name).read_text(encoding="utf-8")
     svg = re.sub(r'\s*<title>.*?</title>|\s(width|height)="[\d.]+"', "", svg)
-    for fill, cls in LOGO_FILLS.items():
-        svg = svg.replace(f'fill="{fill}"', f'class="{cls}"')
     return svg.replace('role="img" aria-label="SentrAI"', 'aria-hidden="true"').replace("\n", "")
 
 
