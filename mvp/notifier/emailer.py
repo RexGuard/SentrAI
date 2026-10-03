@@ -26,7 +26,7 @@ from email.message import EmailMessage
 from email.utils import make_msgid
 from typing import Callable
 
-from formatting import (BAND_COLORS, BAND_EMOJI, BRAND_BLUE, BRAND_BLUE_SOFT, BRAND_NAVY, TAGLINE, alert_fields,
+from formatting import (BAND_COLORS, BAND_EMOJI, BRAND_BUTTON, BRAND_ON_DARK, BRAND_DARK, TAGLINE, alert_fields,
                         button_specs, is_notice, notice_lines, risk_meter)
 
 log = logging.getLogger("cactai.notifier.email")
@@ -91,7 +91,7 @@ def format_email(notification: dict, incident: dict | None = None, risk: dict | 
         text = "\n".join([f"{icon} {header}", *lines, "", f"-- SentrAI · {TAGLINE}"])
         body = "".join(f"<p style=\"margin:0 0 8px 0;font-family:{'monospace' if ln.startswith('SENTRAI-FP') else 'Arial,sans-serif'};"
                        f"font-size:14px;word-break:break-all\">{html.escape(ln)}</p>" for ln in lines)
-        html_body = (f"<div style=\"max-width:640px\"><div style=\"background:{BRAND_NAVY};color:#fff;padding:12px 16px;"
+        html_body = (f"<div style=\"max-width:640px\"><div style=\"background:{BRAND_DARK};color:#fff;padding:12px 16px;"
                      f"font-family:Arial,sans-serif;font-weight:bold\">{icon} {html.escape(header)} · SentrAI</div>"
                      f"<div style=\"padding:16px\">{body}</div></div>")
         return subject, text, html_body
@@ -158,10 +158,10 @@ def _email_html(f: dict, rows: list[tuple[str, str]], act: str, note: str, dashb
         "style='max-width:580px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;"
         "border:1px solid #d5dce8'>"
         # header band
-        f"<tr><td style='background:{BRAND_NAVY};padding:18px 24px'>"
+        f"<tr><td style='background:{BRAND_DARK};padding:18px 24px'>"
         "<table role='presentation' width='100%' cellpadding='0' cellspacing='0'><tr>"
         f"<td style='{font};font-size:20px;font-weight:700;color:#e7edf6'>&#128737;&#65039; Sentr"
-        f"<span style='color:{BRAND_BLUE_SOFT}'>AI</span></td>"
+        f"<span style='color:{BRAND_ON_DARK}'>AI</span></td>"
         f"<td align='right' style='{font};font-size:11px;letter-spacing:1.2px;color:#a5b2c6;text-transform:uppercase'>"
         f"{e(f['header'])}</td></tr></table></td></tr>"
         f"<tr><td style='background:{band};height:4px;line-height:4px;font-size:0'>&nbsp;</td></tr>"
@@ -175,7 +175,7 @@ def _email_html(f: dict, rows: list[tuple[str, str]], act: str, note: str, dashb
         + f"<table role='presentation' width='100%' cellpadding='0' cellspacing='0' style='margin-top:10px'>{body_rows}</table>"
         # call to action
         + "<table role='presentation' cellpadding='0' cellspacing='0' style='margin:22px 0 6px'><tr>"
-        f"<td style='background:{BRAND_BLUE};border-radius:8px'><a href='{e(dashboard_url, quote=True)}' "
+        f"<td style='background:{BRAND_BUTTON};border-radius:8px'><a href='{e(dashboard_url, quote=True)}' "
         f"style='{font};display:inline-block;padding:11px 20px;color:#ffffff;font-size:14px;font-weight:600;"
         "text-decoration:none'>Open the SentrAI dashboard</a></td></tr></table>"
         f"<p style='{font};font-size:13px;color:#44536b;margin:8px 0 0'>{e(act)}</p>"

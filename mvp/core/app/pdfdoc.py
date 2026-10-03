@@ -29,16 +29,17 @@ _HELV_B = [278, 333, 474, 556, 556, 889, 722, 238, 333, 333, 389, 584, 278, 333,
 FONTS = {"F1": ("Helvetica", _HELV), "F2": ("Helvetica-Bold", _HELV_B), "F3": ("Courier", None)}
 REGULAR, BOLD, MONO = "F1", "F2", "F3"
 
-# SentrAI brand kit (assets/brand/tokens.json): light-theme tokens for the page, fixed navy/steel for the band.
-NAVY = (0.043, 0.067, 0.114)       # navy-950 #0b111d
-BLUE = (0.122, 0.310, 0.722)       # steel-700 #1f4fb8 (light brand)
-BLUE_SOFT = (0.498, 0.698, 1.0)    # steel-300 #7fb2ff
-INK = (0.059, 0.102, 0.173)        # ink #0f1a2c
-MUTED = (0.384, 0.435, 0.525)      # ink-muted #626f86
-RULE = (0.835, 0.863, 0.910)       # line #d5dce8
-STRIPE = (0.933, 0.949, 0.973)     # surface-2 #eef2f8
-HEAD = NAVY                        # headings and table headers
-ON_DARK = (0.906, 0.929, 0.965)    # dark ink #e7edf6
+# SentrAI brand kit (assets/brand/tokens.json): White-theme tokens for the page, black for the band.
+BLACK = (0.039, 0.039, 0.039)      # black-950 #0a0a0a
+ACCENT = (0.039, 0.039, 0.039)     # brand #0a0a0a (Mono: the brand colour is the ink)
+INK = (0.039, 0.039, 0.039)        # ink #0a0a0a
+MUTED = (0.400, 0.400, 0.400)      # ink-muted #666666
+RULE = (0.871, 0.871, 0.871)       # line #dedede
+STRIPE = (0.957, 0.957, 0.957)     # surface-2 #f4f4f4
+HEAD = BLACK                       # headings and table headers
+ON_DARK = (0.961, 0.961, 0.961)    # dark ink #f5f5f5
+SOFT_ON_DARK = (0.702, 0.702, 0.702)  # dark ink-soft #b3b3b3
+EDGE = (0.251, 0.251, 0.251)       # #404040, the thin rule under the black band
 
 # The SentrAI logo (assets/brand/mark.svg + wordmark.svg), 64-unit-high box, y down.
 _MARK = [(_hex, parse(d)) for _hex, d in MARK]
@@ -163,7 +164,7 @@ class PdfDoc:
     def heading(self, s: str, size: float = 13, color=HEAD) -> None:
         self.ensure(size * 2.6)
         self.y -= size * 1.2
-        self.rect(MARGIN, self.y - 1, 3, size * 0.95, BLUE)  # steel-blue tab before each heading
+        self.rect(MARGIN, self.y - 1, 3, size * 0.95, ACCENT)  # brand tab before each heading
         self.text(MARGIN + 9, self.y, s, BOLD, size, color)
         self.y -= 4
         self.line(MARGIN, self.y, MARGIN + self.width, self.y, RULE, 0.8)
@@ -239,7 +240,7 @@ class PdfDoc:
             if self.footer or n > 1:
                 y = MARGIN - 14
                 foot.append(f"{_rgb(RULE)} RG 0.6 w {MARGIN:.2f} {y + 10:.2f} m {PAGE_W - MARGIN:.2f} {y + 10:.2f} l S\n".encode())
-                foot.append(f"{_rgb(BLUE)} rg {MARGIN:.2f} {y + 9.4:.2f} 28 1.4 re f\n".encode())
+                foot.append(f"{_rgb(ACCENT)} rg {MARGIN:.2f} {y + 9.4:.2f} 28 1.4 re f\n".encode())
                 foot.append(f"BT {_rgb(MUTED)} rg /F1 7.5 Tf ".encode() + f"{MARGIN:.2f} {y:.2f} Td (".encode() + _esc(clean(self.footer)) + b") Tj ET\n")
                 label = f"Page {i} of {n}"
                 x = PAGE_W - MARGIN - text_width(label, REGULAR, 7.5)
