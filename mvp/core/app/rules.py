@@ -122,6 +122,8 @@ INTEGRITY_SOURCES = ("log_integrity", "audit_integrity")
 # Paths that hold the record: system logs, shell history, login records, SentrAI's own data.
 _LOG_PATH = (r"(?P<path>/var/log/\S*|\S*/\.(bash|zsh|sh|python)_history\b|\S*/\.history\b|/var/run/utmp\b"
              r"|\S*/(\.cactai|cactai|sentrai)/\S*)")
+# Groups that read the record: adm and systemd-journal (logs), cactai/sentrai (SentrAI's own data).
+_LOG_GROUP = r"(adm|systemd-journal|cactai|sentrai)"
 # Old rotated archives (auth.log.2.gz, syslog-20261001) are routinely deleted to free disk space.
 ROTATED_ARCHIVE = re.compile(r"(\.\d+|\.(gz|xz|bz2|zst)|-\d{8})$|\*\.(gz|xz|bz2|zst)$", re.I)
 LOG_WIPE = [
@@ -143,6 +145,20 @@ LOG_WIPE = [
     (re.compile(r"\bauditctl\s+(-D\b|-e\s*0\b)", re.I), "audit rules deleted or auditing switched off"),
     (re.compile(r"\bwevtutil(\.exe)?\s+(cl|clear-log)\b|\b(Clear|Remove)-EventLog\b", re.I), "Windows event log cleared"),
     (re.compile(r"\b(audit|security|system|event)\s+log\s+was\s+cleared\b", re.I), "Windows event log cleared"),
+    # Least privilege undone: someone widens who can read or change the record, or what SentrAI may do.
+    (re.compile(r"\busermod\b[^\n]*\s-\w*G\s*(\S*,)?" + _LOG_GROUP + r"(,|\s|$)"
+                r"|\bgpasswd\s+-a\s+\S+\s+" + _LOG_GROUP + r"\b"
+                r"|\badduser\s+[a-z_][\w.-]*\s+" + _LOG_GROUP + r"\b", re.I),
+     "an account was given the groups that read the logs or SentrAI's data"),
+    (re.compile(r"\bchmod\s+(-\S+\s+)*([0-7]?[0-7]{2}[2367]|\S*[ao]\+\w*w)\s[^\n]*?" + _LOG_PATH, re.I),
+     "a log or SentrAI file was made writable by everyone"),
+    (re.compile(r"\bsetfacl\b[^\n]*\s-\w*m\b[^\n]*?" + _LOG_PATH, re.I), "extra access granted on a log or SentrAI file"),
+    (re.compile(r"\bsetcap\b[^\n]*\b(cactai|sentrai)", re.I), "extra powers given to a SentrAI program"),
+    (re.compile(r"\bsystemctl\s+(edit|set-property|revert)\s+(\S+\s+)?(cactai|sentrai)\S*", re.I),
+     "SentrAI's service limits were changed"),
+    (re.compile(r"\b(Seal\s*=\s*(no|false|0)|Storage\s*=\s*(none|volatile))\b[^\n]*journald|journald\S*[^\n]*"
+                r"\b(Seal\s*=\s*(no|false|0)|Storage\s*=\s*(none|volatile))\b", re.I),
+     "journal sealing or saving to disk switched off"),
 ]
 
 
@@ -239,7 +255,7 @@ class RulesEngine:
         if http is None:
             # Only commands seen on the host itself (sudo/auth lines, process scans, shell or audit
             # logs). The same words inside a web request are an exploit probe, not a wiped log.
-            if why := log_wipe(text):
+            if why := log_wipe(raw) or log_wipe(text):  # raw too: decoding turns "o+w" into "o w"
                 return RuleHit("log_tampering", f"Log tampering: {why} ({raw.strip()[:200]})")
 
         for rx in SQLI:
