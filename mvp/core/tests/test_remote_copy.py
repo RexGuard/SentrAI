@@ -167,6 +167,7 @@ def test_unreachable_witness_keeps_lines_until_it_is_back(tmp_path, wit, monkeyp
     assert not rc.flush() and rc.status["ok"] is False and len(rc._lines) == 4
     assert rc.take()[1][0][0] == "remote_copy_unreachable"
     rc.url = wit.url
+    rc.http.timeout = httpx.Timeout(5.0)  # 0.5 s was for the dead port; a slow Windows runner needs longer to append
     assert rc.flush() and rc.status["lines_sent"] == 4 and rc.status["audit_seq"] == 1
     assert rc.take()[1][0][0] == "remote_copy_restored"
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from .clock import fmt_demo_hours, fmt_offset
-from .pdfdoc import BLUE, BLUE_SOFT, BOLD, MONO, MUTED, NAVY, PAGE_W, Column, PdfDoc, text_width
+from .pdfdoc import ACCENT, BLACK, BOLD, EDGE, MONO, MUTED, PAGE_W, SOFT_ON_DARK, Column, PdfDoc, text_width
 from .saguaro import public
 
 if TYPE_CHECKING:
@@ -254,10 +254,10 @@ def render_pdf(r: dict[str, Any]) -> bytes:
     # SentrAI title band across the top of page 1: logo, report title, incident line
     top = doc.y + 42
     band = 112
-    doc.rect(0, top - band, PAGE_W, band, NAVY)
-    doc.rect(0, top - band - 3, PAGE_W, 3, BLUE)
+    doc.rect(0, top - band, PAGE_W, band, BLACK)
+    doc.rect(0, top - band - 3, PAGE_W, 3, EDGE)
     doc.logo(40, top - 54, 30)
-    doc.text(PAGE_W - 42 - text_width(r["report_id"], BOLD, 9), top - 40, r["report_id"], BOLD, 9, BLUE_SOFT)
+    doc.text(PAGE_W - 42 - text_width(r["report_id"], BOLD, 9), top - 40, r["report_id"], BOLD, 9, SOFT_ON_DARK)
     doc.text(42, top - 80, r["title"], BOLD, 21, (1, 1, 1))
     doc.text(42, top - 98, f"Incident {r['incident_id']} ({inc['category']}, {inc['severity']}, "
                            f"status {inc['status']})  |  generated {r['generated_at']}", size=8.5,
@@ -272,7 +272,7 @@ def render_pdf(r: dict[str, Any]) -> bytes:
         ("SLA", "Breached" if r["sla"]["breached"] else "Within SLA", RED if r["sla"]["breached"] else GREEN),
         ("Acknowledgement", "Received" if acked else "None", GREEN if acked else RED),
         ("Containment", "Autonomous" if r["forced_action"]["taken"]
-         else "Operator" if r["forced_action"]["actions"] else "None", BLUE),
+         else "Operator" if r["forced_action"]["actions"] else "None", ACCENT),
         ("Audit chain", "Valid" if chain_ok else "Broken", GREEN if chain_ok else RED),
     ])
     doc.table([Column("Field", 1.1, BOLD), Column("Record", 3.4)], [

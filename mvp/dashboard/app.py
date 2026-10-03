@@ -23,6 +23,7 @@ import streamlit as st
 
 from cactai_ui import shaping as sh
 from cactai_ui import signin
+from cactai_ui import theme as th
 from cactai_ui.api import CoreClient, CoreError
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
@@ -34,6 +35,13 @@ cfg.load()
 DEFAULT_CORE = os.environ.get("CACTAI_CORE_URL", "http://127.0.0.1:8000")
 DEFAULT_OPERATOR = os.environ.get("CACTAI_OPERATOR", "operator")
 REFRESH_SECONDS = 2
+
+# Look: Black or White theme plus an accent, picked under Configuration > Appearance and saved with the settings.
+LOOK = cfg.appearance()
+THEME = LOOK.get("theme") if LOOK.get("theme") in th.THEMES else th.DEFAULT_THEME
+ACCENT = LOOK.get("accent") or th.DEFAULT_ACCENT
+sh.set_palette(th.chart_colors(THEME))
+
 
 # SentrAI logo: assets/brand/mark.svg and wordmark.svg, copied into cactai_ui so the console needs no other folder.
 def _logo_svg(name: str) -> str:
@@ -51,7 +59,23 @@ PAGE_ICON = str(_FAVICON) if _FAVICON.exists() else "🛡️"
 st.set_page_config(page_title="SentrAI · Risk Console", page_icon=PAGE_ICON, layout="wide",
                    initial_sidebar_state="expanded")
 CSS = (Path(__file__).parent / "cactai_ui" / "console.css").read_text(encoding="utf-8")
-st.markdown(f"<style>{CSS}</style>", unsafe_allow_html=True)
+st.markdown(f"<style>{th.css(THEME, ACCENT)}{CSS}</style>", unsafe_allow_html=True)
+
+
+def _apply_streamlit_theme() -> bool:
+    """Point Streamlit's own theme (buttons, toggles, tables) at the saved look. True when it changed.
+
+    Streamlit sends the theme when a run starts, so a change shows from the next run on."""
+    changed = False
+    for key, value in th.streamlit_options(THEME, ACCENT).items():
+        if st.get_option(key) != value:
+            st._config.set_option(key, value)
+            changed = True
+    return changed
+
+
+if _apply_streamlit_theme():
+    st.rerun()
 
 
 # ------------------------------------------------------------------ login
@@ -458,41 +482,91 @@ def decision_controls(inc: dict) -> None:
 
 # ------------------------------------------------------------------ pages
 
+def matches(query: str, *texts: str) -> bool:
+    """Every word of the search appears somewhere in the texts (case-insensitive)."""
+    hay = " ".join(texts).lower()
+    return all(word in hay for word in query.lower().split())
+
+
+class fold:
+    """A settings group: a closed expander normally, an open card while searching (so the hits show)."""
+
+    def __init__(self, title: str, searching: bool, ico: str = "") -> None:
+        self.title, self.searching, self.ico = title, searching, ico
+
+    def __enter__(self):
+        self.box = st.container(border=True) if self.searching else st.expander(self.title)
+        self.box.__enter__()
+        if self.searching:
+            section(self.title, ico=self.ico)
+        return self
+
+    def __exit__(self, *exc):
+        return self.box.__exit__(*exc)
+
+
+APPEARANCE_WORDS = "appearance look theme colour color accent black white dark light mono violet blue custom logo"
+
+
 def page_config() -> None:
     header("Configuration", f"Saved to {cfg.config_path()} · read by every part when it starts")
     o1, o2 = st.columns([4, 1], vertical_alignment="center")
-    o1.caption("Rather answer a few questions? Cyanide can walk you through setup in the Chat page instead.")
-    if o2.button("Set up with Cyanide", icon=":material/forum:", width="stretch"):
+    query = o1.text_input("Search settings", key="cfg_search", icon=":material/search:", label_visibility="collapsed",
+                          placeholder="Search settings: telegram, threshold, password, theme...").strip()
+    if o2.button("Set up with Cyanide", icon=":material/forum:", width="stretch",
+                 help="Rather answer a few questions? Cyanide walks you through setup in the Chat page."):
         start_setup()
-    current = {f.env: f.default for f in cfg.FIELDS.values()} | cfg.read()
-    values, new_password = {}, ""
-    preset = cfg.SECTIONS[0]
-    with st.container(border=True):
-        section(preset.title, preset.about, "verified_user")
-        values |= preset_settings(current)
-        protection_switch()
+    # Unsaved edits survive a search hiding their field (Streamlit forgets a widget it does not draw).
+    draft = st.session_state.setdefault("cfg_draft", {})
+    current = {f.env: f.default for f in cfg.FIELDS.values()} | cfg.read() | draft
+    values, new_password, shown = dict(current), "", 0
 
-    # Everything else is folded away; the arrow on each row opens it.
-    with st.expander("Dashboard"):  # no icon, so the row shows its arrow
-        st.caption("This browser session only.")
-        c1, c2 = st.columns(2)
-        # Own widget keys: Streamlit drops a widget's state when you leave the page.
-        st.session_state.core_url = c1.text_input("Core API URL", value=st.session_state.core_url).strip()
-        st.session_state.operator = c2.text_input("Operator name (recorded on your approvals)",
-                                                  value=st.session_state.operator).strip() or "operator"
+    if not query or matches(query, APPEARANCE_WORDS):
+        shown += 1
+        with st.container(border=True):
+            section("Appearance", "Saved at once, for everyone who opens this console", "palette")
+            appearance_settings()
+
+    preset = cfg.SECTIONS[0]
+    preset_words = [preset.title, preset.about, "protection monitor only"] + \
+        [f"{cfg.FIELDS[e].prompt} {e}" for e in cfg.PRESET_FIELDS] + [p.label for p in cfg.PRESETS.values()]
+    if not query or matches(query, *preset_words):
+        shown += 1
+        with st.container(border=True):
+            section(preset.title, preset.about, "verified_user")
+            values |= preset_settings(current)
+            protection_switch()
+
+    if not query or matches(query, "Dashboard core api url operator name approvals"):
+        shown += 1
+        with fold("Dashboard", bool(query), "dashboard"):
+            st.caption("This browser session only.")
+            c1, c2 = st.columns(2)
+            # Own widget keys: Streamlit drops a widget's state when you leave the page.
+            st.session_state.core_url = c1.text_input("Core API URL", value=st.session_state.core_url).strip()
+            st.session_state.operator = c2.text_input("Operator name (recorded on your approvals)",
+                                                      value=st.session_state.operator).strip() or "operator"
     for s in cfg.SECTIONS[1:]:
-        with st.expander(s.title):
+        fields = [f for f in s.fields if f.env not in cfg.PRESET_FIELDS]  # those live under the preset
+        whole = not query or matches(query, s.title, s.about)
+        if s.key == "ai":  # one panel: provider, key, model and the connection test belong together
+            if whole or any(matches(query, f.prompt, f.env) for f in s.fields):
+                shown += 1
+                with fold(s.title, bool(query), "smart_toy"):
+                    st.caption(s.about)
+                    values |= ai_settings(current)
+            continue
+        hits = fields if whole else [f for f in fields if matches(query, f.prompt, f.env)]
+        if not hits:
+            continue
+        shown += 1
+        with fold(s.title, bool(query), "tune"):
             st.caption(s.about)
-            if s.key == "ai":
-                values |= ai_settings(current)
-                continue
-            fields = [f for f in s.fields if f.env not in cfg.PRESET_FIELDS]  # those live under the preset
-            if len(fields) < len(s.fields):
+            if len(fields) < len(s.fields) and whole:
                 st.caption("Detection and response values are set under Security preset.")
             cols = st.columns(2)
-            for n, f in enumerate(fields):
+            for n, f in enumerate(hits):
                 if f.generated:  # shown, never edited here: every part must restart with the same value
-                    values[f.env] = current[f.env]
                     cols[n % 2].text_input(f.prompt, value=current[f.env], key=f"cfg_{f.env}", type="password",
                                            disabled=True, help=f"Environment variable {f.env}. Generated by setup; "
                                            "python cactai_config.py token prints it.")
@@ -505,11 +579,18 @@ def page_config() -> None:
                     if typed and len(typed) < cfg.MIN_PASSWORD:
                         cols[n % 2].error(f"Use at least {cfg.MIN_PASSWORD} characters; the old password stays.")
                         typed = ""
-                    values[f.env], new_password = current[f.env], typed
+                    new_password = typed
                     continue
                 values[f.env] = cols[n % 2].text_input(
                     f.prompt, value=current[f.env], key=f"cfg_{f.env}", help=f"Environment variable {f.env}",
                     type="password" if f.secret else "default").strip()
+    if not shown:
+        st.markdown(f'<div class="search-none">{icon("search_off")} No setting matches "{html.escape(query)}". '
+                    'Try a shorter word, like "email", "block" or "key".</div>', unsafe_allow_html=True)
+    saved = cfg.read()
+    draft.update({env: v for env, v in values.items() if env in cfg.FIELDS and v != saved.get(env, cfg.FIELDS[env].default)})
+    for env in [e for e in draft if values.get(e) == saved.get(e, cfg.FIELDS[e].default)]:
+        draft.pop(env)  # changed back by hand
     if st.button("Save settings", icon=":material/save:", type="primary"):
         bad = [f.prompt for f in cfg.FIELDS.values() if not cfg.valid(f, values[f.env])]
         if bad:
@@ -518,6 +599,7 @@ def page_config() -> None:
             if new_password:  # hashed only on Save: hashing is slow on purpose
                 values[cfg.HASH_ENV] = cfg.hash_password(new_password)
             path = cfg.save(values)
+            draft.clear()
             cfg.mark_setup_done("dashboard")
             ai, err = safe(client.ai_reload)
             if err:
@@ -525,6 +607,41 @@ def page_config() -> None:
             else:
                 st.success(f"Saved to {path}. Cyanide switched to the new AI settings ({ai.get('chat')}). "
                            "Restart the demo (stop_demo.ps1, then run_demo.ps1) for the other settings.")
+
+
+def _save_look() -> None:
+    accent = st.session_state.look_accent
+    if accent == th.CUSTOM:
+        accent = th.parse_hex(st.session_state.get("look_custom", "")) or th.ACCENTS["violet"][1]
+    cfg.save_appearance(st.session_state.look_theme, accent)
+
+
+def appearance_settings() -> None:
+    """Black or White, and the accent colour: Mono, a preset, or any colour from the picker."""
+    custom = th.parse_hex(ACCENT) if ACCENT not in th.ACCENTS else None
+    c1, c2, c3 = st.columns([1.1, 1.6, 1], vertical_alignment="bottom")
+    c1.segmented_control("Theme", list(th.THEMES), key="look_theme", default=THEME, required=True,
+                         format_func=lambda k: th.THEMES[k].label, on_change=_save_look)
+    accents = [*th.ACCENTS, th.CUSTOM]
+    c2.segmented_control("Accent colour", accents, key="look_accent", default=th.CUSTOM if custom else
+                         (ACCENT if ACCENT in th.ACCENTS else th.DEFAULT_ACCENT), required=True,
+                         format_func=lambda k: th.ACCENTS[k][0] if k in th.ACCENTS else "Custom",
+                         on_change=_save_look,
+                         help="Mono uses white on Black and black on White. Violet is the logo's colour.")
+    if st.session_state.get("look_accent") == th.CUSTOM:
+        c3.color_picker("Custom colour", value=custom or th.ACCENTS["violet"][1], key="look_custom",
+                        on_change=_save_look)
+    p = th.palette(THEME, ACCENT)
+    warn = th.risk_like(th.accent_hex(ACCENT))
+    st.markdown(
+        f'<div class="preview"><div class="brand-mark" style="width:2rem;height:2rem">{_logo_svg("mark.svg")}</div>'
+        f'<span class="btn">Approve block</span><span class="soft">Selected</span>'
+        f'<span class="lnk">A link</span>'
+        f'<span style="margin-left:auto;font-size:.76rem;color:var(--ink-muted)">accent {p["brand-fill"]} · '
+        f'risk colours stay green / amber / red</span></div>', unsafe_allow_html=True)
+    if warn:
+        st.caption(f"This colour looks like the {warn} risk colour, so buttons may read as alerts. "
+                   "A blue, violet or neutral accent keeps them apart.")
 
 
 def protection_switch() -> None:
@@ -1170,7 +1287,7 @@ def page_review() -> None:
 
     g, h = st.columns([5, 7])
     with g, st.container(border=True):
-        section("Risk gauge", f"threshold {threshold:.0f} · white line", "speed")
+        section("Risk gauge", f"threshold {threshold:.0f} · the bold tick", "speed")
         st.plotly_chart(sh.gauge_figure(idx, threshold, band), width="stretch", config={"displayModeBar": False}, key="gauge")
         st.markdown(f'<div style="text-align:center;margin-top:-.4rem">{pill(sh.BAND_LABELS.get(band, band), color)}</div>',
                     unsafe_allow_html=True)

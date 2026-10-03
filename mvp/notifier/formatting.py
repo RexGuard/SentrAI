@@ -46,12 +46,12 @@ def band_for(index: Any) -> str:
 
 BAND_EMOJI = {"green": "🟢", "amber": "🟠", "red": "🔴", "critical": "🚨", "unknown": "⚪"}
 
-# SentrAI brand kit (assets/brand/tokens.json): navy-950, light brand (buttons) and steel-300 (the "AI" on navy).
+# SentrAI brand kit (assets/brand/tokens.json): black-950 header band, black buttons, white wordmark on black.
 BRAND = "SentrAI"
 TAGLINE = "A sentry doesn't chase you. It just guards the gate."
-BRAND_NAVY, BRAND_BLUE, BRAND_BLUE_SOFT = "#0b111d", "#1f4fb8", "#7fb2ff"
+BRAND_DARK, BRAND_BUTTON, BRAND_ON_DARK = "#0a0a0a", "#0a0a0a", "#ffffff"
 # Green, amber and red mean risk and nothing else (light-theme safe/warn/danger; critical is a deeper red).
-BAND_COLORS = {"green": "#1a7447", "amber": "#8f5d00", "red": "#c0282e", "critical": "#8a1c22", "unknown": "#626f86"}
+BAND_COLORS = {"green": "#1a7447", "amber": "#8f5d00", "red": "#c0282e", "critical": "#8a1c22", "unknown": "#666666"}
 
 
 def risk_meter(index: Any, cells: int = 10, full: str = "▰", empty: str = "▱") -> str:
