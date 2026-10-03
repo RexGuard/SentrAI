@@ -64,6 +64,7 @@ The demo portal and attack scripts are not installed as services.
 --no-notifier                          leave the Telegram notifier off
 --no-start                             install and enable without starting
 --seal-journal                         keep the journal on disk and seal it (see below)
+--remote-copy URL                      send everything to a witness on another machine (see below)
 --prefix DIR / --user NAME
 ```
 
@@ -107,6 +108,38 @@ journalctl --verify --verify-key=<the key>
 ```
 
 Uninstalling leaves sealing on.
+
+## Off-box copy (`--remote-copy`)
+
+Someone with root on this server can delete or rebuild SentrAI's audit record. A witness on a
+second machine keeps a copy they cannot reach: the core sends it every audit record and every log
+line the collector reads, within milliseconds. The witness only adds; the token this server holds
+cannot change, delete or read anything there.
+
+On the second machine (one this server's admins cannot log in to):
+
+```bash
+sudo ./deploy/install-witness.sh --name 198.51.100.20 --allow 203.0.113.10   # this server's address
+```
+
+It prints what to copy over. Then, here:
+
+```bash
+sudo ./deploy/install.sh --remote-copy https://198.51.100.20:8600 \
+     --remote-copy-token-file ./append.token --remote-copy-ca ./cert.pem
+```
+
+The token is kept in `/var/lib/cactai/core`, which only the core service can open. If this
+server's record is ever changed, the core's next send is refused and a **Log tampering** incident
+opens. To list what changed, run from anywhere holding the witness's read token (keep that one
+off this server):
+
+```bash
+python -m app.remote_copy compare --url https://198.51.100.20:8600 --read-token-file read.token
+```
+
+`--remote-copy off` stops sending. A witness can also be any machine with Python 3.10; it needs
+no packages.
 
 ## Reaching the dashboard
 

@@ -26,6 +26,17 @@ def sign(token: str, path: str) -> str:
     return hmac.new(token.encode(), path.encode(), hashlib.sha256).hexdigest()[:32]
 
 
+def _secret(name: str) -> str:
+    """NAME, or the contents of the file named by NAME_FILE (kept where only this service reads it)."""
+    path = os.getenv(f"{name}_FILE", "").strip()
+    if path:
+        try:
+            return Path(path).read_text(encoding="utf-8").strip()
+        except OSError:
+            return ""
+    return os.getenv(name, "").strip()
+
+
 def _f(name: str, default: float) -> float:
     try:
         return float(os.getenv(name, default))
@@ -75,6 +86,11 @@ class Settings:
     clock_jump_s: float = field(default_factory=lambda: _f("CLOCK_JUMP_S", 120.0))
     # Send the signed audit fingerprint to the alert channels this often, in real minutes (0 = never; anchor.py).
     anchor_every_min: float = field(default_factory=lambda: _f("ANCHOR_EVERY_MIN", 60.0))
+    # Off-box copy (remote_copy.py): a SentrAI witness on another machine that keeps every audit
+    # record and log line where this server's root cannot change them. Empty URL = off.
+    remote_copy_url: str = field(default_factory=lambda: os.getenv("CACTAI_REMOTE_COPY_URL", "").strip().rstrip("/"))
+    remote_copy_token: str = field(default_factory=lambda: _secret("CACTAI_REMOTE_COPY_TOKEN"))
+    remote_copy_ca: str = field(default_factory=lambda: os.getenv("CACTAI_REMOTE_COPY_CA", "").strip())
     id_year: int = field(default_factory=lambda: _i("ID_YEAR", 2026))
     id_start: int = field(default_factory=lambda: _i("ID_START", 81))
     history_len: int = 3600

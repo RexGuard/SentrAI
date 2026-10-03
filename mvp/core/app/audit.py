@@ -12,7 +12,7 @@ import sqlite3
 import threading
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 GENESIS_HASH = "0" * 64
 
@@ -31,6 +31,7 @@ class AuditLog:
         self.path = Path(path)
         self._lock = threading.RLock()
         self._conn: sqlite3.Connection | None = None
+        self.listeners: list[Callable[[], None]] = []  # called after each append (the off-box copy wakes up)
         self._open()
 
     def _open(self) -> None:
@@ -82,7 +83,18 @@ class AuditLog:
                 (seq, ts, rtype, canonical(data), prev, h),
             )
             self._conn.commit()
-            return {"seq": seq, "ts": ts, "type": rtype, "data": data, "prev_hash": prev, "hash": h}
+        for listener in self.listeners:
+            listener()
+        return {"seq": seq, "ts": ts, "type": rtype, "data": data, "prev_hash": prev, "hash": h}
+
+    def records_after(self, seq: int, limit: int = 500) -> list[dict[str, Any]]:
+        """Up to ``limit`` records after ``seq``, oldest first, as stored (not re-checked)."""
+        with self._lock:
+            assert self._conn is not None
+            rows = self._conn.execute("SELECT seq, ts, type, data, prev_hash, hash FROM audit WHERE seq > ? ORDER BY seq"
+                                      " LIMIT ?", (seq, limit)).fetchall()
+        return [{"seq": q, "ts": ts, "type": t, "data": json.loads(d), "prev_hash": p, "hash": h}
+                for q, ts, t, d, p, h in rows]
 
     def records(self) -> list[dict[str, Any]]:
         with self._lock:

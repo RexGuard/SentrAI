@@ -27,6 +27,10 @@
 #                          dashboard port, who may open it, and the sign-in email and password
 #   --no-notifier          do not enable the Telegram notifier service
 #   --no-start             install and enable, but do not start or restart anything
+#   --remote-copy URL      send every audit record and log line to a SentrAI witness on another
+#                          machine (deploy/install-witness.sh), as they happen; "off" stops it
+#   --remote-copy-token-file FILE   the witness's append token (needed with --remote-copy)
+#   --remote-copy-ca FILE  the witness's certificate, when it is self-signed
 #   --seal-journal         keep the system journal on disk and seal it (journald Forward Secure
 #                          Sealing): prints a verification key once, to store away from this server
 #
@@ -59,6 +63,9 @@ ADMIN_EMAIL=""
 RESET_PW=0
 ASK=1
 SEAL=0
+REMOTE=""
+REMOTE_TOKEN=""
+REMOTE_CA=""
 declare -A SET=()  # env values given on the command line
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -77,7 +84,10 @@ while [ $# -gt 0 ]; do
         --no-notifier) NOTIFIER=0; shift ;;
         --no-start) START=0; shift ;;
         --seal-journal) SEAL=1; shift ;;
-        -h|--help) sed -n '2,52p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        --remote-copy) REMOTE="$2"; shift 2 ;;
+        --remote-copy-token-file) REMOTE_TOKEN="$2"; shift 2 ;;
+        --remote-copy-ca) REMOTE_CA="$2"; shift 2 ;;
+        -h|--help) sed -n '2,57p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "Unknown option: $1 (see --help)" >&2; exit 2 ;;
     esac
 done
@@ -271,6 +281,29 @@ if [ "$(get_env CACTAI_DB)" = "$STATE/cactai.db" ] || [ -z "$(get_env CACTAI_COL
         set_env CACTAI_COLLECTOR_STATE "$STATE/collector/state.json"
     fi
     chown -R "$SVC_USER:$SVC_USER" "$STATE/core" "$STATE/collector"
+fi
+
+# --- off-box copy (--remote-copy) -------------------------------------------
+# The witness's append token goes where only the core service can read it (/var/lib/cactai/core).
+if [ "$REMOTE" = off ]; then
+    set_env CACTAI_REMOTE_COPY_URL ""
+elif [ -n "$REMOTE" ]; then
+    case "$REMOTE" in http://*|https://*) ;; *) die "--remote-copy needs an http(s):// URL (got '$REMOTE')" ;; esac
+    [ -n "$REMOTE_TOKEN" ] || [ -s "$STATE/core/remote-copy.token" ] \
+        || die "--remote-copy needs --remote-copy-token-file (the witness's append.token)"
+    if [ -n "$REMOTE_TOKEN" ]; then
+        [ -s "$REMOTE_TOKEN" ] || die "--remote-copy-token-file: $REMOTE_TOKEN is missing or empty"
+        install -o "$SVC_USER" -g "$SVC_USER" -m 0600 "$REMOTE_TOKEN" "$STATE/core/remote-copy.token"
+    fi
+    if [ -n "$REMOTE_CA" ]; then
+        [ -s "$REMOTE_CA" ] || die "--remote-copy-ca: $REMOTE_CA is missing or empty"
+        install -m 0644 "$REMOTE_CA" /etc/cactai/witness-ca.pem
+        set_env CACTAI_REMOTE_COPY_CA /etc/cactai/witness-ca.pem
+    fi
+    set_env CACTAI_REMOTE_COPY_URL "$REMOTE"
+    set_env CACTAI_REMOTE_COPY_TOKEN_FILE "$STATE/core/remote-copy.token"
+    code="$(curl -s -o /dev/null -w '%{http_code}' ${REMOTE_CA:+--cacert "$REMOTE_CA"} "$REMOTE/health" 2>/dev/null || true)"
+    [ "$code" = 200 ] || echo "WARNING: the witness at $REMOTE did not answer (got '${code:-nothing}'); SentrAI keeps retrying." >&2
 fi
 
 # --- code and venvs ---------------------------------------------------------
@@ -469,6 +502,11 @@ else
 fi
 printf '%s\n' "$SIGN_IN" | sed 's/^/  /'
 echo "  Change it:  sudo cactai-admin --reset   (or on the dashboard: Configuration, 6. Access)"
+REMOTE_URL="$(get_env CACTAI_REMOTE_COPY_URL)"
+if [ -n "$REMOTE_URL" ]; then
+    echo "  Off-box copy: every audit record and log line goes to $REMOTE_URL as it happens."
+    echo "              Status: curl $CORE_URL/audit/remote-copy"
+fi
 if [ -n "$SEAL_KEY" ]; then
     echo
     echo "  Journal sealing is on. Verification key (shown only now; keep it OFF this server):"
