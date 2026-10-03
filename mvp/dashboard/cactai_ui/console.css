@@ -36,12 +36,10 @@ section[data-testid="stSidebar"] { border-right: 1px solid var(--line-soft); }
 section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] { gap: .15rem; }
 section[data-testid="stSidebar"] div[data-testid="stMarkdownContainer"] { margin-bottom: 0; }
 .brand { display: flex; align-items: center; gap: .65rem; margin: -.4rem 0 1rem .2rem; }
-.brand-mark { width: 2.5rem; height: 2.5rem; border-radius: 12px; display: grid; place-items: center; font-size: 1.45rem;
-              background: linear-gradient(145deg, #1f3f7a, #121a29); border: 1px solid var(--brand-line);
-              box-shadow: 0 0 0 4px rgba(76,141,255,.10); }
-.brand-mark svg { width: 1.9rem; height: 1.9rem; display: block; }
-.brand-name { font-size: 1.35rem; font-weight: 800; letter-spacing: -.02em; color: var(--ink); line-height: 1.1; }
-.brand-name span { color: var(--brand); }
+.brand-mark { flex: none; width: 2.5rem; height: 2.5rem; }
+.brand-mark svg { width: 100%; height: 100%; display: block; }
+.brand-name { color: var(--ink); line-height: 0; margin-bottom: .2rem; }
+.brand-name svg { height: 1.3rem; width: auto; display: block; }
 .brand-tag { color: var(--ink-muted); font-size: .76rem; }
 
 .side-risk { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: .7rem .8rem .75rem;

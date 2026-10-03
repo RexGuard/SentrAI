@@ -10,6 +10,8 @@ from __future__ import annotations
 import zlib
 from dataclasses import dataclass, field
 
+from .brand_mark import MARK, WORDMARK, parse
+
 PAGE_W, PAGE_H = 595.28, 841.89  # A4 in points
 MARGIN = 42.0
 
@@ -29,7 +31,6 @@ REGULAR, BOLD, MONO = "F1", "F2", "F3"
 
 # SentrAI brand kit (assets/brand/tokens.json): light-theme tokens for the page, fixed navy/steel for the band.
 NAVY = (0.043, 0.067, 0.114)       # navy-950 #0b111d
-NAVY_SOFT = (0.086, 0.149, 0.290)  # dark brand-soft #16264a
 BLUE = (0.122, 0.310, 0.722)       # steel-700 #1f4fb8 (light brand)
 BLUE_SOFT = (0.498, 0.698, 1.0)    # steel-300 #7fb2ff
 INK = (0.059, 0.102, 0.173)        # ink #0f1a2c
@@ -39,18 +40,9 @@ STRIPE = (0.933, 0.949, 0.973)     # surface-2 #eef2f8
 HEAD = NAVY                        # headings and table headers
 ON_DARK = (0.906, 0.929, 0.965)    # dark ink #e7edf6
 
-# The shield-and-eye mark (assets/brand/mark-dark.svg, 64x64 box, y down).
-_SHIELD = [("m", 32, 4), ("l", 54, 11.5), ("l", 54, 29), ("c", 54, 43.5, 44.8, 54.2, 32, 60),
-           ("c", 19.2, 54.2, 10, 43.5, 10, 29), ("l", 10, 11.5)]
-_EYE = [("m", 17, 32), ("c", 22.5, 24, 27, 21.5, 32, 21.5), ("c", 37, 21.5, 41.5, 24, 47, 32),
-        ("c", 41.5, 40, 37, 42.5, 32, 42.5), ("c", 27, 42.5, 22.5, 40, 17, 32)]
-
-
-def _circle(cx: float, cy: float, r: float) -> list[tuple]:
-    k = 0.5523 * r
-    return [("m", cx + r, cy), ("c", cx + r, cy + k, cx + k, cy + r, cx, cy + r),
-            ("c", cx - k, cy + r, cx - r, cy + k, cx - r, cy), ("c", cx - r, cy - k, cx - k, cy - r, cx, cy - r),
-            ("c", cx + k, cy - r, cx + r, cy - k, cx + r, cy)]
+# The SentrAI logo (assets/brand/mark.svg + wordmark.svg), 64-unit-high box, y down.
+_MARK = [(_hex, parse(d)) for _hex, d in MARK]
+_WORDMARK = parse(WORDMARK)
 
 
 _SWAPS = {"→": "->", "←": "<-", "✓": "OK", "✅": "OK", "✗": "x", "≥": ">=", "≤": "<=", "\t": "    "}
@@ -137,21 +129,23 @@ class PdfDoc:
     def line(self, x1: float, y1: float, x2: float, y2: float, color=RULE, w: float = 0.6) -> None:
         self._op(f"{_rgb(color)} RG {w:.2f} w {x1:.2f} {y1:.2f} m {x2:.2f} {y2:.2f} l S\n")
 
-    def shield(self, x: float, y: float, size: float) -> None:
-        """The SentrAI mark (dark variant, for the navy band) with its bottom-left corner at (x, y)."""
+    def logo(self, x: float, y: float, size: float, wordmark: tuple[float, float, float] | None = ON_DARK) -> None:
+        """The SentrAI logo with its bottom-left corner at (x, y), `size` points tall: the three-arc mark, then
+        the "SentrAI" lettering in `wordmark` colour (None draws the mark alone)."""
         k = size / 64
 
         def path(cmds: list[tuple]) -> str:
             out = []
             for op, *pts in cmds:
                 xy = " ".join(f"{x + pts[i] * k:.2f} {y + (64 - pts[i + 1]) * k:.2f}" for i in range(0, len(pts), 2))
-                out.append(f"{xy} {op}")
+                out.append(f"{xy} {op}".lstrip())
             return " ".join(out)
 
-        self._op(f"{_rgb(NAVY_SOFT)} rg {_rgb(BLUE_SOFT)} RG {3 * k:.2f} w 1 j {path(_SHIELD)} h B\n")
-        self._op(f"{_rgb(BLUE_SOFT)} rg {path(_EYE)} h f\n")
-        self._op(f"{_rgb(NAVY)} rg {path(_circle(32, 32, 6))} h f\n")
-        self._op(f"{_rgb(ON_DARK)} rg {path(_circle(34.2, 29.8, 1.8))} h f 0 j\n")
+        for colour, cmds in _MARK:
+            rgb = tuple(int(colour[i:i + 2], 16) / 255 for i in (1, 3, 5))
+            self._op(f"{_rgb(rgb)} rg {path(cmds)} f*\n")
+        if wordmark is not None:
+            self._op(f"{_rgb(wordmark)} rg {path(_WORDMARK)} f*\n")
 
     def text(self, x: float, y: float, s: str, font: str = REGULAR, size: float = 10,
              color=INK) -> None:

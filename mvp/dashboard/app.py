@@ -13,6 +13,7 @@ import hmac
 import html
 import json
 import os
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -34,13 +35,16 @@ DEFAULT_CORE = os.environ.get("CACTAI_CORE_URL", "http://127.0.0.1:8000")
 DEFAULT_OPERATOR = os.environ.get("CACTAI_OPERATOR", "operator")
 REFRESH_SECONDS = 2
 
-# SentrAI brand mark: assets/brand/mark-dark.svg (shield with an open eye), inlined so it needs no file.
-SHIELD = ('<svg viewBox="0 0 64 64" aria-hidden="true">'
-          '<path d="M32 4 L54 11.5 V29 C54 43.5 44.8 54.2 32 60 C19.2 54.2 10 43.5 10 29 V11.5 Z" fill="#16264a" '
-          'stroke="#7fb2ff" stroke-width="3" stroke-linejoin="round"/>'
-          '<path d="M17 32 C22.5 24 27 21.5 32 21.5 C37 21.5 41.5 24 47 32 C41.5 40 37 42.5 32 42.5 '
-          'C27 42.5 22.5 40 17 32 Z" fill="#7fb2ff"/><circle cx="32" cy="32" r="6" fill="#0b111d"/>'
-          '<circle cx="34.2" cy="29.8" r="1.8" fill="#e7edf6"/></svg>')
+# SentrAI logo: assets/brand/mark.svg and wordmark.svg, copied into cactai_ui so the console needs no other folder.
+def _logo_svg(name: str) -> str:
+    svg = (Path(__file__).parent / "cactai_ui" / name).read_text(encoding="utf-8")
+    svg = re.sub(r'\s*<title>.*?</title>|\s(width|height)="[\d.]+"', "", svg)
+    return svg.replace('role="img" aria-label="SentrAI"', 'aria-hidden="true"').replace("\n", "")
+
+
+BRAND = ('<div class="brand"><div class="brand-mark">' + _logo_svg("mark.svg") + '</div><div>'
+         '<div class="brand-name" role="img" aria-label="SentrAI">' + _logo_svg("wordmark.svg") + '</div>'
+         '<div class="brand-tag">Risk Console</div></div></div>')
 # Tab icon from the brand kit when it is in the checkout, else the emoji.
 _FAVICON = Path(__file__).resolve().parents[2] / "assets" / "brand" / "favicon-32.png"
 PAGE_ICON = str(_FAVICON) if _FAVICON.exists() else "🛡️"
@@ -79,9 +83,7 @@ def login() -> None:
         return
     account = cfg.dashboard_login()
     _, mid, _ = st.columns([1, 1.2, 1])
-    brand = ('<div class="brand"><div class="brand-mark">' + SHIELD + '</div><div>'
-             '<div class="brand-name">Sentr<span>AI</span></div>'
-             '<div class="brand-tag">Risk Console</div></div></div>')
+    brand = BRAND
     if not account["hash"] and not account["plain"]:
         with mid.container(border=True):
             st.markdown(brand, unsafe_allow_html=True)
@@ -280,12 +282,7 @@ def menu() -> None:
 
 
 with st.sidebar:
-    st.markdown(
-        '<div class="brand"><div class="brand-mark">' + SHIELD + '</div><div>'
-        '<div class="brand-name">Sentr<span>AI</span></div>'
-        '<div class="brand-tag">Risk Console</div></div></div>',
-        unsafe_allow_html=True,
-    )
+    st.markdown(BRAND, unsafe_allow_html=True)
     menu()
     st.markdown('<div class="side-sep"></div>', unsafe_allow_html=True)
     st.toggle(f"Auto-refresh every {REFRESH_SECONDS} s", key="auto_refresh")

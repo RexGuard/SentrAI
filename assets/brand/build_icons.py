@@ -1,9 +1,10 @@
-"""Render the SentrAI PNG/ICO icons and social card from the SVGs in this folder.
+"""Render the SentrAI PNG/ICO icons, social card and transparent logo PNGs from the SVGs in this folder.
 
 Needs: pip install playwright pillow  (uses the local Chromium; set PLAYWRIGHT_BROWSERS_PATH if needed)
 Run:   python assets/brand/build_icons.py
 """
 import os
+import re
 from pathlib import Path
 
 from PIL import Image
@@ -36,14 +37,30 @@ def main() -> None:
         fav = svg("favicon.svg").replace("<svg ", "<svg width='SIZE' height='SIZE' ", 1)
         for s in (16, 32, 48):
             shot(page, page_html(fav.replace('SIZE', str(s))), s, s, f"favicon-{s}.png")
-        # Home-screen icons: dark mark on a navy tile (the OS rounds the corners).
-        tile = svg("mark-dark.svg").replace("<svg ", "<svg width='SIZE' height='SIZE' ", 1)
+        # Home-screen icons: the mark on a white tile, as the logo was drawn (the OS rounds the corners).
+        tile = svg("mark.svg").replace("<svg ", "<svg width='SIZE' height='SIZE' ", 1)
         for s, out in ((180, "apple-touch-icon.png"), (192, "icon-192.png"), (512, "icon-512.png")):
             m = round(s * 0.72)
             body = f"<div style='width:{s}px;height:{s}px;display:grid;place-items:center'>{tile.replace('SIZE', str(m))}</div>"
-            shot(page, page_html(body, NAVY), s, s, out, transparent=False)
+            shot(page, page_html(body, "#ffffff"), s, s, out, transparent=False)
+        # Transparent PNG exports for slides, documents and anything that can't take an SVG.
+        (HERE / "png").mkdir(exist_ok=True)
+        for name in ("mark", "mark-mono"):
+            src = svg(f"{name}.svg").replace("<svg ", "<svg style='color:#1d212b' ", 1)
+            for s in (64, 128, 256, 512, 1024):
+                body = src.replace('width="64" height="64"', f'width="{s}" height="{s}"', 1)
+                shot(page, page_html(body), s, s, f"png/{name}-{s}.png")
+        for name in ("logo", "logo-dark", "wordmark"):
+            src = svg(name + ".svg")
+            vb = [float(v) for v in src.split('viewBox="', 1)[1].split('"', 1)[0].split()]
+            for h in (64, 128, 256, 512):
+                w = round(h * vb[2] / vb[3])
+                body = re.sub(r'width="[\d.]+" height="[\d.]+"', f'width="{w}" height="{h}"', src, count=1)
+                if name == "wordmark":
+                    body = body.replace("<svg ", "<svg style='color:#1d212b' ", 1)
+                shot(page, page_html(body), w, h, f"png/{name}-{h}.png")
         # Social card (Open Graph / link previews), 1200x630.
-        logo = svg("logo-dark.svg").replace("<svg ", "<svg width='600' height='160' ", 1)
+        logo = svg("logo-dark.svg").replace("<svg ", "<svg width='545' height='160' ", 1)
         card = (f"<div style='width:1200px;height:630px;box-sizing:border-box;padding:96px 110px;color:#e7edf6;"
                 f"background:radial-gradient(900px 480px at 0% 0%,rgba(76,141,255,.22),transparent 65%),{NAVY}'>"
                 f"{logo}<p style='font-size:44px;font-weight:650;letter-spacing:-.01em;margin:56px 0 18px;max-width:900px'>"
