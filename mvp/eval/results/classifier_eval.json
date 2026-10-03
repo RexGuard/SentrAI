@@ -1,20 +1,20 @@
 {
-  "events": 178,
+  "events": 191,
   "by_origin": {
     "lab": 116,
     "replay": 17,
-    "handcrafted": 45
+    "handcrafted": 58
   },
   "jev_status": "disabled: TYPESAFE_API_KEY not set (fallback classifier in use)",
   "runs": {
     "rules": {
       "per_category": {
         "benign": {
-          "precision": 0.6951219512195121,
-          "recall": 0.6951219512195121,
-          "f1": 0.6951219512195121,
-          "support": 82,
-          "predicted": 82
+          "precision": 0.7058823529411765,
+          "recall": 0.6976744186046512,
+          "f1": 0.7017543859649124,
+          "support": 86,
+          "predicted": 85
         },
         "brute_force": {
           "precision": 1.0,
@@ -64,13 +64,20 @@
           "f1": 0.8000000000000002,
           "support": 5,
           "predicted": 5
+        },
+        "log_tampering": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 9,
+          "predicted": 9
         }
       },
-      "accuracy": 0.6235955056179775,
-      "macro_f1": 0.7794658157978639,
-      "detection_rate": 0.5625,
-      "false_alarm_rate": 0.012195121951219513,
-      "no_answer": 41,
+      "accuracy": 0.643979057591623,
+      "macro_f1": 0.804706551236479,
+      "detection_rate": 0.6,
+      "false_alarm_rate": 0.011627906976744186,
+      "no_answer": 42,
       "mistakes": [
         {
           "event_id": "eval-0003",
@@ -465,79 +472,86 @@
           "predicted": "benign"
         },
         {
-          "event_id": "eval-0166",
+          "event_id": "eval-0175",
           "origin": "handcrafted",
           "raw": "cron: daily logrotate finished",
           "label": "benign",
           "predicted": "(no answer)"
         },
         {
-          "event_id": "eval-0167",
-          "origin": "handcrafted",
-          "raw": "sshd[900]: Accepted publickey for deploy from 192.0.2.20 port 51022 ssh2",
-          "label": "benign",
-          "predicted": "(no answer)"
-        },
-        {
-          "event_id": "eval-0168",
+          "event_id": "eval-0177",
           "origin": "handcrafted",
           "raw": "systemd: Started Session 41 of user deploy.",
           "label": "benign",
           "predicted": "(no answer)"
         },
         {
-          "event_id": "eval-0170",
-          "origin": "handcrafted",
-          "raw": "GET /favicon.ico 404",
-          "label": "benign",
-          "predicted": "(no answer)"
-        },
-        {
-          "event_id": "eval-0171",
-          "origin": "handcrafted",
-          "raw": "GET /reports/term3.pdf 500 error while rendering",
-          "label": "benign",
-          "predicted": "(no answer)"
-        },
-        {
-          "event_id": "eval-0172",
+          "event_id": "eval-0181",
           "origin": "handcrafted",
           "raw": "UFW ALLOW SRC=192.0.2.10 DST=10.0.0.5 PROTO=TCP DPT=443",
           "label": "benign",
           "predicted": "(no answer)"
         },
         {
-          "event_id": "eval-0173",
+          "event_id": "eval-0182",
           "origin": "handcrafted",
           "raw": "vulnerability scan by approved vendor window 02:00-03:00 finished, 0 findings",
           "label": "benign",
           "predicted": "(no answer)"
         },
         {
-          "event_id": "eval-0174",
+          "event_id": "eval-0183",
           "origin": "handcrafted",
           "raw": "PutBucketAcl bucket=aegis-student-docs acl=private by user=it-admin",
           "label": "benign",
           "predicted": "(no answer)"
         },
         {
-          "event_id": "eval-0175",
+          "event_id": "eval-0184",
           "origin": "handcrafted",
           "raw": "Security group sg-0a1 rule removed: ingress 0.0.0.0/0 tcp 3389",
           "label": "benign",
           "predicted": "misconfiguration"
         },
         {
-          "event_id": "eval-0176",
+          "event_id": "eval-0185",
           "origin": "handcrafted",
           "raw": "EventID=4624 An account was successfully logged on. Account=teacher01",
           "label": "benign",
           "predicted": "(no answer)"
         },
         {
-          "event_id": "eval-0178",
+          "event_id": "eval-0187",
           "origin": "handcrafted",
           "raw": "GET /help/download all course notes 200",
+          "label": "benign",
+          "predicted": "(no answer)"
+        },
+        {
+          "event_id": "eval-0188",
+          "origin": "handcrafted",
+          "raw": "sudo:  admin : TTY=pts/0 ; PWD=/home/admin ; USER=root ; COMMAND=/usr/bin/tail -n 50 /var/log/auth.log",
+          "label": "benign",
+          "predicted": "(no answer)"
+        },
+        {
+          "event_id": "eval-0189",
+          "origin": "handcrafted",
+          "raw": "sudo:  admin : TTY=pts/0 ; PWD=/home/admin ; USER=root ; COMMAND=/usr/bin/systemctl restart rsyslog",
+          "label": "benign",
+          "predicted": "(no answer)"
+        },
+        {
+          "event_id": "eval-0190",
+          "origin": "handcrafted",
+          "raw": "sudo:  admin : TTY=pts/0 ; PWD=/home/admin ; USER=root ; COMMAND=/usr/bin/rm /var/log/syslog.4.gz",
+          "label": "benign",
+          "predicted": "(no answer)"
+        },
+        {
+          "event_id": "eval-0191",
+          "origin": "handcrafted",
+          "raw": "logrotate: rotating /var/log/nginx/access.log -> access.log.1, compressing access.log.2",
           "label": "benign",
           "predicted": "(no answer)"
         }
@@ -546,11 +560,11 @@
     "fallback": {
       "per_category": {
         "benign": {
-          "precision": 0.5263157894736842,
-          "recall": 0.975609756097561,
-          "f1": 0.6837606837606838,
-          "support": 82,
-          "predicted": 152
+          "precision": 0.509090909090909,
+          "recall": 0.9767441860465116,
+          "f1": 0.6693227091633466,
+          "support": 86,
+          "predicted": 165
         },
         "brute_force": {
           "precision": 0.0,
@@ -600,12 +614,19 @@
           "f1": 0.8000000000000002,
           "support": 5,
           "predicted": 5
+        },
+        "log_tampering": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 9,
+          "predicted": 0
         }
       },
-      "accuracy": 0.5842696629213483,
-      "macro_f1": 0.581784188034188,
-      "detection_rate": 0.25,
-      "false_alarm_rate": 0.024390243902439025,
+      "accuracy": 0.5654450261780105,
+      "macro_f1": 0.5155372810751296,
+      "detection_rate": 0.22857142857142856,
+      "false_alarm_rate": 0.023255813953488372,
       "no_answer": 0,
       "mistakes": [
         {
@@ -1113,14 +1134,77 @@
           "predicted": "benign"
         },
         {
-          "event_id": "eval-0175",
+          "event_id": "eval-0164",
+          "origin": "handcrafted",
+          "raw": "sudo:  deploy : TTY=pts/1 ; PWD=/root ; USER=root ; COMMAND=/usr/bin/rm -f /var/log/auth.log",
+          "label": "log_tampering",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0165",
+          "origin": "handcrafted",
+          "raw": "sudo:  deploy : TTY=pts/1 ; PWD=/root ; USER=root ; COMMAND=/usr/bin/journalctl --vacuum-time=1s",
+          "label": "log_tampering",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0166",
+          "origin": "handcrafted",
+          "raw": "sudo:  deploy : TTY=pts/1 ; PWD=/root ; USER=root ; COMMAND=/usr/bin/systemctl stop rsyslog",
+          "label": "log_tampering",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0167",
+          "origin": "handcrafted",
+          "raw": "sudo:  deploy : TTY=pts/1 ; PWD=/root ; USER=root ; COMMAND=/usr/bin/chattr -a /var/log/secure",
+          "label": "log_tampering",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0168",
+          "origin": "handcrafted",
+          "raw": "sudo:  deploy : TTY=pts/1 ; PWD=/root ; USER=root ; COMMAND=/usr/bin/sed -i /203.0.113.70/d /var/log/auth.log",
+          "label": "log_tampering",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0169",
+          "origin": "handcrafted",
+          "raw": "bash history: history -c && unset HISTFILE",
+          "label": "log_tampering",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0170",
+          "origin": "handcrafted",
+          "raw": "auditd: EXECVE argc=3 a0=\"shred\" a1=\"-u\" a2=\"/root/.bash_history\"",
+          "label": "log_tampering",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0171",
+          "origin": "handcrafted",
+          "raw": "EventID=1102 The audit log was cleared. Account=administrator",
+          "label": "log_tampering",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0172",
+          "origin": "handcrafted",
+          "raw": "process wevtutil.exe cl Security started by administrator",
+          "label": "log_tampering",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0184",
           "origin": "handcrafted",
           "raw": "Security group sg-0a1 rule removed: ingress 0.0.0.0/0 tcp 3389",
           "label": "benign",
           "predicted": "misconfiguration"
         },
         {
-          "event_id": "eval-0178",
+          "event_id": "eval-0187",
           "origin": "handcrafted",
           "raw": "GET /help/download all course notes 200",
           "label": "benign",
@@ -1131,11 +1215,11 @@
     "chain": {
       "per_category": {
         "benign": {
-          "precision": 0.6611570247933884,
-          "recall": 0.975609756097561,
-          "f1": 0.7881773399014778,
-          "support": 82,
-          "predicted": 121
+          "precision": 0.672,
+          "recall": 0.9767441860465116,
+          "f1": 0.7962085308056872,
+          "support": 86,
+          "predicted": 125
         },
         "brute_force": {
           "precision": 1.0,
@@ -1185,12 +1269,19 @@
           "f1": 0.8000000000000002,
           "support": 5,
           "predicted": 5
+        },
+        "log_tampering": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 9,
+          "predicted": 9
         }
       },
-      "accuracy": 0.7584269662921348,
-      "macro_f1": 0.7935057201192636,
-      "detection_rate": 0.5729166666666666,
-      "false_alarm_rate": 0.024390243902439025,
+      "accuracy": 0.774869109947644,
+      "macro_f1": 0.8173418835398132,
+      "detection_rate": 0.6095238095238096,
+      "false_alarm_rate": 0.023255813953488372,
       "no_answer": 0,
       "mistakes": [
         {
@@ -1481,14 +1572,14 @@
           "predicted": "benign"
         },
         {
-          "event_id": "eval-0175",
+          "event_id": "eval-0184",
           "origin": "handcrafted",
           "raw": "Security group sg-0a1 rule removed: ingress 0.0.0.0/0 tcp 3389",
           "label": "benign",
           "predicted": "misconfiguration"
         },
         {
-          "event_id": "eval-0178",
+          "event_id": "eval-0187",
           "origin": "handcrafted",
           "raw": "GET /help/download all course notes 200",
           "label": "benign",

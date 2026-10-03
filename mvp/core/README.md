@@ -50,6 +50,8 @@ Tests:
 | `AUTO_CLOSE_QUIET_MIN` | `60` | Resolve an open scan or brute-force incident after this many real minutes with no new event and no containment in force. `0` turns it off. |
 | `AUTO_CLOSE_CATEGORIES` | `port_scan,brute_force` | Which categories auto-close. Other incidents always wait for an operator. |
 | `WATCHDOG_SILENCE_S` | `30` | Watchdog flags a collector after this many seconds of silence. |
+| `INTEGRITY_CHECK_S` | `30` | How often the integrity guard re-checks the audit chain and the clock. |
+| `CLOCK_JUMP_S` | `120` | A clock change bigger than this (core host or a collector) counts as log tampering. |
 | `PROTECTED_IPS` | empty | Comma-separated IPs that Countersign will never approve blocking. |
 | `CACTAI_ENGINE` | `cyanide` | Orchestrator. `cyanide` plans with Claude when a key is set; `saguaro` keeps the fixed playbooks only. |
 | `CACTAI_LLM_API_KEY` | unset | The one AI key the setup wizard saves; used by whichever provider `CACTAI_LLM_PROVIDER` names. With no key, Cyanide behaves exactly like Warden. A provider's own variable (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, `COMMANDCODE_API_KEY`) still works and wins when set. |
@@ -81,6 +83,7 @@ Audit records: `cyanide_plan` (actions, reasons, dropped steps), `cyanide_hold` 
    - `network` and `cloud` go to Watchtower
 2. **Classify**:
    - **Rules first**, always with confidence 1.0. They cover SQLi, XSS, a shell being spawned, `/export` bulk exports, port scans, misconfigurations, and 5 or more failed logins from one IP within 60 s. Failed logins below that threshold are held as benign; when the threshold is reached, all of them are attached to the incident.
+   - **Log tampering** (`log_tampering`, critical 55): commands that wipe, edit or silence the record (deleting or emptying files under `/var/log` or shell history, `journalctl --vacuum`, `chattr -a`, stopping rsyslog/auditd/journald, `wevtutil cl`, Windows event 1102), a collector notice that a log shrank, vanished or was swapped with no rotated copy (`log_integrity`), and the integrity guard's findings (`audit_integrity`: audit chain broken, audit database deleted, clock jumped). On its own it stays below the autonomous line, so a person decides; it only proposes blocking the source IP.
    - **Jev** if the rules cannot decide.
    - **Fallback heuristic** otherwise. It gives confidence 0.5 to 0.8 and `classified_by="fallback"`.
    - Confidence is always clipped to 0.5 to 1.0.

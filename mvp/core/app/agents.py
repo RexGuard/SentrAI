@@ -35,6 +35,7 @@ PLAYBOOKS: dict[str, list[tuple[str, str]]] = {
     "privilege_escalation": [("kill_process", "@host"), ("block_ip", "@src_ip"), ("lock_user", "@user")],
     "data_exfiltration": [("block_ip", "@src_ip"), ("lock_user", "@user")],
     "misconfiguration": [("revoke_public_acl", "@host")],
+    "log_tampering": [("block_ip", "@src_ip")],
 }
 
 ACTION_TEXT = {
@@ -54,6 +55,8 @@ EXPLAIN = {
     "privilege_escalation": "The application on {host} reported a shell being spawned (request from {src}). The endpoint is simulated and executed nothing, but in production this means remote code execution.",
     "data_exfiltration": "A bulk export of member data was requested from {host} by {src} (user '{user}'), possible data theft of PII.",
     "misconfiguration": "An insecure configuration was found on {host} (public access / open admin port / default password).",
+    "log_tampering": "Someone tried to erase, edit or silence the record on {host}: {reason}. Attackers do this to cover their "
+                     "tracks, so treat the host as possibly compromised. SentrAI already holds a copy of what was logged.",
 }
 
 
@@ -130,6 +133,7 @@ class LayerAgent(Agent):
             src=incident.get("src_ip") or "an unknown source",
             user=incident.get("user") or "n/a",
             host=incident.get("host") or "an unknown host",
+            reason=reason.split(":", 1)[-1].strip().rstrip(".") or "a log was changed",
         )
 
 

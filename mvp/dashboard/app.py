@@ -1098,7 +1098,7 @@ def page_classifier() -> None:
             f"- Brute force: **{os.environ.get('BRUTE_FORCE_COUNT', '5')}** failed logins within "
             f"**{os.environ.get('BRUTE_FORCE_WINDOW_S', '60')} s**\n"
             f"- Bulk exfiltration: **{os.environ.get('EXPORT_ROWS_THRESHOLD', '100')}** rows or more in one export\n"
-            "- Signatures: SQL injection, XSS, privilege escalation, port scans, misconfiguration")
+            "- Signatures: SQL injection, XSS, privilege escalation, port scans, misconfiguration, log tampering")
     with st.container(border=True):
         section("Classifications", "newest first · 0.4-0.6 malicious means needs review, never auto-contained", "label")
         table(rows, "No malicious classifications yet.", column_config={

@@ -181,6 +181,7 @@ class OffsetStore:
 
 
 HEAD_BYTES = 256            # the start of a file identifies it across renames and restarts
+ROTATION_GRACE_S = 600      # a rotated copy (name.1, name.1.gz, name-20261002) this recent explains a shrink
 MAX_READ = 1 << 20          # read at most 1 MiB per file per poll
 BACKFILL = int(os.environ.get("CACTAI_COLLECTOR_BACKFILL_KB", "256")) * 1024
 
@@ -204,6 +205,9 @@ class Tailer:
         self._saved = saved
         self._start = start
         self._warned = False
+        # Log-integrity notices: the file shrank, vanished or was replaced and no rotated copy explains
+        # it, so lines may have been wiped. The source turns each one into a "log_integrity" event.
+        self.notices: list[str] = []
 
     # -- file identity
     @staticmethod
@@ -226,6 +230,27 @@ class Tailer:
         if size < head_len:
             return False
         return head is None or self._fingerprint(path, head_len) == head
+
+    def _rotated_copy(self) -> bool:
+        """True when a sibling such as access.log.1, auth.log.1.gz or secure-20261002 was written
+        recently: logrotate (rename or copytruncate) explains the shrink."""
+        name, cutoff = self.path.name, time.time() - ROTATION_GRACE_S
+        try:
+            siblings = list(self.path.parent.iterdir())
+        except OSError:
+            return True  # cannot tell: do not raise an alarm we cannot back up
+        for p in siblings:
+            if p.name != name and (p.name.startswith(name + ".") or p.name.startswith(name + "-")):
+                try:
+                    if p.stat().st_mtime >= cutoff:
+                        return True
+                except OSError:
+                    continue
+        return False
+
+    def _notice(self, what: str) -> None:
+        if not self._rotated_copy():
+            self.notices.append(what)
 
     def checkpoint(self) -> dict:
         return {"pos": self.pos, "inode": self._inode or 0, "head": self._head, "head_len": self._head_len}
@@ -312,6 +337,9 @@ class Tailer:
             if self._first and self._saved:
                 pass  # keep the saved position until the file is back
             else:
+                if self._inode is not None and self.pos > 0:
+                    self._notice(f"deleted: {self.path} disappeared after {self.pos} bytes were read, "
+                                 f"and no rotated copy was made")
                 self._first = False
                 self.pos = 0
                 self._inode = None
@@ -323,9 +351,14 @@ class Tailer:
         inode = getattr(st, "st_ino", 0)
         # Rotation (new inode) or truncation (shrunk file): start again from the top.
         if self._inode is not None and inode != self._inode:
+            if self.pos > 0:
+                self._notice(f"replaced: {self.path} was swapped for a new file after {self.pos} bytes were read, "
+                             f"and no rotated copy was made")
             lines += self._drain_rotated(self._inode, self.pos, self._head, self._head_len)
             self.pos, self._head, self._head_len = 0, None, 0
         elif st.st_size < self.pos:
+            self._notice(f"truncated: {self.path} shrank from {self.pos} to {st.st_size} bytes in place, "
+                         f"and no rotated copy was made")
             self.pos, self._head, self._head_len = 0, None, 0
         self._inode = inode
         self._remember_head(st.st_size)
@@ -360,6 +393,11 @@ class FileSource(Source):
     def checkpoint(self) -> dict | None:
         return self.tailer.checkpoint()
 
+    def integrity_events(self, host: str | None = None) -> list[dict[str, Any]]:
+        """One "log_integrity" event per notice the tailer raised (rules classify it as log tampering)."""
+        notices, self.tailer.notices = self.tailer.notices, []
+        return [make_event("os", "log_integrity", f"log-integrity {n}", host=host) for n in notices]
+
 
 class JsonLogSource(FileSource):
     """One JSON-lines log file written by the target app."""
@@ -373,7 +411,7 @@ class JsonLogSource(FileSource):
                 continue
             if event is not None:
                 events.append(event)
-        return events
+        return events + self.integrity_events()
 
 
 class HeartbeatSource(Source):
@@ -445,7 +483,8 @@ class DiscoveredLogSource(FileSource):
         self.source = f"scout:{path.name}"
 
     def poll(self) -> list[dict[str, Any]]:
-        return [server_log_event(line, self.layer, self.source, self.fmt) for line in self.tailer.read_new_lines()]
+        events = [server_log_event(line, self.layer, self.source, self.fmt) for line in self.tailer.read_new_lines()]
+        return events + self.integrity_events(real_host())
 
 
 JOURNALD_SSH = ["SYSLOG_IDENTIFIER=sshd", "SYSLOG_IDENTIFIER=sshd-session", "SYSLOG_IDENTIFIER=sshd-auth"]
