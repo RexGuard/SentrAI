@@ -1,6 +1,6 @@
 /* SentrAI site styles: shared by the landing page and the doc layout.
    Colours come from the brand kit (assets/brand/tokens.css, loaded first in head.html).
-   Blue is the brand; green, amber and red only ever mean risk. */
+   Black and white are the brand (violet, the logo's colour, is the only accent); green, amber and red only ever mean risk. */
 :root {
   --bg: var(--sn-bg);
   --surface: var(--sn-surface);
@@ -24,15 +24,15 @@
   --max: 1120px;
   --font: var(--sn-font);
   --mono: var(--sn-mono);
-  /* Night-watch panel: always navy, in both themes. */
-  --night: var(--sn-navy-950);
-  --night-2: var(--sn-navy-900);
-  --night-3: var(--sn-navy-800);
-  --night-line: #26324a;
-  --night-ink: #e7edf6;
-  --night-soft: #a5b2c6;
-  --steel: var(--sn-steel-300);
-  --steel-2: var(--sn-steel-500);
+  /* Night-watch panel: always black, in both themes. */
+  --night: var(--sn-black-950);
+  --night-2: var(--sn-black-900);
+  --night-3: var(--sn-black-800);
+  --night-line: #2e2e2e;
+  --night-ink: #f5f5f5;
+  --night-soft: #b3b3b3;
+  --steel: #ffffff;
+  --steel-2: #b3b3b3;
   /* Shield silhouette used for icon tiles and badges (same curve as the logo mark). */
   --shield: polygon(50% 0%, 100% 14%, 100% 46%, 97% 62%, 88% 78%, 70% 92%, 50% 100%, 30% 92%, 12% 78%, 3% 62%, 0% 46%, 0% 14%);
 }
@@ -96,13 +96,13 @@ h1, h2 { font-weight: 750; }
 .section-title { font-size: clamp(26px, 4vw, 36px); max-width: 720px; }
 .lede { color: var(--ink-soft); font-size: 18px; max-width: 680px; margin: 0 0 32px; }
 
-/* Hero: the night watch. Always navy, whatever the OS theme. */
+/* Hero: the night watch. Always black, whatever the OS theme. */
 .hero {
   position: relative; overflow: hidden; isolation: isolate;
   padding: 72px 0 80px; color: var(--night-ink);
   background:
-    radial-gradient(700px 420px at 78% 38%, rgba(76, 141, 255, .20), transparent 70%),
-    radial-gradient(600px 300px at 0% 100%, rgba(76, 141, 255, .10), transparent 70%),
+    radial-gradient(700px 420px at 78% 38%, rgba(255, 255, 255, .08), transparent 70%),
+    radial-gradient(600px 300px at 0% 100%, rgba(128, 87, 240, .10), transparent 70%),
     var(--night);
   /* The gauge card and buttons inside the hero read these. */
   --bg: var(--night); --surface: var(--night-2); --surface-2: var(--night-3); --line: var(--night-line);
@@ -112,7 +112,7 @@ h1, h2 { font-weight: 750; }
 }
 .hero::before { /* faint perimeter grid */
   content: ""; position: absolute; inset: 0; z-index: -1;
-  background-image: linear-gradient(rgba(127, 178, 255, .06) 1px, transparent 1px), linear-gradient(90deg, rgba(127, 178, 255, .06) 1px, transparent 1px);
+  background-image: linear-gradient(rgba(255, 255, 255, .05) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, .05) 1px, transparent 1px);
   background-size: 40px 40px;
   mask-image: radial-gradient(ellipse 80% 70% at 70% 40%, #000 30%, transparent 80%);
   -webkit-mask-image: radial-gradient(ellipse 80% 70% at 70% 40%, #000 30%, transparent 80%);
@@ -122,7 +122,7 @@ h1, h2 { font-weight: 750; }
 .hero h1 em { font-style: normal; color: var(--steel); }
 .hero .lede { font-size: 19px; }
 .hero .eyebrow { color: var(--steel); }
-.hero .btn-ghost { background: transparent; border-color: #3a4a68; color: var(--night-ink); }
+.hero .btn-ghost { background: transparent; border-color: #4c4c4c; color: var(--night-ink); }
 .hero .btn-ghost:hover { border-color: var(--steel); }
 .cta { display: flex; flex-wrap: wrap; gap: 12px; }
 .quote { margin: 28px 0 0; color: var(--ink-soft); font-style: italic; border-left: 3px solid var(--brand-2); padding-left: 14px; }
@@ -131,8 +131,8 @@ h1, h2 { font-weight: 750; }
 /* Watch post: shield outline + radar sweep behind the gauge card */
 .watch { position: relative; }
 .watch .shield-art { position: absolute; z-index: -1; left: 50%; top: 50%; width: 132%; max-width: 620px; transform: translate(-50%, -52%); pointer-events: none; }
-.watch .shield-art .ring { fill: none; stroke: rgba(127, 178, 255, .16); stroke-width: 1; }
-.watch .shield-art .outline { fill: rgba(22, 38, 74, .45); stroke: rgba(127, 178, 255, .38); stroke-width: 1.5; }
+.watch .shield-art .ring { fill: none; stroke: rgba(255, 255, 255, .14); stroke-width: 1; }
+.watch .shield-art .outline { fill: rgba(38, 38, 38, .45); stroke: rgba(255, 255, 255, .32); stroke-width: 1.5; }
 .watch .shield-art .sweep { transform-origin: 200px 200px; animation: sweep 6s linear infinite; }
 @keyframes sweep { to { transform: rotate(360deg); } }
 @media (max-width: 860px) { .watch .shield-art { width: 110%; } }
@@ -250,7 +250,7 @@ section.alt .card { background: var(--bg); }
 
 /* Architecture figure: a blueprint frame on the night panel */
 .figure { position: relative; background: var(--night); border: 1px solid var(--night-line); border-radius: var(--radius); padding: 44px 18px 18px; box-shadow: var(--shadow);
-  background-image: linear-gradient(rgba(127, 178, 255, .07) 1px, transparent 1px), linear-gradient(90deg, rgba(127, 178, 255, .07) 1px, transparent 1px);
+  background-image: linear-gradient(rgba(255, 255, 255, .06) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, .06) 1px, transparent 1px);
   background-size: 24px 24px; }
 .figure::before { content: "SYSTEM MAP"; position: absolute; top: 14px; left: 18px; font: 700 11px var(--mono); letter-spacing: .14em; color: var(--steel); }
 .figure::after { content: ""; position: absolute; top: 16px; right: 18px; width: 44px; height: 8px; background: radial-gradient(circle, #e5484d 3px, transparent 3.5px) 0 0 / 14px 8px, radial-gradient(circle, #e8b34a 3px, transparent 3.5px) 14px 0 / 14px 8px no-repeat, radial-gradient(circle, #6fcf97 3px, transparent 3.5px) 28px 0 / 14px 8px no-repeat; background-repeat: no-repeat; }
@@ -272,13 +272,13 @@ section.alt .timeline li { background: var(--bg); }
 /* Team */
 .team { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
 .member { display: flex; gap: 14px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; }
-.avatar { flex: none; width: 46px; height: 52px; clip-path: var(--shield); padding-bottom: 4px; display: grid; place-items: center; font-weight: 800; color: #fff; background: linear-gradient(160deg, var(--sn-steel-500), var(--sn-steel-700)); }
+.avatar { flex: none; width: 46px; height: 52px; clip-path: var(--shield); padding-bottom: 4px; display: grid; place-items: center; font-weight: 800; color: #fff; background: linear-gradient(160deg, #404040, var(--sn-black-950)); }
 .member b { display: block; }
 .member span { color: var(--ink-soft); font-size: 14px; }
 @media (max-width: 760px) { .team { grid-template-columns: 1fr; } }
 
 /* CTA band: the night panel again */
-.band { position: relative; overflow: hidden; background: radial-gradient(500px 240px at 100% 0%, rgba(76, 141, 255, .25), transparent 70%), var(--night); color: var(--night-ink); border: 1px solid var(--night-line); border-radius: 20px; padding: 40px; display: flex; flex-wrap: wrap; gap: 24px; align-items: center; justify-content: space-between; }
+.band { position: relative; overflow: hidden; background: radial-gradient(500px 240px at 100% 0%, rgba(255, 255, 255, .10), transparent 70%), var(--night); color: var(--night-ink); border: 1px solid var(--night-line); border-radius: 20px; padding: 40px; display: flex; flex-wrap: wrap; gap: 24px; align-items: center; justify-content: space-between; }
 .band h2 { margin: 0 0 6px; font-size: clamp(22px, 3vw, 30px); }
 .band p { margin: 0; color: var(--night-soft); }
 .band .btn-ghost { background: var(--steel); color: var(--night); border-color: var(--steel); }

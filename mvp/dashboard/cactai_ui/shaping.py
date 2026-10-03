@@ -308,6 +308,19 @@ AGENTS = {
     "Operator": ("👤", "#e7edf6"),
 }
 
+_AGENT_BASE = {name: color for name, (_, color) in AGENTS.items()}
+
+
+def set_palette(colors: dict) -> None:
+    """Switch the module's colours to a console theme (theme.chart_colors()). Called once per run."""
+    global UNKNOWN_COLOR, SURFACE, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED, GRID
+    BAND_COLORS.update(colors["band"])
+    UNKNOWN_COLOR, SURFACE, GRID = colors["unknown"], colors["surface"], colors["grid"]
+    TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED = colors["text"], colors["text_secondary"], colors["text_muted"]
+    for name, base in _AGENT_BASE.items():  # agent name colours stay readable on the theme's cards
+        AGENTS[name] = (AGENTS[name][0], TEXT_PRIMARY if name == "Operator" else colors["readable"](base))
+
+
 # Names from before the SentrAI sentry theme, still in older audit records and saved actions.
 LEGACY_AGENTS = {
     "Saguaro": "Warden", "Needle": "Countersign", "Root": "Gatehouse", "Reservoir": "Vault",

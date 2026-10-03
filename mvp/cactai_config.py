@@ -267,7 +267,8 @@ def read() -> dict[str, str]:
         data = json.loads(config_path().read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
-    values = {k: str(v) for section in data.values() if isinstance(section, dict) for k, v in section.items()}
+    values = {k: str(v) for key, section in data.items() if isinstance(section, dict) and key != APPEARANCE_KEY
+              for k, v in section.items()}
     return settle_preset(_one_ai_key(_migrate_password(values))) if values else values
 
 
@@ -279,14 +280,31 @@ def save(values: dict[str, str]) -> Path:
         if not values.get(keep):
             values[keep] = read().get(keep, "")
     data = {s.key: {f.env: values.get(f.env, f.default) for f in s.fields} for s in SECTIONS}
-    done = _raw().get(SETUP_DONE_KEY)
-    if done:  # not a setting (read() skips it), so carry it over
-        data[SETUP_DONE_KEY] = done
+    for keep in (SETUP_DONE_KEY, APPEARANCE_KEY):  # not settings (read() skips them), so carry them over
+        if _raw().get(keep):
+            data[keep] = _raw()[keep]
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     return path
 
 
 SETUP_DONE_KEY = "setup_done"  # top-level marker: how setup was finished (wizard, dashboard or chat)
+APPEARANCE_KEY = "appearance"  # the console's theme and accent: only the dashboard reads it
+
+
+def appearance() -> dict[str, str]:
+    """{"theme": "dark" | "light", "accent": "mono" | a preset name | "#rrggbb"}; {} until one is saved."""
+    saved = _raw().get(APPEARANCE_KEY)
+    return {k: str(v) for k, v in saved.items() if k in ("theme", "accent")} if isinstance(saved, dict) else {}
+
+
+def save_appearance(theme: str, accent: str) -> Path:
+    """Saved at once, without touching the other settings."""
+    path = config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = _raw()
+    data[APPEARANCE_KEY] = {"theme": theme, "accent": accent}
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    return path
 
 
 def _raw() -> dict:

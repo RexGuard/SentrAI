@@ -1,28 +1,13 @@
-/* SentrAI Risk Console. Night-watch navy with a steel-blue brand accent; risk bands keep their own
-   green / amber / red. No external fonts, so the console looks the same offline. */
+/* SentrAI Risk Console. Black or White theme with one accent colour; risk bands keep their own
+   green / amber / red in both. No external fonts, so the console looks the same offline. */
 :root {
-  --bg: #0b111d;
-  --surface: #121a29;
-  --surface-2: #172134;
-  --surface-3: #1d2940;
-  --ink: #e7edf6;
-  --ink-soft: #a5b2c6;
-  --ink-muted: #6f7d93;
-  --line: #26324a;
-  --line-soft: #1e293d;
-  --brand: #7fb2ff;
-  --brand-2: #4c8dff;
-  --brand-soft: #16264a;
-  --brand-line: #2d4777;
-  --green: #6fcf97;
-  --green-line: #2e5a41;
-  --amber: #e8b34a;
-  --red: #e5484d;
+  /* Colours come from cactai_ui/theme.py (Black or White theme plus the accent picked in Configuration),
+     injected before this file as a :root block. Only shape and type live here. */
   --radius: 14px;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
-.stApp { background: radial-gradient(1100px 520px at 0% -12%, rgba(76,141,255,.10), transparent 62%), var(--bg); }
+.stApp { background: radial-gradient(1100px 520px at 0% -12%, var(--glow), transparent 62%), var(--bg); }
 .block-container { padding-top: 1.6rem; padding-bottom: 3rem; max-width: 1480px; }
 header[data-testid="stHeader"] { background: transparent; }
 
@@ -33,6 +18,7 @@ header[data-testid="stHeader"] { background: transparent; }
 
 /* ------------------------------------------------------------ sidebar */
 section[data-testid="stSidebar"] { border-right: 1px solid var(--line-soft); }
+.brand-mark .l1 { fill: var(--logo-1); } .brand-mark .l2 { fill: var(--logo-2); } .brand-mark .l3 { fill: var(--logo-3); }
 section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] { gap: .15rem; }
 section[data-testid="stSidebar"] div[data-testid="stMarkdownContainer"] { margin-bottom: 0; }
 .brand { display: flex; align-items: center; gap: .65rem; margin: -.4rem 0 1rem .2rem; }
@@ -101,23 +87,23 @@ div[data-testid="stVerticalBlockBorderWrapper"], div[data-testid="stForm"] { bor
 .sec-title small { color: var(--ink-muted); font-weight: 500; font-size: .76rem; }
 
 .empty { display: flex; align-items: center; gap: .6rem; color: var(--ink-soft); font-size: .86rem; padding: .9rem 1rem;
-         border: 1px dashed var(--line); border-radius: 12px; background: rgba(255,255,255,.012);
+         border: 1px dashed var(--line); border-radius: 12px; background: var(--surface);
          margin-bottom: .8rem; }
 .empty .mi { color: var(--ink-muted); font-size: 1.3rem; }
-.empty.good { border-color: var(--green-line); background: rgba(79,182,124,.06); color: var(--ink); }
+.empty.good { border-color: var(--green-line); background: color-mix(in srgb, var(--green) 7%, transparent); color: var(--ink); }
 .empty.good .mi { color: var(--green); }
 
-.offline { border: 1px solid rgba(229,72,77,.45); background: rgba(229,72,77,.08); border-radius: var(--radius);
-           padding: 1.1rem 1.3rem; color: #f3d4d5; display: flex; gap: .9rem; }
-.offline .mi { font-size: 1.6rem; color: var(--red); }
-.offline b { color: #fff; }
-.offline small { color: #c9a9ab; }
-.protect-off { border: 1px solid rgba(232,179,74,.5); background: rgba(232,179,74,.09); border-radius: var(--radius);
-               padding: .9rem 1.2rem; margin-bottom: 1rem; color: #f1e2c2; display: flex; gap: .9rem; }
+.offline { border: 1px solid color-mix(in srgb, var(--critical) 45%, transparent); background: color-mix(in srgb, var(--critical) 8%, transparent);
+           border-radius: var(--radius); padding: 1.1rem 1.3rem; color: var(--ink-soft); display: flex; gap: .9rem; }
+.offline .mi { font-size: 1.6rem; color: var(--critical); }
+.offline b { color: var(--ink); }
+.offline small { color: var(--ink-muted); }
+.protect-off { border: 1px solid color-mix(in srgb, var(--amber) 50%, transparent); background: color-mix(in srgb, var(--amber) 9%, transparent);
+               border-radius: var(--radius); padding: .9rem 1.2rem; margin-bottom: 1rem; color: var(--ink-soft); display: flex; gap: .9rem; }
 .protect-off .mi { font-size: 1.6rem; color: var(--amber); }
-.protect-off b { color: #fff; }
+.protect-off b { color: var(--ink); }
 .protect-off > div { font-size: .9rem; line-height: 1.5; }
-.protect-off small { color: #cdb98f; }
+.protect-off small { color: var(--ink-muted); }
 .side-off { margin-top: .45rem; font-size: .72rem; font-weight: 700; color: var(--amber); }
 
 /* ------------------------------------------------------------ incidents */
@@ -148,11 +134,30 @@ div[data-testid="stExpander"] summary { font-weight: 600; }
 .agent { font-weight: 700; }
 .feed-type { color: var(--ink); font-weight: 600; }
 .feed-sum { color: var(--ink-soft); }
-.feed-hash { color: #54627a; font-family: var(--mono); font-size: .68rem; }
+.feed-hash { color: var(--ink-faint); font-family: var(--mono); font-size: .68rem; }
 
 /* ------------------------------------------------------------ forms */
-div[data-testid="stForm"] { background: rgba(255,255,255,.012); }
-.stButton button[kind="primary"], .stFormSubmitButton button[kind="primaryFormSubmit"] { color: #0b111d; font-weight: 700; }
+div[data-testid="stForm"] { background: var(--surface); }
+.stButton button[kind="primary"], .stFormSubmitButton button[kind="primaryFormSubmit"] { color: var(--on-brand); font-weight: 700; }
 .field-hint { color: var(--ink-muted); font-size: .76rem; margin: -.3rem 0 .4rem 0; }
 
 @media (max-width: 900px) { .detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* ------------------------------------------------------------ settings search and appearance */
+.search-none { color: var(--ink-muted); font-size: .86rem; padding: .4rem 0 .8rem; }
+.swatches { display: flex; gap: .5rem; flex-wrap: wrap; margin: .2rem 0 .6rem; }
+.swatch { display: inline-flex; align-items: center; gap: .45rem; font-size: .78rem; color: var(--ink-soft); }
+.swatch i { width: 1.1rem; height: 1.1rem; border-radius: 50%; border: 1px solid var(--line); display: inline-block; }
+.preview { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; padding: .7rem .8rem; border-radius: 12px;
+           border: 1px solid var(--line); background: var(--surface-2); margin-top: .4rem; }
+.preview .btn { background: var(--brand-fill); color: var(--on-brand); border-radius: 9px; padding: .3rem .8rem;
+                font-weight: 700; font-size: .82rem; }
+.preview .lnk { color: var(--brand); font-weight: 600; font-size: .82rem; }
+.preview .soft { background: var(--brand-soft); border: 1px solid var(--brand-line); color: var(--ink); border-radius: 9px;
+                 padding: .3rem .7rem; font-size: .82rem; }
+
+/* Streamlit widgets that need the accent spelled out (its knob and pill defaults assume a coloured accent). */
+div[data-testid="stButtonGroup"] button[aria-checked="true"] { background: var(--brand-fill) !important;
+        color: var(--on-brand) !important; border-color: var(--brand-fill) !important; font-weight: 600; }
+div[data-testid="stButtonGroup"] button[aria-checked="true"] * { color: var(--on-brand); }
+.stCheckbox label:has(input[role="switch"])[data-selected="true"] > div:first-of-type > div { background: var(--on-brand); }
