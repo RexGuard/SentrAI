@@ -52,6 +52,28 @@ Tests:
 | `WATCHDOG_SILENCE_S` | `30` | Watchdog flags a collector after this many seconds of silence. |
 | `INTEGRITY_CHECK_S` | `30` | How often the integrity guard re-checks the audit chain and the clock. |
 | `CLOCK_JUMP_S` | `120` | A clock change bigger than this (core host or a collector) counts as log tampering. |
+| `ANCHOR_EVERY_MIN` | `60` | Send the signed record fingerprint to the alert channels this often (real minutes, only when new records exist; 0 = never). |
+| `CACTAI_ANCHOR_KEY` | (made on first use) | Fingerprint signing key. Default: `anchor.key` next to the audit database, mode 0600. |
+
+### Record fingerprints
+
+The audit chain proves its own consistency, but root on the server could rebuild it. So the core
+sends the newest record's signed fingerprint off the box (Telegram/email), every `ANCHOR_EVERY_MIN`
+and in short form in every incident alert:
+
+```
+SENTRAI-FP v1 seq=1234 head=3fa9...e1 at=2026-10-02T10:00:00Z sig=8b12...
+```
+
+To check the chain on disk still matches a fingerprint you kept (`OK:` exit 0, `TAMPERED:` exit 1):
+
+```
+python -m app.anchor verify "SENTRAI-FP v1 seq=1234 head=... at=... sig=..."
+python -m app.anchor show        # the current fingerprint
+```
+
+or `GET /audit/verify?fingerprint=...`. After a demo reset the old chain is in `data/archive/`;
+pass it with `--db`.
 | `PROTECTED_IPS` | empty | Comma-separated IPs that Countersign will never approve blocking. |
 | `CACTAI_ENGINE` | `cyanide` | Orchestrator. `cyanide` plans with Claude when a key is set; `saguaro` keeps the fixed playbooks only. |
 | `CACTAI_LLM_API_KEY` | unset | The one AI key the setup wizard saves; used by whichever provider `CACTAI_LLM_PROVIDER` names. With no key, Cyanide behaves exactly like Warden. A provider's own variable (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, `COMMANDCODE_API_KEY`) still works and wins when set. |

@@ -70,6 +70,14 @@ For counting SSH guesses: one failed attempt shows up as `failed_auth` (password
 `invalid_user` (every server, once per connection); PAM lines repeat them, so don't add them on
 top. `src_ip` + `port` identifies one connection.
 
+### Line chain
+Every event the collector sends carries `chain: {"stream", "seq", "prev", "hash"}`:
+`hash = sha256(prev + json([event_id, timestamp, host, layer, source, raw]))` (compact JSON, `ensure_ascii=False`),
+`prev` is the previous event's hash (64 zeros for #1), `seq` counts up from 1 per `stream` (one per collector,
+kept in `collector-state.json` once delivered). The core checks each one (`integrity.py`): a changed line, a
+missing run of events or one that does not follow its predecessor becomes an `audit_integrity` event
+(log tampering). Events without `chain` are accepted as before.
+
 ### Categories (exact strings)
 `benign, brute_force, sql_injection, xss, port_scan, privilege_escalation, data_exfiltration, misconfiguration, log_tampering`
 
@@ -105,6 +113,8 @@ that signature (HMAC of the path with the token), which fits that one report onl
 | POST | `/incidents/{id}/permanent` | `{"operator", "justification"}` |
 | POST | `/incidents/{id}/ack` | `{"operator", "channel"}` records acknowledgement |
 | GET | `/audit` | hash-chained records `[{"seq","ts","type","data","prev_hash","hash"}]` + `{"chain_valid": bool}` |
+| GET | `/audit/fingerprint` | `{"seq","head","at","line"}`: the current signed fingerprint (`SENTRAI-FP v1 ...`) |
+| GET | `/audit/verify?fingerprint=<line>` | `{"ok": bool, "reason": str}`: does the chain on disk still match a fingerprint sent earlier |
 | GET | `/reports/{incident_id}` | evidence report JSON |
 | GET | `/reports/{incident_id}.md` | same report as Markdown |
 | GET | `/protection` | `{"protection": "on" \| "off", "monitor_only", "changed_at", "changed_by", "reason", "active_actions": [...ids]}` |

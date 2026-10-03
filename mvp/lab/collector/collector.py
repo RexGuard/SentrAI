@@ -152,6 +152,39 @@ def path_key(path: Path) -> str:
     return str(path.absolute())
 
 
+# Line chain (CONTRACT.md "Line chain"): every event the collector sends carries a seal linking it
+# to the one before, so the core can tell when a batch went missing or a line was changed after
+# it was read. The fields sealed are the ones that say what happened, where and when.
+CHAIN_FIELDS = ("event_id", "timestamp", "host", "layer", "source", "raw")
+GENESIS = "0" * 64
+
+
+def chain_hash(prev: str, event: dict[str, Any]) -> str:
+    body = json.dumps([event.get(k) for k in CHAIN_FIELDS], separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256((prev + body).encode("utf-8")).hexdigest()
+
+
+class LineChain:
+    """Seals events in the order they are sent. ``checkpoint()`` is saved with the read positions,
+    once the sealed events have reached the core, so a restart carries on the same chain."""
+
+    def __init__(self, saved: dict | None = None) -> None:
+        saved = saved or {}
+        self.stream = str(saved.get("stream") or f"{real_host()}-{uuid.uuid4().hex[:8]}")
+        self.seq = int(saved.get("seq") or 0)
+        self.head = str(saved.get("hash") or GENESIS)
+
+    def seal(self, event: dict[str, Any]) -> dict[str, Any]:
+        self.seq += 1
+        h = chain_hash(self.head, event)
+        event["chain"] = {"stream": self.stream, "seq": self.seq, "prev": self.head, "hash": h}
+        self.head = h
+        return event
+
+    def checkpoint(self) -> dict:
+        return {"stream": self.stream, "seq": self.seq, "hash": self.head}
+
+
 class OffsetStore:
     """Where each log was read up to, saved as JSON so a restart resumes instead of re-sending."""
 
@@ -596,21 +629,35 @@ def default_sources(logs_dir: Path, heartbeat_interval: float = 10.0, store: Off
             HeartbeatSource(heartbeat_interval)]
 
 
+POLL_S = float(os.environ.get("CACTAI_COLLECTOR_POLL_S", "0.05"))  # how often logs are checked for new lines
+RETRY_MAX_S = 30.0  # longest wait between attempts while the core is unreachable
+CHAIN_KEY = "_chain"  # the line chain's head in collector-state.json
+
+
 class Collector:
+    """Streams events to the core: logs are checked every ``poll_interval`` seconds (50 ms) and new
+    lines are sent at once over one kept-alive connection. While the core is unreachable they are
+    buffered and retried, waiting ``flush_interval`` seconds at first and up to 30 s."""
+
     def __init__(self, core_url: str, logs_dir: Path,
                  flush_interval: float = 1.0, heartbeat_interval: float = 10.0,
-                 sources: list[Source] | None = None, token: str = ""):
+                 sources: list[Source] | None = None, token: str = "", poll_interval: float = POLL_S):
         self.core_url = core_url.rstrip("/")
         self.headers = {"Authorization": f"Bearer {token}"} if token else {}
         self.logs_dir = logs_dir
         self.flush_interval = flush_interval
+        self.poll_interval = poll_interval
         self.heartbeat_interval = heartbeat_interval
         self.watch_sources = sources is None  # default set: also pick up newly approved log files
         self.store = OffsetStore() if sources is None else None
         self.sources = sources if sources is not None else default_sources(logs_dir, heartbeat_interval, self.store)
+        self.chain = LineChain(self.store.get(CHAIN_KEY) if self.store else None)
+        self.session = requests.Session()
         self._sources_stamp: float | None = None
         self._tail_from_end = False
         self._started = time.time()
+        self._sent_since_report = 0
+        self._next_report = 0.0
         self.pending: list[dict] = []
 
     def refresh_discovered(self) -> list[Source]:
@@ -640,7 +687,7 @@ class Collector:
         if self.watch_sources:
             self.refresh_discovered()
         for source in self.sources:
-            self.pending.extend(source.poll())
+            self.pending.extend(self.chain.seal(ev) for ev in source.poll())
 
     def flush(self) -> bool:
         """POST pending events. Keep them buffered if core is down."""
@@ -649,15 +696,18 @@ class Collector:
             return True
         batch = self.pending
         try:
-            resp = requests.post(f"{self.core_url}/events", json=batch, headers=self.headers, timeout=3)
+            resp = self.session.post(f"{self.core_url}/events", json=batch, headers=self.headers, timeout=3)
             resp.raise_for_status()
             body = {}
             try:
                 body = resp.json()
             except Exception:
                 pass
-            print(f"[collector] sent {len(batch)} events -> core "
-                  f"(risk_index={body.get('risk_index', '?')})", flush=True)
+            self._sent_since_report += len(batch)
+            if time.monotonic() >= self._next_report:  # streaming sends often: one line every 10 s at most
+                print(f"[collector] sent {self._sent_since_report} events -> core "
+                      f"(risk_index={body.get('risk_index', '?')})", flush=True)
+                self._sent_since_report, self._next_report = 0, time.monotonic() + 10.0
             self.pending = []
             self.save_positions()
             return True
@@ -670,16 +720,26 @@ class Collector:
         """Everything polled so far has reached core: remember where each log was read up to."""
         if self.store is None:
             return
-        self.store.save({s.key: cp for s in self.sources if s.key and (cp := s.checkpoint()) is not None})
+        self.store.save({**{s.key: cp for s in self.sources if s.key and (cp := s.checkpoint()) is not None},
+                         CHAIN_KEY: self.chain.checkpoint()})
 
     def run(self) -> None:
-        print(f"[collector] tailing {self.logs_dir} -> {self.core_url}/events "
-              f"(flush {self.flush_interval}s, heartbeat {self.heartbeat_interval}s)",
-              flush=True)
+        print(f"[collector] streaming {self.logs_dir} -> {self.core_url}/events "
+              f"(checks every {self.poll_interval * 1000:.0f} ms, heartbeat {self.heartbeat_interval}s, "
+              f"chain {self.chain.stream} at #{self.chain.seq})", flush=True)
+        retry_at, wait, idle_save = 0.0, self.flush_interval, 0.0
         while True:
             self.collect()
-            self.flush()
-            time.sleep(self.flush_interval)
+            now = time.monotonic()
+            if self.pending and now >= retry_at:
+                if self.flush():
+                    wait = self.flush_interval
+                else:
+                    retry_at, wait = now + wait, min(wait * 2, RETRY_MAX_S)
+            elif not self.pending and now >= idle_save:
+                self.save_positions()  # nothing waiting: everything read so far has been delivered
+                idle_save = now + 1.0
+            time.sleep(self.poll_interval)
 
 
 NGINX_LOGS = [("/var/log/nginx/access.log", "web", "nginx"), ("/var/log/nginx/error.log", "web", "nginx")]
@@ -721,7 +781,10 @@ def main() -> None:
     ap.add_argument("--core", default=os.environ.get("CACTAI_CORE_URL",
                                                       "http://127.0.0.1:8000"))
     ap.add_argument("--logs", default=str(paths.logs_dir()))
-    ap.add_argument("--flush-interval", type=float, default=1.0)
+    ap.add_argument("--flush-interval", type=float, default=1.0,
+                    help="first wait before retrying when the core is unreachable (doubles up to 30 s)")
+    ap.add_argument("--poll-interval", type=float, default=POLL_S,
+                    help="seconds between checks for new log lines (default 0.05; CACTAI_COLLECTOR_POLL_S)")
     ap.add_argument("--heartbeat-interval", type=float, default=10.0)
     ap.add_argument("--add-system-logs", action="store_true",
                     help="approve this server's nginx logs and SSH login log (auth.log, secure or journald), then exit")
@@ -732,7 +795,7 @@ def main() -> None:
     logs_dir = Path(args.logs)
     logs_dir.mkdir(parents=True, exist_ok=True)
     Collector(args.core, logs_dir, args.flush_interval,
-              args.heartbeat_interval, token=cactai_config.api_token()).run()
+              args.heartbeat_interval, token=cactai_config.api_token(), poll_interval=args.poll_interval).run()
 
 
 if __name__ == "__main__":

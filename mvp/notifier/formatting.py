@@ -24,7 +24,10 @@ KIND_HEADERS = {
     "autonomous_action": ("🛡️", "Autonomous containment applied"),
     "containment": ("🛡️", "Containment applied"),
     "report": ("📄", "Evidence report ready"),
+    "audit_anchor": ("🔏", "Record fingerprint"),
 }
+# Kinds that are not about one incident: shown as a short note (header, title, text), no risk or buttons.
+NOTICE_KINDS = ("audit_anchor",)
 
 # Callback data: "<verb>:<incident_id>" (Telegram limits callback_data to 64 bytes).
 APPROVE = "approve"
@@ -110,10 +113,27 @@ def alert_fields(notification: dict, incident: dict | None = None, risk: dict | 
     }
 
 
+def is_notice(notification: dict) -> bool:
+    return notification_kind(notification) in NOTICE_KINDS
+
+
+def notice_lines(notification: dict) -> tuple[str, str, list[str]]:
+    """(icon, header, lines) of a notice: its title, then its text."""
+    icon, header = KIND_HEADERS.get(notification_kind(notification), ("ℹ️", "Notice"))
+    lines = [str(notification.get("title") or "")]
+    lines += str(notification.get("text") or "").splitlines()
+    return icon, header, [ln for ln in lines if ln]
+
+
 def format_telegram(notification: dict, incident: dict | None = None, risk: dict | None = None) -> str:
     """Telegram message body in HTML parse mode."""
-    f = alert_fields(notification, incident, risk)
     e = html.escape
+    if is_notice(notification):
+        icon, header, lines = notice_lines(notification)
+        # The last line of a fingerprint notice is the line to keep: monospace so it copies whole.
+        body = [e(ln) if not ln.startswith("SENTRAI-FP") else f"<code>{e(ln)}</code>" for ln in lines]
+        return "\n".join([f"{icon} <b>{e(header)}</b>  ·  <i>🛡️ {BRAND}</i>", *body])
+    f = alert_fields(notification, incident, risk)
     risk_txt = f"{f['risk_index']}/100" if f["risk_index"] is not None else "-"
     meter = risk_meter(f["risk_index"])
     lines = [
@@ -170,8 +190,18 @@ _ANSI = {"green": "\033[92m", "amber": "\033[93m", "red": "\033[91m", "critical"
 def format_console(notification: dict, incident: dict | None = None, risk: dict | None = None,
                    color: bool = True, width: int = 72) -> str:
     """Boxed plain-text alert for CONSOLE mode."""
-    f = alert_fields(notification, incident, risk)
     c = _ANSI if color else {k: "" for k in _ANSI}
+    if is_notice(notification):
+        _, header, body = notice_lines(notification)
+        inner = width - 4
+        top = f"┌─ SentrAI · {header} "
+        lines = [top + "─" * max(0, width - len(top) - 1) + "┐"]
+        for text in body:
+            for chunk in _wrap(text, inner):
+                lines.append(f"│ {chunk.ljust(inner)} │")
+        lines.append("└" + "─" * (width - 2) + "┘")
+        return "\n".join(lines)
+    f = alert_fields(notification, incident, risk)
     risk_txt = f"{f['risk_index']}/100 {f['band'].upper()}" if f["risk_index"] is not None else "-"
     if f["risk_index"] is not None:
         risk_txt += " " + risk_meter(f["risk_index"], full="■", empty="·")
