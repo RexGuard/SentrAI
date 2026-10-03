@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from .clock import fmt_demo_hours, fmt_offset
-from .pdfdoc import BLUE, BLUE_SOFT, BOLD, MONO, MUTED, NAVY, ON_DARK, PAGE_W, Column, PdfDoc, text_width
+from .pdfdoc import BLUE, BLUE_SOFT, BOLD, MONO, MUTED, NAVY, PAGE_W, Column, PdfDoc, text_width
 from .saguaro import public
 
 if TYPE_CHECKING:
@@ -251,14 +251,12 @@ def render_pdf(r: dict[str, Any]) -> bytes:
     doc = PdfDoc(title=f"{r['title']} {r['report_id']}",
                  footer=f"SentrAI  |  {r['report_id']}  |  generated {r['generated_at']}  |  chain head {proof['chain_head_hash'][:16]}...")
 
-    # SentrAI title band across the top of page 1: shield + wordmark, report title, incident line
+    # SentrAI title band across the top of page 1: logo, report title, incident line
     top = doc.y + 42
     band = 112
     doc.rect(0, top - band, PAGE_W, band, NAVY)
     doc.rect(0, top - band - 3, PAGE_W, 3, BLUE)
-    doc.shield(40, top - 54, 30)
-    doc.text(74, top - 43, "Sentr", BOLD, 15, ON_DARK)
-    doc.text(74 + text_width("Sentr", BOLD, 15), top - 43, "AI", BOLD, 15, BLUE_SOFT)
+    doc.logo(40, top - 54, 30)
     doc.text(PAGE_W - 42 - text_width(r["report_id"], BOLD, 9), top - 40, r["report_id"], BOLD, 9, BLUE_SOFT)
     doc.text(42, top - 80, r["title"], BOLD, 21, (1, 1, 1))
     doc.text(42, top - 98, f"Incident {r['incident_id']} ({inc['category']}, {inc['severity']}, "

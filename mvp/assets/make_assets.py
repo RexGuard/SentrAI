@@ -22,7 +22,7 @@ PANEL = "#121A29"      # navy-900
 PANEL2 = "#172134"     # navy-800
 TEXT = "#E7EDF6"
 MUTED = "#A5B2C6"
-BLUE = "#7FB2FF"       # brand accent (steel-300): headings, highlights, the "AI"
+BLUE = "#7FB2FF"       # brand accent (steel-300): headings, highlights
 BLUE_D = "#1F4FB8"     # steel-700: filled headers and badges
 BLUE_SOFT = "#16264A"
 # Green, amber and red mean risk and nothing else.
@@ -66,31 +66,31 @@ def accent_bar(fig, y=0.06, x0=0.06, w=0.06):
 
 
 def wordmark(fig, x, y, size, ha="left", va="center"):
-    """ "SentrAI" with "AI" in brand blue, as the brand kit asks."""
-    t = fig.text(x, y, "Sentr", fontsize=size, weight="bold", color=TEXT, ha="left", va=va)
-    fig.canvas.draw()
-    bb = t.get_window_extent().transformed(fig.transFigure.inverted())
-    if ha == "right":  # shift both parts so the whole word ends at x
-        ai = fig.text(0, y, "AI", fontsize=size, weight="bold", color=BLUE, va=va)
-        fig.canvas.draw()
-        w_ai = ai.get_window_extent().transformed(fig.transFigure.inverted()).width
-        t.set_x(x - bb.width - w_ai)
-        ai.set_x(x - w_ai)
-        return
-    fig.text(bb.x1, y, "AI", fontsize=size, weight="bold", color=BLUE, ha="left", va=va)
+    """The "SentrAI" lettering from assets/brand/wordmark.svg, as tall as `size`-point bold capitals."""
+    h_in = 0.73 * size / 72
+    w, h = h_in * _WM_W / _WM_H / 19.2, h_in / 10.8
+    x0 = x - w if ha == "right" else x
+    y0 = y - h / 2 if va == "center" else y
+    ax = fig.add_axes([x0, y0, w, h])
+    ax.set_xlim(_WM_X, _WM_X + _WM_W)
+    ax.set_ylim(64 - _WM_Y - _WM_H, 64 - _WM_Y)
+    ax.axis("off")
+    ax.add_patch(PathPatch(_svg_path(_WORDMARK), fc=TEXT, ec="none"))
 
 
 def brand(fig, x=0.94, y=0.05):
     wordmark(fig, x, y, 22, ha="right")
 
 
-# The shield-and-eye mark (assets/brand/mark-dark.svg), in its 64x64 box with y pointing down.
-_SHIELD = "M32 4 L54 11.5 V29 C54 43.5 44.8 54.2 32 60 C19.2 54.2 10 43.5 10 29 V11.5 Z"
-_EYE = "M17 32 C22.5 24 27 21.5 32 21.5 C37 21.5 41.5 24 47 32 C41.5 40 37 42.5 32 42.5 C27 42.5 22.5 40 17 32 Z"
+# The SentrAI logo (assets/brand/mark.svg and wordmark.svg), in its 64-unit-high box with y pointing down.
+_BRAND = Path(__file__).resolve().parents[2] / "assets" / "brand"
+_MARK = re.findall(r'fill="(#[0-9a-f]{6})" d="([^"]+)"', (_BRAND / "mark.svg").read_text(encoding="utf-8"))
+_WORDMARK = re.search(r' d="([^"]+)"', (_BRAND / "wordmark.svg").read_text(encoding="utf-8")).group(1)
+_WM_X, _WM_Y, _WM_W, _WM_H = 69.2, 18.0, 147.9, 33.6  # the letters' bounding box
 
 
 def _svg_path(d):
-    """Parse the absolute M/L/V/C/Z subset the mark uses into a matplotlib Path (y flipped)."""
+    """Parse the absolute M/L/V/C/Z subset the logo uses into a matplotlib Path (y flipped)."""
     toks = re.findall(r"[MLVCZ]|-?[\d.]+", d)
     verts, codes, i, cur = [], [], 0, (0.0, 0.0)
     while i < len(toks):
@@ -104,8 +104,9 @@ def _svg_path(d):
         elif op == "C":
             pts = [(float(toks[i + k]), float(toks[i + k + 1])) for k in (0, 2, 4)]; i += 6
             verts += pts; codes += [MPath.CURVE4] * 3; cur = pts[-1]
-        elif op == "Z":
-            verts.append(verts[0]); codes.append(MPath.CLOSEPOLY)
+        elif op == "Z":  # close back to the start of this subpath (the wordmark has several)
+            start = len(codes) - 1 - codes[::-1].index(MPath.MOVETO)
+            verts.append(verts[start]); codes.append(MPath.CLOSEPOLY)
     return MPath([(x, 64 - y) for x, y in verts], codes)
 
 
@@ -114,10 +115,8 @@ def mark(ax, glow=True):
     if glow:
         for r, a in [(38, 0.05), (33, 0.07), (29, 0.09)]:
             ax.add_patch(Circle((32, 32), r, fc=BLUE, ec="none", alpha=a))
-    ax.add_patch(PathPatch(_svg_path(_SHIELD), fc=BLUE_SOFT, ec=BLUE, lw=6, joinstyle="round"))
-    ax.add_patch(PathPatch(_svg_path(_EYE), fc=BLUE, ec="none"))
-    ax.add_patch(Circle((32, 32), 6, fc=BG, ec="none"))
-    ax.add_patch(Circle((34.2, 64 - 29.8), 1.8, fc=TEXT, ec="none"))
+    for colour, d in _MARK:
+        ax.add_patch(PathPatch(_svg_path(d), fc=colour, ec="none"))
 
 
 def risk_index(raw):
