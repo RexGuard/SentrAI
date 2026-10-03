@@ -43,10 +43,11 @@ The demo portal and attack scripts are not installed as services.
 - Code: `/opt/cactai/mvp` (owned by root; `--prefix` moves it).
 - Service settings: `/etc/cactai/cactai.env` (ports, addresses, paths, `PROTECTED_IPS`; readable
   by root and the `cactai` group only). Restart `cactai.target` after editing it.
-- State: `/var/lib/cactai` (the settings you save on the dashboard, the audit database, the list
-  of watched log files, Scout's pending proposals and trails).
-- The services run as the `cactai` system user, which joins `adm` and `systemd-journal` so it can
-  read `/var/log/auth.log`, nginx logs and the journal. They can write only to `/var/lib/cactai`.
+- State: `/var/lib/cactai` (the settings you save on the dashboard, the list of watched log files,
+  Scout's pending proposals and trails), with the audit record in `/var/lib/cactai/core` and the
+  collector's read positions in `/var/lib/cactai/collector`. An upgrade moves both from their old
+  place in `/var/lib/cactai` (it stops the services for that, even with `--no-start`).
+- The services run as the `cactai` system user, which has no extra groups. See "Least privilege".
 - The clock runs in real time (`DEMO_SPEED=1`): a 2-hour block lasts 2 real hours.
 
 ## Options
@@ -62,10 +63,83 @@ The demo portal and attack scripts are not installed as services.
 --no-questions (-y)                    never ask (what a script or CI run gets anyway)
 --no-notifier                          leave the Telegram notifier off
 --no-start                             install and enable without starting
+--seal-journal                         keep the journal on disk and seal it (see below)
+--remote-copy URL                      send everything to a witness on another machine (see below)
 --prefix DIR / --user NAME
 ```
 
 On an upgrade only the options you pass change `cactai.env`; everything else stays as it was.
+
+## Least privilege
+
+Each service gets only what its job needs, so a flaw in one part cannot be used to rewrite the
+record or switch SentrAI off. The limits are in the `cactai-*.service` files:
+
+| Service | Reads logs | Writes | Can change the firewall | Can see the audit record |
+|---|---|---|---|---|
+| `cactai-core` | yes | `core/`, `scout/` | yes (only with `CACTAI_FIREWALL` on) | yes |
+| `cactai-collector` | yes | `collector/` | no | no |
+| `cactai-dashboard` | no | the settings file | no | no |
+| `cactai-notifier` | no | nothing | no | no |
+
+The log groups (`adm`, `systemd-journal`) are given to the core and collector services only, not
+to the `cactai` account; `cactai-scout` gets them for its own run. Every service also runs with
+no new privileges, a read-only system, no devices, no kernel tunables or modules, and the
+`@system-service` system calls only (`systemd-analyze security cactai-core` scores each one;
+they are all "OK", down from "EXPOSED" before).
+
+The services share one account, so these walls are the service sandboxes, not file ownership: a
+person with root on the server can still lift them. That is why the core also watches for it:
+adding an account to the log groups, making a log or SentrAI file writable by everyone, granting
+file access with `setfacl`, `setcap` on a SentrAI program, `systemctl edit` or `set-property` on a
+SentrAI service, and switching journal sealing or storage off are all reported as log tampering,
+like a wiped log. Root's own changes are why the fingerprints in alerts (core README, "Record
+fingerprints") go off the box.
+
+### Sealed journal (`--seal-journal`)
+
+Turns on journald's Forward Secure Sealing: the journal is kept on disk and signed every 15
+minutes with a key that moves forward and forgets the old one, so entries already sealed cannot
+be rewritten unnoticed, even by root. The installer prints a verification key once. Keep it away
+from the server (a password manager), and check the journal with:
+
+```bash
+journalctl --verify --verify-key=<the key>
+```
+
+Uninstalling leaves sealing on.
+
+## Off-box copy (`--remote-copy`)
+
+Someone with root on this server can delete or rebuild SentrAI's audit record. A witness on a
+second machine keeps a copy they cannot reach: the core sends it every audit record and every log
+line the collector reads, within milliseconds. The witness only adds; the token this server holds
+cannot change, delete or read anything there.
+
+On the second machine (one this server's admins cannot log in to):
+
+```bash
+sudo ./deploy/install-witness.sh --name 198.51.100.20 --allow 203.0.113.10   # this server's address
+```
+
+It prints what to copy over. Then, here:
+
+```bash
+sudo ./deploy/install.sh --remote-copy https://198.51.100.20:8600 \
+     --remote-copy-token-file ./append.token --remote-copy-ca ./cert.pem
+```
+
+The token is kept in `/var/lib/cactai/core`, which only the core service can open. If this
+server's record is ever changed, the core's next send is refused and a **Log tampering** incident
+opens. To list what changed, run from anywhere holding the witness's read token (keep that one
+off this server):
+
+```bash
+python -m app.remote_copy compare --url https://198.51.100.20:8600 --read-token-file read.token
+```
+
+`--remote-copy off` stops sending. A witness can also be any machine with Python 3.10; it needs
+no packages.
 
 ## Reaching the dashboard
 

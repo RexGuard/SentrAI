@@ -50,6 +50,46 @@ Tests:
 | `AUTO_CLOSE_QUIET_MIN` | `60` | Resolve an open scan or brute-force incident after this many real minutes with no new event and no containment in force. `0` turns it off. |
 | `AUTO_CLOSE_CATEGORIES` | `port_scan,brute_force` | Which categories auto-close. Other incidents always wait for an operator. |
 | `WATCHDOG_SILENCE_S` | `30` | Watchdog flags a collector after this many seconds of silence. |
+| `INTEGRITY_CHECK_S` | `30` | How often the integrity guard re-checks the audit chain and the clock. |
+| `CLOCK_JUMP_S` | `120` | A clock change bigger than this (core host or a collector) counts as log tampering. |
+| `ANCHOR_EVERY_MIN` | `60` | Send the signed record fingerprint to the alert channels this often (real minutes, only when new records exist; 0 = never). |
+| `CACTAI_ANCHOR_KEY` | (made on first use) | Fingerprint signing key. Default: `anchor.key` next to the audit database, mode 0600. |
+
+### Off-box copy
+
+With `CACTAI_REMOTE_COPY_URL` (and the append token in `CACTAI_REMOTE_COPY_TOKEN` or a file named by
+`CACTAI_REMOTE_COPY_TOKEN_FILE`; `CACTAI_REMOTE_COPY_CA` for a self-signed certificate), the core sends every
+audit record and every sealed log line to a SentrAI witness on another machine as it happens (about 4 ms from
+append to stored, measured locally). The witness can only add, and the core's token cannot read the copy back.
+If the witness refuses a record because the chain here no longer continues its copy, the core opens a
+**Log tampering** incident. To see exactly what changed, with the witness's read token:
+
+```
+python -m app.remote_copy compare --url https://198.51.100.20:8600 --read-token-file read.token
+```
+
+Status: `GET /audit/remote-copy`. Setup: `deploy/install-witness.sh` on the second machine, then
+`deploy/install.sh --remote-copy ...` here (deploy/README.md, "Off-box copy").
+
+### Record fingerprints
+
+The audit chain proves its own consistency, but root on the server could rebuild it. So the core
+sends the newest record's signed fingerprint off the box (Telegram/email), every `ANCHOR_EVERY_MIN`
+and in short form in every incident alert:
+
+```
+SENTRAI-FP v1 seq=1234 head=3fa9...e1 at=2026-10-02T10:00:00Z sig=8b12...
+```
+
+To check the chain on disk still matches a fingerprint you kept (`OK:` exit 0, `TAMPERED:` exit 1):
+
+```
+python -m app.anchor verify "SENTRAI-FP v1 seq=1234 head=... at=... sig=..."
+python -m app.anchor show        # the current fingerprint
+```
+
+or `GET /audit/verify?fingerprint=...`. After a demo reset the old chain is in `data/archive/`;
+pass it with `--db`.
 | `PROTECTED_IPS` | empty | Comma-separated IPs that Countersign will never approve blocking. |
 | `CACTAI_ENGINE` | `cyanide` | Orchestrator. `cyanide` plans with Claude when a key is set; `saguaro` keeps the fixed playbooks only. |
 | `CACTAI_LLM_API_KEY` | unset | The one AI key the setup wizard saves; used by whichever provider `CACTAI_LLM_PROVIDER` names. With no key, Cyanide behaves exactly like Warden. A provider's own variable (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, `COMMANDCODE_API_KEY`) still works and wins when set. |
@@ -81,6 +121,7 @@ Audit records: `cyanide_plan` (actions, reasons, dropped steps), `cyanide_hold` 
    - `network` and `cloud` go to Watchtower
 2. **Classify**:
    - **Rules first**, always with confidence 1.0. They cover SQLi, XSS, a shell being spawned, `/export` bulk exports, port scans, misconfigurations, and 5 or more failed logins from one IP within 60 s. Failed logins below that threshold are held as benign; when the threshold is reached, all of them are attached to the incident.
+   - **Log tampering** (`log_tampering`, critical 55): commands that wipe, edit or silence the record (deleting or emptying files under `/var/log` or shell history, `journalctl --vacuum`, `chattr -a`, stopping rsyslog/auditd/journald, `wevtutil cl`, Windows event 1102), commands that widen who can read or change it (adding an account to `adm`, `systemd-journal` or `cactai`, `chmod o+w` or `setfacl` on a log or SentrAI file, `setcap` on a SentrAI program, `systemctl edit` on a SentrAI service, journal sealing switched off), a collector notice that a log shrank, vanished or was swapped with no rotated copy (`log_integrity`), and the integrity guard's findings (`audit_integrity`: audit chain broken, audit database deleted, clock jumped). On its own it stays below the autonomous line, so a person decides; it only proposes blocking the source IP.
    - **Jev** if the rules cannot decide.
    - **Fallback heuristic** otherwise. It gives confidence 0.5 to 0.8 and `classified_by="fallback"`.
    - Confidence is always clipped to 0.5 to 1.0.

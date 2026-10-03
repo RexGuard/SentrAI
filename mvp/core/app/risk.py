@@ -13,6 +13,7 @@ CATEGORIES = [
     "privilege_escalation",
     "data_exfiltration",
     "misconfiguration",
+    "log_tampering",
 ]
 
 # category -> (severity, base points)
@@ -25,6 +26,9 @@ SEVERITY: dict[str, tuple[str, int]] = {
     "privilege_escalation": ("critical", 60),
     "data_exfiltration": ("critical", 70),
     "misconfiguration": ("medium", 20),
+    # Critical but below the autonomous line on its own (risk ~60): a person decides, because the
+    # command may be an admin's. It adds to any attack already open on the same host.
+    "log_tampering": ("critical", 55),
 }
 
 BANDS = ["green", "amber", "red", "critical"]

@@ -30,10 +30,12 @@ from .agents import (
     Watchdog,
 )
 from . import firewall
+from . import anchor, remote_copy
 from .audit import AuditLog
 from .classifier import Classification, default_chain
 from .clock import DemoClock, fmt_demo_hours
 from .config import Settings, sign
+from .integrity import IntegrityGuard
 from .jev_client import JevClient
 from .netlogs import enrich
 from .responders import BlocklistResponder, Responders, SimulatedResponder
@@ -53,6 +55,7 @@ TITLES = {
     "privilege_escalation": "Shell spawned / privilege escalation",
     "data_exfiltration": "Bulk data export",
     "misconfiguration": "Misconfiguration",
+    "log_tampering": "Log tampering",
 }
 
 BUTTONS_DECIDE = [
@@ -114,6 +117,11 @@ class Saguaro(Agent):
         self.needle = Needle(s.needle_min_confidence, self.responders.allowlist, s.protected_ips, s.protected_users)
         self.watchdog = Watchdog(s.watchdog_silence_s)
         self.scribe = Scribe(self.audit, self.clock)
+        self.integrity = IntegrityGuard(self.audit, s.integrity_check_s, s.clock_jump_s)
+        self.remote = remote_copy.from_settings(self.audit, s)  # off-box copy; started by the app (main.py)
+        self.anchor_key = anchor.load_key(s.db_path)
+        self._anchor_next = time.monotonic() + 60.0 * s.anchor_every_min
+        self._anchor_seq = 0
         self.helpdesk = HelpDesk()
         self.lock = threading.RLock()
         self._protection_file = s.db_path.parent / "protection.json"
@@ -192,6 +200,7 @@ class Saguaro(Agent):
     # --------------------------------------------------------------- ingestion
     def ingest(self, events: list[dict[str, Any]]) -> dict[str, Any]:
         accepted = 0
+        tampering: list[dict[str, Any]] = []  # broken line chains and clock jumps, classified after this batch
         # Cap the total time one request may spend waiting on Jev; the rest use the fallback.
         self.jev_step.deadline = time.monotonic() + self.settings.jev_budget_s
         for raw_ev in events:
@@ -208,12 +217,18 @@ class Saguaro(Agent):
             with self.lock:
                 if ev["event_id"] in self.events:
                     continue  # duplicate delivery
+                if (broken := self.integrity.chained(raw_ev)) is not None:
+                    tampering.append(broken)
+                if self.remote is not None:
+                    self.remote.add_line(raw_ev)  # off the box as it arrives
                 self.events[ev["event_id"]] = {**ev, "category": None}
                 recovered = self.watchdog.observe(str(ev["host"]), now, heartbeat)
                 if recovered:
                     self.scribe.record(self.watchdog.name, "collector_recovered", recovered)
             accepted += 1
             if heartbeat:
+                if (jump := self.integrity.heartbeat(str(ev["host"]), ev.get("timestamp"))) is not None:
+                    tampering.append(jump)
                 with self.lock:
                     self.events[ev["event_id"]].update(category="benign", classified_by="rules", reason="heartbeat")
                 continue
@@ -221,6 +236,8 @@ class Saguaro(Agent):
             cls = agent.analyze(ev, now)  # may call Jev: done outside the lock
             with self.lock:
                 self._apply_classification(ev, cls, agent, now)
+        if tampering:
+            self.ingest(tampering)
         with self.lock:
             self._trim_events()
             now = self.clock.now()
@@ -414,6 +431,31 @@ class Saguaro(Agent):
                              f"Monitoring on that host may be blind.", [])
             self._evaluate(now)
             self._record_history(now)
+            self._send_fingerprint(now)
+            findings = self.integrity.check()
+            if self.remote is not None:
+                refused, notes = self.remote.take()
+                findings += refused
+                for rtype, data in notes:
+                    self.scribe.record(self.name, rtype, data)
+        if findings:
+            self.ingest(findings)  # a broken audit chain, a deleted audit file or a clock jump
+
+    def _send_fingerprint(self, now: float, force: bool = False) -> dict[str, Any] | None:
+        """Every ANCHOR_EVERY_MIN real minutes (when new records were written), send the newest
+        record's signed fingerprint to the alert channels: a copy the server cannot recall (anchor.py)."""
+        every = self.settings.anchor_every_min
+        if not force and (every <= 0 or time.monotonic() < self._anchor_next):
+            return None
+        self._anchor_next = time.monotonic() + 60.0 * max(every, 1.0)
+        fp = anchor.fingerprint(self.audit, self.anchor_key)
+        if fp.seq == self._anchor_seq and not force:
+            return None
+        self._anchor_seq = fp.seq
+        return self._notify(now, "audit_anchor", None, [self.settings.on_duty], f"Record fingerprint {fp.short()}",
+                            f"Fingerprint of audit records 1 to {fp.seq}. Keep this message: if the audit log on "
+                            f"the server is ever rebuilt, this line proves it (python -m app.anchor verify).\n"
+                            f"{fp.line()}", [])
 
     def _evaluate(self, now: float) -> None:
         self._expire_actions(now)
@@ -584,8 +626,10 @@ class Saguaro(Agent):
                 inc["_notified_open"] = True
                 kind = "needs_review" if inc["needs_review"] else "incident_opened"
                 extra = "\nClassifier uncertain: needs review, no automatic action will be taken." if inc["needs_review"] else ""
+                fp = anchor.fingerprint(self.audit, None).short()
                 self._notify(now, kind, inc["id"], [self.settings.on_duty], self._headline(inc, r),
-                             f"{self._headline(inc, r)}\n{inc['explanation']}\nRecommended: {inc['recommended_action']}.{extra}",
+                             f"{self._headline(inc, r)}\n{inc['explanation']}\nRecommended: {inc['recommended_action']}.{extra}"
+                             f"\nRecord fingerprint: {fp}",
                              BUTTONS_DECIDE)
 
     def _band_changes(self, now: float, r: dict[str, Any]) -> None:

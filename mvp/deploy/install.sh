@@ -27,17 +27,27 @@
 #                          dashboard port, who may open it, and the sign-in email and password
 #   --no-notifier          do not enable the Telegram notifier service
 #   --no-start             install and enable, but do not start or restart anything
+#   --remote-copy URL      send every audit record and log line to a SentrAI witness on another
+#                          machine (deploy/install-witness.sh), as they happen; "off" stops it
+#   --remote-copy-token-file FILE   the witness's append token (needed with --remote-copy)
+#   --remote-copy-ca FILE  the witness's certificate, when it is self-signed
+#   --seal-journal         keep the system journal on disk and seal it (journald Forward Secure
+#                          Sealing): prints a verification key once, to store away from this server
 #
 # What it creates:
 #   /etc/cactai/cactai.env           ports, addresses and paths (root:cactai 0640, kept on upgrade)
-#   /var/lib/cactai/                 state: settings, audit DB, approved log list, Scout trails (cactai 0750)
+#   /var/lib/cactai/                 state: settings, approved log list, Scout trails (cactai 0750)
+#   /var/lib/cactai/core/            the audit record and its fingerprint key (core only, 0700)
+#   /var/lib/cactai/collector/       the collector's read positions and line chain (collector only, 0700)
 #   /etc/systemd/system/cactai*.service and cactai.target
 #   /usr/local/bin/cactai-scout      runs Scout as the service account (no terminal needed)
 #   /usr/local/bin/cactai-admin      shows or resets the dashboard sign-in (sudo cactai-admin --reset)
 #   /usr/local/sbin/cactai-dashboard-firewall   the dashboard's firewall rule (run by its service)
 #   /etc/cactai/tls/                 a self-signed HTTPS certificate, when the dashboard is opened
-# The service account joins the adm and systemd-journal groups (when they exist) so it can read
-# /var/log/auth.log, nginx logs and the journal. The only firewall change is the dashboard rule
+# Least privilege: the account itself has no extra groups. Only the core and collector services
+# get the adm and systemd-journal groups (to read /var/log/auth.log, nginx logs and the journal);
+# only the core may change the firewall; each service sees only its own state folder (see the
+# cactai-*.service files). The only firewall change made here is the dashboard rule
 # (plus a matching allow in ufw or firewalld when one is active). Nothing touches nginx or sshd.
 # Remove everything again with ./deploy/uninstall.sh.
 set -euo pipefail
@@ -52,6 +62,10 @@ DASH_LOCAL=0
 ADMIN_EMAIL=""
 RESET_PW=0
 ASK=1
+SEAL=0
+REMOTE=""
+REMOTE_TOKEN=""
+REMOTE_CA=""
 declare -A SET=()  # env values given on the command line
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -69,7 +83,11 @@ while [ $# -gt 0 ]; do
         --no-questions|-y) ASK=0; shift ;;
         --no-notifier) NOTIFIER=0; shift ;;
         --no-start) START=0; shift ;;
-        -h|--help) sed -n '2,44p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        --seal-journal) SEAL=1; shift ;;
+        --remote-copy) REMOTE="$2"; shift 2 ;;
+        --remote-copy-token-file) REMOTE_TOKEN="$2"; shift 2 ;;
+        --remote-copy-ca) REMOTE_CA="$2"; shift 2 ;;
+        -h|--help) sed -n '2,57p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "Unknown option: $1 (see --help)" >&2; exit 2 ;;
     esac
 done
@@ -149,10 +167,18 @@ if ! id "$SVC_USER" >/dev/null 2>&1; then
     useradd --system --home-dir "$STATE" --no-create-home --shell /usr/sbin/nologin "$SVC_USER"
     echo "Created system user $SVC_USER"
 fi
+# Least privilege: the log-reading groups go to the core and collector services only
+# (SupplementaryGroups= in their units), not to the account, so the dashboard and notifier
+# cannot read logs. Older installs added the account to them; take that back.
+LOG_GROUPS=()
 for g in adm systemd-journal; do
-    if getent group "$g" >/dev/null; then usermod -aG "$g" "$SVC_USER"; fi
+    if getent group "$g" >/dev/null; then
+        LOG_GROUPS+=("$g")
+        if id -nG "$SVC_USER" | tr ' ' '\n' | grep -qx "$g"; then gpasswd -d "$SVC_USER" "$g" >/dev/null; fi
+    fi
 done
 install -d -o "$SVC_USER" -g "$SVC_USER" -m 0750 "$STATE" "$STATE/scout" "$STATE/scout/trails" "$STATE/lab-logs"
+install -d -o "$SVC_USER" -g "$SVC_USER" -m 0700 "$STATE/core" "$STATE/collector"
 install -d -o root -g "$SVC_USER" -m 0750 /etc/cactai
 
 # --- settings (ports, addresses, paths) ------------------------------------
@@ -175,7 +201,8 @@ CACTAI_PUBLIC_URL=http://127.0.0.1:8000
 DEMO_SPEED=1
 PROTECTED_IPS=127.0.0.1,::1,localhost
 CACTAI_CONFIG=$STATE/config.json
-CACTAI_DB=$STATE/cactai.db
+CACTAI_DB=$STATE/core/cactai.db
+CACTAI_COLLECTOR_STATE=$STATE/collector/state.json
 CACTAI_LAB_LOGS=$STATE/lab-logs
 CACTAI_LAB_DB=$STATE/portal.sqlite3
 CACTAI_SCOUT_SOURCES=$STATE/scout/sources.json
@@ -235,6 +262,50 @@ if [ "$START" = 1 ] && command -v ss >/dev/null 2>&1; then
     done
 fi
 
+# --- state folders (upgrade) ------------------------------------------------
+# Older installs kept the audit record and the collector's positions in $STATE itself, where every
+# service could write them. Move them into the folders only their own service can open.
+if [ "$(get_env CACTAI_DB)" = "$STATE/cactai.db" ] || [ -z "$(get_env CACTAI_COLLECTOR_STATE)" ]; then
+    systemctl stop cactai.target 2>/dev/null || true
+    if [ "$(get_env CACTAI_DB)" = "$STATE/cactai.db" ]; then
+        for f in cactai.db cactai.db-wal cactai.db-shm anchor.key protection.json archive; do
+            if [ -e "$STATE/$f" ] && [ ! -e "$STATE/core/$f" ]; then mv "$STATE/$f" "$STATE/core/$f"; fi
+        done
+        set_env CACTAI_DB "$STATE/core/cactai.db"
+        echo "Moved the audit record to $STATE/core/"
+    fi
+    if [ -z "$(get_env CACTAI_COLLECTOR_STATE)" ]; then
+        if [ -e "$STATE/collector-state.json" ] && [ ! -e "$STATE/collector/state.json" ]; then
+            mv "$STATE/collector-state.json" "$STATE/collector/state.json"
+        fi
+        set_env CACTAI_COLLECTOR_STATE "$STATE/collector/state.json"
+    fi
+    chown -R "$SVC_USER:$SVC_USER" "$STATE/core" "$STATE/collector"
+fi
+
+# --- off-box copy (--remote-copy) -------------------------------------------
+# The witness's append token goes where only the core service can read it (/var/lib/cactai/core).
+if [ "$REMOTE" = off ]; then
+    set_env CACTAI_REMOTE_COPY_URL ""
+elif [ -n "$REMOTE" ]; then
+    case "$REMOTE" in http://*|https://*) ;; *) die "--remote-copy needs an http(s):// URL (got '$REMOTE')" ;; esac
+    [ -n "$REMOTE_TOKEN" ] || [ -s "$STATE/core/remote-copy.token" ] \
+        || die "--remote-copy needs --remote-copy-token-file (the witness's append.token)"
+    if [ -n "$REMOTE_TOKEN" ]; then
+        [ -s "$REMOTE_TOKEN" ] || die "--remote-copy-token-file: $REMOTE_TOKEN is missing or empty"
+        install -o "$SVC_USER" -g "$SVC_USER" -m 0600 "$REMOTE_TOKEN" "$STATE/core/remote-copy.token"
+    fi
+    if [ -n "$REMOTE_CA" ]; then
+        [ -s "$REMOTE_CA" ] || die "--remote-copy-ca: $REMOTE_CA is missing or empty"
+        install -m 0644 "$REMOTE_CA" /etc/cactai/witness-ca.pem
+        set_env CACTAI_REMOTE_COPY_CA /etc/cactai/witness-ca.pem
+    fi
+    set_env CACTAI_REMOTE_COPY_URL "$REMOTE"
+    set_env CACTAI_REMOTE_COPY_TOKEN_FILE "$STATE/core/remote-copy.token"
+    code="$(curl -s -o /dev/null -w '%{http_code}' ${REMOTE_CA:+--cacert "$REMOTE_CA"} "$REMOTE/health" 2>/dev/null || true)"
+    [ "$code" = 200 ] || echo "WARNING: the witness at $REMOTE did not answer (got '${code:-nothing}'); SentrAI keeps retrying." >&2
+fi
+
 # --- code and venvs ---------------------------------------------------------
 echo "Copying code to $MVP ..."
 install -d -m 0755 "$PREFIX" "$MVP"
@@ -278,6 +349,8 @@ done
 "$MVP/core/.venv/bin/python" -m compileall -q "$MVP"/*.py >/dev/null || true
 
 # --- Scout wrapper ----------------------------------------------------------
+SCOUT_GROUPS=""  # Scout reads logs to find them, so it gets the same groups as the collector
+for g in "${LOG_GROUPS[@]}"; do SCOUT_GROUPS+="-G $g "; done
 cat > /usr/local/bin/cactai-scout <<EOF
 #!/usr/bin/env bash
 # Runs Scout (python -m scout) as $SVC_USER with the service settings. Without a terminal it
@@ -288,7 +361,7 @@ set -euo pipefail
 [ "\$(id -u)" = 0 ] || { echo "run with sudo" >&2; exit 1; }
 set -a; . $ENV_FILE; set +a
 cd $MVP/lab
-exec runuser -u $SVC_USER -- env HOME=$STATE $MVP/lab/.venv/bin/python -m scout "\$@"
+exec runuser -u $SVC_USER $SCOUT_GROUPS-- env HOME=$STATE $MVP/lab/.venv/bin/python -m scout "\$@"
 EOF
 chmod 0755 /usr/local/bin/cactai-scout
 
@@ -351,10 +424,31 @@ fi
 SCHEME=http
 if grep -q '^STREAMLIT_SERVER_SSL_CERT_FILE=' "$ENV_FILE"; then SCHEME=https; fi
 
+# --- sealed journal (--seal-journal) ----------------------------------------
+# journald signs the journal at intervals with a key that moves forward and forgets the old one,
+# so entries already sealed cannot be rewritten without "journalctl --verify" noticing. The
+# verification key is printed once and is not kept here: store it away from this server.
+SEAL_KEY=""
+if [ "$SEAL" = 1 ]; then
+    install -d -m 0755 /etc/systemd/journald.conf.d
+    printf '[Journal]\nStorage=persistent\nSeal=yes\n' > /etc/systemd/journald.conf.d/50-sentrai-seal.conf
+    install -d -m 2755 -g systemd-journal /var/log/journal 2>/dev/null || install -d -m 2755 /var/log/journal
+    systemd-tmpfiles --create --prefix /var/log/journal >/dev/null 2>&1 || true
+    systemctl restart systemd-journald
+    journalctl --flush >/dev/null 2>&1 || true
+    if ls /var/log/journal/*/fss >/dev/null 2>&1; then
+        echo "The journal is already sealed; its verification key was shown when sealing was set up."
+    else
+        SEAL_KEY="$(journalctl --setup-keys --quiet 2>/dev/null)" || die "journalctl --setup-keys failed"
+        systemctl restart systemd-journald
+    fi
+fi
+
 # --- systemd ----------------------------------------------------------------
 UNITS=(cactai-core cactai-collector cactai-dashboard cactai-notifier)
 for u in "${UNITS[@]}"; do
-    sed -e "s|@PREFIX@|$PREFIX|g" -e "s|@USER@|$SVC_USER|g" "$SRC/deploy/$u.service" > "/etc/systemd/system/$u.service"
+    sed -e "s|@PREFIX@|$PREFIX|g" -e "s|@USER@|$SVC_USER|g" -e "s|@LOGGROUPS@|${LOG_GROUPS[*]}|g" \
+        "$SRC/deploy/$u.service" > "/etc/systemd/system/$u.service"
 done
 if [ "$NOTIFIER" = 0 ]; then
     sed 's/ cactai-notifier.service//' "$SRC/deploy/cactai.target" > /etc/systemd/system/cactai.target
@@ -408,6 +502,17 @@ else
 fi
 printf '%s\n' "$SIGN_IN" | sed 's/^/  /'
 echo "  Change it:  sudo cactai-admin --reset   (or on the dashboard: Configuration, 6. Access)"
+REMOTE_URL="$(get_env CACTAI_REMOTE_COPY_URL)"
+if [ -n "$REMOTE_URL" ]; then
+    echo "  Off-box copy: every audit record and log line goes to $REMOTE_URL as it happens."
+    echo "              Status: curl $CORE_URL/audit/remote-copy"
+fi
+if [ -n "$SEAL_KEY" ]; then
+    echo
+    echo "  Journal sealing is on. Verification key (shown only now; keep it OFF this server):"
+    echo "    $SEAL_KEY"
+    echo "  Check the journal later with:  journalctl --verify --verify-key=<that key>"
+fi
 case "$CORE_HOST" in
     127.0.0.1|localhost|::1) ;;
     *) echo "  WARNING: the core API listens on $CORE_HOST:$CORE_PORT with no login; limit it in the firewall." ;;

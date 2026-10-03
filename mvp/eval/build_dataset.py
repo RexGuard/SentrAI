@@ -217,6 +217,19 @@ def handcrafted_events() -> list[dict]:
         "s3 GetObject x 1840 objects (2.1 GB) bucket=aegis-student-docs by key AKIA...XYZ from 203.0.113.77",
     ]:
         h.append(_hand("hand_exfil", "data_exfiltration", "db", "db_query", raw, ip="203.0.113.77", host="db-01", crit=1.5))
+    # Log tampering: an intruder covering tracks (sudo lines, shell history, Windows Security log).
+    for source, raw in [
+        ("linux_auth", "sudo:  deploy : TTY=pts/1 ; PWD=/root ; USER=root ; COMMAND=/usr/bin/rm -f /var/log/auth.log"),
+        ("linux_auth", "sudo:  deploy : TTY=pts/1 ; PWD=/root ; USER=root ; COMMAND=/usr/bin/journalctl --vacuum-time=1s"),
+        ("linux_auth", "sudo:  deploy : TTY=pts/1 ; PWD=/root ; USER=root ; COMMAND=/usr/bin/systemctl stop rsyslog"),
+        ("linux_auth", "sudo:  deploy : TTY=pts/1 ; PWD=/root ; USER=root ; COMMAND=/usr/bin/chattr -a /var/log/secure"),
+        ("linux_auth", "sudo:  deploy : TTY=pts/1 ; PWD=/root ; USER=root ; COMMAND=/usr/bin/sed -i /203.0.113.70/d /var/log/auth.log"),
+        ("os_process", "bash history: history -c && unset HISTFILE"),
+        ("os_process", "auditd: EXECVE argc=3 a0=\"shred\" a1=\"-u\" a2=\"/root/.bash_history\""),
+        ("windows_security", "EventID=1102 The audit log was cleared. Account=administrator"),
+        ("windows_security", "process wevtutil.exe cl Security started by administrator"),
+    ]:
+        h.append(_hand("hand_log_tampering", "log_tampering", "os", source, raw, ip="203.0.113.70", user="deploy"))
     # Benign look-alikes: should NOT open an incident.
     for layer, source, raw in [
         ("db", "db_query", "SELECT rows=12 q='SELECT * FROM members WHERE program = ?'"),
@@ -234,6 +247,10 @@ def handcrafted_events() -> list[dict]:
         ("os", "windows_security", "EventID=4624 An account was successfully logged on. Account=teacher01"),
         ("web", "flask_access", "GET /export 200 rows=8 user=admin"),
         ("web", "flask_access", "GET /help/download all course notes 200"),
+        ("os", "linux_auth", "sudo:  admin : TTY=pts/0 ; PWD=/home/admin ; USER=root ; COMMAND=/usr/bin/tail -n 50 /var/log/auth.log"),
+        ("os", "linux_auth", "sudo:  admin : TTY=pts/0 ; PWD=/home/admin ; USER=root ; COMMAND=/usr/bin/systemctl restart rsyslog"),
+        ("os", "linux_auth", "sudo:  admin : TTY=pts/0 ; PWD=/home/admin ; USER=root ; COMMAND=/usr/bin/rm /var/log/syslog.4.gz"),
+        ("os", "os_process", "logrotate: rotating /var/log/nginx/access.log -> access.log.1, compressing access.log.2"),
     ]:
         h.append(_hand("hand_benign_lookalike", "benign", layer, source, raw, ip="192.0.2.10"))
     return h

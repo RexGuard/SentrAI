@@ -115,6 +115,64 @@ HARMLESS_PATH = re.compile(
     r"|\.well-known/(acme-challenge/|security\.txt|change-password|openid|apple-app|assetlinks|mta-sts))",
     re.I,
 )
+# --- log tampering: wiping, editing or silencing the record (an attacker covering tracks) ----
+# Notices from SentrAI itself: the collector saw a log shrink or vanish with no rotated copy, the
+# core found its audit chain broken, or a clock jumped. One is enough.
+INTEGRITY_SOURCES = ("log_integrity", "audit_integrity")
+# Paths that hold the record: system logs, shell history, login records, SentrAI's own data.
+_LOG_PATH = (r"(?P<path>/var/log/\S*|\S*/\.(bash|zsh|sh|python)_history\b|\S*/\.history\b|/var/run/utmp\b"
+             r"|\S*/(\.cactai|cactai|sentrai)/\S*)")
+# Groups that read the record: adm and systemd-journal (logs), cactai/sentrai (SentrAI's own data).
+_LOG_GROUP = r"(adm|systemd-journal|cactai|sentrai)"
+# Old rotated archives (auth.log.2.gz, syslog-20261001) are routinely deleted to free disk space.
+ROTATED_ARCHIVE = re.compile(r"(\.\d+|\.(gz|xz|bz2|zst)|-\d{8})$|\*\.(gz|xz|bz2|zst)$", re.I)
+LOG_WIPE = [
+    (re.compile(r"\bhistory\s+-[cw]\b|\bunset\s+HISTFILE\b|\bHISTFILE=/dev/null\b|\bHISTSIZE=0\b|\bset\s+\+o\s+history\b"),
+     "shell history was cleared or switched off"),
+    (re.compile(r"\b(shred|wipe|srm)\b[^\n]*?" + _LOG_PATH, re.I), "log or history file shredded"),
+    (re.compile(r"\brm\b[^\n]*?" + _LOG_PATH, re.I), "log or history file deleted"),
+    (re.compile(r"\btruncate\b[^\n]*-s\s*0\b[^\n]*?" + _LOG_PATH, re.I), "log file truncated to zero"),
+    (re.compile(r"(^|[;&|]\s*|\b(cat\s+/dev/null|echo(\s+-n)?(\s+(''|\"\"))?|true)\s*|(^|\s):\s*)(?<![>\d&])>(?!>)\s*" + _LOG_PATH, re.I),
+     "log file emptied by redirection"),
+    (re.compile(r"\bsed\s+(-\S+\s+)*-i\S*\s[^\n]*?" + _LOG_PATH, re.I), "log file edited in place"),
+    (re.compile(r"\bjournalctl\b[^\n]*--vacuum-(time|size|files)\b", re.I), "systemd journal vacuumed (old entries deleted)"),
+    (re.compile(r"\bchattr\s+-[ai]+\b", re.I), "append-only/immutable protection removed from a file"),
+    (re.compile(r"\b(systemctl\s+(stop|disable|mask|kill)|service)\s+(\S+\s+)?(r?syslog|rsyslogd?|syslog-ng|auditd"
+                r"|systemd-journald|journald|cactai\S*|sentrai\S*)(\.service)?(\s+stop)?\b", re.I),
+     "logging or auditing service stopped"),
+    (re.compile(r"\b(pkill|killall|kill\s+-9)\b[^\n]*\b(rsyslogd|syslog-ng|auditd|systemd-journald)\b", re.I),
+     "logging or auditing process killed"),
+    (re.compile(r"\bauditctl\s+(-D\b|-e\s*0\b)", re.I), "audit rules deleted or auditing switched off"),
+    (re.compile(r"\bwevtutil(\.exe)?\s+(cl|clear-log)\b|\b(Clear|Remove)-EventLog\b", re.I), "Windows event log cleared"),
+    (re.compile(r"\b(audit|security|system|event)\s+log\s+was\s+cleared\b", re.I), "Windows event log cleared"),
+    # Least privilege undone: someone widens who can read or change the record, or what SentrAI may do.
+    (re.compile(r"\busermod\b[^\n]*\s-\w*G\s*(\S*,)?" + _LOG_GROUP + r"(,|\s|$)"
+                r"|\bgpasswd\s+-a\s+\S+\s+" + _LOG_GROUP + r"\b"
+                r"|\badduser\s+[a-z_][\w.-]*\s+" + _LOG_GROUP + r"\b", re.I),
+     "an account was given the groups that read the logs or SentrAI's data"),
+    (re.compile(r"\bchmod\s+(-\S+\s+)*([0-7]?[0-7]{2}[2367]|\S*[ao]\+\w*w)\s[^\n]*?" + _LOG_PATH, re.I),
+     "a log or SentrAI file was made writable by everyone"),
+    (re.compile(r"\bsetfacl\b[^\n]*\s-\w*m\b[^\n]*?" + _LOG_PATH, re.I), "extra access granted on a log or SentrAI file"),
+    (re.compile(r"\bsetcap\b[^\n]*\b(cactai|sentrai)", re.I), "extra powers given to a SentrAI program"),
+    (re.compile(r"\bsystemctl\s+(edit|set-property|revert)\s+(\S+\s+)?(cactai|sentrai)\S*", re.I),
+     "SentrAI's service limits were changed"),
+    (re.compile(r"\b(Seal\s*=\s*(no|false|0)|Storage\s*=\s*(none|volatile))\b[^\n]*journald|journald\S*[^\n]*"
+                r"\b(Seal\s*=\s*(no|false|0)|Storage\s*=\s*(none|volatile))\b", re.I),
+     "journal sealing or saving to disk switched off"),
+]
+
+
+def log_wipe(text: str) -> str | None:
+    """Why ``text`` (a command seen on a host) wipes, edits or silences a log; None when it does not."""
+    for rx, why in LOG_WIPE:
+        for m in rx.finditer(text):
+            path = m.groupdict().get("path")
+            if path and ROTATED_ARCHIVE.search(path.rstrip("'\";,)")):
+                continue
+            return why
+    return None
+
+
 LOGIN_PATH = re.compile(r"^/(login|signin|sign-in|user/login|users/sign_in|admin/login|auth/login|wp-login\.php|xmlrpc\.php)\b", re.I)
 
 
@@ -191,7 +249,14 @@ class RulesEngine:
         ssh = parse_sshd(event)
         if ssh is not None:
             return self._sshd(event, ssh, now)
+        if source in INTEGRITY_SOURCES:
+            return RuleHit("log_tampering", f"Log integrity: {raw[:300]}")
         http = parse_http(event)
+        if http is None:
+            # Only commands seen on the host itself (sudo/auth lines, process scans, shell or audit
+            # logs). The same words inside a web request are an exploit probe, not a wiped log.
+            if why := log_wipe(raw) or log_wipe(text):  # raw too: decoding turns "o+w" into "o w"
+                return RuleHit("log_tampering", f"Log tampering: {why} ({raw.strip()[:200]})")
 
         for rx in SQLI:
             if rx.search(text):

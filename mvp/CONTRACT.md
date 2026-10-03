@@ -70,12 +70,20 @@ For counting SSH guesses: one failed attempt shows up as `failed_auth` (password
 `invalid_user` (every server, once per connection); PAM lines repeat them, so don't add them on
 top. `src_ip` + `port` identifies one connection.
 
+### Line chain
+Every event the collector sends carries `chain: {"stream", "seq", "prev", "hash"}`:
+`hash = sha256(prev + json([event_id, timestamp, host, layer, source, raw]))` (compact JSON, `ensure_ascii=False`),
+`prev` is the previous event's hash (64 zeros for #1), `seq` counts up from 1 per `stream` (one per collector,
+kept in `collector-state.json` once delivered). The core checks each one (`integrity.py`): a changed line, a
+missing run of events or one that does not follow its predecessor becomes an `audit_integrity` event
+(log tampering). Events without `chain` are accepted as before.
+
 ### Categories (exact strings)
-`benign, brute_force, sql_injection, xss, port_scan, privilege_escalation, data_exfiltration, misconfiguration`
+`benign, brute_force, sql_injection, xss, port_scan, privilege_escalation, data_exfiltration, misconfiguration, log_tampering`
 
 ### Severity → base points
 low 5-10, medium 15-25, high 30-45, critical 50-70. Default mapping:
-brute_force=high(30), sql_injection=high(40), xss=medium(20), port_scan=medium(15), privilege_escalation=critical(60), data_exfiltration=critical(70), misconfiguration=medium(20), benign=0.
+brute_force=high(30), sql_injection=high(40), xss=medium(20), port_scan=medium(15), privilege_escalation=critical(60), data_exfiltration=critical(70), misconfiguration=medium(20), log_tampering=critical(55), benign=0.
 
 ### Risk index
 `risk_index = round(100 * (1 - exp(-raw/60)))`, raw = sum of open incident points (base × ai_confidence × asset_criticality) + inaction penalty (+5 per demo-hour unacknowledged, capped +30 per incident) − resolved incidents.
@@ -105,6 +113,9 @@ that signature (HMAC of the path with the token), which fits that one report onl
 | POST | `/incidents/{id}/permanent` | `{"operator", "justification"}` |
 | POST | `/incidents/{id}/ack` | `{"operator", "channel"}` records acknowledgement |
 | GET | `/audit` | hash-chained records `[{"seq","ts","type","data","prev_hash","hash"}]` + `{"chain_valid": bool}` |
+| GET | `/audit/fingerprint` | `{"seq","head","at","line"}`: the current signed fingerprint (`SENTRAI-FP v1 ...`) |
+| GET | `/audit/remote-copy` | `{"enabled", "url", "ok", "audit_seq", "lines_sent", "last_sent_at", "error", ...}`: the off-box copy |
+| GET | `/audit/verify?fingerprint=<line>` | `{"ok": bool, "reason": str}`: does the chain on disk still match a fingerprint sent earlier |
 | GET | `/reports/{incident_id}` | evidence report JSON |
 | GET | `/reports/{incident_id}.md` | same report as Markdown |
 | GET | `/protection` | `{"protection": "on" \| "off", "monitor_only", "changed_at", "changed_by", "reason", "active_actions": [...ids]}` |
@@ -149,6 +160,16 @@ that signature (HMAC of the path with the token), which fits that one report onl
   "snapshot_hash": "..." }
 ```
 Containment is enforced by the target app polling `/blocklist` (real effect: blocked IPs/users get HTTP 403). No host firewall changes by default.
+
+## Witness (owner: core; `witness/witness.py`)
+The off-box copy. The core sends `POST /append {"stream", "items"}` with the append token as it goes:
+- `audit-<host>-<first 12 of record 1's hash>`: audit records exactly as stored (`seq, ts, type, data, prev_hash, hash`).
+  Each must continue the copy (`seq` = last + 1, `prev_hash` = last hash) and match its own hash, else `409`.
+  The same record sent twice is accepted once.
+- `lines-<collector stream>`: events with their `chain` (see "Line chain"). A stream may start mid-chain; one that
+  does not follow is kept with a note.
+`GET /head?stream=` answers `{"stream","seq","hash"}` to either token. `GET /records?stream=&from=` and
+`GET /streams` need the read token. There is no way to change or delete anything (`PUT`/`DELETE`/`PATCH` are `405`).
 
 ## Target app (owner: lab)
 - Flask on :5000: `/` , `/login` (POST form user/password), `/search?q=` (deliberately naive, logs SQLi-looking queries; uses SQLite with a fake `members` table of synthetic data), `/export` (bulk export, triggers data_exfiltration events), `/admin/run?cmd=` simulated command endpoint that NEVER executes anything, only logs "shell spawned" style event.
