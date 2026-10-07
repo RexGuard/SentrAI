@@ -158,6 +158,22 @@ class CoreClient:
     def latest_scan(self) -> dict:
         return self.get_json("/system/scan")
 
+    def scan_threats(self, operator: str) -> dict:
+        """Read-only threat scan of the configured folders; findings each have an id for quarantine."""
+        return self.post_json("/threats/scan", {"operator": operator}, timeout=SCAN_TIMEOUT)
+
+    def latest_threats(self) -> dict:
+        return self.get_json("/threats")
+
+    def quarantine(self, finding_id: str, operator: str, reason: str = "") -> dict:
+        return self.post_json(f"/threats/{finding_id}/quarantine", {"operator": operator, "reason": reason})
+
+    def quarantined(self) -> list[dict]:
+        return list(self.get_json("/quarantine") or [])
+
+    def restore(self, quarantine_id: str, operator: str) -> dict:
+        return self.post_json(f"/quarantine/{quarantine_id}/restore", {"operator": operator})
+
     def log_sources(self) -> list[dict]:
         """Extra log files the collector watches (approved from a scan, or by Scout)."""
         return list(self.get_json("/log-sources") or [])

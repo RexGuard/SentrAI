@@ -122,6 +122,7 @@ Audit records: `cyanide_plan` (actions, reasons, dropped steps), `cyanide_hold` 
 2. **Classify**:
    - **Rules first**, always with confidence 1.0. They cover SQLi, XSS, a shell being spawned, `/export` bulk exports, port scans, misconfigurations, and 5 or more failed logins from one IP within 60 s. Failed logins below that threshold are held as benign; when the threshold is reached, all of them are attached to the incident.
    - **Log tampering** (`log_tampering`, critical 55): commands that wipe, edit or silence the record (deleting or emptying files under `/var/log` or shell history, `journalctl --vacuum`, `chattr -a`, stopping rsyslog/auditd/journald, `wevtutil cl`, Windows event 1102), commands that widen who can read or change it (adding an account to `adm`, `systemd-journal` or `cactai`, `chmod o+w` or `setfacl` on a log or SentrAI file, `setcap` on a SentrAI program, `systemctl edit` on a SentrAI service, journal sealing switched off), a collector notice that a log shrank, vanished or was swapped with no rotated copy (`log_integrity`), and the integrity guard's findings (`audit_integrity`: audit chain broken, audit database deleted, clock jumped). On its own it stays below the autonomous line, so a person decides; it only proposes blocking the source IP.
+   - **Malware** (`malware`, critical 65): the threat scan found a web shell, backdoor, reverse shell, crypto miner or container escape tool in a file or a running program (`threat_scan`). It stays below the autonomous line and proposes no automatic action; the operator quarantines the file.
    - **Jev** if the rules cannot decide.
    - **Fallback heuristic** otherwise. It gives confidence 0.5 to 0.8 and `classified_by="fallback"`.
    - Confidence is always clipped to 0.5 to 1.0.
@@ -165,7 +166,20 @@ Scout follows a technician through the folders. The process scan (`app/procscan.
 - **Nothing is watched until an operator says so.** Each file in a scan has an id. The dashboard's Collector page (Find logs on this computer) and Cyanide's chat buttons approve a file by that id, so neither the model nor a crafted request can point the collector at an arbitrary path. Approved files go to the same list Scout writes (`lab/scout/sources.json`), and the running collector starts tailing them within a few seconds, from the end of the file.
 - **Cyanide.** Chat has two new tools: `scan_system` and `suggest_log_source` (a button, like `suggest_action`). Without an AI key, asking the chat to "scan" gives the scanner's own list with buttons.
 
-Audit records: `system_scan` and `log_source_added`.
+Audit records: `system_scan` and `log_source_added`. The process scan also flags programs that look hostile (a known crypto miner, a mining-pool address or a reverse shell in the command line, a program running from `/tmp` or `/dev/shm`, or one whose file was deleted after it started); each is raised once as a `malware` alert (see below).
+
+## Threat scan (signs of a break-in)
+
+The process scan finds logs; the threat scan (`app/threatscan.py`, `app/threats.py`) looks inside files for what an intruder leaves behind: web shells and PHP backdoors, reverse shells, download-and-run one-liners, crypto miners, container escape tools used on shared game hosts (proot root systems, Alpine minirootfs, Harbor/Ptero-VM), `ld.so.preload` rootkit tricks, cron jobs and SSH keys added for persistence, and long encoded blobs. Ideas taken from a Pterodactyl malware scanner and rewritten for SentrAI's rules.
+
+- **Which folders.** Only the ones you choose: `"threat_scan": {"paths": ["/var/lib/pterodactyl/volumes"], "every_minutes": 60}` in the system profile, or `CACTAI_THREAT_PATHS` (separated by `:` on Linux, `;` on Windows). `every_minutes` repeats the scan in the background (default 60 when paths are set). SentrAI's own folders are always skipped.
+- **What it reads.** Scripts and web pages (`.php`, `.sh`, `.py`, `.js`, `.jsp`, `.asp`, `.ps1`, ...), configuration files (including `config.yml`), extensionless scripts that start with `#!`, cron files, and the text and class files inside `.jar` plugins (only strong signs count there: miners, reverse shells, escape tools). `tmp/` and `logs/` are scanned on purpose, since that is where malware hides. Package caches (`node_modules`, `.git`, virtualenvs) and minified bundles are skipped. Files over `max_file_mb` (default 10) are skipped.
+- **Tuning.** `"allow": ["*/plugins/dynmap/*"]` skips known-good paths; `"known_bad_sha256": [...]` flags exact files.
+- **Each finding is raised once.** Critical and high findings become events (`source: "threat_scan"`) that the rules classify as `malware` (critical, 65), so they open an incident and notify like any other. A fingerprint of the file contents and signature is kept in `data/threat_seen.json` (`CACTAI_THREAT_STATE`), so an hourly scan does not repeat the same alert; a file that changes is new again. Medium findings are only listed.
+- **Nothing is deleted, and nothing happens on its own.** There is no auto-delete and no auto-suspend. An operator quarantines a file by its finding id (dashboard Collector page, or Cyanide's `suggest_quarantine` button). The file must be unchanged since the scan; it moves to `data/quarantine` (`CACTAI_QUARANTINE`), read-only, with a note of where it came from, and `POST /quarantine/{id}/restore` puts it back.
+- **Private details stay out.** Matched lines are cut to 160 characters with secrets masked and home folders shown as `~`; the model sees them labelled as untrusted text.
+
+Audit records: `threat_scan`, `file_quarantined`, `file_restored`.
 
 ## Endpoints
 
@@ -190,6 +204,7 @@ Additions that do not change the contract:
 - `GET /notifications`: all notifications, including delivered ones.
 - `POST /heartbeat {"collector": "web-01"}`: collector heartbeat for Watchdog. An event with `"source": "heartbeat"` does the same.
 - `POST /system/scan {"operator": "erick"}` and `GET /system/scan` (latest): read-only process scan with suggested log files.
+- `POST /threats/scan {"operator": "erick"}`, `GET /threats`, `POST /threats/{id}/quarantine`, `GET /quarantine`, `POST /quarantine/{id}/restore`: threat scan and quarantine.
 - `GET /log-sources` and `POST /log-sources {"operator", "file_id", "layer"?}`: extra log files the collector watches; a file is added only by its id from the latest scan.
 - `POST /demo/advance {"demo_hours": 3}`: fast-forwards the demo clock, for tests and to skip ahead during a take.
 

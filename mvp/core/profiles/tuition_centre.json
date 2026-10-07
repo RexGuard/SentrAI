@@ -13,6 +13,7 @@
   "protected_ips": ["10.0.0.1"],
   "protected_users": [],
   "process_scan": {"enabled": true, "skip_processes": ["veyon*", "exam-browser*"]},
+  "threat_scan": {"paths": ["/var/www"], "every_minutes": 60, "allow": [], "known_bad_sha256": []},
   "preferences": [
     "Protecting student personal data comes before portal uptime.",
     "Avoid locking teacher accounts during class hours unless data is being taken.",

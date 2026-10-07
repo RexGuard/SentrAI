@@ -998,6 +998,9 @@ def chat_suggestion(mid: Any, n: int, s: dict, inc: dict | None) -> None:
     if s.get("kind") == "watch_log":
         watch_suggestion(mid, n, s)
         return
+    if s.get("kind") == "quarantine_file":
+        quarantine_suggestion(mid, n, s)
+        return
     inc_id, decision = str(s.get("incident")), str(s.get("decision"))
     ok, why_not = sh.suggestion_state(inc, decision)
     label = str(s.get("label") or f"{decision} {inc_id}")
@@ -1045,6 +1048,19 @@ def watch_suggestion(mid: Any, n: int, s: dict) -> None:
             st.caption(str(s["reason"]))
         if st.button(f"Confirm: {label}", key=f"sugg_{mid}_{n}", type="primary"):
             run_action(label, lambda: client.watch_log(str(s.get("file_id")), st.session_state.operator), rerun=False)
+            st.rerun()
+
+
+def quarantine_suggestion(mid: Any, n: int, s: dict) -> None:
+    """A file Cyanide thinks is hostile. Pressing it moves the file into quarantine (it can be restored)."""
+    label = str(s.get("label") or "Quarantine file")
+    with st.container(border=True):
+        st.markdown(f"💡 **Suggested: {html.escape(label)}**")
+        if s.get("reason"):
+            st.caption(str(s["reason"]))
+        if st.button(f"Confirm: {label}", key=f"sugg_{mid}_{n}", type="primary"):
+            run_action(label, lambda: client.quarantine(str(s.get("finding_id")), st.session_state.operator,
+                                                        str(s.get("reason") or "")), rerun=False)
             st.rerun()
 
 
@@ -1101,6 +1117,7 @@ def page_collector() -> None:
               "No agent data.")
     scout_proposals()
     log_discovery()
+    threat_panel()
     with st.container(border=True):
         section("Malicious events collected", "newest first", "warning")
         table(sh.classification_rows(records)[["Time", "Event", "Category", "Layer agent", "Incident", "Raw log line"]],
@@ -1147,6 +1164,9 @@ def log_discovery() -> None:
                    f"ones skipped.")
         if latest.get("error"):
             st.warning(f"The scan hit a problem: {latest['error']}")
+        for t in latest.get("threats") or []:
+            st.error(f"{SEVERITY_ICON.get(str(t.get('severity')), '⚪')} Suspicious program: {t.get('label')} · "
+                     f"{t.get('name')} (pid {t.get('pid')}, account {t.get('account') or 'unknown'})")
         found = latest.get("suggestions") or []
         known = [s for s in found if s.get("recognised", True)]
         other = [s for s in found if not s.get("recognised", True)]
@@ -1160,6 +1180,65 @@ def log_discovery() -> None:
                     scan_suggestion(s)
         for note in latest.get("notes") or []:
             st.caption(f"ℹ️ {note}")
+
+
+SEVERITY_ICON = {"critical": "🔴", "high": "🟠", "medium": "🟡"}
+
+
+def threat_panel() -> None:
+    """Threat scan: look inside the configured folders for web shells, miners, reverse shells and the like."""
+    with st.container(border=True):
+        section("Check for threats", "read-only look inside your chosen folders · files move to quarantine only "
+                                     "when you press it", "bug_report")
+        if st.button("Scan for threats", icon=":material/policy:", key="scan_threats"):
+            with st.spinner("Checking files…"):
+                run_action("Threat scan finished", lambda: client.scan_threats(st.session_state.operator), rerun=False)
+        latest, err = safe(client.latest_threats, None)
+        if err or not latest:
+            st.caption("Threat scanning is not available on this core.")
+            return
+        if latest.get("note"):
+            st.caption(latest["note"])
+        if not latest.get("scanned_at"):
+            st.caption("No threat scan yet. Set the folders under threat_scan.paths in the system profile "
+                       "(or CACTAI_THREAT_PATHS); Cyanide can also run one when you ask in Chat.")
+        else:
+            c = latest.get("counts") or {}
+            st.caption(f"Last scan {sh.short_time(latest.get('scanned_at'))}: {latest.get('files_checked', 0)} files in "
+                       f"{', '.join(latest.get('roots') or [])} · {c.get('critical', 0)} critical, {c.get('high', 0)} high, "
+                       f"{c.get('medium', 0)} worth a look")
+            if latest.get("missing"):
+                st.warning("Folders not found: " + ", ".join(latest["missing"]))
+            found = latest.get("findings") or []
+            if not found:
+                empty("Nothing suspicious found.", "verified_user", good=True)
+            for f in found[:25]:
+                threat_row(f)
+        held, _ = safe(client.quarantined, [])
+        if held:
+            with st.expander(f"In quarantine ({len(held)})"):
+                for q in held:
+                    c1, c2 = st.columns([5, 1])
+                    c1.caption(f"{q.get('name')} · from `{q.get('original')}` · {(q.get('finding') or {}).get('label')} · "
+                               f"by {q.get('operator')} {sh.short_time(q.get('at'))}")
+                    if c2.button("Restore", key=f"restore_{q.get('id')}", icon=":material/undo:"):
+                        run_action(f"Restored {q.get('name')}",
+                                   lambda qid=q.get("id"): client.restore(qid, st.session_state.operator), rerun=False)
+                        st.rerun()
+
+
+def threat_row(f: dict) -> None:
+    where = f"`{f.get('path')}`" + (f" → `{f.get('entry')}`" if f.get("entry") else "") + \
+        (f" line {f.get('line')}" if f.get("line") else "")
+    c1, c2 = st.columns([5, 1])
+    c1.markdown(f"{SEVERITY_ICON.get(str(f.get('severity')), '⚪')} **{html.escape(str(f.get('label')))}** · "
+                f"{html.escape(str(f.get('kind', '')).replace('_', ' '))} · {where}", unsafe_allow_html=True)
+    if f.get("snippet"):
+        c1.code(str(f["snippet"]), language=None)
+    if c2.button("Quarantine", key=f"quar_{f.get('id')}", icon=":material/block:"):
+        run_action(f"Quarantined {f.get('path')}",
+                   lambda fid=f.get("id"): client.quarantine(fid, st.session_state.operator), rerun=False)
+        st.rerun()
 
 
 def scan_suggestion(s: dict) -> None:

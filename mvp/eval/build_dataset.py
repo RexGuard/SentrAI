@@ -253,6 +253,15 @@ def handcrafted_events() -> list[dict]:
         ("os", "os_process", "logrotate: rotating /var/log/nginx/access.log -> access.log.1, compressing access.log.2"),
     ]:
         h.append(_hand("hand_benign_lookalike", "benign", layer, source, raw, ip="192.0.2.10"))
+    # Malware: SentrAI's own threat scan (core/app/threats.py) and a miner showing up in a process log.
+    for source, raw in [
+        ("threat_scan", "threat-scan critical webshell: runs code sent in a web request in /var/www/uploads/img.php line 1"),
+        ("threat_scan", "threat-scan critical miner: crypto-mining pool address in ~/server/tmp/start.sh line 4"),
+        ("threat_scan", "threat-scan high container_escape: downloads a mini Linux system to run inside the server in /srv/mc/harbor.sh line 12"),
+        ("threat_scan", "threat-scan critical process: known crypto miner program (xmrig, pid 4242, account mc)"),
+        ("os_process", "audit: EXECVE a0=\"/tmp/.x/xmrig\" a1=\"-o\" a2=\"stratum+tcp://pool.example:3333\""),
+    ]:
+        h.append(_hand("hand_malware", "malware", "os", source, raw))
     return h
 
 

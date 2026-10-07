@@ -1,9 +1,9 @@
 {
-  "events": 191,
+  "events": 196,
   "by_origin": {
     "lab": 116,
     "replay": 17,
-    "handcrafted": 58
+    "handcrafted": 63
   },
   "jev_status": "disabled: TYPESAFE_API_KEY not set (fallback classifier in use)",
   "runs": {
@@ -71,13 +71,20 @@
           "f1": 1.0,
           "support": 9,
           "predicted": 9
+        },
+        "malware": {
+          "precision": 1.0,
+          "recall": 0.8,
+          "f1": 0.888888888888889,
+          "support": 5,
+          "predicted": 4
         }
       },
-      "accuracy": 0.643979057591623,
-      "macro_f1": 0.804706551236479,
-      "detection_rate": 0.6,
+      "accuracy": 0.6479591836734694,
+      "macro_f1": 0.81312478500172,
+      "detection_rate": 0.6090909090909091,
       "false_alarm_rate": 0.011627906976744186,
-      "no_answer": 42,
+      "no_answer": 43,
       "mistakes": [
         {
           "event_id": "eval-0003",
@@ -554,17 +561,24 @@
           "raw": "logrotate: rotating /var/log/nginx/access.log -> access.log.1, compressing access.log.2",
           "label": "benign",
           "predicted": "(no answer)"
+        },
+        {
+          "event_id": "eval-0196",
+          "origin": "handcrafted",
+          "raw": "audit: EXECVE a0=\"/tmp/.x/xmrig\" a1=\"-o\" a2=\"stratum+tcp://pool.example:3333\"",
+          "label": "malware",
+          "predicted": "(no answer)"
         }
       ]
     },
     "fallback": {
       "per_category": {
         "benign": {
-          "precision": 0.509090909090909,
+          "precision": 0.5029940119760479,
           "recall": 0.9767441860465116,
-          "f1": 0.6693227091633466,
+          "f1": 0.6640316205533596,
           "support": 86,
-          "predicted": 165
+          "predicted": 167
         },
         "brute_force": {
           "precision": 0.0,
@@ -621,11 +635,18 @@
           "f1": 0.0,
           "support": 9,
           "predicted": 0
+        },
+        "malware": {
+          "precision": 1.0,
+          "recall": 0.6,
+          "f1": 0.7499999999999999,
+          "support": 5,
+          "predicted": 3
         }
       },
-      "accuracy": 0.5654450261780105,
-      "macro_f1": 0.5155372810751296,
-      "detection_rate": 0.22857142857142856,
+      "accuracy": 0.5663265306122449,
+      "macro_f1": 0.538454444106618,
+      "detection_rate": 0.24545454545454545,
       "false_alarm_rate": 0.023255813953488372,
       "no_answer": 0,
       "mistakes": [
@@ -1209,6 +1230,20 @@
           "raw": "GET /help/download all course notes 200",
           "label": "benign",
           "predicted": "data_exfiltration"
+        },
+        {
+          "event_id": "eval-0193",
+          "origin": "handcrafted",
+          "raw": "threat-scan critical miner: crypto-mining pool address in ~/server/tmp/start.sh line 4",
+          "label": "malware",
+          "predicted": "benign"
+        },
+        {
+          "event_id": "eval-0194",
+          "origin": "handcrafted",
+          "raw": "threat-scan high container_escape: downloads a mini Linux system to run inside the server in /srv/mc/harbor.sh line 12",
+          "label": "malware",
+          "predicted": "benign"
         }
       ]
     },
@@ -1276,11 +1311,18 @@
           "f1": 1.0,
           "support": 9,
           "predicted": 9
+        },
+        "malware": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 5,
+          "predicted": 5
         }
       },
-      "accuracy": 0.774869109947644,
-      "macro_f1": 0.8173418835398132,
-      "detection_rate": 0.6095238095238096,
+      "accuracy": 0.7806122448979592,
+      "macro_f1": 0.8356076951858318,
+      "detection_rate": 0.6272727272727273,
       "false_alarm_rate": 0.023255813953488372,
       "no_answer": 0,
       "mistakes": [

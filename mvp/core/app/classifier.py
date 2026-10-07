@@ -101,6 +101,7 @@ FALLBACK_TABLE: list[tuple[tuple[str, ...], str, float, float]] = [
     ((r"\bsudo\s", r"chmod\s+\+s", r"/etc/shadow", r"\bwhoami\b", r"/bin/sh\b", r"\bcmd\.exe\b", r"powershell\s+-e"), "privilege_escalation", 0.7, 0.75),
     ((r"\bdrop\s+table\b", r"\binformation_schema\b", r"\bsleep\s*\(", r"'\s*or\b", r"\"\s*or\b"), "sql_injection", 0.65, 0.7),
     ((r"<img\b", r"<svg\b", r"\balert\s*\(", r"document\.cookie"), "xss", 0.65, 0.7),
+    ((r"\bxmrig\b", r"stratum\+tcp://", r"/dev/tcp/\S+", r"\bweb\s?shell\b", r"\bc99shell\b"), "malware", 0.7, 0.75),
     ((r"\bnmap\b", r"\bmasscan\b", r"\bsyn\s+scan\b", r"\bport\s*scan"), "port_scan", 0.7, 0.75),
     ((r"\bpublic-read\b", r"0\.0\.0\.0/0", r"\bpublic\s+acl\b", r"\bdefault\s+password\b", r"\bport\s+22\s+open\b"), "misconfiguration", 0.75, 0.7),
     ((r"\bdump\b", r"\bbulk\b", r"\bcopy\s+\w+\s+to\b", r"\bdownload\s+all\b"), "data_exfiltration", 0.6, 0.55),  # weak -> needs review
