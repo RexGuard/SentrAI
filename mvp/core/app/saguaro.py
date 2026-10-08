@@ -56,6 +56,7 @@ TITLES = {
     "data_exfiltration": "Bulk data export",
     "misconfiguration": "Misconfiguration",
     "log_tampering": "Log tampering",
+    "malware": "Malware found",
 }
 
 BUTTONS_DECIDE = [

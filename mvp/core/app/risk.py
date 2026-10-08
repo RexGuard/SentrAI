@@ -14,6 +14,7 @@ CATEGORIES = [
     "data_exfiltration",
     "misconfiguration",
     "log_tampering",
+    "malware",
 ]
 
 # category -> (severity, base points)
@@ -29,6 +30,9 @@ SEVERITY: dict[str, tuple[str, int]] = {
     # Critical but below the autonomous line on its own (risk ~60): a person decides, because the
     # command may be an admin's. It adds to any attack already open on the same host.
     "log_tampering": ("critical", 55),
+    # Already inside: a web shell, miner or reverse shell on disk or running. Below the autonomous
+    # line on its own (risk ~66): a person reviews and quarantines, since a match can be a false alarm.
+    "malware": ("critical", 65),
 }
 
 BANDS = ["green", "amber", "red", "critical"]

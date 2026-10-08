@@ -18,6 +18,7 @@ from .reports import build_report, render_markdown, render_pdf
 from . import ai, anchor
 from .chat import OperatorChat, default_chat_provider
 from .discovery import Discovery
+from .threats import ThreatWatch
 from .cyanide import Cyanide, default_planner
 from .saguaro import BadRequestError, ConflictError, Saguaro
 
@@ -84,6 +85,16 @@ class LogSourceIn(BaseModel):
     layer: Optional[str] = None
 
 
+class ThreatScanIn(BaseModel):
+    operator: str = "operator"
+    paths: Optional[list[str]] = None
+
+
+class QuarantineIn(BaseModel):
+    operator: str
+    reason: str = ""
+
+
 class PendingDecisionIn(BaseModel):
     operator: str
     approve: bool
@@ -135,24 +146,38 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             except Exception:  # never let the loop die
                 log.exception("tick failed")
 
+    async def threat_scanner() -> None:
+        """Repeat the threat scan every threat_scan.every_minutes (off when no folders are set)."""
+        while True:
+            every = threats.every_s()
+            await asyncio.sleep(every or 300)
+            if every:
+                try:
+                    await asyncio.to_thread(threats.scan, "schedule")
+                except Exception:
+                    log.exception("threat scan failed")
+
     @contextlib.asynccontextmanager
     async def lifespan(_: FastAPI):
         task = asyncio.create_task(ticker()) if core.settings.background else None
+        scanner = asyncio.create_task(threat_scanner()) if core.settings.background else None
         if core.remote is not None and core.settings.background:
             core.remote.start()
         yield
-        if task:
-            task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await task
+        for t in (task, scanner):
+            if t:
+                t.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await t
         if core.remote is not None:
             core.remote.stop()
         core.audit.close()
 
     # Operator chat: read-only tools plus suggestion buttons; answers from the core's own
     # explanations when no AI key is set (or when the fixed-playbook engine runs).
-    discovery = Discovery(core)
-    chat = OperatorChat(core, default_chat_provider() if isinstance(core, Cyanide) else None, discovery)
+    threats = ThreatWatch(core)
+    discovery = Discovery(core, threats)
+    chat = OperatorChat(core, default_chat_provider() if isinstance(core, Cyanide) else None, discovery, threats)
     chat.off_reason = core.ai_off_reason = ai.why_off()
 
     def require_token(request: Request) -> None:
@@ -174,6 +199,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.core = core
     app.state.chat = chat
     app.state.discovery = discovery
+    app.state.threats = threats
 
     def not_found(iid: str) -> HTTPException:
         return HTTPException(status_code=404, detail=f"incident {iid} not found")
@@ -355,6 +381,39 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/system/scan")
     def get_scan() -> dict[str, Any]:
         return discovery.latest() or {"suggestions": [], "processes": [], "scanned_at": None}
+
+    # Threat scan: read-only look inside chosen folders for web shells, miners, reverse shells and the
+    # like. New critical/high findings open a "malware" incident; files are quarantined only by id.
+    @app.post("/threats/scan")
+    def post_threat_scan(body: Optional[ThreatScanIn] = None) -> dict[str, Any]:
+        return threats.scan((body.operator if body else None) or "operator", body.paths if body else None)
+
+    @app.get("/threats")
+    def get_threats() -> dict[str, Any]:
+        return threats.latest() or {"findings": [], "scanned_at": None,
+                                    "every_minutes": round(threats.every_s() / 60) or None}
+
+    @app.post("/threats/{finding_id}/quarantine")
+    def quarantine_threat(finding_id: str, body: QuarantineIn) -> dict[str, Any]:
+        try:
+            return threats.quarantine(finding_id, body.operator, body.reason)
+        except KeyError as e:
+            raise HTTPException(404, str(e).strip("'\""))
+        except ValueError as e:
+            raise HTTPException(409, str(e))
+
+    @app.get("/quarantine")
+    def get_quarantine() -> list[dict[str, Any]]:
+        return threats.quarantined()
+
+    @app.post("/quarantine/{qid}/restore")
+    def restore_quarantined(qid: str, body: OperatorIn) -> dict[str, Any]:
+        try:
+            return threats.restore(qid, body.operator)
+        except KeyError as e:
+            raise HTTPException(404, str(e).strip("'\""))
+        except ValueError as e:
+            raise HTTPException(409, str(e))
 
     @app.get("/log-sources")
     def get_log_sources() -> list[dict[str, Any]]:

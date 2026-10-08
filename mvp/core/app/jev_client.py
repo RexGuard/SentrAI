@@ -30,6 +30,7 @@ CATEGORY_DESCRIPTIONS: dict[str, str] = {
     "data_exfiltration": "Bulk export or copy of data out of the system.",
     "misconfiguration": "Insecure configuration such as public buckets, open admin ports, default passwords.",
     "log_tampering": "Deleting, emptying or editing logs or shell history, or stopping logging, to hide activity.",
+    "malware": "A web shell, backdoor, reverse shell, crypto miner or container escape tool on the host.",
 }
 assert set(CATEGORY_DESCRIPTIONS) == set(CATEGORIES)
 

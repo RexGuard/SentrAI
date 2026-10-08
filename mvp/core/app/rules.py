@@ -119,6 +119,8 @@ HARMLESS_PATH = re.compile(
 # Notices from SentrAI itself: the collector saw a log shrink or vanish with no rotated copy, the
 # core found its audit chain broken, or a clock jumped. One is enough.
 INTEGRITY_SOURCES = ("log_integrity", "audit_integrity")
+# --- malware: SentrAI's own threat scan found a web shell, miner, reverse shell etc. (threats.py)
+THREAT_SOURCE = "threat_scan"
 # Paths that hold the record: system logs, shell history, login records, SentrAI's own data.
 _LOG_PATH = (r"(?P<path>/var/log/\S*|\S*/\.(bash|zsh|sh|python)_history\b|\S*/\.history\b|/var/run/utmp\b"
              r"|\S*/(\.cactai|cactai|sentrai)/\S*)")
@@ -241,6 +243,8 @@ class RulesEngine:
 
         if source == "heartbeat":
             return RuleHit("benign", "collector heartbeat")
+        if source == THREAT_SOURCE:
+            return RuleHit("malware", f"Threat scan: {raw.removeprefix('threat-scan ')[:300]}")
         if source in TRIPWIRE_SOURCES and (m := SPINE.match(raw)) and m.group(1) in SPINE_KINDS:
             category, why = SPINE_KINDS[m.group(1)]
             return RuleHit(category, f"Tripwire: {why}")

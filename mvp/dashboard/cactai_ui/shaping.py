@@ -80,6 +80,7 @@ CATEGORY_LABELS = {
     "data_exfiltration": "Data exfiltration",
     "misconfiguration": "Misconfiguration",
     "log_tampering": "Log tampering",
+    "malware": "Malware found",
 }
 
 STATUS_ICONS = {

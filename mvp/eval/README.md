@@ -13,13 +13,13 @@ Without a key those columns say "not run".
 
 ## The event set
 
-`events.jsonl` holds 178 labelled events in the contract Event shape:
+`events.jsonl` holds 196 labelled events in the contract Event shape:
 
 - **lab (116)**: the real lab portal driven with the payloads from `lab/attacks/*.py`, extra SQLi
   and XSS payloads, and normal staff traffic (including searches such as `O'Brien` and
   `select course`). The log lines go through the real collector.
 - **replay (17)**: `lab/replay/simulate.py` unchanged.
-- **handcrafted (45)**: firewall, cloud, Windows and sshd lines the lab cannot produce, and benign
+- **handcrafted (63)**: firewall, cloud, Windows and sshd lines the lab cannot produce, threat-scan findings, and benign
   look-alikes (a closed security-group rule, a nightly `pg_dump`, a small export).
 
 A line gets an attack label only if the line itself shows the attack. Every failed login in a

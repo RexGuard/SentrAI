@@ -36,6 +36,7 @@ PLAYBOOKS: dict[str, list[tuple[str, str]]] = {
     "data_exfiltration": [("block_ip", "@src_ip"), ("lock_user", "@user")],
     "misconfiguration": [("revoke_public_acl", "@host")],
     "log_tampering": [("block_ip", "@src_ip")],
+    "malware": [],  # files are quarantined from the threat scan, one by one, by an operator
 }
 
 ACTION_TEXT = {
@@ -57,6 +58,8 @@ EXPLAIN = {
     "misconfiguration": "An insecure configuration was found on {host} (public access / open admin port / default password).",
     "log_tampering": "Someone tried to erase, edit or silence the record on {host}: {reason}. Attackers do this to cover their "
                      "tracks, so treat the host as possibly compromised. SentrAI already holds a copy of what was logged.",
+    "malware": "SentrAI's threat scan found {reason} on {host}. Something hostile may already be inside: check the file "
+               "or program, quarantine it from the threat scan if it is not yours, and look for how it got there.",
 }
 
 

