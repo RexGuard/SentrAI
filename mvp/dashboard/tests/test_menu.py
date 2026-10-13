@@ -309,3 +309,21 @@ def test_plain_password_from_the_environment_still_works(fake_core, tmp_path, mo
     at.text_input[1].input("cactus-cactus")
     at.button[0].click().run()
     assert any(b.label == "Sign out" for b in at.sidebar.button)
+
+
+def test_threat_paths_are_shown_escaped(fake_core, tmp_path, monkeypatch):
+    """A scanned file name is chosen by whoever uploaded it, so it must never reach the page as HTML."""
+    from streamlit.testing.v1 import AppTest
+
+    monkeypatch.setenv("CACTAI_CONFIG", str(tmp_path / "config.json"))
+    requests.post(f"{fake_core}/threats/scan", json={"operator": "erick"}, timeout=3)
+    import streamlit as st
+    st.cache_data.clear()
+    at = AppTest.from_file(APP, default_timeout=20)
+    at.session_state["core_url"] = fake_core
+    at.session_state["auto_refresh"] = False
+    at.session_state["page"] = "collector"
+    at.run()
+    assert not at.exception, at.exception
+    shown = [m.value for m in at.markdown if "img.php" in m.value]
+    assert shown and all("<code>/var/lib/pterodactyl/volumes/a1b2/plugins/web/upload/img.php</code>" in v for v in shown)
