@@ -7,6 +7,7 @@ every change and restored on startup (state.py), so a restart keeps them. POST /
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import math
 import threading
@@ -93,6 +94,19 @@ LEGACY_AGENT_NAMES = {"Saguaro": "Warden", "Root": "Gatehouse", "Reservoir": "Va
                       "AreoleLinux": "Garrison-Linux", "AreoleWin": "Garrison-Win", "Needle": "Countersign"}
 
 
+AUDIT_RAW_CHARS = 200
+
+
+def raw_summary(raw: Any) -> dict[str, Any]:
+    """What the audit chain keeps of a log line: a short printable excerpt, its length and its SHA-256.
+    The chain only needs enough to prove which line it was, and must not keep a permanent copy of the
+    passwords, tokens or personal data that people and attackers put in requests."""
+    text = "" if raw is None else str(raw)
+    excerpt = "".join(ch if ch.isprintable() else " " for ch in text[:AUDIT_RAW_CHARS])
+    return {"raw": excerpt + ("..." if len(text) > AUDIT_RAW_CHARS else ""), "raw_len": len(text),
+            "raw_sha256": hashlib.sha256(text.encode("utf-8", "replace")).hexdigest()}
+
+
 class Saguaro(Agent):
     name = "Warden"
     role = "lead orchestrator: routes events, merges findings, owns the risk index"
@@ -115,7 +129,8 @@ class Saguaro(Agent):
         self.spinenet = SpineNet(self.classifier)
         self.areole_linux = AreoleLinux(self.classifier, self.responders)
         self.areole_win = AreoleWin(self.classifier, self.responders)
-        self.needle = Needle(s.needle_min_confidence, self.responders.allowlist, s.protected_ips, s.protected_users)
+        self.needle = Needle(s.needle_min_confidence, self.responders.allowlist, s.protected_ips, s.protected_users,
+                             s.protected_nets, s.contain_min_severity, s.contain_min_points)
         self.watchdog = Watchdog(s.watchdog_silence_s)
         self.scribe = Scribe(self.audit, self.clock)
         self.integrity = IntegrityGuard(self.audit, s.integrity_check_s, s.clock_jump_s)
@@ -284,7 +299,7 @@ class Saguaro(Agent):
             "event_classified",
             {
                 "event_id": ev["event_id"],
-                "raw": ev.get("raw"),
+                **raw_summary(ev.get("raw")),
                 "category": cls.category,
                 "confidence": cls.confidence,
                 "malicious": cls.malicious,
@@ -396,6 +411,7 @@ class Saguaro(Agent):
             inc["classification_reason"] = cls.reason  # a decoy touch is the strongest evidence: lead with it
         if changed:
             inc["points"] = round(inc["base_points"] * inc["ai_confidence"] * inc["asset_criticality"], 1)
+            inc["_autonomous_denied"] = False  # stronger evidence: Countersign looks again
         self._describe(inc, self._agent(inc["analyzed_by"]))
 
     # ------------------------------------------------------------- risk engine
@@ -403,7 +419,8 @@ class Saguaro(Agent):
         end = inc["_acked_ts"] if inc["_acked_ts"] is not None else (inc.get("_closed_ts") or now)
         hours = self.clock.demo_hours(inc["_opened_ts"], end)
         inc["time_unaddressed_hours"] = round(hours, 2)
-        inc["inaction_penalty"] = inaction_penalty(hours, self.settings.penalty_per_hour, self.settings.penalty_cap)
+        inc["inaction_penalty"] = inaction_penalty(hours, self.settings.penalty_per_hour, self.settings.penalty_cap,
+                                                  inc.get("severity", "high"))
         if hours > self.settings.sla_hours:
             inc["sla_breached"] = True
         inc["contribution"] = round(inc["points"] + inc["inaction_penalty"], 1) if inc["status"] in RISK_STATUSES else 0.0

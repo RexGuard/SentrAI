@@ -31,6 +31,7 @@ import shutil
 import subprocess
 from collections.abc import Callable
 
+from . import protect
 from .responders import Action, BlocklistResponder
 
 log = logging.getLogger("cactai.firewall")
@@ -84,7 +85,7 @@ def unsafe_reason(target: str, protected: set[str]) -> str | None:
         return "not an IP address"
     if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
         ip = ip.ipv4_mapped
-    if str(ip) in protected:
+    if protect.matches(str(ip), protected):  # an address, or inside a protected network (10.0.0.0/24)
         return "protected address"
     if ip.is_loopback or ip.is_unspecified or ip.is_multicast or ip.is_link_local:
         return "loopback, unspecified, multicast or link-local address"

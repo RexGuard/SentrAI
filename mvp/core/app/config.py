@@ -16,6 +16,8 @@ CORE_DIR = Path(__file__).resolve().parent.parent
 sys.path.append(str(CORE_DIR.parent))
 import cactai_config  # noqa: E402
 
+from . import protect  # noqa: E402
+
 cactai_config.load()
 DEFAULT_DB = CORE_DIR / "data" / "cactai.db"
 
@@ -96,13 +98,23 @@ class Settings:
     history_len: int = 3600
     jev_timeout_s: float = field(default_factory=lambda: _f("JEV_TIMEOUT_S", 3.0))
     needle_min_confidence: float = field(default_factory=lambda: _f("NEEDLE_MIN_CONFIDENCE", 0.6))
-    # Never auto-block the demo machine itself (loopback) or protected accounts.
+    # Never auto-block the demo machine itself (loopback), this machine's DNS servers and gateway
+    # (INFRA_AUTODETECT=0 turns that off) or anything in INFRA_ALLOWLIST. Entries may be networks (10.0.0.0/24).
     protected_ips: set[str] = field(
-        default_factory=lambda: {x.strip() for x in os.getenv("PROTECTED_IPS", "127.0.0.1,::1,localhost").split(",") if x.strip()}
+        default_factory=lambda: protect.split(os.getenv("PROTECTED_IPS", "127.0.0.1,::1,localhost"))
+        | protect.split(os.getenv("INFRA_ALLOWLIST", ""))
+        | (protect.detect_infra() if os.getenv("INFRA_AUTODETECT", "1").strip().lower() not in protect.OFF else set())
     )
+    # Private networks: an autonomous block of these waits for a person (an operator can still approve it).
+    protected_nets: set[str] = field(default_factory=lambda: protect.nets(os.getenv("PROTECTED_NETS", protect.PRIVATE_NETS)))
+    # Admin and service accounts are always protected; PROTECTED_USERS adds more.
     protected_users: set[str] = field(
-        default_factory=lambda: {x.strip() for x in os.getenv("PROTECTED_USERS", "").split(",") if x.strip()}
+        default_factory=lambda: protect.split(protect.DEFAULT_USERS) | protect.split(os.getenv("PROTECTED_USERS", ""))
     )
+    # Autonomous containment also needs the incident itself to be serious, not only the overall index:
+    # its own severity at least CONTAIN_MIN_SEVERITY and its own points at least CONTAIN_MIN_POINTS.
+    contain_min_severity: str = field(default_factory=lambda: os.getenv("CONTAIN_MIN_SEVERITY", "high").strip().lower())
+    contain_min_points: float = field(default_factory=lambda: _f("CONTAIN_MIN_POINTS", 20.0))
     # Host firewall for block_ip (app/firewall.py): off keeps blocking portal-only; enforce=False is a dry run.
     firewall: str = field(default_factory=lambda: os.getenv("CACTAI_FIREWALL", "off"))
     firewall_enforce: bool = field(

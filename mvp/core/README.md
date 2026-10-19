@@ -90,7 +90,11 @@ python -m app.anchor show        # the current fingerprint
 
 or `GET /audit/verify?fingerprint=...`. After a demo reset the old chain is in `data/archive/`;
 pass it with `--db`.
-| `PROTECTED_IPS` | empty | Comma-separated IPs that Countersign will never approve blocking. |
+| `PROTECTED_IPS` | `127.0.0.1,::1,localhost` | Comma-separated IPs or networks that Countersign will never approve blocking. |
+| `PROTECTED_NETS` | private ranges | Networks Countersign will not block on its own (RFC 1918, 100.64.0.0/10, fc00::/7); an operator can still approve a block. `off` disables. |
+| `INFRA_ALLOWLIST` | empty | Infrastructure never blocked. The DNS servers and default gateway are added automatically unless `INFRA_AUTODETECT=0`. |
+| `PROTECTED_USERS` | empty | Extra accounts never auto-locked. Admin and service accounts are always protected. |
+| `CONTAIN_MIN_SEVERITY` / `CONTAIN_MIN_POINTS` | `high` / `20` | The incident's own bar for autonomous containment, on top of the overall risk threshold. Lower incidents wait for a person. |
 | `CACTAI_ENGINE` | `cyanide` | Orchestrator. `cyanide` plans with Claude when a key is set; `saguaro` keeps the fixed playbooks only. |
 | `CACTAI_LLM_API_KEY` | unset | The one AI key the setup wizard saves; used by whichever provider `CACTAI_LLM_PROVIDER` names. With no key, Cyanide behaves exactly like Warden. A provider's own variable (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, `COMMANDCODE_API_KEY`) still works and wins when set. |
 | `CACTAI_LLM_PROVIDER` | `auto` | `anthropic`, `openai`, `deepseek`, `commandcode` (also set `CACTAI_LLM_MODEL`), or `compatible` (any OpenAI-compatible API: also set `CACTAI_LLM_BASE_URL` and `CACTAI_LLM_MODEL`). `auto` uses the first provider-specific key set. The dashboard's Configuration page has a Fetch models button that lists the models your key can use. |

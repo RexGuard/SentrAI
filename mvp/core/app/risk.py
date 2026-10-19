@@ -37,6 +37,12 @@ SEVERITY: dict[str, tuple[str, int]] = {
 
 BANDS = ["green", "amber", "red", "critical"]
 
+SEVERITIES = ["info", "low", "medium", "high", "critical"]
+
+# How hard an unanswered incident presses on the index each demo hour: an ignored critical
+# incident climbs faster than an ignored medium one, and an informational one not at all.
+PENALTY_WEIGHT = {"info": 0.0, "low": 0.25, "medium": 0.5, "high": 1.0, "critical": 1.5}
+
 
 def risk_index(raw: float) -> int:
     raw = max(0.0, raw)
@@ -57,9 +63,17 @@ def band_rank(name: str) -> int:
     return BANDS.index(name)
 
 
+def severity_rank(name: str) -> int:
+    """Position in SEVERITIES; anything unknown ranks as info."""
+    name = (name or "").lower()
+    return SEVERITIES.index(name) if name in SEVERITIES else 0
+
+
 def clip_confidence(value: float) -> float:
     return round(min(1.0, max(0.5, float(value))), 3)
 
 
-def inaction_penalty(unacked_demo_hours: float, per_hour: float = 5.0, cap: float = 30.0) -> float:
-    return float(min(cap, per_hour * math.floor(max(0.0, unacked_demo_hours))))
+def inaction_penalty(unacked_demo_hours: float, per_hour: float = 5.0, cap: float = 30.0,
+                     severity: str = "high") -> float:
+    w = PENALTY_WEIGHT.get((severity or "").lower(), 1.0)
+    return round(float(min(cap * w, per_hour * w * math.floor(max(0.0, unacked_demo_hours)))), 1)
