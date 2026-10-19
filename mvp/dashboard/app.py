@@ -163,6 +163,11 @@ def section(title: str, note: str = "", ico: str = "") -> None:
                 unsafe_allow_html=True)
 
 
+def code(text) -> str:
+    """Inline code for markdown shown with unsafe_allow_html: a file name can hold a backtick or a tag."""
+    return f"<code>{html.escape(str(text))}</code>"
+
+
 def empty(text: str, ico: str = "inbox", good: bool = False) -> None:
     st.markdown(f'<div class="empty{" good" if good else ""}">{icon(ico)}<span>{html.escape(text)}</span></div>',
                 unsafe_allow_html=True)
@@ -1134,7 +1139,7 @@ def scout_proposals() -> None:
                 "travel_explore")
         for p in waiting:
             c1, c2, c3 = st.columns([6, 1, 1])
-            c1.markdown(f"**{html.escape(str(p.get('name')))}** · `{p.get('path')}` · {p.get('layer')}  \n"
+            c1.markdown(f"**{html.escape(str(p.get('name')))}** · {code(p.get('path'))} · {html.escape(str(p.get('layer')))}  \n"
                         f"<span style='opacity:.7'>{html.escape(str(p.get('why') or ''))}</span>",
                         unsafe_allow_html=True)
             pid = p.get("id")
@@ -1228,8 +1233,8 @@ def threat_panel() -> None:
 
 
 def threat_row(f: dict) -> None:
-    where = f"`{f.get('path')}`" + (f" → `{f.get('entry')}`" if f.get("entry") else "") + \
-        (f" line {f.get('line')}" if f.get("line") else "")
+    where = code(f.get('path')) + (f" → {code(f.get('entry'))}" if f.get("entry") else "") + \
+        (f" line {html.escape(str(f.get('line')))}" if f.get("line") else "")
     c1, c2 = st.columns([5, 1])
     c1.markdown(f"{SEVERITY_ICON.get(str(f.get('severity')), '⚪')} **{html.escape(str(f.get('label')))}** · "
                 f"{html.escape(str(f.get('kind', '')).replace('_', ' '))} · {where}", unsafe_allow_html=True)
@@ -1245,7 +1250,7 @@ def scan_suggestion(s: dict) -> None:
     """One place the scan found logs, with a Watch button per file not yet watched."""
     files = s.get("files") or []
     state = "✅ already watched" if s.get("already_watched") else f"{len(files)} log file(s)"
-    st.markdown(f"**{html.escape(str(s.get('program')))}** · `{s.get('path')}` · {s.get('layer')} · {state}  \n"
+    st.markdown(f"**{html.escape(str(s.get('program')))}** · {code(s.get('path'))} · {html.escape(str(s.get('layer')))} · {state}  \n"
                 f"<span style='opacity:.7'>{html.escape(', '.join(s.get('reasons') or []))}</span>",
                 unsafe_allow_html=True)
     for f in files:

@@ -196,6 +196,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                                 headers={"WWW-Authenticate": "Bearer"})
 
     app = FastAPI(title="SentrAI core", version="0.1.0", lifespan=lifespan, dependencies=[Depends(require_token)])
+    # The signed report link opens in a browser: no framing, no type sniffing, and the ?sig= stays
+    # out of the Referer of anything the page links to.
+    @app.middleware("http")
+    async def security_headers(request: Request, call_next):
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        return response
+
     app.state.core = core
     app.state.chat = chat
     app.state.discovery = discovery

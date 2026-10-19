@@ -44,6 +44,17 @@ def config_path() -> Path:
     return Path(os.environ.get("CACTAI_CONFIG") or Path.home() / ".cactai" / "config.json")
 
 
+def _write_private(path: Path, text: str) -> None:
+    """The settings hold the API token and keys: readable by this user only (no effect on Windows)."""
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(text)
+    try:
+        os.chmod(path, 0o600)  # a file saved by an older version keeps its old mode otherwise
+    except OSError:
+        pass
+
+
 @dataclass(frozen=True)
 class Field:
     env: str  # the environment variable the components already read
@@ -283,7 +294,7 @@ def save(values: dict[str, str]) -> Path:
     for keep in (SETUP_DONE_KEY, APPEARANCE_KEY):  # not settings (read() skips them), so carry them over
         if _raw().get(keep):
             data[keep] = _raw()[keep]
-    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    _write_private(path, json.dumps(data, indent=2) + "\n")
     return path
 
 
@@ -303,7 +314,7 @@ def save_appearance(theme: str, accent: str) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     data = _raw()
     data[APPEARANCE_KEY] = {"theme": theme, "accent": accent}
-    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    _write_private(path, json.dumps(data, indent=2) + "\n")
     return path
 
 
@@ -333,7 +344,7 @@ def mark_setup_done(how: str) -> None:
         save({})
         data = _raw()
     data[SETUP_DONE_KEY] = how
-    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    _write_private(path, json.dumps(data, indent=2) + "\n")
 
 
 _LOADED: dict[str, str] = {}  # what load() put into os.environ, so a reload can replace it

@@ -244,3 +244,13 @@ def test_admin_command_reads_the_password_from_stdin(config_file, monkeypatch, c
     out = capsys.readouterr().out
     assert "ops@example.com" in out and "from-stdin-pass" not in out
     assert cfg.check_password("from-stdin-pass", cfg.dashboard_login()["hash"])
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Windows has no Unix file modes")
+def test_settings_file_is_readable_by_its_owner_only(config_file):
+    config_file.write_text("{}\n", encoding="utf-8")
+    os.chmod(config_file, 0o644)  # saved by an older version
+    cfg.save({})
+    assert config_file.stat().st_mode & 0o777 == 0o600
+    cfg.save_appearance("dark", "mono")
+    assert config_file.stat().st_mode & 0o777 == 0o600
