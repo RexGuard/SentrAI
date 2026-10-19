@@ -586,6 +586,9 @@ class Saguaro(Agent):
         nid = f"ntf-{self._next_notif:04d}"
         self._next_notif += 1
         r = self._last_risk
+        # The signed fingerprint of the audit chain right now. Every alert carries it off the box, so
+        # each message in Telegram or email is a witness the server cannot recall (anchor.py).
+        witness = anchor.fingerprint(self.audit, self.anchor_key).line()
         n = {
             "id": nid,
             "incident": incident_id,
@@ -597,6 +600,7 @@ class Saguaro(Agent):
             "band": r["band"],
             "buttons": buttons,
             "report_url": self._report_url(incident_id) if incident_id else None,
+            "witness": witness,
             "created_at": self.clock.iso(now),
             "delivered": False,
             "delivered_at": None,

@@ -110,6 +110,8 @@ def format_email(notification: dict, incident: dict | None = None, risk: dict | 
     if f["penalty"]:
         rows.append(("Inaction penalty", f"+{f['penalty']} pts" + (" · SLA BREACHED" if f["sla_breached"] else "")))
     rows.append(("Recommended", str(f["recommended"])))
+    if f["witness"]:
+        rows.append(("Audit witness", f["witness"]))
     actions = [label.split(" ", 1)[-1] for label, _ in button_specs(notification, incident)]
     act = (f"To {' or '.join(actions)}, open the SentrAI dashboard: {dashboard_url}" if actions
            else f"Details on the SentrAI dashboard: {dashboard_url}")
@@ -150,7 +152,8 @@ def _email_html(f: dict, rows: list[tuple[str, str]], act: str, note: str, dashb
     body_rows = "".join(
         f"<tr><td style='{font};padding:9px 14px 9px 0;color:#626f86;font-size:13px;white-space:nowrap;"
         f"vertical-align:top;border-top:1px solid #e4e9f1'>{e(k)}</td>"
-        f"<td style='{font};padding:9px 0;color:#0f1a2c;font-size:14px;border-top:1px solid #e4e9f1'>{e(v)}</td></tr>"
+        f"<td style='{font};padding:9px 0;color:#0f1a2c;font-size:14px;border-top:1px solid #e4e9f1;"
+        f"word-break:break-all'>{e(v)}</td></tr>"
         for k, v in rows)
     return (
         f"<div style='margin:0;padding:24px 12px;background:#f5f7fb'>"

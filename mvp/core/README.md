@@ -74,8 +74,9 @@ Status: `GET /audit/remote-copy`. Setup: `deploy/install-witness.sh` on the seco
 ### Record fingerprints
 
 The audit chain proves its own consistency, but root on the server could rebuild it. So the core
-sends the newest record's signed fingerprint off the box (Telegram/email), every `ANCHOR_EVERY_MIN`
-and in short form in every incident alert:
+sends the newest record's signed fingerprint off the box (Telegram/email) every `ANCHOR_EVERY_MIN`,
+and every notification carries the full signed line as its `witness` (shown at the bottom of each
+Telegram, email and console alert):
 
 ```
 SENTRAI-FP v1 seq=1234 head=3fa9...e1 at=2026-10-02T10:00:00Z sig=8b12...
@@ -88,7 +89,10 @@ python -m app.anchor verify "SENTRAI-FP v1 seq=1234 head=... at=... sig=..."
 python -m app.anchor show        # the current fingerprint
 ```
 
-or `GET /audit/verify?fingerprint=...`. After a demo reset the old chain is in `data/archive/`;
+or `GET /audit/verify?fingerprint=...`. The notifier keeps the newest witness it delivered
+(`notifier/data/last_witness.txt`), so `/verify` in the Telegram chat, or
+`python notifier.py --verify`, checks the live chain against it without pasting anything
+(`/verify <line>` checks an older one). After a demo reset the old chain is in `data/archive/`;
 pass it with `--db`.
 | `PROTECTED_IPS` | empty | Comma-separated IPs that Countersign will never approve blocking. |
 | `CACTAI_ENGINE` | `cyanide` | Orchestrator. `cyanide` plans with Claude when a key is set; `saguaro` keeps the fixed playbooks only. |

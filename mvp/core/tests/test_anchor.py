@@ -119,3 +119,19 @@ def test_core_sends_fingerprints_and_puts_one_in_alerts(client):
                                      "raw": "POST /login 401 user=admin", "asset_criticality": 1.5})
     opened = [x for x in core.notifications if x["kind"] == "incident_opened"]
     assert opened and "Record fingerprint: #" in opened[0]["text"]
+
+
+def test_every_alert_carries_a_signed_witness_that_verify_checks(client):
+    core = client.core
+    for i in range(6):
+        client.post("/events", json={"event_id": f"w{i}", "timestamp": "2026-10-02T10:00:00+08:00", "host": "web-01",
+                                     "layer": "web", "source": "flask_auth", "src_ip": "203.0.113.45", "user": "admin",
+                                     "raw": "POST /login 401 user=admin", "asset_criticality": 1.5})
+    pending = client.get("/notifications/pending").json()
+    assert pending and all(n["witness"].startswith("SENTRAI-FP v1 ") and " sig=" in n["witness"] for n in pending)
+    line = pending[-1]["witness"]
+    assert client.get("/audit/verify", params={"fingerprint": line}).json()["ok"] is True
+    seq = anchor.parse(line).seq
+    _rebuild(core.audit, seq, {"forged": True})
+    res = client.get("/audit/verify", params={"fingerprint": line}).json()
+    assert res["ok"] is False and f"record {seq}" in res["reason"]

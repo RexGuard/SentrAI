@@ -7,6 +7,7 @@ Env:
   TELEGRAM_CHAT_ID     chat that receives alerts and is allowed to press buttons
   CACTAI_OPERATOR      fallback operator name (default "operator")
   NOTIFIER_POLL_SECONDS poll interval (default 2)
+  NOTIFIER_WITNESS_FILE where the last delivered audit fingerprint is kept (default notifier/data/last_witness.txt)
   SMTP_HOST, ALERT_EMAIL_TO, ...  email backup channel, see emailer.py
 If TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is missing, runs in CONSOLE mode.
 Email is off until SMTP_HOST and ALERT_EMAIL_TO are set. Then it is sent when Telegram fails
@@ -14,6 +15,9 @@ Email is off until SMTP_HOST and ALERT_EMAIL_TO are set. Then it is sent when Te
 the console in CONSOLE mode.
 
 Usage:  python notifier.py [--console] [--once] [--core URL]
+        python notifier.py --verify [LINE]   check the core's audit chain against the last witnessed
+                                             fingerprint (or LINE); exit 1 if it was changed
+In Telegram, /verify does the same.
 """
 from __future__ import annotations
 
@@ -30,11 +34,48 @@ from typing import Callable
 from core import Core, CoreError
 from emailer import EmailConfig, email_sender
 from formatting import (APPROVE, PERMANENT, REJECT, ROLLBACK, button_specs, format_console,
-                        format_telegram, incident_id_of, parse_callback)
+                        format_telegram, incident_id_of, parse_callback, witness_of)
 
 log = logging.getLogger("cactai.notifier")
 
 DEFAULT_CORE = "http://127.0.0.1:8000"
+DEFAULT_WITNESS = Path(__file__).resolve().parent / "data" / "last_witness.txt"
+
+
+# ------------------------------------------------------------------ audit witness
+
+class WitnessStore:
+    """The newest audit fingerprint this notifier delivered. The same line also sits in the alert
+    chat, where the server cannot change it; this copy lets /verify check it without pasting."""
+
+    def __init__(self, path: Path | str | None = None) -> None:
+        self.path = Path(path or os.environ.get("NOTIFIER_WITNESS_FILE") or DEFAULT_WITNESS)
+
+    def save(self, line: str) -> None:
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self.path.write_text(line.strip() + "\n", encoding="utf-8")
+        except OSError as exc:
+            log.warning("could not save the audit witness to %s: %s", self.path, exc)
+
+    def last(self) -> str:
+        try:
+            return self.path.read_text(encoding="utf-8").strip()
+        except OSError:
+            return ""
+
+
+def verify_witness(core: Core, line: str) -> tuple[bool | None, str]:
+    """(ok, message): does the core's chain still hold the witnessed record? None = could not check."""
+    if not line:
+        return None, "No audit fingerprint has been delivered yet, so there is nothing to compare."
+    try:
+        res = core.verify(line)
+    except CoreError as exc:
+        return None, f"Could not reach the core to check: {exc}"
+    ok = bool(res.get("ok"))
+    why = str(res.get("reason") or "")
+    return ok, ("✅ Audit log intact: " if ok else "🚨 AUDIT LOG CHANGED: ") + why
 
 
 # ------------------------------------------------------------------ shared delivery loop
@@ -43,8 +84,10 @@ DEFAULT_CORE = "http://127.0.0.1:8000"
 SendFn = Callable[[dict, "dict | None", "dict | None"], "str | tuple[str, str]"]
 
 
-def process_pending(core: Core, send: SendFn, channel: str, seen: set[str] | None = None) -> list[str]:
-    """Deliver every pending notification once; mark delivered. Returns delivered ids."""
+def process_pending(core: Core, send: SendFn, channel: str, seen: set[str] | None = None,
+                    witness: WitnessStore | None = None) -> list[str]:
+    """Deliver every pending notification once; mark delivered. Returns delivered ids.
+    The audit fingerprint each one carries is kept in `witness` once it is sent."""
     delivered: list[str] = []
     risk = core.risk()
     for n in core.pending():
@@ -55,6 +98,8 @@ def process_pending(core: Core, send: SendFn, channel: str, seen: set[str] | Non
         incident = core.incident(iid) if iid else None
         result = send(n, incident, risk)
         used, message_id = result if isinstance(result, tuple) else (channel, result)
+        if witness is not None and witness_of(n):
+            witness.save(witness_of(n))
         try:
             core.delivered(nid, used, message_id)
         except CoreError as exc:
@@ -124,10 +169,11 @@ def run_console(core: Core, poll: float, once: bool = False) -> None:
           else "   email alerts off (set SMTP_HOST + ALERT_EMAIL_TO to turn them on)")
     send = with_email(console_sender(), "console", email, always=True)
     seen: set[str] = set()
+    witness = WitnessStore()
     down = False
     while True:
         try:
-            process_pending(core, send, "console", seen)
+            process_pending(core, send, "console", seen, witness)
             if down:
                 print("   core reachable again.")
             down = False
@@ -150,6 +196,7 @@ def run_telegram(core: Core, token: str, chat_id: str, poll: float, fallback_ope
 
     allowed_chat = str(chat_id)
     seen: set[str] = set()
+    witness = WitnessStore()
     email_cfg, email = email_from_env()
 
     def operator_of(update: Update) -> str:
@@ -179,7 +226,7 @@ def run_telegram(core: Core, token: str, chat_id: str, poll: float, fallback_ope
         deliver = with_email(send, "telegram", email, always=bool(email_cfg and email_cfg.mode == "always"))
         while True:
             try:
-                await asyncio.to_thread(process_pending, core, deliver, "telegram", seen)
+                await asyncio.to_thread(process_pending, core, deliver, "telegram", seen, witness)
                 if down:
                     log.info("core reachable again")
                 down = False
@@ -276,8 +323,18 @@ def run_telegram(core: Core, token: str, chat_id: str, poll: float, fallback_ope
             f"🛡️ SentrAI notifier is running.\nThis chat id: {update.effective_chat.id}\n"
             + ("Alerts are delivered here." if is_allowed(update) else "This chat is NOT the configured alert chat."))
 
+    async def on_verify(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """/verify: is the audit log on the server still what the last alert witnessed?
+        /verify SENTRAI-FP v1 ... checks an older line copied from this chat instead."""
+        if not is_allowed(update) or update.message is None:
+            return
+        line = " ".join(context.args or []).strip() or witness.last()
+        _, message = await asyncio.to_thread(verify_witness, core, line)
+        await update.message.reply_text(message)
+
     app = Application.builder().token(token).post_init(post_init).build()
     app.add_handler(CommandHandler("start", on_start))
+    app.add_handler(CommandHandler("verify", on_verify))
     app.add_handler(CallbackQueryHandler(on_button))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
     app.run_polling(allowed_updates=Update.ALL_TYPES)
@@ -295,6 +352,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--console", action="store_true", help="force console mode")
     p.add_argument("--once", action="store_true", help="console mode: deliver pending once and exit")
     p.add_argument("--poll", type=float, default=float(os.environ.get("NOTIFIER_POLL_SECONDS", "2")))
+    p.add_argument("--verify", nargs="?", const="", metavar="LINE",
+                   help="check the audit chain against the last witnessed fingerprint (or LINE) and exit")
     args = p.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -303,6 +362,10 @@ def main(argv: list[str] | None = None) -> int:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
     core = Core(args.core, token=cactai_config.api_token())
+    if args.verify is not None:
+        ok, message = verify_witness(core, args.verify.strip() or WitnessStore().last())
+        print(message)
+        return 0 if ok else (1 if ok is False else 2)
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
     chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
     operator = os.environ.get("CACTAI_OPERATOR", "operator")
