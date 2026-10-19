@@ -39,6 +39,7 @@ Tests:
 | `TEAM_LEAD`, `IT_MANAGER`, `CXO` | role names | Escalation recipients. |
 | `TYPESAFE_API_KEY` | unset | Turns on Jev (TypeSafe System One). Without it the fallback classifier is used. |
 | `JEV_TIMEOUT_S` | `3` | Timeout for each Jev call. After 3 failures in a row a 60 s circuit breaker opens. |
+| `JEV_CACHE_SIZE` / `JEV_CACHE_TTL_S` | `2048` / `3600` | Jev answers kept per log template (the line with IPs, times, ids, pids and ports replaced), so the same request from many addresses is asked about once. Size `0` turns the cache off. |
 | `PROTECTED_IPS` | `127.0.0.1,::1,localhost` | Addresses never blocked, by the portal or the firewall. Add your own admin IP before turning the firewall on, e.g. `PROTECTED_IPS=127.0.0.1,::1,localhost,198.51.100.200`. |
 | `CACTAI_FIREWALL` | `off` | Mirror `block_ip` into the host firewall: `auto`, `nftables`, `iptables` (Linux) or `netsh` (Windows). `off` keeps blocking portal-only. |
 | `CACTAI_FIREWALL_ENFORCE` | `0` | `0` is a dry run: the command is logged and written to the audit trail, never run. `1` runs it (admin/root). Loopback, link-local, multicast and `PROTECTED_IPS` are never sent to the firewall. |
@@ -91,7 +92,6 @@ python -m app.anchor show        # the current fingerprint
 or `GET /audit/verify?fingerprint=...`. After a demo reset the old chain is in `data/archive/`;
 pass it with `--db`.
 | `PROTECTED_IPS` | empty | Comma-separated IPs that Countersign will never approve blocking. |
-| `JEV_CACHE_SIZE` / `JEV_CACHE_TTL_S` | `2048` / `3600` | Jev answers kept per log template (the line with IPs, times, ids, pids and ports replaced), so the same request from many addresses is asked about once. Size `0` turns the cache off. |
 | `CACTAI_ENGINE` | `cyanide` | Orchestrator. `cyanide` plans with Claude when a key is set; `saguaro` keeps the fixed playbooks only. |
 | `CACTAI_LLM_API_KEY` | unset | The one AI key the setup wizard saves; used by whichever provider `CACTAI_LLM_PROVIDER` names. With no key, Cyanide behaves exactly like Warden. A provider's own variable (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, `COMMANDCODE_API_KEY`) still works and wins when set. |
 | `CACTAI_LLM_PROVIDER` | `auto` | `anthropic`, `openai`, `deepseek`, `commandcode` (also set `CACTAI_LLM_MODEL`), or `compatible` (any OpenAI-compatible API: also set `CACTAI_LLM_BASE_URL` and `CACTAI_LLM_MODEL`). `auto` uses the first provider-specific key set. The dashboard's Configuration page has a Fetch models button that lists the models your key can use. |
