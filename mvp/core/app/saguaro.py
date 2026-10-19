@@ -38,7 +38,7 @@ from .config import Settings, sign
 from .integrity import IntegrityGuard
 from .jev_client import JevClient
 from .netlogs import enrich
-from .responders import BlocklistResponder, Responders, SimulatedResponder
+from .responders import BlocklistResponder, Responders, SimulatedResponder, WebhookResponder
 from .risk import SEVERITY, band, band_rank, inaction_penalty, risk_index
 from .rules import TRIPWIRE_REASONS, RulesEngine
 from .state import StateStore
@@ -110,6 +110,12 @@ class Saguaro(Agent):
         self.classifier, self.jev_step = default_chain(self.rules, self.jev)
         self.blocklist_responder = firewall.from_settings(s.firewall, s.firewall_enforce, s.protected_ips)
         self.responders = Responders(self.blocklist_responder, SimulatedResponder())
+        if s.responder_webhook_url:
+            # Registered last, so it takes the listed types; the blocklist still applies its own first.
+            bl = self.blocklist_responder
+            hook = WebhookResponder(s.responder_webhook_url, s.responder_webhook_actions, s.responder_webhook_secret,
+                                    s.responder_webhook_timeout_s, inner=lambda t: bl if t in bl.actions else None)
+            self.responders = Responders(self.blocklist_responder, SimulatedResponder(), hook)
         self.root = Root(self.classifier)
         self.reservoir = Reservoir(self.classifier)
         self.spinenet = SpineNet(self.classifier)

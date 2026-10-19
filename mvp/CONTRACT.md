@@ -70,6 +70,16 @@ For counting SSH guesses: one failed attempt shows up as `failed_auth` (password
 `invalid_user` (every server, once per connection); PAM lines repeat them, so don't add them on
 top. `src_ip` + `port` identifies one connection.
 
+### Webhook source (any tool → core, `POST /webhook/<name>`)
+Same token as `/events`. The body is a JSON object, a list of objects, or an object holding a list
+under `events`, `alerts`, `records`, `items`, `logs` or `data`. Each object becomes one Event
+(`core/app/webhook.py`): fields come from the `<name>` entry of `CACTAI_WEBHOOK_MAPS` (dotted paths,
+or `=value` for a fixed value), then from common key names (`src_ip`/`client_ip`/`remote_addr`,
+`message`/`msg`/`full_log`, `host`/`hostname`/`agent.name`, ...). `source` is always
+`webhook_<name>`, `raw` is capped at 8,000 characters (the whole object as JSON when no text field
+is found), `event_id` is `wh-<name>-<id or hash of the object>`, and `?layer=` / `?host=` set
+defaults. Returns `{"accepted": n, "risk_index": int, "events": [event ids]}`.
+
 ### Line chain
 Every event the collector sends carries `chain: {"stream", "seq", "prev", "hash"}`:
 `hash = sha256(prev + json([event_id, timestamp, host, layer, source, raw]))` (compact JSON, `ensure_ascii=False`),

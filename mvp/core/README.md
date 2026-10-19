@@ -41,6 +41,10 @@ Tests:
 | `JEV_TIMEOUT_S` | `3` | Timeout for each Jev call. After 3 failures in a row a 60 s circuit breaker opens. |
 | `PROTECTED_IPS` | `127.0.0.1,::1,localhost` | Addresses never blocked, by the portal or the firewall. Add your own admin IP before turning the firewall on, e.g. `PROTECTED_IPS=127.0.0.1,::1,localhost,198.51.100.200`. |
 | `CACTAI_FIREWALL` | `off` | Mirror `block_ip` into the host firewall: `auto`, `nftables`, `iptables` (Linux) or `netsh` (Windows). `off` keeps blocking portal-only. |
+| `CACTAI_WEBHOOK_MAPS` | unset | Field maps for `POST /webhook/<name>` (inline JSON or a file path), e.g. `{"wazuh": {"src_ip": "data.srcip", "raw": "full_log", "layer": "=os"}}`. Without a map, common key names are guessed. See CONTRACT.md. |
+| `CACTAI_RESPONDER_WEBHOOK_URL` | unset | Also hand approved actions to another system (a firewall API, WAF or SOAR) as JSON POSTs `{"op": "apply"\|"revert", "type", "target", ...}`. An action counts as in force only on a 2xx answer. Blocks still go on `/blocklist` too. |
+| `CACTAI_RESPONDER_WEBHOOK_ACTIONS` | all six | Which action types go to the webhook (`block_ip,lock_user,rate_limit,waf_rule,kill_process,revoke_public_acl`). |
+| `CACTAI_RESPONDER_WEBHOOK_SECRET` | unset | Sent as `Authorization: Bearer` and used to sign each body (`X-SentrAI-Signature: sha256=<HMAC>`). `_FILE` works too. |
 | `CACTAI_FIREWALL_ENFORCE` | `0` | `0` is a dry run: the command is logged and written to the audit trail, never run. `1` runs it (admin/root). Loopback, link-local, multicast and `PROTECTED_IPS` are never sent to the firewall. |
 | `CACTAI_DB` | `data/cactai.db` | SQLite audit chain. |
 | `BRUTE_FORCE_COUNT` / `BRUTE_FORCE_WINDOW_S` | `5` / `60` | Brute-force rule: this many failed logins from the same IP within this many seconds. |

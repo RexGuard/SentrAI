@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict
 
 from .config import Settings, sign
 from .reports import build_report, render_markdown, render_pdf
-from . import ai, anchor
+from . import ai, anchor, webhook
 from .chat import OperatorChat, default_chat_provider
 from .discovery import Discovery
 from .threats import ThreatWatch
@@ -222,6 +222,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def post_events(payload: Union[list[EventIn], EventIn] = Body(...)) -> dict[str, Any]:
         items = payload if isinstance(payload, list) else [payload]
         return core.ingest([e.model_dump() for e in items])
+
+    webhook_maps = webhook.load_maps()
+
+    @app.post("/webhook/{name}")
+    def post_webhook(name: str, payload: Any = Body(...), layer: Optional[str] = Query(None),
+                     host: Optional[str] = Query(None)) -> dict[str, Any]:
+        """Any JSON from another tool, mapped onto the /events contract (webhook.py). Same token as /events."""
+        try:
+            events = webhook.to_events(payload, name, webhook_maps, layer, host)
+        except webhook.WebhookError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {**core.ingest(events), "events": [e["event_id"] for e in events]}
 
     @app.get("/risk")
     def get_risk(history: int = Query(600, ge=0, le=3600)) -> dict[str, Any]:
