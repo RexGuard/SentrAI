@@ -91,6 +91,7 @@ python -m app.anchor show        # the current fingerprint
 or `GET /audit/verify?fingerprint=...`. After a demo reset the old chain is in `data/archive/`;
 pass it with `--db`.
 | `PROTECTED_IPS` | empty | Comma-separated IPs that Countersign will never approve blocking. |
+| `JEV_CACHE_SIZE` / `JEV_CACHE_TTL_S` | `2048` / `3600` | Jev answers kept per log template (the line with IPs, times, ids, pids and ports replaced), so the same request from many addresses is asked about once. Size `0` turns the cache off. |
 | `CACTAI_ENGINE` | `cyanide` | Orchestrator. `cyanide` plans with Claude when a key is set; `saguaro` keeps the fixed playbooks only. |
 | `CACTAI_LLM_API_KEY` | unset | The one AI key the setup wizard saves; used by whichever provider `CACTAI_LLM_PROVIDER` names. With no key, Cyanide behaves exactly like Warden. A provider's own variable (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, `COMMANDCODE_API_KEY`) still works and wins when set. |
 | `CACTAI_LLM_PROVIDER` | `auto` | `anthropic`, `openai`, `deepseek`, `commandcode` (also set `CACTAI_LLM_MODEL`), or `compatible` (any OpenAI-compatible API: also set `CACTAI_LLM_BASE_URL` and `CACTAI_LLM_MODEL`). `auto` uses the first provider-specific key set. The dashboard's Configuration page has a Fetch models button that lists the models your key can use. |
