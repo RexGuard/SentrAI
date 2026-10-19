@@ -37,7 +37,7 @@ SEVERITY = {
     "brute_force": ("high", 30), "sql_injection": ("high", 40), "xss": ("medium", 20),
     "port_scan": ("medium", 15), "privilege_escalation": ("critical", 60),
     "data_exfiltration": ("critical", 70), "misconfiguration": ("medium", 20), "log_tampering": ("critical", 55),
-    "malware": ("critical", 65),
+    "malware": ("critical", 65), "prompt_injection": ("critical", 60),
     "benign": ("low", 0),
 }
 PLAYBOOK = {
@@ -50,6 +50,7 @@ PLAYBOOK = {
     "misconfiguration": [("revoke_public_acl", "s3://demo-bucket")],
     "log_tampering": [("block_ip", "src_ip")],
     "malware": [],
+    "prompt_injection": [("waf_rule", "prompt-injection filter"), ("block_ip", "src_ip")],
 }
 RECOMMEND = {
     "brute_force": "Block {src_ip} for 2 h, lock account '{user}' and rate-limit /login",
@@ -61,6 +62,7 @@ RECOMMEND = {
     "misconfiguration": "Remove the public ACL and enable default encryption",
     "log_tampering": "Block {src_ip} for 2 h and check the host for compromise",
     "malware": "Check the file or program and quarantine it from the threat scan",
+    "prompt_injection": "Add a WAF rule for prompt-injection text and block {src_ip} for 2 h",
 }
 
 app = FastAPI(title="SentrAI FAKE core (dev only)")

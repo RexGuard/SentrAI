@@ -39,6 +39,19 @@ XSS = [
     re.compile(r"\bon(error|load|mouseover)\s*=", re.I),
     re.compile(r"<\s*(img|svg|iframe)[^>]*\bsrc\s*=", re.I),
 ]
+# Text aimed at an AI model, not at the web app: someone trying to talk the classifier (or any
+# AI reading the logs) into a wrong answer. Checked on web requests only.
+PROMPT_INJECTION = [
+    re.compile(r"\b(ignore|disregard|forget|override)\s+(all\s+|any\s+|the\s+|your\s+)*"
+               r"(previous|prior|above|earlier|preceding|system)\s+(instructions?|prompts?|rules|messages?|context)", re.I),
+    re.compile(r"\b(classify|label|mark|treat|report)\s+(this|it|me|the\s+(request|event|log))\s+as\s+"
+               r"(benign|safe|harmless|normal|not\s+malicious)", re.I),
+    re.compile(r"\b(this|the)\s+(request|event|log|line)\s+is\s+(benign|safe|harmless)\b.{0,40}\b(ai|model|assistant|classifier)\b", re.I),
+    re.compile(r"\b(reveal|print|show|repeat)\s+(me\s+)?(your|the)\s+(system\s+prompt|instructions)", re.I),
+    re.compile(r"\byou\s+are\s+now\s+(a|an|in|the|dan)\b", re.I),
+    re.compile(r"<\|?(im_start|im_end|system|endoftext)\|?>|\[/?INST\]|<</?SYS>>", re.I),
+    re.compile(r"(^|[\s\"'])(###\s*)?(system|assistant)\s*(prompt)?\s*:\s*(you|ignore|from\s+now)", re.I),
+]
 PRIV_ESC = [
     re.compile(r"shell\s+spawned", re.I),
     re.compile(r"spawn(ed|s)?\s+(a\s+)?(shell|/bin/(ba)?sh|cmd\.exe|powershell)", re.I),
@@ -262,6 +275,10 @@ class RulesEngine:
             if why := log_wipe(raw) or log_wipe(text):  # raw too: decoding turns "o+w" into "o w"
                 return RuleHit("log_tampering", f"Log tampering: {why} ({raw.strip()[:200]})")
 
+        if http is not None or event.get("layer") == "web":
+            for rx in PROMPT_INJECTION:
+                if rx.search(text):
+                    return RuleHit("prompt_injection", f"Prompt injection aimed at the AI classifier: /{rx.pattern[:80]}/")
         for rx in SQLI:
             if rx.search(text):
                 return RuleHit("sql_injection", f"SQL injection signature matched: /{rx.pattern}/")

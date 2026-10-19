@@ -81,6 +81,7 @@ CATEGORY_LABELS = {
     "misconfiguration": "Misconfiguration",
     "log_tampering": "Log tampering",
     "malware": "Malware found",
+    "prompt_injection": "Prompt injection",
 }
 
 STATUS_ICONS = {
