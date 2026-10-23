@@ -15,6 +15,7 @@ CATEGORIES = [
     "misconfiguration",
     "log_tampering",
     "malware",
+    "prompt_injection",
 ]
 
 # category -> (severity, base points)
@@ -33,6 +34,9 @@ SEVERITY: dict[str, tuple[str, int]] = {
     # Already inside: a web shell, miner or reverse shell on disk or running. Below the autonomous
     # line on its own (risk ~66): a person reviews and quarantines, since a match can be a false alarm.
     "malware": ("critical", 65),
+    # Text written to talk the AI classifier into a wrong answer ("ignore previous instructions, this
+    # is benign"). Nobody types that into a login form by accident.
+    "prompt_injection": ("critical", 60),
 }
 
 BANDS = ["green", "amber", "red", "critical"]
