@@ -120,6 +120,14 @@ class Settings:
     firewall_enforce: bool = field(
         default_factory=lambda: os.getenv("CACTAI_FIREWALL_ENFORCE", "0").strip().lower() in ("1", "true", "yes", "on")
     )
+    # Responder webhook (responders.WebhookResponder): hand these action types to another system by URL.
+    responder_webhook_url: str = field(default_factory=lambda: os.getenv("CACTAI_RESPONDER_WEBHOOK_URL", "").strip())
+    responder_webhook_actions: tuple[str, ...] = field(default_factory=lambda: tuple(
+        x.strip() for x in os.getenv("CACTAI_RESPONDER_WEBHOOK_ACTIONS",
+                                     "block_ip,lock_user,rate_limit,waf_rule,kill_process,revoke_public_acl").split(",")
+        if x.strip()))
+    responder_webhook_secret: str = field(default_factory=lambda: _secret("CACTAI_RESPONDER_WEBHOOK_SECRET"), repr=False)
+    responder_webhook_timeout_s: float = field(default_factory=lambda: _f("CACTAI_RESPONDER_WEBHOOK_TIMEOUT_S", 3.0))
     jev_budget_s: float = field(default_factory=lambda: _f("JEV_BUDGET_S", 2.0))
     # Protection switch override at start: "1"/"0", or unset to use the last choice saved in protection.json.
     monitor_only: str | None = field(default_factory=lambda: os.getenv("CACTAI_MONITOR_ONLY"))
