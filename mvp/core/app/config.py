@@ -97,6 +97,9 @@ class Settings:
     id_start: int = field(default_factory=lambda: _i("ID_START", 81))
     history_len: int = 3600
     jev_timeout_s: float = field(default_factory=lambda: _f("JEV_TIMEOUT_S", 3.0))
+    # Jev answers kept per log template (IPs, times and ids stripped); 0 turns the cache off.
+    jev_cache_size: int = field(default_factory=lambda: _i("JEV_CACHE_SIZE", 2048))
+    jev_cache_ttl_s: float = field(default_factory=lambda: _f("JEV_CACHE_TTL_S", 3600.0))
     needle_min_confidence: float = field(default_factory=lambda: _f("NEEDLE_MIN_CONFIDENCE", 0.6))
     # Never auto-block the demo machine itself (loopback), this machine's DNS servers and gateway
     # (INFRA_AUTODETECT=0 turns that off) or anything in INFRA_ALLOWLIST. Entries may be networks (10.0.0.0/24).

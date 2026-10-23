@@ -39,6 +39,7 @@ Tests:
 | `TEAM_LEAD`, `IT_MANAGER`, `CXO` | role names | Escalation recipients. |
 | `TYPESAFE_API_KEY` | unset | Turns on Jev (TypeSafe System One). Without it the fallback classifier is used. |
 | `JEV_TIMEOUT_S` | `3` | Timeout for each Jev call. After 3 failures in a row a 60 s circuit breaker opens. |
+| `JEV_CACHE_SIZE` / `JEV_CACHE_TTL_S` | `2048` / `3600` | Jev answers kept per log template (the line with IPs, times, ids, pids and ports replaced), so the same request from many addresses is asked about once. Size `0` turns the cache off. |
 | `PROTECTED_IPS` | `127.0.0.1,::1,localhost` | Addresses never blocked, by the portal or the firewall. Add your own admin IP before turning the firewall on, e.g. `PROTECTED_IPS=127.0.0.1,::1,localhost,198.51.100.200`. |
 | `CACTAI_FIREWALL` | `off` | Mirror `block_ip` into the host firewall: `auto`, `nftables`, `iptables` (Linux) or `netsh` (Windows). `off` keeps blocking portal-only. |
 | `CACTAI_WEBHOOK_MAPS` | unset | Field maps for `POST /webhook/<name>` (inline JSON or a file path), e.g. `{"wazuh": {"src_ip": "data.srcip", "raw": "full_log", "layer": "=os"}}`. Without a map, common key names are guessed. See CONTRACT.md. |

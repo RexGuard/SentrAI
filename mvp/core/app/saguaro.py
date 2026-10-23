@@ -33,7 +33,7 @@ from .agents import (
 from . import firewall
 from . import anchor, remote_copy
 from .audit import AuditLog
-from .classifier import Classification, default_chain
+from .classifier import Classification, JevCache, default_chain
 from .clock import DemoClock, fmt_demo_hours
 from .config import Settings, sign
 from .integrity import IntegrityGuard
@@ -122,7 +122,7 @@ class Saguaro(Agent):
         self.jev = JevClient(s.jev_timeout_s)
         # The three parts: events arrive from collectors via POST /events, the classifier
         # chain labels them, and the responders carry out approved containment.
-        self.classifier, self.jev_step = default_chain(self.rules, self.jev)
+        self.classifier, self.jev_step = default_chain(self.rules, self.jev, JevCache(s.jev_cache_size, s.jev_cache_ttl_s))
         self.blocklist_responder = firewall.from_settings(s.firewall, s.firewall_enforce, s.protected_ips)
         self.responders = Responders(self.blocklist_responder, SimulatedResponder())
         if s.responder_webhook_url:
@@ -1118,7 +1118,8 @@ class Saguaro(Agent):
                 st["analyzed"] = a.analyzed
             out.append(st)
         out.append({"name": "Jev", "role": "TypeSafe System One classifier", "status": self.jev.status,
-                    "calls": self.jev.calls, "failures": self.jev.failures, "last_error": self.jev.last_error})
+                    "calls": self.jev.calls, "failures": self.jev.failures, "last_error": self.jev.last_error,
+                    "cache": self.jev_step.cache.stats()})
         return out
 
     # ------------------------------------------------------------------- demo
@@ -1133,6 +1134,7 @@ class Saguaro(Agent):
         with self.lock:
             archived = self.audit.archive_and_reset()
             self.rules.reset()
+            self.jev_step.cache.clear()
             self.responders.reset()
             self.watchdog.reset()
             self.clock._offset = 0.0
