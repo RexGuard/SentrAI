@@ -61,7 +61,7 @@ def test_lru_eviction_ttl_and_off():
     assert cache.get("b") is None and cache.get("a") is r and len(cache) == 2  # b was least recently used
     expired = JevCache(ttl_s=0.000001)
     expired.put("k", r)
-    time.sleep(0.01)
+    time.sleep(0.05)  # longer than Windows' ~16 ms monotonic clock tick, so the clock has moved on
     assert expired.get("k") is None
     off = JevCache(size=0)
     off.put("k", r)

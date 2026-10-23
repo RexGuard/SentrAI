@@ -265,6 +265,9 @@ class Needle(Agent):
             return Review(False, f"DENY: AI confidence {conf} < {self.min_confidence}; autonomous action not justified.")
         if risk_index < threshold:
             return Review(False, f"DENY: risk index {risk_index} is below threshold {threshold}.")
+        if not incident.get("strong_signal", True) and len(incident.get("signals") or []) < 2:
+            return Review(False, f"DENY: {incident['id']} rests on one weak signal ({incident['classified_by']}, "
+                                 f"no rule or tripwire); a second independent signal or a person must confirm it.")
         if why := self.below_bar(incident):
             return Review(False, f"DENY: {incident['id']} {why}; the overall index alone does not justify "
                                  f"autonomous action.")

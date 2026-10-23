@@ -20,7 +20,7 @@ Precision / recall / F1. Support is the number of lines with that label.
 | Category | Support | Rules | Keyword fallback | Chain (as shipped) | Chain, collector-parsed events | Chain before this change |
 |---|---|---|---|---|---|---|
 | benign | 1396 | 93% / 100% / **96%** | 77% / 100% / **87%** | 93% / 100% / **96%** | 93% / 100% / **96%** | 82% / 100% / **90%** |
-| brute_force | 310 | 100% / 71% / **83%** | 0% / 0% / **0%** | 100% / 71% / **83%** | 100% / 71% / **83%** | 100% / 30% / **47%** |
+| brute_force | 310 | 100% / 72% / **83%** | 0% / 0% / **0%** | 100% / 72% / **83%** | 100% / 72% / **83%** | 100% / 30% / **47%** |
 | sql_injection | 5 | 100% / 100% / **100%** | 100% / 40% / **57%** | 100% / 100% / **100%** | 100% / 100% / **100%** | 100% / 60% / **75%** |
 | xss | 1 | 100% / 100% / **100%** | 100% / 100% / **100%** | 100% / 100% / **100%** | 100% / 100% / **100%** | 100% / 100% / **100%** |
 | port_scan | 96 | 100% / 81% / **90%** | 0% / 0% / **0%** | 100% / 81% / **90%** | 100% / 81% / **90%** | 0% / 0% / **0%** |
@@ -28,7 +28,7 @@ Precision / recall / F1. Support is the number of lines with that label.
 
 ## Per source (chain as shipped)
 
-Attackers flagged: **25 of 28** (25 with the right category). Normal sources that raised any alarm: **0 of 52**.
+Attackers flagged: **26 of 28** (26 with the right category). Normal sources that raised any alarm: **0 of 52**.
 
 | Attacker | Kind | Label | Lines | Flagged from line | Flagged as |
 |---|---|---|---|---|---|
@@ -42,7 +42,7 @@ Attackers flagged: **25 of 28** (25 with the right category). Normal sources tha
 | ssh-scanner-2 | banner_grab | port_scan | 1 | - | missed |
 | ssh-scanner-3 | banner_grab | port_scan | 2 | - | missed |
 | ssh-scanner-4 | banner_grab | port_scan | 5 | 3 | port_scan (3) |
-| ssh-slow-bf | slow_bruteforce | brute_force | 12 | - | missed |
+| ssh-slow-bf | slow_bruteforce | brute_force | 12 | 10 | brute_force (3) |
 | censys | scanner_ua | port_scan | 1 | 1 | port_scan (1) |
 | dirbuster | path_bruteforce | port_scan | 30 | 10 | port_scan (21) |
 | env-scanner | secret_file_probe | port_scan | 20 | 1 | port_scan (20) |
@@ -67,7 +67,7 @@ Before this change: 9 of 28 attackers flagged (7 with the right category); 0 nor
 
 | Source | Label | Predicted | Lines | Example |
 |---|---|---|---|---|
-| ssh-slow-bf | brute_force | benign | 12 | `Sep 28 00:01:00 srv-demo sshd[13894]: Failed password for root from 203.0.113.54 port 44000 ssh2` |
+| ssh-slow-bf | brute_force | benign | 9 | `Sep 28 00:01:00 srv-demo sshd[13894]: Failed password for root from 203.0.113.54 port 44000 ssh2` |
 | ssh-scanner-0 | port_scan | benign | 2 | `Sep 28 00:08:00 srv-demo sshd[83387]: Did not receive identification string from 198.51.100.60 port ` |
 | ssh-root-bf | brute_force | benign | 18 | `Sep 28 00:15:00 srv-demo sshd[48827]: pam_unix(sshd:auth): authentication failure; logname= uid=0 eu` |
 | ssh-scanner-1 | port_scan | benign | 2 | `2026-09-28T00:25:00.850972+00:00 srv-demo sshd[76454]: banner exchange: Connection from 198.51.100.6` |

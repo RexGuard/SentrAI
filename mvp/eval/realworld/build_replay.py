@@ -267,7 +267,7 @@ class Builder:
                      "brute_force", "ssh-keyonly-root", "key_only_server")
 
     def ssh_slow_bruteforce(self) -> None:
-        # One guess every 5 minutes: under the 5-in-10-minutes threshold. A known miss.
+        # One guess every 5 minutes: under the 5-in-10-minutes threshold, caught by the slow (per-day) rule.
         for i in range(12):
             s = T0 + timedelta(minutes=5 * i + 1)
             self.ssh(s, self.pid(), f"Failed password for root from 203.0.113.54 port {44000 + i} ssh2", "brute_force", "ssh-slow-bf", "slow_bruteforce")
