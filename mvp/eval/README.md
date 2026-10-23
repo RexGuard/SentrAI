@@ -24,7 +24,9 @@ Without a key those columns say "not run".
 
 A line gets an attack label only if the line itself shows the attack. Every failed login in a
 brute-force burst is labelled `brute_force`, so the first four of each burst count as misses for
-a threshold rule. Scores are per event, not per incident.
+a threshold rule. Scores are per event; two extra rows show what an operator sees: "attack lines
+in an incident" also counts the earlier lines a later hit attaches to its incident, and "attackers
+caught" counts each attacker (label + source address) once.
 
 ## Results
 

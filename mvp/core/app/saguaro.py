@@ -98,6 +98,11 @@ LEGACY_AGENT_NAMES = {"Saguaro": "Warden", "Root": "Gatehouse", "Reservoir": "Va
 AUDIT_RAW_CHARS = 200
 
 
+def _signal(ev: dict[str, Any], cls: Classification) -> str:
+    """One independent piece of evidence: which classifier said so, about which log source."""
+    return f"{cls.classified_by or '?'}:{ev.get('source') or ev.get('layer') or '?'}"
+
+
 def raw_summary(raw: Any) -> dict[str, Any]:
     """What the audit chain keeps of a log line: a short printable excerpt, its length and its SHA-256.
     The chain only needs enough to prove which line it was, and must not keep a permanent copy of the
@@ -118,7 +123,9 @@ class Saguaro(Agent):
         self.audit = AuditLog(s.db_path)
         self.rules = RulesEngine(s.brute_force_count, s.brute_force_window_s, s.export_rows_threshold,
                                  ssh_count=s.ssh_brute_force_count, ssh_window_s=s.ssh_brute_force_window_s,
-                                 scan_4xx_count=s.web_scan_4xx_count, scan_window_s=s.web_scan_window_s)
+                                 scan_4xx_count=s.web_scan_4xx_count, scan_window_s=s.web_scan_window_s,
+                                 slow_count=s.slow_brute_force_count, slow_window_s=s.slow_brute_force_window_s,
+                                 ssh_slow_count=s.ssh_slow_brute_force_count)
         self.jev = JevClient(s.jev_timeout_s)
         # The three parts: events arrive from collectors via POST /events, the classifier
         # chain labels them, and the responders carry out approved containment.
@@ -364,6 +371,10 @@ class Saguaro(Agent):
             "_sla_flag": False,
             "_notified_open": False,
             "_autonomous_denied": False,
+            # Evidence Countersign weighs before acting alone: a deterministic rule or tripwire is strong;
+            # an AI or keyword guess is weak and needs a second, independent one (another source or classifier).
+            "strong_signal": cls.classified_by == "rules",
+            "signals": [_signal(ev, cls)],
         }
         self._describe(inc, agent)
         self.incidents[iid] = inc
@@ -402,6 +413,13 @@ class Saguaro(Agent):
             if eid in self.events:
                 self.events[eid]["incident"] = inc["id"]
         changed = False
+        sig = _signal(ev, cls)
+        if sig not in inc.setdefault("signals", []):
+            inc["signals"].append(sig)
+            changed = True
+        if cls.classified_by == "rules" and not inc.get("strong_signal", True):
+            inc["strong_signal"] = True
+            changed = True
         if cls.confidence > inc["ai_confidence"]:
             inc["ai_confidence"] = cls.confidence
             changed = True

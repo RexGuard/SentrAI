@@ -24,16 +24,18 @@ def test_one_spine_touch_opens_a_certain_incident(client, kind, layer, user, cat
     assert "decoy" in inc["explanation"]
 
 
-def test_quiet_export_is_caught_only_by_the_bait_rows(client):
-    # 42 rows is under the bulk-export threshold (benign on its own) ...
+def test_whole_table_read_is_caught_and_bait_rows_lead_the_reason(client):
+    # 42 rows is under the bulk-export threshold, but reading the whole members table is a dump ...
     client.post("/events", json=ev(1, "SELECT rows=42 q='SELECT * FROM members'", ip="203.0.113.99",
                                    user=None, layer="db", source="db_query"))
-    assert client.get("/incidents").json() == []
-    # ... but the bait rows inside that export are not.
+    [inc] = client.get("/incidents").json()
+    assert inc["category"] == "data_exfiltration"
+    # ... and the bait rows inside that export join the same incident as its strongest evidence.
     client.post("/events", json=ev(2, "cactus-spine honeytoken_row: bait member rows STF-0007 returned by /export",
                                    ip="203.0.113.99", user=None, layer="db", source="cactus_spine"))
     [inc] = client.get("/incidents").json()
     assert inc["category"] == "data_exfiltration" and inc["points"] == 105.0  # 70 x 1.0 x 1.5
+    assert inc["classification_reason"].startswith("Tripwire:")
 
 
 def test_spine_text_from_other_sources_is_not_trusted(client):
