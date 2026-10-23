@@ -112,7 +112,14 @@ def alert_fields(notification: dict, incident: dict | None = None, risk: dict | 
         "penalty": (incident or {}).get("inaction_penalty"),
         "sla_breached": bool((incident or {}).get("sla_breached")),
         "status": (incident or {}).get("status") or "open",
+        "witness": witness_of(notification),
     }
+
+
+def witness_of(notification: dict) -> str:
+    """The signed audit fingerprint the core put on this notification ("SENTRAI-FP v1 ..."), or ""."""
+    w = str(notification.get("witness") or "").strip()
+    return w if w.startswith("SENTRAI-FP") else ""
 
 
 def is_notice(notification: dict) -> bool:
@@ -124,6 +131,9 @@ def notice_lines(notification: dict) -> tuple[str, str, list[str]]:
     icon, header = KIND_HEADERS.get(notification_kind(notification), ("ℹ️", "Notice"))
     lines = [str(notification.get("title") or "")]
     lines += str(notification.get("text") or "").splitlines()
+    w = witness_of(notification)
+    if w and not any(ln.startswith("SENTRAI-FP") for ln in lines):
+        lines.append(w)
     return icon, header, [ln for ln in lines if ln]
 
 
@@ -159,6 +169,8 @@ def format_telegram(notification: dict, incident: dict | None = None, risk: dict
         lines.append("<i>Temporary, reversible fix with TTL. Choose Rollback or Make Permanent.</i>")
     else:
         lines.append("<i>Your button press is recorded as an acknowledgement in the hash-chained audit log.</i>")
+    if f["witness"]:  # monospace so it copies whole; /verify checks the server still matches it
+        lines.append(f"🔏 <code>{e(f['witness'])}</code>")
     return "\n".join(lines)
 
 
@@ -217,6 +229,8 @@ def format_console(notification: dict, incident: dict | None = None, risk: dict 
     if f["penalty"]:
         body.append(f"Inaction penalty +{f['penalty']} pts" + (" · SLA BREACHED" if f["sla_breached"] else ""))
     body.append(f"Recommended: {f['recommended']}")
+    if f["witness"]:
+        body.append(f"Witness: {f['witness']}")
     specs = button_specs(notification, incident)
     if specs:
         body.append("Actions: " + "  ".join(f"[{label.split(' ', 1)[-1]}]" for label, _ in specs)

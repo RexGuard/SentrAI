@@ -30,6 +30,17 @@ class Core:
         except ValueError:
             return None
 
+    def verify(self, line: str) -> dict:
+        """Asks the core whether its audit chain still matches a witnessed fingerprint line."""
+        try:
+            r = self.session.get(f"{self.base_url}/audit/verify", params={"fingerprint": line},
+                                 timeout=(1.0, self.timeout))
+        except requests.RequestException as exc:
+            raise CoreError(f"core unreachable at {self.base_url}: {exc.__class__.__name__}") from exc
+        if r.status_code >= 400:
+            raise CoreError(f"GET /audit/verify -> HTTP {r.status_code}: {r.text[:200]}")
+        return r.json()
+
     def pending(self) -> list[dict]:
         data = self._req("GET", "/notifications/pending")
         if isinstance(data, dict):  # tolerate {"notifications": [...]}
