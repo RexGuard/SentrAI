@@ -15,14 +15,15 @@ Run from a terminal, the installer then asks about the web dashboard, with the a
   Dashboard port [8501]:
   Allowed IPs [203.0.113.10]:            the IPs that may open it (defaults to --protect, or the
                                           address your SSH session comes from); "local" = tunnel only
-  Dashboard sign-in email [admin@sentrai.local]:
-  Dashboard password (Enter to make one for you):   typed twice, at least 8 characters
+  Owner email:                            only on a new machine; Enter skips it, and you create the
+  Owner password, at least 12 characters:  Owner in the browser with a setup code instead
 ```
 
 It skips any question the command line already answers (`--dashboard-port`, `--dashboard-allow`,
 `--dashboard-local`, `--admin-email`), and all of them with `--no-questions` or without a terminal.
 On an upgrade the brackets hold the current values. At the end it prints the dashboard address and
-the sign-in; a password it made is shown only then. `sudo cactai-admin --reset` makes a new one.
+either the Owner's email or a one-time setup code for creating the Owner on the dashboard. Everyone
+else joins by invite from the dashboard's Team page.
 
 Needs systemd and Python 3.10+ with the `venv` module (Debian/Ubuntu: `sudo apt install python3-venv`).
 Run the same command again from a newer checkout to upgrade: settings and state are kept, and
@@ -58,8 +59,8 @@ The demo portal and attack scripts are not installed as services.
 --protect IP                           add to PROTECTED_IPS (repeatable); the dashboard opens to it too
 --dashboard-allow IP                   open the dashboard to this IP or network only (repeatable)
 --dashboard-local                      keep the dashboard on the server (SSH tunnel only)
---admin-email EMAIL                    dashboard sign-in email (asked on a first install)
---reset-password                       new dashboard password, printed at the end
+--admin-email EMAIL                    the dashboard Owner's email (asked on a first install)
+--reset-password                       new password for that account, printed at the end
 --no-questions (-y)                    never ask (what a script or CI run gets anyway)
 --no-notifier                          leave the Telegram notifier off
 --no-start                             install and enable without starting
@@ -153,7 +154,7 @@ With `--protect` or `--dashboard-allow`, the installer sets up access by itself:
   installer also allows the port there for those addresses.
 - It serves HTTPS with a self-signed certificate made in `/etc/cactai/tls/`. The browser warns
   about it once.
-- It asks for the email and password on every new browser session.
+- It asks for the email, password and authenticator code on every new browser session.
 
 Open `https://<server address>:8501` from the allowed IP and sign in. When your IP changes, run
 the installer again with the new one (`--dashboard-allow` replaces the list).
@@ -166,9 +167,9 @@ ssh -L 8501:127.0.0.1:8501 you@your-server     # then open http://127.0.0.1:8501
 ```
 
 ```bash
-sudo cactai-admin                                  # show the sign-in email
-sudo cactai-admin --reset                          # new password, printed once
-sudo cactai-admin --email you@example.com --reset  # new email and password
+sudo cactai-admin                                  # who may sign in; a setup code on a new machine
+sudo cactai-admin --reset                          # the first Owner: new password, authenticator again
+sudo cactai-admin --reset --email you@example.com  # the same for another account
 ```
 
 ## Finding the logs to watch

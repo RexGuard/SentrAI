@@ -21,10 +21,12 @@
 #   --dashboard-allow IP   open the dashboard to this IP or network only (repeatable): it listens on
 #                          all addresses, a firewall rule drops everyone else, and it uses HTTPS
 #   --dashboard-local      keep the dashboard on this server only (reach it through an SSH tunnel)
-#   --admin-email EMAIL    the dashboard sign-in email (asked on a first install when not given)
-#   --reset-password       make a new dashboard password (shown once at the end)
+#   --admin-email EMAIL    the dashboard Owner's email (asked on a first install when not given; with no
+#                          password typed, the Owner is created in the browser with a setup code)
+#   --reset-password       make a new password for that account (or the first Owner), shown once at the
+#                          end; its authenticator app is added again at the next sign-in
 #   --no-questions         never ask; with a terminal and without this, the installer asks for the
-#                          dashboard port, who may open it, and the sign-in email and password
+#                          dashboard port, who may open it, and on a new machine the Owner account
 #   --no-notifier          do not enable the Telegram notifier service
 #   --no-start             install and enable, but do not start or restart anything
 #   --remote-copy URL      send every audit record and log line to a SentrAI witness on another
@@ -141,20 +143,19 @@ if [ "$ASK" = 1 ] && [ -t 0 ]; then
         a="${a:-${cur:-local}}"
         if [ "$a" = local ]; then DASH_LOCAL=1; else IFS=', ' read -r -a ALLOW <<< "$a"; fi
     fi
-    if [ -z "$ADMIN_EMAIL" ]; then
-        cur="$(grep -o '"CACTAI_DASHBOARD_EMAIL": "[^"]*"' "$saved_config" 2>/dev/null | sed 's/.*: "\(.*\)"/\1/' || true)"
-        while :; do
-            read -r -p "  Dashboard sign-in email [${cur:-admin@sentrai.local}]: " a || a=""
-            case "$a" in '') ADMIN_EMAIL="$cur"; break ;; *@*) ADMIN_EMAIL="$a"; break ;; *) echo "    Please enter an email address." ;; esac
-        done
-    fi
-    if grep -q '"CACTAI_DASHBOARD_PASSWORD_HASH": "pbkdf2' "$saved_config" 2>/dev/null; then keep="keep the current one"
-    else keep="make one for you"; fi
-    if [ "$RESET_PW" = 0 ]; then
-        while :; do
-            read -r -s -p "  Dashboard password, at least 8 characters (Enter to $keep): " p1 || p1=""; echo
-            [ -n "$p1" ] || break
-            if [ "${#p1}" -lt 8 ]; then echo "    Use at least 8 characters."; continue; fi
+    # The Owner account, only on a machine with no one yet. People after that join by invite (Team page).
+    if [ ! -f "$(dirname "$saved_config")/accounts.json" ] \
+        && ! grep -q '"CACTAI_DASHBOARD_PASSWORD_HASH": "pbkdf2' "$saved_config" 2>/dev/null; then
+        echo "  The dashboard's Owner account. Press Enter to skip and create it in the browser with a setup code."
+        if [ -z "$ADMIN_EMAIL" ]; then
+            while :; do
+                read -r -p "  Owner email: " a || a=""
+                case "$a" in '') break ;; *@*.*) ADMIN_EMAIL="$a"; break ;; *) echo "    Please enter an email address." ;; esac
+            done
+        fi
+        while [ -n "$ADMIN_EMAIL" ]; do
+            read -r -s -p "  Owner password, at least 12 characters: " p1 || p1=""; echo
+            if [ "${#p1}" -lt 12 ]; then echo "    Use at least 12 characters."; continue; fi
             read -r -s -p "  Type it again: " p2 || p2=""; echo
             if [ "$p1" = "$p2" ]; then ADMIN_PASSWORD="$p1"; break; fi
             echo "    The two passwords differ; try again."
@@ -368,8 +369,8 @@ chmod 0755 /usr/local/bin/cactai-scout
 # --- dashboard sign-in --------------------------------------------------------
 cat > /usr/local/bin/cactai-admin <<EOF
 #!/usr/bin/env bash
-# Shows the dashboard sign-in email, or makes a new password (printed once).
-#   sudo cactai-admin          sudo cactai-admin --reset          sudo cactai-admin --email you@example.com
+# Lists who may sign in to the dashboard; on a new machine, prints a one-time setup code for the Owner.
+#   sudo cactai-admin          sudo cactai-admin --reset [--email you@example.com]   (new password, authenticator again)
 set -euo pipefail
 [ "\$(id -u)" = 0 ] || { echo "run with sudo" >&2; exit 1; }
 set -a; . $ENV_FILE; set +a
@@ -379,7 +380,7 @@ chmod 0755 /usr/local/bin/cactai-admin
 admin_args=()
 if [ -n "$ADMIN_EMAIL" ]; then admin_args+=(--email "$ADMIN_EMAIL"); fi
 if [ "$RESET_PW" = 1 ]; then admin_args+=(--reset); fi
-if [ -n "$ADMIN_PASSWORD" ]; then
+if [ -n "$ADMIN_PASSWORD" ] && [ -n "$ADMIN_EMAIL" ]; then
     SIGN_IN="$(printf '%s\n' "$ADMIN_PASSWORD" | /usr/local/bin/cactai-admin "${admin_args[@]}" --password-stdin)" \
         || die "could not set up the dashboard sign-in"
 else
@@ -501,7 +502,7 @@ else
     esac
 fi
 printf '%s\n' "$SIGN_IN" | sed 's/^/  /'
-echo "  Change it:  sudo cactai-admin --reset   (or on the dashboard: Configuration, 6. Access)"
+echo "  People:     invite them on the dashboard's Team page. Locked out: sudo cactai-admin --reset"
 REMOTE_URL="$(get_env CACTAI_REMOTE_COPY_URL)"
 if [ -n "$REMOTE_URL" ]; then
     echo "  Off-box copy: every audit record and log line goes to $REMOTE_URL as it happens."
