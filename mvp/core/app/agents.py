@@ -20,7 +20,9 @@ from typing import TYPE_CHECKING, Any
 from .audit import AuditLog, canonical
 from .classifier import Classification, ClassifierChain
 from .clock import DemoClock
+from . import protect
 from .responders import Responders
+from .risk import severity_rank
 from .rules import TRIPWIRE_REASONS
 
 if TYPE_CHECKING:
@@ -212,20 +214,37 @@ class Needle(Agent):
     role = "reviewer: two-key approval for every autonomous action"
 
     def __init__(self, min_confidence: float, allowlist: set[str], protected_ips: set[str],
-                 protected_users: set[str] | None = None) -> None:
+                 protected_users: set[str] | None = None, protected_nets: set[str] | None = None,
+                 min_severity: str = "high", min_points: float = 0.0) -> None:
         self.min_confidence = min_confidence
         self.allowlist = allowlist
         self.protected_ips = protected_ips
         self.protected_users = protected_users or set()
+        self.protected_nets = protected_nets or set()
+        self.min_severity = min_severity
+        self.min_points = min_points
 
-    def screen(self, proposals: list[Proposal]) -> tuple[list[Proposal], list[dict[str, str]]]:
-        """Splits proposals into (allowed, denied): allowlisted type and not a protected target."""
+    def below_bar(self, incident: dict[str, Any]) -> str | None:
+        """Why this incident on its own is not serious enough for autonomous containment, or None."""
+        sev = str(incident.get("severity") or "info").lower()
+        if severity_rank(sev) < severity_rank(self.min_severity):
+            return f"severity {sev} is below {self.min_severity}"
+        points = float(incident.get("points") or 0)
+        if points < self.min_points:
+            return f"its own points {points:g} are below {self.min_points:g}"
+        return None
+
+    def screen(self, proposals: list[Proposal], autonomous: bool = False) -> tuple[list[Proposal], list[dict[str, str]]]:
+        """Splits proposals into (allowed, denied): allowlisted type and not a protected target.
+        Private networks are protected from autonomous blocks only: an operator may still approve one."""
         ok: list[Proposal] = []
         denied: list[dict[str, str]] = []
         for p in proposals:
             why = ("not in allowlist" if p.type not in self.allowlist
-                   else "protected asset" if p.type == "block_ip" and p.target in self.protected_ips
-                   else "protected account" if p.type == "lock_user" and p.target in self.protected_users
+                   else "protected asset" if p.type == "block_ip" and protect.matches(p.target, self.protected_ips)
+                   else "private network: a person decides" if autonomous and p.type == "block_ip"
+                   and protect.matches(p.target, self.protected_nets)
+                   else "protected account" if p.type == "lock_user" and protect.user_matches(p.target, self.protected_users)
                    else None)
             if why:
                 denied.append({"type": p.type, "target": p.target, "why": why})
@@ -242,7 +261,10 @@ class Needle(Agent):
             return Review(False, f"DENY: AI confidence {conf} < {self.min_confidence}; autonomous action not justified.")
         if risk_index < threshold:
             return Review(False, f"DENY: risk index {risk_index} is below threshold {threshold}.")
-        ok, denied = self.screen(proposals)
+        if why := self.below_bar(incident):
+            return Review(False, f"DENY: {incident['id']} {why}; the overall index alone does not justify "
+                                 f"autonomous action.")
+        ok, denied = self.screen(proposals, autonomous=True)
         if not ok:
             return Review(False, "DENY: no allowlisted action remains after review.", [], denied)
         reasoning = (

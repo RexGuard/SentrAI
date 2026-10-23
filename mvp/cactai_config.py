@@ -129,8 +129,8 @@ SECTIONS = (
         Field("HOTPATCH_TTL_HOURS", "Hours before an automatic block expires", "2", float),
         Field("SLA_HOURS", "Hours a human has to respond before escalation", "2", float),
         Field("NEEDLE_MIN_CONFIDENCE", "AI confidence (0-1) needed before acting without a person", "0.6", float),
-        Field("PROTECTED_IPS", "IPs never to block (comma-separated)", "127.0.0.1,::1,localhost"),
-        Field("PROTECTED_USERS", "Accounts never to lock (comma-separated)"),
+        Field("PROTECTED_IPS", "IPs or networks never to block (comma-separated)", "127.0.0.1,::1,localhost"),
+        Field("PROTECTED_USERS", "More accounts never to lock (admin and service accounts always are)"),
         Field("ON_DUTY", "On-duty responder shown in alerts", "John Doe (SEC-409) / Shift Bravo"),
     )),
     Section("notifications", "4. Notifications", "Telegram alerts, with email as the backup. "

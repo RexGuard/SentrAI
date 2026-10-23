@@ -97,14 +97,14 @@ def test_no_plan_falls_back_to_saguaro_playbook(make):
     attack(core)
     inc = core.get_incident("RSK-2026-081")
     assert "planned_by" not in inc
-    assert {a["type"] for a in inc["actions"]} == {"block_ip", "lock_user", "rate_limit"}
+    assert {a["type"] for a in inc["actions"]} == {"block_ip", "rate_limit"}  # admin is never auto-locked
     assert any(t["kind"] == "cyanide_fallback" for t in inc["timeline"])
 
 
 def test_no_planner_behaves_like_saguaro(make):
     core = make(None)
     attack(core)
-    assert core.blocklist() == {"ips": ["203.0.113.45"], "users": ["admin"]}
+    assert core.blocklist() == {"ips": ["203.0.113.45"], "users": []}
     planner = next(a for a in core.agents_status() if a["name"] == "Planner")
     assert planner["status"] == "off (playbooks only)"
 

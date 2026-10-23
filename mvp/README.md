@@ -150,7 +150,10 @@ behind an arrow.
 | `SLA_HOURS` / `HOTPATCH_TTL_HOURS` | 2 / 2 | core |
 | `ON_DUTY`, `TEAM_LEAD`, `IT_MANAGER`, `CXO` | sample names | core (reports, escalation) |
 | `PROTECTED_IPS` | `127.0.0.1,::1,localhost` | core: never auto-blocked (portal or firewall); add your admin IP here before enabling `CACTAI_FIREWALL` |
-| `PROTECTED_USERS` | empty | core: never auto-locked |
+| `PROTECTED_USERS` | empty | core: more accounts never auto-locked; admin and service accounts (root, admin, administrator, www-data, nginx, postgres, ...) are always protected |
+| `PROTECTED_NETS` | private ranges | core: networks Countersign never blocks on its own (an operator still can); `10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,100.64.0.0/10,fc00::/7` by default, `off` for a lab whose attackers sit on a private network |
+| `INFRA_ALLOWLIST` | empty | core: gateways, DNS, monitoring and other infrastructure never blocked (addresses or networks). This machine's DNS servers and default gateway are added automatically (`INFRA_AUTODETECT=0` turns that off) |
+| `CONTAIN_MIN_SEVERITY` / `CONTAIN_MIN_POINTS` | `high` / `20` | core: an incident is only contained without a person when its own severity and points reach these, whatever the overall risk index |
 | `CACTAI_FIREWALL` | `off` | core: also block IPs in the host firewall (`auto`, `nftables`, `iptables`, `netsh`); `off` keeps portal-only blocking |
 | `CACTAI_FIREWALL_ENFORCE` | `0` | core: `0` is a dry run that only logs the firewall command; `1` really runs it (needs admin/root) |
 | `TYPESAFE_API_KEY` | unset | core: enables Jev (TypeSafe System One); otherwise rules + fallback heuristic |
