@@ -126,7 +126,7 @@ def test_setup_done_marker(config_file):
 
 
 def test_launcher_sign_in_does_not_count_as_setup(config_file):
-    cfg.ensure_admin("me@example.com")  # what run_demo and install.sh do on a first start
+    cfg.ensure_admin("me@example.com")  # what run.sh/run.ps1 and install.sh do on a first start
     assert not cfg.setup_done()
 
 

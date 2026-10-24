@@ -56,7 +56,7 @@ if __name__ == "__main__":
     # First run on this machine: ask for the settings before any path or log name is read.
     cactai_config.ensure()
 from collector import parsers  # noqa: E402
-from target_app import paths  # noqa: E402
+from collector import paths  # noqa: E402
 
 HOST = "web-01"  # the demo portal's pretend server name; real logs use the real host name
 

@@ -168,8 +168,8 @@ Both remove the dashboard's firewall rule. A sealed journal stays sealed.
 
 ## What a server install does not do yet
 
-SentrAI's detection rules are still tuned to the demo portal's log format, so on real logs they
-catch less than in the demo. Blocks reach the demo portal's blocklist by default. Blocking in the
+SentrAI's detection rules were first tuned on a demo app's logs, so on real logs they may catch
+less at first. Blocks go on SentrAI's own blocklist by default. Blocking in the
 server's own firewall is built but off: once turned on it starts as a dry run that only logs the
 command it would run. Turn it on step by step in [Settings](settings.html#firewall-blocking),
 after your own IP is protected.

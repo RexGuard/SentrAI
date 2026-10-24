@@ -15,7 +15,7 @@ import pytest
 
 from collector import collector, parsers
 from collector.collector import Collector, DiscoveredLogSource, JournaldSource, OffsetStore, Tailer
-from target_app import paths
+from collector import paths
 
 SAMPLES = Path(__file__).resolve().parent / "samples"
 SGT = parsers.log_tz("+08:00")

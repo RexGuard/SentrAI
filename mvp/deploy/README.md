@@ -1,7 +1,7 @@
 # Running SentrAI as server services
 
-`run_demo.sh` is for recording the demo: everything stops when you run `stop_demo.sh`, and the
-clock runs fast. On a real Linux server, install SentrAI as systemd services instead.
+`run.sh` is for trying SentrAI on a laptop: everything stops when you run `stop.sh`. On a real
+Linux server, install SentrAI as systemd services instead.
 
 ```bash
 git clone https://github.com/RexGuard/SentrAI && cd SentrAI/mvp

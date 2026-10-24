@@ -1,12 +1,12 @@
 <#
 .SYNOPSIS
-  Stops only the SentrAI demo windows started by run_demo.ps1 (PIDs from mvp\.demo_pids.json).
+  Stops only the SentrAI windows started by run.ps1 (PIDs from mvp\.run_pids.json).
 #>
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
-$PidFile = Join-Path $Root ".demo_pids.json"
+$PidFile = Join-Path $Root ".run_pids.json"
 
 if (-not (Test-Path $PidFile)) {
-    Write-Host "No running demo recorded (mvp\.demo_pids.json not found)."
+    Write-Host "SentrAI is not running (mvp\.run_pids.json not found)."
     exit 0
 }
 
@@ -22,4 +22,4 @@ foreach ($item in @($items)) {
     }
 }
 Remove-Item $PidFile -Force
-Write-Host "SentrAI demo stopped."
+Write-Host "SentrAI stopped."

@@ -11,15 +11,13 @@ description: Fixes for the most common SentrAI install problems.
 Another program is using 8000 or 8501. Pick other ports:
 
 ```bash
-./run_demo.sh --core-port 8100 --dashboard-port 8601                  # Linux, macOS
+./run.sh --core-port 8100 --dashboard-port 8601                  # Linux, macOS
 sudo ./deploy/install.sh --core-port 8100 --dashboard-port 8601       # server
 ```
 
 ```powershell
-.\run_demo.ps1 -CorePort 8100 -DashboardPort 8601
+.\run.ps1 -CorePort 8100 -DashboardPort 8601
 ```
-
-The demo portal must stay on 5000. If 5000 is taken, stop the other program first.
 
 ## "No module named venv" or "ensurepip is not available"
 
@@ -37,8 +35,8 @@ rm -rf core/.venv lab/.venv dashboard/.venv notifier/.venv
 
 ## PowerShell says running scripts is disabled
 
-Start the demo with the policy switch shown in [Try the demo](demo.html#on-windows):
-`powershell -ExecutionPolicy Bypass -File .\run_demo.ps1`. It applies to that run only.
+Start SentrAI with the policy switch shown in [Run on a laptop](laptop.html#on-windows):
+`powershell -ExecutionPolicy Bypass -File .\run.ps1`. It applies to that run only.
 
 ## "python" is not found on Windows
 
@@ -65,7 +63,7 @@ Work through these in order:
 Make a new one; it is printed once:
 
 ```bash
-python cactai_config.py admin --reset     # demo
+python cactai_config.py admin --reset     # laptop
 sudo cactai-admin --reset                  # server
 ```
 
@@ -76,18 +74,17 @@ again, or reset the password as above.
 
 ## No alerts arrive in Telegram
 
-Without a bot token, alerts go to the notifier's window (Windows) or `.demo_logs/notifier.log`
+Without a bot token, alerts go to the notifier's window (Windows) or `.run_logs/notifier.log`
 (Linux, macOS), or `journalctl -u cactai-notifier` on a server. Check the token and chat ID under
 **Configuration**, section **4. Notifications**, and make sure you sent your bot a message first.
 
-## Nothing happens when the demo attacks
+## Nothing shows up on the dashboard
 
-- Run the attack from the `lab` folder with its own Python: `.venv/bin/python scenario.py`
-  (`.\.venv\Scripts\python.exe scenario.py` on Windows).
-- Make sure the demo is still running. Each part writes its output to `.demo_logs/` on Linux and
+- Check that the collector is watching something: **Collector** on the dashboard lists the logs
+  it reads. Approve some first (see [Run on a laptop](laptop.html#give-it-logs-to-watch)).
+- Make sure SentrAI is still running. Each part writes its output to `.run_logs/` on Linux and
   macOS, or to its own window on Windows.
-- At the default demo speed, a demo hour is a real minute. Use `--demo-speed 600` to see the
-  whole story in a few minutes.
+- The timers run in real time. Use `--speed 60` (`-Speed 60`) to see escalations within minutes.
 
 ## Still stuck?
 

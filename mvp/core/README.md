@@ -168,11 +168,10 @@ to the new ones (`LEGACY_AGENT_NAMES` in `app/saguaro.py`, `LEGACY_AGENTS` in th
 | Gatehouse, Vault, Watchtower | `Root`, `Reservoir`, `SpineNet` (`app/agents.py`) |
 | Garrison-Linux, Garrison-Win | `AreoleLinux`, `AreoleWin` |
 | Countersign | `Needle` (setting `NEEDLE_MIN_CONFIDENCE`, audit type `needle_review`) |
-| Tripwires | lab `target_app/spines.py`, `CACTAI_SPINES`, `--spines` (alias `--tripwires`) |
 
 ## Process scan (finding logs automatically)
 
-Scout follows a technician through the folders. The process scan (`app/procscan.py`, `app/discovery.py`) is the automatic half: it lists the programs running on this computer, recognises the known ones (IIS, nginx, Apache, Tomcat, MySQL, PostgreSQL, SQL Server, MongoDB, Redis, SSH, Docker, syslog, Node and Python apps, and the SentrAI lab portal) and looks for their log files in the usual places, next to the program, in options such as `--log-file`, and (on Linux) in the files each process has open.
+Scout follows a technician through the folders. The process scan (`app/procscan.py`, `app/discovery.py`) is the automatic half: it lists the programs running on this computer, recognises the known ones (IIS, nginx, Apache, Tomcat, MySQL, PostgreSQL, SQL Server, MongoDB, Redis, SSH, Docker, syslog, Node and Python apps) and looks for their log files in the usual places, next to the program, in options such as `--log-file`, and (on Linux) in the files each process has open.
 
 - **How.** Windows: PowerShell/CIM (`Win32_Process`, plus `Win32_Service` for the service account). Linux: `/proc`. macOS: `ps`. Standard library only, no admin rights needed; processes it cannot read are listed by name only.
 - **Read-only.** It never starts, stops or signals a process and never reads log contents. It only checks which files exist.

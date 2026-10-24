@@ -121,7 +121,7 @@ def build(name: str, key: str | None, model: str | None = None, base_url: str | 
     except ImportError as e:
         package = "anthropic" if name == "anthropic" else "openai"
         raise LLMError(f"the '{package}' Python package is not installed for this part of SentrAI. Run "
-                       f"stop_demo.ps1, then run_demo.ps1 again: it installs new packages when it starts") from e
+                       f"stop.ps1, then run.ps1 again: it installs new packages when it starts") from e
 
 
 PING_SCHEMA = {"type": "object", "properties": {"ok": {"type": "boolean"}}, "required": ["ok"],

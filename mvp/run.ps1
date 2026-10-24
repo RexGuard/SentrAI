@@ -1,46 +1,40 @@
 <#
 .SYNOPSIS
-  Starts the whole SentrAI demo on this laptop (Windows PowerShell 5.1 compatible).
+  Starts SentrAI on this laptop (Windows PowerShell 5.1 compatible).
 
 .DESCRIPTION
   Opens one titled window per component:
     core       FastAPI risk engine + agents     http://127.0.0.1:8000  (-CorePort)
-    target     Aegis Academy portal (fake)      http://127.0.0.1:5000
-    collector  tails the portal logs -> core
+    collector  tails the logs you approved -> core
     notifier   Telegram bot (console mode if TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID are not set)
     dashboard  Streamlit                        http://127.0.0.1:8501  (-DashboardPort)
-  Window PIDs are saved to mvp\.demo_pids.json so stop_demo.ps1 stops only these.
+  Window PIDs are saved to mvp\.run_pids.json so stop.ps1 stops only these.
 
 .EXAMPLE
-  .\run_demo.ps1                     # live mode, 1 real minute = 1 demo hour
-  .\run_demo.ps1 -DemoSpeed 600      # faster inaction penalty (1 real minute = 10 demo hours)
-  .\run_demo.ps1 -Mode replay        # no collector; use replay\simulate.py instead of live attacks
-  .\run_demo.ps1 -CorePort 8100      # when 8000 is taken (or set CACTAI_CORE_PORT / CACTAI_DASHBOARD_PORT)
-  .\run_demo.ps1 -Tripwires          # tripwires: honeypot, honeytokens, tarpit (-Spines works too)
+  .\run.ps1                     # real time: one real hour is one hour on the timers
+  .\run.ps1 -Speed 60           # faster timers for testing (1 real minute = 1 hour)
+  .\run.ps1 -CorePort 8100      # when 8000 is taken (or set CACTAI_CORE_PORT / CACTAI_DASHBOARD_PORT)
 #>
 param(
-    [ValidateSet("live", "replay")] [string]$Mode = "live",
-    [double]$DemoSpeed = 60,
+    [Alias("DemoSpeed")] [double]$Speed = $(if ($env:DEMO_SPEED) { [double]$env:DEMO_SPEED } else { 1 }),
     [switch]$NoDashboard,
     [switch]$NoBrowser,
-    [Alias("Tripwires")] [switch]$Spines,
     [int]$CorePort = $(if ($env:CACTAI_CORE_PORT) { [int]$env:CACTAI_CORE_PORT } else { 8000 }),
     [int]$DashboardPort = $(if ($env:CACTAI_DASHBOARD_PORT) { [int]$env:CACTAI_DASHBOARD_PORT } else { 8501 })
 )
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
-$PidFile = Join-Path $Root ".demo_pids.json"
-$TargetPort = 5000  # fixed: the attack scripts refuse any other port
-if (($CorePort -eq $DashboardPort) -or ($CorePort -eq $TargetPort) -or ($DashboardPort -eq $TargetPort)) {
-    Write-Host "Core, dashboard and target ($TargetPort) need three different ports." -ForegroundColor Red
+$PidFile = Join-Path $Root ".run_pids.json"
+if ($CorePort -eq $DashboardPort) {
+    Write-Host "Core and dashboard need two different ports." -ForegroundColor Red
     exit 2
 }
 $Core = "http://127.0.0.1:$CorePort"
 $Dash = "http://127.0.0.1:$DashboardPort"
 
 if (Test-Path $PidFile) {
-    Write-Host "A demo seems to be running already (found .demo_pids.json). Run .\stop_demo.ps1 first." -ForegroundColor Yellow
+    Write-Host "SentrAI seems to be running already (found .run_pids.json). Run .\stop.ps1 first." -ForegroundColor Yellow
     exit 1
 }
 
@@ -72,9 +66,9 @@ function Test-Port([int]$Port) {
     return [bool]$c
 }
 
-foreach ($p in $CorePort, $TargetPort, $DashboardPort) {
+foreach ($p in $CorePort, $DashboardPort) {
     if (Test-Port $p) {
-        Write-Host "Port $p is already in use. Close whatever is using it (or run .\stop_demo.ps1), or pick another port with -CorePort / -DashboardPort, and try again." -ForegroundColor Red
+        Write-Host "Port $p is already in use. Close whatever is using it (or run .\stop.ps1), or pick another port with -CorePort / -DashboardPort, and try again." -ForegroundColor Red
         exit 1
     }
 }
@@ -89,8 +83,7 @@ $pyNotif = Ensure-Venv "notifier"
 & $pyLab (Join-Path $Root "cactai_config.py")
 if ($LASTEXITCODE -ne 0) { exit 1 }
 
-# The core API token (made and saved on first use). Every window gets the same one, and the
-# scripts you run later (scenario.py, replay) read it from the settings file.
+# The core API token (made and saved on first use). Every window gets the same one.
 $env:CACTAI_API_TOKEN = (& $pyLab (Join-Path $Root "cactai_config.py") token | Select-Object -Last 1).Trim()
 if (-not $env:CACTAI_API_TOKEN) { Write-Host "Could not read the API token (python cactai_config.py token)." -ForegroundColor Red; exit 1 }
 # The dashboard sign-in (email + password). Made on first run; the password is shown only then.
@@ -101,7 +94,7 @@ $authHeader = @{ Authorization = "Bearer $($env:CACTAI_API_TOKEN)" }
 # Shared environment for every child window.
 $env:PYTHONUTF8 = "1"
 $env:PYTHONIOENCODING = "utf-8"
-$env:DEMO_SPEED = "$DemoSpeed"
+$env:DEMO_SPEED = "$Speed"
 $env:CACTAI_CORE_URL = $Core
 if (-not $env:CACTAI_PUBLIC_URL) { $env:CACTAI_PUBLIC_URL = $Core }
 
@@ -127,28 +120,14 @@ function Wait-Http([string]$Url, [int]$Seconds = 40) {
 }
 
 Write-Host ""
-Write-Host "SentrAI demo  (mode: $Mode, DEMO_SPEED=$DemoSpeed -> 1 real minute = $([math]::Round($DemoSpeed/60,2)) demo hours)" -ForegroundColor Green
+if ($Speed -eq 1) { Write-Host "SentrAI  (real time)" -ForegroundColor Green }
+else { Write-Host "SentrAI  (DEMO_SPEED=$Speed -> 1 real minute = $([math]::Round($Speed/60,2)) hours on the timers)" -ForegroundColor Green }
 
 $started += Start-Component "core" (Join-Path $Root "core") "& '$pyCore' -m uvicorn app.main:app --host 127.0.0.1 --port $CorePort"
 if (-not (Wait-Http "$Core/health")) {
     Write-Host "Core did not come up on :$CorePort. Check the 'SentrAI - core' window." -ForegroundColor Red
 }
-# Fresh audit chain and incident state for this take.
-try { Invoke-RestMethod -Method Post -Uri "$Core/demo/reset" -TimeoutSec 5 | Out-Null } catch { }
-
-$labDir = Join-Path $Root "lab"
-$logsDir = (& $pyLab (Join-Path $Root "cactai_config.py") get CACTAI_LAB_LOGS)
-if ((Test-Path $logsDir) -and ($logsDir -like "*$labDir*")) { Get-ChildItem $logsDir -Filter *.jsonl | Remove-Item -Force }
-
-if ($Spines) { $env:CACTAI_SPINES = "1" }  # tripwires in the portal (target_app\spines.py)
-$started += Start-Component "target" $labDir "& '$pyLab' -m target_app"
-if (-not (Wait-Http "http://127.0.0.1:5000/healthz")) {
-    Write-Host "Target app did not come up on :5000. Check the 'SentrAI - target' window." -ForegroundColor Red
-}
-
-if ($Mode -eq "live") {
-    $started += Start-Component "collector" $labDir "& '$pyLab' -m collector.collector"
-}
+$started += Start-Component "collector" (Join-Path $Root "lab") "& '$pyLab' -m collector.collector"
 $started += Start-Component "notifier" (Join-Path $Root "notifier") "& '$pyNotif' notifier.py"
 
 if (-not $NoDashboard) {
@@ -162,20 +141,8 @@ if (-not $NoDashboard) {
 $started | ConvertTo-Json | Set-Content -Path $PidFile -Encoding ASCII
 
 Write-Host ""
-Write-Host "All components started. Next, from mvp\lab:" -ForegroundColor Green
-if ($Mode -eq "live") {
-    Write-Host "  .\.venv\Scripts\python.exe scenario.py                         # full story, narrated"
-    Write-Host "  or step by step:"
-    Write-Host "  .\.venv\Scripts\python.exe -m attacks.benign"
-    Write-Host "  .\.venv\Scripts\python.exe -m attacks.brute_force --count 8 --delay 0.3"
-    Write-Host "  .\.venv\Scripts\python.exe -m attacks.sqli --count 3"
-    if ($Spines) { Write-Host "  .\.venv\Scripts\python.exe -m attacks.spines                 # tripwires: honeypot + honeytokens (or scenario.py --tripwires)" }
-} else {
-    Write-Host "  .\.venv\Scripts\python.exe -m replay.simulate                  # scripted replay (say so on camera)"
-}
-Write-Host ""
-Write-Host "Portal:    http://127.0.0.1:5000"
+Write-Host "All components started." -ForegroundColor Green
 Write-Host "Core API:  $Core"
 Write-Host "Dashboard: $Dash"
 if (-not $NoDashboard) { $signIn | ForEach-Object { Write-Host $_ -ForegroundColor Yellow } }
-Write-Host "Stop everything with .\stop_demo.ps1"
+Write-Host "Stop everything with .\stop.ps1"
