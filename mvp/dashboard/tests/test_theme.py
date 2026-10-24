@@ -66,3 +66,16 @@ def test_appearance_is_kept_apart_from_settings(tmp_path, monkeypatch):
     cfg.save({"CACTAI_OPERATOR": "erick"})  # saving the settings keeps the look
     assert cfg.appearance() == {"theme": "light", "accent": "#14b8a6"}
     assert "theme" not in cfg.read() and cfg.read()["CACTAI_OPERATOR"] == "erick"
+
+
+def test_agent_colours_never_look_like_risk_colours():
+    """Green, amber and red mean risk only, so no agent name is painted in them."""
+    for name, color in sh._AGENT_BASE.items():
+        assert not th.risk_like(color), name
+
+
+@pytest.mark.parametrize("theme", list(th.THEMES))
+def test_faint_text_meets_aa(theme):
+    c = th.THEMES[theme].colors
+    for surface in ("bg", "surface", "surface-2"):
+        assert th.contrast(c["ink-faint"], c[surface]) >= 4.5, surface

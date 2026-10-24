@@ -327,3 +327,34 @@ def test_threat_paths_are_shown_escaped(fake_core, tmp_path, monkeypatch):
     assert not at.exception, at.exception
     shown = [m.value for m in at.markdown if "img.php" in m.value]
     assert shown and all("<code>/var/lib/pterodactyl/volumes/a1b2/plugins/web/upload/img.php</code>" in v for v in shown)
+
+
+def test_start_page_is_approvals_only_when_something_waits():
+    assert sh.start_page([{"id": "A", "status": "open"}]) == "approvals"
+    assert sh.start_page([{"id": "A", "status": "contained"}]) == "approvals"
+    assert sh.start_page([{"id": "A", "status": "resolved"}]) == "review"
+    assert sh.start_page(None) == "review"
+
+
+def test_status_labels_are_plain_words():
+    assert sh.status_label("contained") == "Contained"
+    assert sh.status_label("needs_review") == "Needs review"
+
+
+def test_console_opens_on_what_needs_a_decision(fake_core, tmp_path, monkeypatch):
+    from streamlit.testing.v1 import AppTest
+
+    conf = tmp_path / "config.json"
+    conf.write_text('{"setup_done": "dashboard"}', encoding="utf-8")
+    monkeypatch.setenv("CACTAI_CONFIG", str(conf))
+    monkeypatch.setenv("CACTAI_CORE_URL", fake_core)
+    requests.post(f"{fake_core}/dev/trigger/brute_force", params={"src_ip": "203.0.113.77", "user": "landing"},
+                  timeout=3)
+    import streamlit as st
+    st.cache_data.clear()  # an earlier test's incident list may still be cached
+    at = AppTest.from_file(APP, default_timeout=20)
+    at.session_state["core_url"] = fake_core
+    at.session_state["auto_refresh"] = False
+    at.run()
+    assert not at.exception, at.exception
+    assert at.session_state["page"] == "approvals"

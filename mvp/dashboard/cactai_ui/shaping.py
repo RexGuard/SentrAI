@@ -84,12 +84,13 @@ CATEGORY_LABELS = {
     "prompt_injection": "Prompt injection",
 }
 
-STATUS_ICONS = {
-    "open": "🔴 open",
-    "acknowledged": "🟡 acknowledged",
-    "contained": "🛡️ contained",
-    "resolved": "✅ resolved",
-    "rejected": "⛔ rejected",
+# Plain words, sentence case: emoji render differently on every OS and tables can't show icons.
+STATUS_LABELS = {
+    "open": "Open",
+    "acknowledged": "Acknowledged",
+    "contained": "Contained",
+    "resolved": "Resolved",
+    "rejected": "Rejected",
 }
 
 CLASSIFIER_LABELS = {"rules": "Rules", "jev": "Jev (AI)", "fallback": "Fallback"}
@@ -102,7 +103,7 @@ def category_label(category: str | None) -> str:
 
 
 def status_label(status: str | None) -> str:
-    return STATUS_ICONS.get(str(status or ""), str(status or "unknown"))
+    return STATUS_LABELS.get(str(status or ""), str(status or "unknown").replace("_", " ").capitalize())
 
 
 def parse_ts(value: Any) -> datetime | None:
@@ -293,21 +294,22 @@ def build_containment_rows(blocklist: dict | None, incidents: Iterable[dict]) ->
 
 # ---------------------------------------------------------------- audit / agents
 
+# Material Symbols name and colour per agent. Blues, violets, teals and greys only: green, amber and red mean risk.
 AGENTS = {
-    "Warden": ("🛡️", "#6fcf97"),
-    "Cyanide": ("🧪", "#6fcf97"),
-    "Planner": ("✳️", "#d97757"),
-    "Countersign": ("🔑", "#e0a526"),
-    "Scribe": ("📜", "#8fa7ff"),
-    "Gatehouse": ("🌐", "#4fb3d9"),
-    "Watchtower": ("📡", "#b88cf0"),
-    "Vault": ("🗄️", "#5bc0be"),
-    "Garrison-Linux": ("🐧", "#e88a5a"),
-    "Garrison-Win": ("🪟", "#e88a5a"),
-    "Watchdog": ("🐕", "#a0a39b"),
-    "Help Desk": ("💬", "#d98bb5"),
-    "Jev": ("🧠", "#c79bf2"),
-    "Operator": ("👤", "#e7edf6"),
+    "Warden": ("shield", "#7aa2ff"),
+    "Cyanide": ("science", "#5bc0be"),
+    "Planner": ("account_tree", "#e08bd0"),
+    "Countersign": ("key", "#9aa5b8"),
+    "Scribe": ("description", "#8fa7ff"),
+    "Gatehouse": ("public", "#4fb3d9"),
+    "Watchtower": ("cell_tower", "#b88cf0"),
+    "Vault": ("database", "#5bc0be"),
+    "Garrison-Linux": ("dns", "#a3b1c6"),
+    "Garrison-Win": ("desktop_windows", "#a3b1c6"),
+    "Watchdog": ("pets", "#a0a39b"),
+    "Help Desk": ("support_agent", "#d98bb5"),
+    "Jev": ("psychology", "#c79bf2"),
+    "Operator": ("person", "#e7edf6"),
 }
 
 _AGENT_BASE = {name: color for name, (_, color) in AGENTS.items()}
@@ -415,7 +417,7 @@ def build_activity_feed(records: list[dict], limit: int = 30) -> list[dict]:
     for rec in reversed(ordered[-limit:]):
         agent = agent_for(rec)
         base = agent.split(":", 1)[0]
-        icon, color = AGENTS.get(base, ("🤖", TEXT_SECONDARY))
+        icon, color = AGENTS.get(base, ("smart_toy", TEXT_SECONDARY))
         feed.append(
             {
                 "seq": rec.get("seq"),
@@ -526,7 +528,7 @@ def history_figure(df: pd.DataFrame, threshold: float = 80) -> go.Figure:
     fig.add_hline(
         y=float(threshold), line={"color": TEXT_PRIMARY, "width": 1.5, "dash": "dash"},
         annotation_text=f"Autonomous threshold {threshold:.0f}", annotation_position="top left",
-        annotation_font={"color": TEXT_SECONDARY, "size": 11},
+        annotation_font={"color": TEXT_SECONDARY, "size": 12},
     )
     fig.update_layout(
         height=290,
@@ -535,7 +537,7 @@ def history_figure(df: pd.DataFrame, threshold: float = 80) -> go.Figure:
         plot_bgcolor="rgba(0,0,0,0)",
         showlegend=False,
         hovermode="x unified",
-        font={"color": TEXT_SECONDARY, "family": FONT, "size": 11},
+        font={"color": TEXT_SECONDARY, "family": FONT, "size": 12},
         xaxis={"showgrid": False, "linecolor": GRID, "tickformat": "%H:%M:%S"},
         yaxis={"range": [0, 100], "gridcolor": GRID, "tickvals": [0, 30, 60, 80, 100], "zeroline": False},
     )
@@ -616,7 +618,7 @@ def risk_breakdown(incidents: Iterable[dict]) -> pd.DataFrame:
             "Status": status_label(inc.get("status")),
             "Base": inc.get("base_points"),
             "Confidence": inc.get("ai_confidence"),
-            "Criticality": inc.get("asset_criticality"),
+            "Criticality": "-" if inc.get("asset_criticality") is None else str(inc["asset_criticality"]),
             "Points": round(float(inc.get("points") or 0), 1),
             "Inaction penalty": round(float(inc.get("inaction_penalty") or 0), 1),
             "Unaddressed (demo h)": round(float(inc.get("time_unaddressed_hours") or 0), 1),
@@ -636,6 +638,11 @@ def all_action_rows(incidents: Iterable[dict]) -> pd.DataFrame:
         return pd.DataFrame(columns=["Incident", *action_rows({}).columns])
     df = pd.concat(frames, ignore_index=True)
     return df[["Incident", *[c for c in df.columns if c != "Incident"]]]
+
+
+def start_page(incidents: Iterable[dict] | None) -> str:
+    """Where the console opens: Approvals when something waits on a person, otherwise Review."""
+    return "approvals" if pending_approvals(incidents or []) else "review"
 
 
 def pending_approvals(incidents: Iterable[dict]) -> list[dict]:

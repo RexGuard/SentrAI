@@ -1,8 +1,8 @@
 """SentrAI operator dashboard (Streamlit, http://127.0.0.1:8501).
 
-The sidebar is the menu: Configuration (the home page), Approvals, Chat (talk with the
-orchestrator), one page per part of the pipeline (Collector, Classifier, Action taker), Review,
-Reports and Audit trail. A part's
+The sidebar is the menu: Approvals, Chat (talk with the orchestrator), one page per part of the
+pipeline (Collector, Classifier, Action taker), Review, Reports, Audit trail and Configuration. The
+console opens on Approvals when something waits on a person, otherwise on Review. A part's
 menu button shows a bubble with the malicious activity that arrived since it was last opened.
 
 Run from this folder:  .venv\\Scripts\\streamlit run app.py
@@ -57,7 +57,7 @@ BRAND = ('<div class="brand"><div class="brand-mark">' + _logo_svg("mark.svg") +
 _FAVICON = Path(__file__).resolve().parents[2] / "assets" / "brand" / "favicon-32.png"
 PAGE_ICON = str(_FAVICON) if _FAVICON.exists() else "🛡️"
 st.set_page_config(page_title="SentrAI · Risk Console", page_icon=PAGE_ICON, layout="wide",
-                   initial_sidebar_state="expanded")
+                   initial_sidebar_state="auto")  # collapsed on a phone, so the page shows first
 CSS = (Path(__file__).parent / "cactai_ui" / "console.css").read_text(encoding="utf-8")
 st.markdown(f"<style>{th.css(THEME, ACCENT)}{CSS}</style>", unsafe_allow_html=True)
 
@@ -163,6 +163,12 @@ def section(title: str, note: str = "", ico: str = "") -> None:
                 unsafe_allow_html=True)
 
 
+def short_path(path) -> str:
+    """A path with the home folder as ~, so screenshots don't show whose computer it is."""
+    path, home = str(path), str(Path.home())
+    return "~" + path[len(home):] if path.startswith(home) else path
+
+
 def code(text) -> str:
     """Inline code for markdown shown with unsafe_allow_html: a file name can hold a backtick or a tag."""
     return f"<code>{html.escape(str(text))}</code>"
@@ -171,6 +177,9 @@ def code(text) -> str:
 def empty(text: str, ico: str = "inbox", good: bool = False) -> None:
     st.markdown(f'<div class="empty{" good" if good else ""}">{icon(ico)}<span>{html.escape(text)}</span></div>',
                 unsafe_allow_html=True)
+
+
+OK_ICON, WARN_ICON = ":material/check_circle:", ":material/warning:"
 
 
 def safe(fn, default: Any = None) -> tuple[Any, str | None]:
@@ -184,9 +193,9 @@ def run_action(label: str, fn, rerun: bool = True) -> None:
     """Run an operator action, flash the result, and refresh the live fragment immediately."""
     try:
         fn()
-        st.session_state["flash"] = (f"{label}", "✅")
+        st.session_state["flash"] = (f"{label}", OK_ICON)
     except CoreError as exc:
-        st.session_state["flash"] = (f"{label} failed: {exc}", "⚠️")
+        st.session_state["flash"] = (f"{label} failed: {exc}", WARN_ICON)
     if rerun:
         st.rerun(scope="fragment")
 
@@ -204,7 +213,6 @@ def show_flash() -> None:
 st.session_state.setdefault("core_url", DEFAULT_CORE)
 st.session_state.setdefault("operator", DEFAULT_OPERATOR)
 st.session_state.setdefault("auto_refresh", True)
-st.session_state.setdefault("page", "config" if cfg.setup_done() else "chat")  # new machine: guided setup
 st.session_state.setdefault("seen", {})
 TOKEN = cfg.api_token()
 client = CoreClient(st.session_state.core_url, token=TOKEN)
@@ -237,10 +245,13 @@ def audit_records() -> tuple[list[dict], bool | None, str | None]:
     return records, valid, err
 
 
+if "page" not in st.session_state:  # land on what needs a person; a new machine starts with guided setup
+    st.session_state.page = sh.start_page(fetch("incidents", [])[0]) if cfg.setup_done() else "chat"
+
+
 # ------------------------------------------------------------------ menu
 
 PAGES = {  # key: (Material icon, label, menu group)
-    "config": ("tune", "Configuration", ""),
     "approvals": ("approval_delegation", "Approvals", "Decide"),
     "chat": ("forum", "Chat", "Decide"),
     "collector": ("input", "Collector", "Pipeline"),
@@ -249,6 +260,7 @@ PAGES = {  # key: (Material icon, label, menu group)
     "review": ("speed", "Review", "Oversight"),
     "reports": ("description", "Reports", "Oversight"),
     "audit": ("link", "Audit trail", "Oversight"),
+    "config": ("tune", "Configuration", "Settings"),
 }
 
 
@@ -330,20 +342,17 @@ with st.sidebar:
 # ------------------------------------------------------------------ shared page parts
 
 def header(title: str, note: str = "") -> dict | None:
-    """Page title plus the live status chips. Returns /risk, or None when the core is offline."""
+    """Page title plus the live status chips. Returns /risk, or None when the core is offline.
+
+    The risk number lives in the sidebar card only, so each screen says it once."""
     risk, err = fetch("risk")
     now_s = datetime.now().strftime("%H:%M:%S")
     ico, _, group = PAGES[st.session_state.page]
     if err or not isinstance(risk, dict):
         chips = pill("Core offline", sh.BAND_COLORS["critical"])
     else:
-        band = sh.resolve_band(risk)
         _, valid, _ = audit_records()
-        label = sh.BAND_LABELS.get(band, band)
-        if risk.get("monitor_only") and band == "critical":
-            label = "CRITICAL · nothing applied (monitor only)"
-        chips = (pill(f"Risk {risk.get('risk_index', '-')} · {label}", sh.band_color(band))
-                 + (pill("Chain valid", sh.BAND_COLORS["green"]) if valid
+        chips = ((pill("Chain valid", sh.BAND_COLORS["green"]) if valid
                     else pill("Chain broken", sh.BAND_COLORS["critical"]) if valid is False
                     else pill("Chain unknown", sh.UNKNOWN_COLOR)))
         if risk.get("monitor_only"):
@@ -352,7 +361,7 @@ def header(title: str, note: str = "") -> dict | None:
                   pulse=bool(AUTO))
     st.markdown(
         f'<div class="page-head"><div class="page-title"><div class="page-icon">{icon(ico)}</div><div>'
-        f'<div class="eyebrow">{html.escape(group or "Settings")}</div><h1>{html.escape(title)}</h1>'
+        f'<div class="eyebrow">{html.escape(group)}</div><h1>{html.escape(title)}</h1>'
         f'<div class="page-note">{html.escape(note)}</div></div></div>'
         f'<div class="chips">{chips}</div></div>',
         unsafe_allow_html=True,
@@ -403,11 +412,11 @@ def incident_summary(inc: dict) -> None:
     st.markdown(
         f'<div class="inc-head">'
         f'<span class="inc-id">{html.escape(inc_id)}</span>'
-        f'{pill(str(inc.get("severity", "?")).upper(), sev_color)}'
+        f'{pill(str(inc.get("severity", "unknown")).capitalize() + " severity", sev_color)}'
         f'{pill(sh.status_label(inc.get("status")), sh.TEXT_SECONDARY)}'
-        + (pill("SLA BREACHED", sh.BAND_COLORS["critical"]) if inc.get("sla_breached") else "")
-        + (pill(f"ACK · {inc.get('acked_by')}", sh.BAND_COLORS["green"]) if inc.get("acked")
-           else pill("ACK · NONE", sh.BAND_COLORS["amber"]))
+        + (pill("SLA breached", sh.BAND_COLORS["critical"]) if inc.get("sla_breached") else "")
+        + (pill(f"Seen by {inc.get('acked_by')}", sh.BAND_COLORS["green"]) if inc.get("acked")
+           else pill("Not acknowledged", sh.BAND_COLORS["amber"]))
         + "</div>",
         unsafe_allow_html=True,
     )
@@ -472,12 +481,16 @@ def decision_controls(inc: dict) -> None:
         with st.form(key=f"contain_{inc_id}", clear_on_submit=True, border=True):
             just = st.text_area("Justification (written to the audit log)", key=f"cjust_{inc_id}", height=70,
                                 placeholder="e.g. Verified attacker; keep the block")
+            sure = st.checkbox("Keep this block forever. It will no longer expire on its own.", key=f"sure_{inc_id}")
             c1, c2 = st.columns(2)
-            rb = c1.form_submit_button("Rollback", icon=":material/undo:", width="stretch")
-            perm = c2.form_submit_button("Make Permanent", icon=":material/push_pin:", type="primary", width="stretch")
+            # Rollback is the safe default, so it gets the filled style; the permanent choice needs the tick above.
+            rb = c1.form_submit_button("Roll back", icon=":material/undo:", type="primary", width="stretch")
+            perm = c2.form_submit_button("Make permanent", icon=":material/push_pin:", width="stretch")
         if rb:
             run_action(f"Rolled back {inc_id}",
                        lambda: client.rollback(inc_id, op, just.strip() or "Rolled back by operator from dashboard"))
+        elif perm and not sure:
+            st.error("Tick \"Keep this block forever\" first. Nothing was changed.")
         elif perm:
             run_action(f"Made permanent {inc_id}",
                        lambda: client.permanent(inc_id, op, just.strip() or "Made permanent by operator from dashboard"))
@@ -514,7 +527,7 @@ APPEARANCE_WORDS = "appearance look theme colour color accent black white dark l
 
 
 def page_config() -> None:
-    header("Configuration", f"Saved to {cfg.config_path()} · read by every part when it starts")
+    header("Configuration", f"Saved to {short_path(cfg.config_path())} · read by every part when it starts")
     o1, o2 = st.columns([4, 1], vertical_alignment="center")
     query = o1.text_input("Search settings", key="cfg_search", icon=":material/search:", label_visibility="collapsed",
                           placeholder="Search settings: telegram, threshold, password, theme...").strip()
@@ -642,7 +655,7 @@ def appearance_settings() -> None:
         f'<div class="preview"><div class="brand-mark" style="width:2rem;height:2rem">{_logo_svg("mark.svg")}</div>'
         f'<span class="btn">Approve block</span><span class="soft">Selected</span>'
         f'<span class="lnk">A link</span>'
-        f'<span style="margin-left:auto;font-size:.76rem;color:var(--ink-muted)">accent {p["brand-fill"]} · '
+        f'<span style="margin-left:auto;font-size:.8rem;color:var(--ink-muted)">accent {p["brand-fill"]} · '
         f'risk colours stay green / amber / red</span></div>', unsafe_allow_html=True)
     if warn:
         st.caption(f"This colour looks like the {warn} risk colour, so buttons may read as alerts. "
@@ -661,9 +674,9 @@ def protection_switch() -> None:
     def switch(on: bool, reason: str = "") -> None:
         try:
             client.set_protection(on, op, reason)
-            st.session_state["flash"] = ("Protection is on" if on else "Protection is off: monitor-only mode", "✅")
+            st.session_state["flash"] = ("Protection is on" if on else "Protection is off: monitor-only mode", OK_ICON)
         except CoreError as exc:
-            st.session_state["flash"] = (f"Could not switch protection: {exc}", "⚠️")
+            st.session_state["flash"] = (f"Could not switch protection: {exc}", WARN_ICON)
         _get.clear()
         st.rerun()
 
@@ -783,13 +796,13 @@ def ai_connection(ai: dict[str, str]) -> None:
     if err:
         t1.caption("Cyanide: core not running, so this can't show what it uses. Start the demo to test through it.")
     elif now.get("online"):
-        t1.caption(f"Cyanide now: 🟢 online · {now.get('provider')} · {now.get('model')}"
+        t1.caption(f"Cyanide now: :green[:material/radio_button_checked: online] · {now.get('provider')} · {now.get('model')}"
                    f" · key from {now.get('key_source') or 'unknown'}")
     else:
-        t1.caption(f"Cyanide now: 🔴 offline · {now.get('off_reason') or now.get('chat')}")
+        t1.caption(f"Cyanide now: :red[:material/radio_button_unchecked: offline] · {now.get('off_reason') or now.get('chat')}")
     body = {"provider": ai["CACTAI_LLM_PROVIDER"], "api_key": ai["CACTAI_LLM_API_KEY"],
             "base_url": ai["CACTAI_LLM_BASE_URL"], "model": ai[cfg.MODEL_ENV]}
-    if t2.button("🔌 Test connection", width="stretch", disabled=bool(err),
+    if t2.button("Test connection", icon=":material/power:", width="stretch", disabled=bool(err),
                  help="Send one short request to the provider with the settings above (saved or not), "
                       "through the same code Cyanide uses"):
         with st.spinner("Sending a test request to the provider..."):
@@ -894,7 +907,7 @@ def page_chat() -> None:
         with st.spinner(f"{assistant} is looking into it…"):
             _, err = safe(lambda: client.chat(st.session_state.operator, prompt, about or None))
         if err:
-            st.session_state["flash"] = (f"Chat failed: {err}", "⚠️")
+            st.session_state["flash"] = (f"Chat failed: {err}", WARN_ICON)
         st.rerun()
 
 
@@ -921,7 +934,7 @@ def setup_conversation() -> None:
     with st.container(height=540, border=True):
         for m in sc.messages:
             mine = m["role"] == "user"
-            with st.chat_message("user" if mine else "assistant", avatar="👤" if mine else "🧪"):
+            with st.chat_message("user" if mine else "assistant", avatar=":material/person:" if mine else ":material/science:"):
                 st.markdown(m["text"].replace("\n", "  \n") if mine else m["text"])
     answer = None
     options = sc.options()
@@ -984,7 +997,7 @@ def save_setup(sc: "setup_chat.SetupChat") -> None:
 def chat_message(m: dict, assistant: str, by_id: dict[str, dict]) -> None:
     mine = m.get("role") == "operator"
     who = m.get("operator") or st.session_state.operator if mine else assistant
-    with st.chat_message("user" if mine else "assistant", avatar="👤" if mine else "🧪"):
+    with st.chat_message("user" if mine else "assistant", avatar=":material/person:" if mine else ":material/science:"):
         meta = f"**{who}** · {sh.short_time(m.get('ts'))}"
         if m.get("incident"):
             meta += f" · about {m['incident']}"
@@ -1010,11 +1023,11 @@ def chat_suggestion(mid: Any, n: int, s: dict, inc: dict | None) -> None:
     ok, why_not = sh.suggestion_state(inc, decision)
     label = str(s.get("label") or f"{decision} {inc_id}")
     if not ok:
-        st.caption(f"💡 Suggested: {label} · {why_not}")
+        st.caption(f":material/lightbulb: Suggested: {label} · {why_not}")
         return
     op = st.session_state.operator
     with st.form(key=f"sugg_{mid}_{n}", border=True):
-        st.markdown(f"💡 **Suggested: {html.escape(label)}**")
+        st.markdown(f":material/lightbulb: **Suggested: {html.escape(label)}**")
         just = st.text_input("Justification (written to the audit log)", value=str(s.get("reason") or ""),
                              key=f"sugg_just_{mid}_{n}")
         go_ = st.form_submit_button(f"Confirm: {label}", type="primary" if decision != "reject" else "secondary")
@@ -1048,7 +1061,7 @@ def watch_suggestion(mid: Any, n: int, s: dict) -> None:
     """A log file Cyanide found in a process scan. Pressing Watch adds it to the collector."""
     label = str(s.get("label") or "Watch log")
     with st.container(border=True):
-        st.markdown(f"💡 **Suggested: {html.escape(label)}**")
+        st.markdown(f":material/lightbulb: **Suggested: {html.escape(label)}**")
         if s.get("reason"):
             st.caption(str(s["reason"]))
         if st.button(f"Confirm: {label}", key=f"sugg_{mid}_{n}", type="primary"):
@@ -1060,7 +1073,7 @@ def quarantine_suggestion(mid: Any, n: int, s: dict) -> None:
     """A file Cyanide thinks is hostile. Pressing it moves the file into quarantine (it can be restored)."""
     label = str(s.get("label") or "Quarantine file")
     with st.container(border=True):
-        st.markdown(f"💡 **Suggested: {html.escape(label)}**")
+        st.markdown(f":material/lightbulb: **Suggested: {html.escape(label)}**")
         if s.get("reason"):
             st.caption(str(s["reason"]))
         if st.button(f"Confirm: {label}", key=f"sugg_{mid}_{n}", type="primary"):
@@ -1113,7 +1126,7 @@ def page_collector() -> None:
         table(sh.pd.DataFrame(rows), "")
     with right, st.container(border=True):
         section("Heartbeats", "Watchdog flags a collector that goes quiet", "monitor_heart")
-        table(sh.pd.DataFrame([{"Collector": c.get("collector", "-"), "State": "⚠️ silent" if c.get("silent") else "✅ alive",
+        table(sh.pd.DataFrame([{"Collector": c.get("collector", "-"), "State": "Silent" if c.get("silent") else "Alive",
                                 "Last seen": datetime.fromtimestamp(float(c["last_seen_ts"])).strftime("%H:%M:%S")
                                 if c.get("last_seen_ts") else "-"} for c in collectors]),
               "No heartbeat received yet. Start the collector.")
@@ -1170,7 +1183,7 @@ def log_discovery() -> None:
         if latest.get("error"):
             st.warning(f"The scan hit a problem: {latest['error']}")
         for t in latest.get("threats") or []:
-            st.error(f"{SEVERITY_ICON.get(str(t.get('severity')), '⚪')} Suspicious program: {t.get('label')} · "
+            st.error(f"{SEVERITY_ICON.get(str(t.get('severity')), OTHER_SEVERITY)} Suspicious program: {t.get('label')} · "
                      f"{t.get('name')} (pid {t.get('pid')}, account {t.get('account') or 'unknown'})")
         found = latest.get("suggestions") or []
         known = [s for s in found if s.get("recognised", True)]
@@ -1184,10 +1197,12 @@ def log_discovery() -> None:
                 for s in other[:10]:
                     scan_suggestion(s)
         for note in latest.get("notes") or []:
-            st.caption(f"ℹ️ {note}")
+            st.caption(f":material/info: {note}")
 
 
-SEVERITY_ICON = {"critical": "🔴", "high": "🟠", "medium": "🟡"}
+SEVERITY_ICON = {"critical": ":red[:material/error:]", "high": ":orange[:material/warning:]",
+                 "medium": ":orange[:material/info:]"}  # Streamlit markdown icons: the same on every OS
+OTHER_SEVERITY = ":gray[:material/help:]"
 
 
 def threat_panel() -> None:
@@ -1236,7 +1251,7 @@ def threat_row(f: dict) -> None:
     where = code(f.get('path')) + (f" → {code(f.get('entry'))}" if f.get("entry") else "") + \
         (f" line {html.escape(str(f.get('line')))}" if f.get("line") else "")
     c1, c2 = st.columns([5, 1])
-    c1.markdown(f"{SEVERITY_ICON.get(str(f.get('severity')), '⚪')} **{html.escape(str(f.get('label')))}** · "
+    c1.markdown(f"{SEVERITY_ICON.get(str(f.get('severity')), OTHER_SEVERITY)} **{html.escape(str(f.get('label')))}** · "
                 f"{html.escape(str(f.get('kind', '')).replace('_', ' '))} · {where}", unsafe_allow_html=True)
     if f.get("snippet"):
         c1.code(str(f["snippet"]), language=None)
@@ -1249,7 +1264,7 @@ def threat_row(f: dict) -> None:
 def scan_suggestion(s: dict) -> None:
     """One place the scan found logs, with a Watch button per file not yet watched."""
     files = s.get("files") or []
-    state = "✅ already watched" if s.get("already_watched") else f"{len(files)} log file(s)"
+    state = ":material/check: already watched" if s.get("already_watched") else f"{len(files)} log file(s)"
     st.markdown(f"**{html.escape(str(s.get('program')))}** · {code(s.get('path'))} · {html.escape(str(s.get('layer')))} · {state}  \n"
                 f"<span style='opacity:.7'>{html.escape(', '.join(s.get('reasons') or []))}</span>",
                 unsafe_allow_html=True)
@@ -1319,15 +1334,15 @@ def page_responder() -> None:
     with k1:
         kpi("Active containment", str(len(containment)), "in force now", sh.BAND_COLORS["amber"] if len(containment) else None)
     with k2:
-        kpi("Blocked IPs", str(len((blocklist or {}).get("ips") or [])), "via GET /blocklist")
+        kpi("Blocked IPs", str(len((blocklist or {}).get("ips") or [])), "blocked right now")
     with k3:
-        kpi("Locked accounts", str(len((blocklist or {}).get("users") or [])), "via GET /blocklist")
+        kpi("Locked accounts", str(len((blocklist or {}).get("users") or [])), "locked right now")
     with k4:
         kpi("Actions taken", str(len(history)), f"expire after {os.environ.get('HOTPATCH_TTL_HOURS', '2')} demo h")
     st.write("")
 
     with st.container(border=True):
-        section("Active containment", "enforced via /blocklist", "block")
+        section("Active containment", "blocked or locked right now", "block")
         if bl_err:
             st.warning(f"Could not load blocklist: {bl_err}")
         table(containment, "Nothing contained right now.")
@@ -1351,11 +1366,16 @@ def page_review() -> None:
     idx, band = risk.get("risk_index"), sh.resolve_band(risk)
     color, threshold = sh.band_color(band), float(risk.get("threshold") or 80)
     active = [i for i in incidents if i.get("status") in sh.ACTIVE_STATUSES]
+    waiting = sh.pending_approvals(incidents)
     penalty = sum(float(i.get("inaction_penalty") or 0) for i in active)
+    hist = sh.history_frame(risk.get("history"))
+    peak = max(float(hist["risk_index"].max()), float(idx or 0)) if not hist.empty else idx
 
+    # The risk index itself is in the sidebar card and the gauge; these cards each add something new.
     k1, k2, k3, k4, k5 = st.columns(5)
     with k1:
-        kpi("Risk index", f"{idx if idx is not None else '-'} / 100", f"raw score {risk.get('raw_score', '-')}", color)
+        kpi("Peak so far", f"{peak:.0f}" if peak is not None else "-", f"raw score now {risk.get('raw_score', '-')}",
+            sh.band_color(sh.band_for(peak)) if peak is not None else None)
     with k2:
         kpi("Threshold", f"{threshold:.0f}", "autonomous containment above this")
     with k3:
@@ -1363,7 +1383,8 @@ def page_review() -> None:
         kpi("Headroom", f"{gap:.0f}" if gap > 0 else "over", "points until the threshold",
             sh.BAND_COLORS["critical"] if gap <= 0 else None)
     with k4:
-        kpi("Open incidents", str(len(active)), f"{len(incidents)} total")
+        kpi("Waiting on you", str(len(waiting)), f"{len(waiting) - len(active)} contained · {len(active)} open",
+            sh.BAND_COLORS["amber"] if waiting else None)
     with k5:
         kpi("Inaction penalty", f"+{penalty:.0f}", "+5 per demo-hour unacknowledged",
             sh.BAND_COLORS["amber"] if penalty else None)
@@ -1377,7 +1398,6 @@ def page_review() -> None:
                     unsafe_allow_html=True)
     with h, st.container(border=True):
         section("Risk over time", "step line · bands green / amber / red / critical", "show_chart")
-        hist = sh.history_frame(risk.get("history"))
         if hist.empty:
             empty("No history yet. The core adds a point on every risk change.", "show_chart")
         else:
@@ -1406,7 +1426,7 @@ def page_reports() -> None:
     newest = sorted(by_id, key=lambda i: str(by_id[i].get("opened_at") or ""), reverse=True)
     ids = sorted(newest, key=lambda i: i not in with_report)  # ready reports first
     rows = [{"Incident": i, "Category": sh.category_label(by_id[i].get("category")),
-             "Report": "✅ ready" if i in with_report else "-"} for i in ids]
+             "Report": "Ready" if i in with_report else "-"} for i in ids]
     left, right = st.columns([4, 8])
     with left, st.container(border=True):
         section("All incidents", f"{len(with_report & set(by_id))} reports ready", "inventory_2")
@@ -1448,12 +1468,14 @@ def render_feed(feed: list[dict]) -> None:
             f'<div class="feed-row"><div class="feed-time">{html.escape(e["time"])}<br>'
             f'<span class="feed-hash">#{e["seq"] if e["seq"] is not None else "-"}</span></div>'
             f'<div class="feed-rail"><i style="background:{e["color"]}"></i></div>'
-            f'<div class="feed-body"><span class="agent" style="color:{e["color"]}">{e["icon"]} {html.escape(e["agent"])}</span>'
+            f'<div class="feed-body"><span class="agent" style="color:{e["color"]}">{icon(e["icon"])} {html.escape(e["agent"])}</span>'
             f' · <span class="feed-type">{html.escape(e["type"])}</span><br>'
             f'<span class="feed-sum">{html.escape(e["summary"])}</span> '
             f'<span class="feed-hash">{html.escape(e["hash"])}</span></div></div>'
         )
-    st.markdown(f'<div class="feed">{"".join(rows)}</div>', unsafe_allow_html=True)
+    # Focusable, so keyboard users can scroll the feed too.
+    st.markdown(f'<div class="feed" tabindex="0" role="region" aria-label="Agent activity">{"".join(rows)}</div>',
+                unsafe_allow_html=True)
 
 
 def report_viewer(inc_id: str) -> None:
