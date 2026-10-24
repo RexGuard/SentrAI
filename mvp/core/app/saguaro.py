@@ -1,7 +1,7 @@
 """Warden (class Saguaro): lead orchestrator. Owns incidents, the risk index, notifications and the hotpatch workflow.
 
 Incidents, actions (blocks) and notifications are saved to SQLite next to the audit chain after
-every change and restored on startup (state.py), so a restart keeps them. POST /demo/reset clears both.
+every change and restored on startup (state.py), so a restart keeps them. reset() clears both.
 """
 
 from __future__ import annotations

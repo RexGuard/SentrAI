@@ -55,7 +55,7 @@ def _i(name: str, default: int) -> int:
 
 @dataclass
 class Settings:
-    demo_speed: float = field(default_factory=lambda: _f("DEMO_SPEED", 60.0))
+    demo_speed: float = field(default_factory=lambda: _f("DEMO_SPEED", 1.0))  # real time; above 1 speeds the timers up for testing
     threshold: int = field(default_factory=lambda: _i("RISK_THRESHOLD", 80))
     sla_hours: float = field(default_factory=lambda: _f("SLA_HOURS", 2.0))
     ttl_hours: float = field(default_factory=lambda: _f("HOTPATCH_TTL_HOURS", 2.0))

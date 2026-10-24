@@ -25,7 +25,7 @@ def test_bubbles_count_alerts_since_each_page_was_opened():
     assert sh.unseen_counts(RECORDS, {"collector": 3, "classifier": 5}) == {"collector": 1, "classifier": 0, "responder": 1}
 
 
-def test_bubbles_come_back_after_a_demo_reset():
+def test_bubbles_come_back_after_a_fresh_chain():
     # seen seq 99 is beyond the restarted chain, so everything counts again
     assert sh.unseen_counts(RECORDS, {"collector": 99})["collector"] == 2
 
@@ -85,7 +85,7 @@ def test_chat_asks_and_the_suggestion_goes_through_the_normal_decision(fake_core
     from streamlit.testing.v1 import AppTest
 
     monkeypatch.setenv("CACTAI_CONFIG", str(tmp_path / "config.json"))
-    requests.post(f"{fake_core}/demo/reset", timeout=3)
+    requests.post(f"{fake_core}/dev/reset", timeout=3)
     requests.post(f"{fake_core}/dev/trigger/brute_force", timeout=3)
     import streamlit as st
     st.cache_data.clear()  # earlier tests cached the incidents from before the reset
@@ -170,7 +170,7 @@ def test_collector_page_scans_and_watches_a_log(fake_core, tmp_path, monkeypatch
     from streamlit.testing.v1 import AppTest
 
     monkeypatch.setenv("CACTAI_CONFIG", str(tmp_path / "config.json"))
-    requests.post(f"{fake_core}/demo/reset", timeout=3)
+    requests.post(f"{fake_core}/dev/reset", timeout=3)
     import streamlit as st
     st.cache_data.clear()
     at = AppTest.from_file(APP, default_timeout=20)
@@ -196,7 +196,7 @@ def test_scout_proposals_are_approved_or_dismissed_on_the_collector_page(fake_co
     from streamlit.testing.v1 import AppTest
 
     monkeypatch.setenv("CACTAI_CONFIG", str(tmp_path / "config.json"))
-    requests.post(f"{fake_core}/demo/reset", timeout=3)
+    requests.post(f"{fake_core}/dev/reset", timeout=3)
     for name in ("auth.log", "syslog"):
         requests.post(f"{fake_core}/_fake/scout-proposal", json={"name": name, "path": f"/var/log/{name}"}, timeout=3)
     st.cache_data.clear()

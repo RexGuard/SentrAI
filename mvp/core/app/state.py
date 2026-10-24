@@ -1,7 +1,7 @@
 """Saves the orchestrator's working state (incidents, actions, notifications) in SQLite.
 
 The state lives in the same database file as the audit chain, in its own tables, so
-POST /demo/reset (which archives that file) clears both at once. Each row is one object
+Cyanide.reset() (which archives that file, used by tests) clears both at once. Each row is one object
 stored as JSON; only rows that changed since the last save are written.
 """
 

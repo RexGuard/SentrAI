@@ -57,7 +57,7 @@ def test_custom_responder_extends_the_allowlist():
 def test_expired_block_made_permanent_is_enforced_again(client):
     brute_force(client)
     client.post("/incidents/RSK-2026-081/decision", json={"operator": "erick", "decision": "approve"})
-    client.post("/demo/advance", json={"demo_hours": 2.1})
+    client.core.advance(2.1)
     assert client.get("/blocklist").json()["ips"] == []
     client.post("/incidents/RSK-2026-081/permanent", json={"operator": "erick", "justification": "known bad"})
     assert client.get("/blocklist").json()["ips"] == ["203.0.113.45"]

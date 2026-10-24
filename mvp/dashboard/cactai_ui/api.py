@@ -188,6 +188,3 @@ class CoreClient:
     def decide_log_source(self, proposal_id: str, operator: str, approve: bool, reason: str = "") -> dict:
         return self.post_json(f"/log-sources/pending/{proposal_id}",
                               {"operator": operator, "approve": approve, "reason": reason})
-
-    def reset_demo(self) -> Any:
-        return self.post_json("/demo/reset", {})

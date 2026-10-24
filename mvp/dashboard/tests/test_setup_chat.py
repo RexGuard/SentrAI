@@ -14,6 +14,7 @@ import setup_chat  # noqa: E402
 def config_file(tmp_path, monkeypatch):
     path = tmp_path / "config.json"
     monkeypatch.setenv("CACTAI_CONFIG", str(path))
+    monkeypatch.setattr(setup_chat, "system_logs", lambda *a, **k: [])  # this machine's /var/log stays out of it
     return path
 
 
@@ -73,8 +74,8 @@ def test_walkthrough_with_buttons_and_typing(tmp_path):
 def test_bad_answers_are_asked_again(tmp_path):
     sc = run(setup_chat.SetupChat(), "office", "yes")
     sc.answer(str(tmp_path / "nope"))
-    assert "can't find a folder" in last(sc) and sc.step.key == "logs"
-    sc.answer("demo")
+    assert "can't find a file or folder" in last(sc) and sc.step.key == "logs"
+    sc.answer("own")
     sc.answer("whatever")
     assert "couldn't find an IP" in last(sc) and sc.step.key == "ips"
 
@@ -97,14 +98,14 @@ def test_ai_maps_an_unclear_answer_but_never_sees_secrets():
     sc = setup_chat.SetupChat()
     sc.answer("we are a dental clinic", interpret=interpret)
     assert sc.step.key == "preset" and "Strict" in last(sc) and "Patient records" in last(sc)
-    run(sc, "yes", "demo", "none", "none", "keep", "none")  # ... alerts: just the dashboard
+    run(sc, "yes", "own", "none", "none", "keep", "none")  # ... alerts: just the dashboard
     sc.answer("anthropic", interpret=interpret)
     sc.answer("sk-ant-secret", interpret=interpret)
     assert "sk-ant-secret" not in seen and sc.values()["CACTAI_LLM_API_KEY"] == "sk-ant-secret"
 
 
 def test_review_and_restart():
-    sc = run(setup_chat.SetupChat(), "busy", "yes", "demo", "none", "none", "keep", "console", "none",
+    sc = run(setup_chat.SetupChat(), "busy", "yes", "own", "none", "none", "keep", "console", "none",
              "local", "keep", "keep")
     sc.answer("short")
     assert "at least 8" in last(sc)
@@ -133,3 +134,34 @@ def test_launcher_sign_in_does_not_count_as_setup(config_file):
 def test_changed_values_count_as_done(config_file):
     cfg.save({"CACTAI_OPERATOR": "Erick"})  # saved before the marker existed
     assert cfg.setup_done()
+
+
+def test_logs_found_on_this_computer_are_offered_and_saved(tmp_path, monkeypatch):
+    found = [{"path": "/var/log/nginx/access.log", "layer": "web", "format": "nginx", "why": "nginx web server log"},
+             {"path": "journald:sshd", "layer": "os", "format": "journald", "why": "SSH logins (sshd)"}]
+    monkeypatch.setattr(setup_chat, "system_logs", lambda *a, **k: found)
+    sc = run(setup_chat.SetupChat(), "office", "yes")
+    assert "/var/log/nginx/access.log" in last(sc) and "demo" not in last(sc).lower()
+    assert [v for v, _ in sc.options()] == ["found", "own"]
+    sc.answer("found")
+    assert sc.step.key == "ips"
+    assert "/var/log/nginx/access.log, journald:sshd" in "\n".join(sc.summary())
+    monkeypatch.setenv("CACTAI_SCOUT_SOURCES", str(tmp_path / "sources.json"))
+    assert setup_chat.save_log_sources(sc, "guided setup (erick)") == ["/var/log/nginx/access.log", "journald:sshd"]
+    saved = json.loads((tmp_path / "sources.json").read_text())
+    assert [e["path"] for e in saved] == ["/var/log/nginx/access.log", "journald:sshd"]
+    assert all(e["confirmed_by"] == "guided setup (erick)" for e in saved)
+
+
+def test_a_typed_log_file_or_folder_is_watched(tmp_path):
+    (tmp_path / "auth.log").write_text("")
+    (tmp_path / "access.log").write_text("")
+    (tmp_path / "access.jsonl").write_text("")  # SentrAI's own format: read from the folder already
+    (tmp_path / "dpkg.log").write_text("")      # not a web or login log
+    sc = run(setup_chat.SetupChat(), "office", "yes", str(tmp_path / "auth.log"))
+    assert sc.notes["log_sources"] == [{"path": str((tmp_path / "auth.log").resolve()), "layer": "os",
+                                        "format": "auto", "why": "chosen in guided setup"}]
+    sc = run(setup_chat.SetupChat(), "office", "yes", str(tmp_path))
+    assert sc.values()["CACTAI_LAB_LOGS"] == str(tmp_path.resolve())
+    assert sorted(Path(e["path"]).name for e in sc.notes["log_sources"]) == ["access.log", "auth.log"]
+    assert setup_chat.save_log_sources(setup_chat.SetupChat(), "x") == []  # nothing picked, nothing written

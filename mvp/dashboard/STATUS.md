@@ -5,7 +5,7 @@ Stopped on request, 2026-09-27 ~23:32. All servers I started (fake core :8900, S
 ## Done
 - `mvp/dashboard/` Streamlit app (`app.py`) with its own `.venv`, `requirements.txt` and `.streamlit/config.toml` (dark theme, port 8501).
   - Features: SentrAI branding; plotly 0-100 gauge colored by band with the threshold line at 80; risk-over-time chart from `/risk` history; KPI row; incident queue table; incident detail with [Acknowledge], [Approve & Patch], [Reject with Justification] (reject requires text), [Rollback] and [Make Permanent] for contained incidents; active containment from `/blocklist`; agent activity feed from `/audit` with a "Chain valid ✅" badge; evidence report viewer (`/reports/{id}.md`) with .md and .json download buttons.
-  - Sidebar: core URL, operator name, auto-refresh every 2 s (`st.fragment(run_every=2)`), Reset demo button (`/demo/reset`).
+  - Sidebar: core URL, operator name, auto-refresh every 2 s (`st.fragment(run_every=2)`).
   - When the core is down, a "CORE OFFLINE" panel is shown and the page keeps retrying.
   - Helpers: `cactai_ui/api.py` (HTTP client), `cactai_ui/shaping.py` (pure functions for bands, tables, feed and figures).
   - `dev/fake_core.py`: FastAPI fake of the whole contract API. It defaults to port **8900** so it never collides with the real core. It plays a scripted scenario: brute force, then penalty growth, then SQLi, then autonomous containment and a report. There is also a dev-only `POST /dev/trigger/{category}`.

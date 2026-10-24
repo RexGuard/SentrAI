@@ -31,10 +31,10 @@ Tests:
 
 | Var | Default | Meaning |
 | --- | --- | --- |
-| `DEMO_SPEED` | `60` | Demo hours per real hour. At 60, 1 real minute is 1 demo hour. |
+| `DEMO_SPEED` | `1` | Timer hours per real hour. 1 is real time; for testing, 60 makes 1 real minute count as 1 hour. |
 | `RISK_THRESHOLD` | `80` | Risk index at which autonomous containment starts. |
-| `SLA_HOURS` | `2` | Acknowledgement SLA, in demo hours. |
-| `HOTPATCH_TTL_HOURS` | `2` | How long a hotpatch lasts, in demo hours. |
+| `SLA_HOURS` | `2` | Acknowledgement SLA, in hours. |
+| `HOTPATCH_TTL_HOURS` | `2` | How long a hotpatch lasts, in hours. |
 | `ON_DUTY` | `John Doe (SEC-409) / Shift Bravo` | The responsible entity named in reports and notifications. |
 | `TEAM_LEAD`, `IT_MANAGER`, `CXO` | role names | Escalation recipients. |
 | `TYPESAFE_API_KEY` | unset | Turns on Jev (TypeSafe System One). Without it the fallback classifier is used. |
@@ -97,7 +97,7 @@ python -m app.anchor show        # the current fingerprint
 or `GET /audit/verify?fingerprint=...`. The notifier keeps the newest witness it delivered
 (`notifier/data/last_witness.txt`), so `/verify` in the Telegram chat, or
 `python notifier.py --verify`, checks the live chain against it without pasting anything
-(`/verify <line>` checks an older one). After a demo reset the old chain is in `data/archive/`;
+(`/verify <line>` checks an older one). An archived chain in `data/archive/` can be checked too;
 pass it with `--db`.
 | `PROTECTED_IPS` | `127.0.0.1,::1,localhost` | Comma-separated IPs or networks that Countersign will never approve blocking. |
 | `PROTECTED_NETS` | private ranges | Networks Countersign will not block on its own (RFC 1918, 100.64.0.0/10, fc00::/7); an operator can still approve a block. `off` disables. |
@@ -144,12 +144,12 @@ Audit records: `cyanide_plan` (actions, reasons, dropped steps), `cyanide_hold` 
    - If P(malicious) is between 0.4 and 0.6, the incident gets `needs_review=true`. It is never auto-contained, and the operator is notified right away.
 3. **Aggregate**. Incidents are grouped by `(category, src_ip or user or host)`. IDs run `RSK-2026-081`, `RSK-2026-082`, and so on.
    - `points = base × confidence × asset_criticality`
-   - `raw` is the sum over incidents that are `open` or `acknowledged`, each counting its points plus its inaction penalty. The penalty is +5 per full demo hour unacknowledged, capped at +30. It freezes when the incident is acknowledged.
+   - `raw` is the sum over incidents that are `open` or `acknowledged`, each counting its points plus its inaction penalty. The penalty is +5 per full hour unacknowledged, capped at +30. It freezes when the incident is acknowledged.
    - Contained, resolved and rejected incidents no longer count.
 4. **Hotpatch**. When the risk index reaches the threshold, every incident that is open, unacknowledged and not flagged for review goes through these steps:
    1. Snapshot: sha256 of the blocklist state.
    2. Countersign review: the incident needs confidence of at least 0.6, and the action must be on the allowlist.
-   3. Garrison applies the playbook with a TTL of 2 demo hours.
+   3. Garrison applies the playbook with a TTL of 2 hours.
    4. Verify.
    5. Notify.
 
@@ -208,7 +208,6 @@ These follow the contract:
 - `/blocklist`
 - `/notifications/pending`
 - `/notifications/{id}/delivered`
-- `/demo/reset`
 
 Additions that do not change the contract:
 - `GET /incidents/{id}/why`: HelpDesk explanation.
@@ -219,7 +218,6 @@ Additions that do not change the contract:
 - `POST /system/scan {"operator": "erick"}` and `GET /system/scan` (latest): read-only process scan with suggested log files.
 - `POST /threats/scan {"operator": "erick"}`, `GET /threats`, `POST /threats/{id}/quarantine`, `GET /quarantine`, `POST /quarantine/{id}/restore`: threat scan and quarantine.
 - `GET /log-sources` and `POST /log-sources {"operator", "file_id", "layer"?}`: extra log files the collector watches; a file is added only by its id from the latest scan.
-- `POST /demo/advance {"demo_hours": 3}`: fast-forwards the demo clock, for tests and to skip ahead during a take.
 
 ### Response shapes the contract leaves open
 
@@ -238,7 +236,6 @@ Additions that do not change the contract:
 | `rollback` | Rolls back active actions. The incident becomes `acknowledged`, so its points count again but it will not be auto-contained. Returns 409 if nothing is active. |
 | `permanent` | Makes active or expired actions permanent (no expiry). The incident becomes `resolved`. |
 | `ack` | Records who acknowledged, when and on which channel. Freezes the inaction penalty. Idempotent. |
-| `/demo/reset` | Moves the audit DB to `data/archive/` (the old chain is kept, not destroyed), clears all state (the saved incident state lives in the same file), and starts a new chain. |
 
 ## Limitations
 

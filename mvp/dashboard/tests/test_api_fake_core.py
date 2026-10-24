@@ -33,13 +33,13 @@ def test_full_operator_flow(fake_core):
     audit = c.audit()
     assert audit["chain_valid"] is True
     assert any(r["type"] == "permanent" for r in audit["records"])
-    c.reset_demo()
+    requests.post(f"{fake_core}/dev/reset", timeout=3)
     assert c.incidents() == []
 
 
 def test_protection_switch(fake_core):
     c = CoreClient(fake_core)
-    c.reset_demo()
+    requests.post(f"{fake_core}/dev/reset", timeout=3)
     assert c.protection()["protection"] == "on" and c.risk()["monitor_only"] is False
     try:
         c.set_protection(False, "erick", "")
@@ -61,4 +61,4 @@ def test_protection_switch(fake_core):
     c.set_protection(True, "erick")
     assert c.protection()["protection"] == "on"
     assert any(r["type"] == "protection_changed" for r in c.audit()["records"])
-    c.reset_demo()
+    requests.post(f"{fake_core}/dev/reset", timeout=3)
