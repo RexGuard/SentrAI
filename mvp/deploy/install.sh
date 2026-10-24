@@ -197,14 +197,13 @@ CACTAI_DASHBOARD_HOST=127.0.0.1
 CACTAI_DASHBOARD_PORT=8501
 CACTAI_CORE_URL=http://127.0.0.1:8000
 CACTAI_PUBLIC_URL=http://127.0.0.1:8000
-# Real time: one real hour is one hour on the SLA and block timers (the demo runs faster).
+# Real time: one real hour is one hour on the SLA and block timers (DEMO_SPEED above 1 speeds them up for testing).
 DEMO_SPEED=1
 PROTECTED_IPS=127.0.0.1,::1,localhost
 CACTAI_CONFIG=$STATE/config.json
 CACTAI_DB=$STATE/core/cactai.db
 CACTAI_COLLECTOR_STATE=$STATE/collector/state.json
 CACTAI_LAB_LOGS=$STATE/lab-logs
-CACTAI_LAB_DB=$STATE/portal.sqlite3
 CACTAI_SCOUT_SOURCES=$STATE/scout/sources.json
 CACTAI_SCOUT_TRAILS=$STATE/scout/trails
 EOF
@@ -315,9 +314,9 @@ for c in core lab dashboard notifier; do
     [ -d "$MVP/$c" ] && find "$MVP/$c" -mindepth 1 -maxdepth 1 ! -name .venv -exec rm -rf {} +
 done
 tar -C "$SRC" -cf - \
-    --exclude=.venv --exclude=__pycache__ --exclude=.pytest_cache --exclude=.demo_logs \
-    --exclude=.demo_pids.json --exclude=./lab/logs --exclude=./core/data \
-    --exclude=./lab/scout/sources.json --exclude=./lab/scout/pending.json --exclude=./lab/portal.sqlite3 \
+    --exclude=.venv --exclude=__pycache__ --exclude=.pytest_cache --exclude=.run_logs \
+    --exclude=.run_pids.json --exclude=./lab/logs --exclude=./core/data \
+    --exclude=./lab/scout/sources.json --exclude=./lab/scout/pending.json \
     --exclude=./research --exclude=./pitch --exclude=./deck --exclude=./assets \
     . | tar -C "$MVP" -xf - --no-same-owner
 chown -R root:root "$MVP"

@@ -15,10 +15,10 @@ Every component MUST follow this file. The design source of truth is `../Cyberse
 mvp/
   CONTRACT.md            (this file, owned by lead)
   core/                  owner: core agent      FastAPI on http://127.0.0.1:8000
-  lab/                   owner: lab agent       target app on http://127.0.0.1:5000, collector, attacks, replay
+  lab/                   owner: lab agent       collector, Scout
   dashboard/             owner: ui agent        Streamlit on http://127.0.0.1:8501
   notifier/              owner: ui agent        Telegram bot (optional at runtime)
-  run_demo.ps1           owner: lead (integration)
+  run.ps1 / run.sh       owner: lead (integration)
 ```
 
 ## Shared data (JSON over HTTP)

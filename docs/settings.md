@@ -75,7 +75,7 @@ service) and paste its key.
 
 ## Firewall blocking
 
-By default a block only reaches the demo portal. To block attackers in the machine's own firewall,
+By default a block only goes on SentrAI's own blocklist (`/blocklist`, for your app or proxy to read). To block attackers in the machine's own firewall,
 go step by step:
 
 1. Make sure your own IP is in `PROTECTED_IPS`.

@@ -7,14 +7,14 @@ description: How to install and run SentrAI on Windows, macOS or a Linux server.
 # Install SentrAI
 
 SentrAI watches your logs, scores the risk of what it sees, and blocks attackers inside your own
-network. It never strikes back. This guide gets it running, from a five-minute demo on a laptop to
+network. It never strikes back. This guide gets it running, from a laptop to
 a server that keeps watch around the clock.
 
 ## Pick your path
 
 | You want to | Go to | Time |
 | --- | --- | --- |
-| See SentrAI stop an attack on your own computer | [Try the demo](demo.html) | about 5 minutes |
+| Run SentrAI on your own computer | [Run on a laptop](laptop.html) | about 5 minutes |
 | Keep SentrAI running on a Linux server | [Install on a server](server.html) | about 10 minutes |
 | Sign in to the dashboard, or reset a password | [Signing in](sign-in.html) | |
 | Change thresholds, alerts or protected IPs | [Settings](settings.html) | |
@@ -22,7 +22,7 @@ a server that keeps watch around the clock.
 
 ## What you need
 
-| | Demo (Windows) | Demo (Linux or macOS) | Server |
+| | Laptop (Windows) | Laptop (Linux or macOS) | Server |
 | --- | --- | --- | --- |
 | System | Windows 10 or 11 | any recent Linux, or macOS | Linux with systemd |
 | Python | 3.12, on your PATH | 3.11 or newer, with `venv` | 3.10 or newer, with `venv` |
@@ -58,7 +58,6 @@ Every command in this guide is run from that `mvp` folder unless it says otherwi
 | Collector | reads the log files you approve and passes new lines to the core | |
 | Dashboard | the web console where you review, approve and change settings | `127.0.0.1:8501` |
 | Notifier | sends alerts to Telegram or email, with Approve and Reject buttons | |
-| Demo portal | a made-up student portal that the demo attacks (demo only) | `127.0.0.1:5000` |
 
 The core only ever listens on your own machine. The dashboard does too, unless you open it to
 named IP addresses during a [server install](server.html#open-the-dashboard-to-your-computer).

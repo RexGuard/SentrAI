@@ -25,9 +25,9 @@ Small organizations already get security alerts. Breaches happen because nobody 
 
 ## Working prototype
 
-The MVP runs on one Windows laptop: a fictional student portal gets attacked, SentrAI scores the risk, alerts the operator, auto-blocks the attackers when the risk crosses 80, and writes a hash-chained evidence report.
+The MVP runs on one laptop or a Linux server: SentrAI reads the logs you approve, scores the risk, alerts the operator, auto-blocks the attackers when the risk crosses 80, and writes a hash-chained evidence report.
 
-- 🛠️ **[MVP code and how to run it](https://github.com/RexGuard/SentrAI/tree/main/mvp)**: `run_demo.ps1` starts everything; 74 automated tests including an end-to-end run of the demo story.
+- 🛠️ **[MVP code and how to run it](https://github.com/RexGuard/SentrAI/tree/main/mvp)**: `run.ps1` / `run.sh` start everything, `deploy/install.sh` installs it on a server, with automated tests for every part.
 - 🎬 **[Video script](https://github.com/RexGuard/SentrAI/blob/main/mvp/pitch/VIDEO_SCRIPT.md)**, [slide outline](https://github.com/RexGuard/SentrAI/blob/main/mvp/pitch/SLIDES.md), [judge Q&A](https://github.com/RexGuard/SentrAI/blob/main/mvp/pitch/QA_PREP.md) and [sources](https://github.com/RexGuard/SentrAI/blob/main/mvp/research/SOURCES.md).
 
 - 🗺️ **[Roadmap](https://rexguard.github.io/SentrAI/ROADMAP.html)**: 9 phases from the MVP to a pilot, with effort, owners and done-when checks.

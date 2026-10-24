@@ -1,27 +1,20 @@
-# SentrAI Lab (target app · collector · attacks · replay)
+# SentrAI Lab (collector · Scout)
 
-The **lab** half of the SentrAI MVP: a fictional victim web app, a log
-collector that feeds the core, scripted attacks for the demo, and a replay
-fallback. Everything runs natively on Windows, on localhost, no Docker.
+The log side of SentrAI: the collector that turns logs into events for the core, and Scout,
+which finds the security logs on a new system. Runs natively on Windows or Linux, no Docker.
 
-Owner: lab agent. Writes only inside `mvp/lab/`. Talks to the core
-(`http://127.0.0.1:8000`) over the shared contract in `../CONTRACT.md`.
+Talks to the core (`http://127.0.0.1:8000`) over the shared contract in `../CONTRACT.md`.
 
 ## Layout
 
 ```
 lab/
-  requirements.txt        flask, requests, psutil, pytest
-  fake_core.py            tiny stand-in for the real core (dev/demo only)
-  scenario.py             full live demo story (benign -> brute -> pause -> sqli)
-  target_app/             Flask "Aegis Academy Student Portal" on :5000
-    app.py  db.py  logger.py  blocklist.py  paths.py  templates/
+  requirements.txt        requests, psutil, pytest (+ optional AI packages for Scout)
   collector/collector.py  tails logs/*.jsonl + approved server logs -> POST core /events
   collector/parsers.py    nginx access/error, syslog (sshd), journald line parsers
-  attacks/                brute_force, sqli, exfil, shell, benign (+ _common)
-  replay/simulate.py      REPLAY MODE: post a scripted incident to core
-  logs/                   JSON-lines logs written at runtime (access/auth/db/os)
-  seed/admin_password.txt fake admin password
+  collector/paths.py      where the JSON-lines logs live (CACTAI_LAB_LOGS, CACTAI_LOG_*)
+  scout/                  finds log files on a new system and learns from expert trails
+  logs/                   JSON-lines logs (access/auth/db/os/deception) from the app being guarded
   tests/                  pytest suite
 ```
 
@@ -35,79 +28,16 @@ python -m venv .venv
 
 All commands below use the venv python. Run them **from `mvp\lab`**.
 
-## Run the demo stack
+## Run the collector
 
-Open separate terminals (order: core, target, collector).
-
-```powershell
-# 1. Core — the real one (core agent). For a self-contained lab, use the stand-in:
-.\.venv\Scripts\python.exe fake_core.py                 # http://127.0.0.1:8000
-
-# 2. Target app (student portal, polls core /blocklist every 2s, fail-open)
-.\.venv\Scripts\python.exe -m target_app                # http://127.0.0.1:5000
-
-# 3. Collector (tails logs, batches events to core every 1s, heartbeat every 10s)
-.\.venv\Scripts\python.exe -m collector.collector
-```
-
-Point components at a different core with `--core` / the `CACTAI_CORE_URL`
-env var (default `http://127.0.0.1:8000`).
-
-## Attacks (localhost-only; remote hosts are hard-refused)
+`run.ps1` / `run.sh` in `mvp` start it with the rest of SentrAI. On its own:
 
 ```powershell
-.\.venv\Scripts\python.exe -m attacks.benign       --count 8  --delay 0.5
-.\.venv\Scripts\python.exe -m attacks.brute_force  --count 12 --delay 0.3
-.\.venv\Scripts\python.exe -m attacks.sqli         --count 6  --delay 0.4
-.\.venv\Scripts\python.exe -m attacks.exfil        --count 4  --delay 0.6
-.\.venv\Scripts\python.exe -m attacks.shell        --count 3  --delay 0.5
+.\.venv\Scripts\python.exe -m collector.collector   # tails logs, batches events to core every 1s, heartbeat every 10s
 ```
 
-Every script takes `--count`, `--delay`, `--host`, `--port`, `--src-ip`.
-The demo "attacker" IP is sent in the `X-Demo-Src-IP` header (brute
-`203.0.113.45`, sqli `198.51.100.23`, shell `198.51.100.77`, exfil
-`203.0.113.77`, benign `192.0.2.10`).
-
-## Full scripted story (live)
-
-```powershell
-.\.venv\Scripts\python.exe scenario.py            # benign -> brute -> pause -> sqli
-```
-
-## Tripwires: honeypot, honeytokens, tarpit (off by default)
-
-Design doc section 11. Everything stays inside the portal; nothing is ever sent to the
-attacker. Turn on with `run_demo.ps1 -Tripwires` / `run_demo.sh --tripwires` (or set
-`CACTAI_SPINES=1` before `python -m target_app`). The older `-Spines` / `--spines` flags still work.
-
-| Tripwire | What it is | Touch becomes |
-| --- | --- | --- |
-| Honeypot page | `/admin-legacy`, listed only in `robots.txt` as Disallow | `port_scan` (reconnaissance) |
-| Honeypot login | posting to that page; never signs anyone in | `brute_force` (IP only, no real account is locked) |
-| Honeytoken credential | `svc_backup` planted in an HTML comment on the decoy page, used on the real `/login` | `brute_force` |
-| Honeytoken rows | `STF-0007` and `STF-0012` in `members`; staff searches never match them, `/export` does | `data_exfiltration` |
-| Tarpit | decoy pages, and every request from an IP after its first touch, wait `CACTAI_TARPIT_S` seconds (default 3, max 30) | slows the attack |
-
-Each touch is written to `logs/deception.jsonl` (source `tripwire`) and the core
-rules classify it with confidence 1.0.
-
-```powershell
-.\.venv\Scripts\python.exe -m attacks.spines        # intruder walks into every tripwire (prints each wait)
-.\.venv\Scripts\python.exe scenario.py --tripwires  # the full story plus a phase 5 for the tripwires
-```
-
-In the full scenario the risk is already high by phase 5, so the first decoy touch gets
-203.0.113.99 blocked within seconds and the later steps are refused with 403. Run
-`attacks.spines` on its own (fresh start) to show every tripwire.
-
-## Replay fallback (if the live attack is flaky on camera)
-
-```powershell
-.\.venv\Scripts\python.exe -m replay.simulate                 # post scripted incident to core
-.\.venv\Scripts\python.exe -m replay.simulate --dump          # just print the events
-```
-
-Prints a `REPLAY MODE` banner — say on camera that it is a replay.
+Point it at a different core with `--core` / the `CACTAI_CORE_URL` env var (default
+`http://127.0.0.1:8000`).
 
 ## Scout: find the security logs on a new system
 
@@ -150,17 +80,6 @@ python -m collector.collector
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
-Covers: login flow, blocklist (containment) 403 enforcement, collector
-normalization to a valid contract Event, tailer creation/rotation handling,
-and that every attack script refuses non-localhost targets. Tests write to a
-temp dir and hit no network.
-
-## Safety notes
-
-- `/admin/run?cmd=` **never executes** anything — it only logs a simulated
-  `web server spawned shell: <cmd>` OS-layer event.
-- All member data is synthetic (`Member 0001`…, `@example.com`); the bait rows
-  use `@aegis-academy.example` and are removed again when tripwires are off.
-- Attack scripts refuse any host other than `127.0.0.1` / `localhost` / `::1`.
-- If core is unreachable the target app **fails open** (allows traffic).
-```
+Covers: collector normalization to a valid contract Event, tailer creation/rotation handling,
+real nginx/sshd/journald parsing, the line chain and log-integrity checks, the setup wizard and
+Scout. Tests write to a temp dir and hit no network.

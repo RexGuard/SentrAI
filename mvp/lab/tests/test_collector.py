@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 
 from collector import collector
-from target_app import paths
+from collector import paths
 
 CONTRACT_LAYERS = {"web", "db", "os", "network", "cloud"}
 

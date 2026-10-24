@@ -13,12 +13,12 @@ of the password is saved, never the password itself.
 
 The first start makes the sign-in for you:
 
-- **Demo:** the setup questions ask for an email and a password (press Enter and one is made for
-  you). At the end, `run_demo` prints the sign-in, with the password shown that one time.
+- **Laptop:** the setup questions ask for an email and a password (press Enter and one is made for
+  you). At the end, `run.ps1` / `run.sh` prints the sign-in, with the password shown that one time.
 - **Server:** the installer asks for both, or takes `--admin-email`, and prints the sign-in at the
   end.
 
-Open the dashboard (`http://127.0.0.1:8501` for the demo, `https://<server>:8501` on a server)
+Open the dashboard (`http://127.0.0.1:8501` on a laptop, `https://<server>:8501` on a server)
 and sign in.
 
 After five wrong tries from one address, that address has to wait five minutes.
@@ -57,7 +57,7 @@ Invoke-RestMethod http://127.0.0.1:8000/incidents -Headers @{ Authorization = "B
 The shared email and password become personal accounts, so every approval shows who made it.
 
 1. **Create the Owner account.** A new machine opens on *Create your Owner account*. It asks for
-   a one-time **setup code**, printed by `run_demo`, `python cactai_config.py admin` or
+   a one-time **setup code**, printed by `run.ps1` / `run.sh`, `python cactai_config.py admin` or
    `sudo cactai-admin`. A setup code lasts 24 hours.
 2. **Add an authenticator app.** Scan the QR code with any authenticator app (Google
    Authenticator, Microsoft Authenticator, 1Password and the like), then type the 6-digit code.
