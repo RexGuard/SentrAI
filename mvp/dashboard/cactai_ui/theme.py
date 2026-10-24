@@ -30,14 +30,14 @@ THEMES = {
     "dark": Theme("Black", "dark", {
         "bg": "#0a0a0a", "surface": "#141414", "surface-2": "#1b1b1b", "surface-3": "#262626",
         "sidebar": "#0f0f0f", "ink": "#f5f5f5", "ink-soft": "#b3b3b3", "ink-muted": "#8c8c8c",
-        "ink-faint": "#666666", "line": "#2e2e2e", "line-soft": "#212121",
+        "ink-faint": "#858585", "line": "#2e2e2e", "line-soft": "#212121",
     }, {"green": "#4fb67c", "amber": "#e8b34a", "red": "#ec835a", "critical": "#e5484d"},
         "#8c8c8c", "rgba(255,255,255,0.07)", .10),
     "light": Theme("White", "light", {
         "bg": "#fafafa", "surface": "#ffffff", "surface-2": "#f4f4f4", "surface-3": "#e8e8e8",
         "sidebar": "#f4f4f4", "ink": "#0a0a0a", "ink-soft": "#404040", "ink-muted": "#666666",
-        "ink-faint": "#8c8c8c", "line": "#dedede", "line-soft": "#ebebeb",
-    }, {"green": "#15803d", "amber": "#a16207", "red": "#c2410c", "critical": "#dc2626"},
+        "ink-faint": "#6e6e6e", "line": "#dedede", "line-soft": "#ebebeb",
+    }, {"green": "#15803d", "amber": "#96590a", "red": "#c2410c", "critical": "#dc2626"},
         "#6b6b6b", "rgba(0,0,0,0.08)", .07),
 }
 
@@ -170,7 +170,7 @@ def chart_colors(theme: str = DEFAULT_THEME) -> dict[str, object]:
     c = t.colors
     return {"band": dict(t.risk), "unknown": t.unknown, "surface": c["surface"], "text": c["ink"],
             "text_secondary": c["ink-soft"], "text_muted": c["ink-muted"], "grid": t.grid,
-            "readable": lambda color: readable(color, c["surface"])}
+            "readable": lambda color: readable(color, c["surface-2"])}  # the card shade text is hardest to read on
 
 
 def risk_like(hex_color: str) -> str:

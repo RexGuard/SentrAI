@@ -1,7 +1,8 @@
 /* SentrAI Risk Console. Black or White theme with one accent colour; risk bands keep their own
    green / amber / red in both. No external fonts, so the console looks the same offline. */
 :root {
-  /* Colours come from cactai_ui/theme.py (Black or White theme plus the accent picked in Configuration),
+  /* Streamlit's root font size is 15 px: .8rem (12 px) is the smallest text size used here.
+     Colours come from cactai_ui/theme.py (Black or White theme plus the accent picked in Configuration),
      injected before this file as a :root block. Only shape and type live here. */
   --radius: 14px;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -25,20 +26,20 @@ section[data-testid="stSidebar"] div[data-testid="stMarkdownContainer"] { margin
 .brand-mark svg { width: 100%; height: 100%; display: block; }
 .brand-name { color: var(--ink); line-height: 0; margin-bottom: .2rem; }
 .brand-name svg { height: 1.3rem; width: auto; display: block; }
-.brand-tag { color: var(--ink-muted); font-size: .76rem; }
+.brand-tag { color: var(--ink-muted); font-size: .8rem; }
 
 .side-risk { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: .7rem .8rem .75rem;
              margin: 0 0 .6rem 0; }
 .side-risk .row { display: flex; justify-content: space-between; align-items: baseline; }
-.side-risk .lbl { color: var(--ink-muted); font-size: .66rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+.side-risk .lbl { color: var(--ink-muted); font-size: .8rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
 .side-risk .num { font-size: 1.55rem; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
-.side-risk .num small { font-size: .75rem; color: var(--ink-muted); font-weight: 600; }
+.side-risk .num small { font-size: .8rem; color: var(--ink-muted); font-weight: 600; }
 .side-risk .bar { position: relative; height: 6px; border-radius: 99px; background: var(--surface-3); margin: .45rem 0 .45rem; overflow: visible; }
 .side-risk .bar i { position: absolute; inset: 0 auto 0 0; border-radius: 99px; }
 .side-risk .bar b { position: absolute; top: -3px; width: 2px; height: 12px; background: var(--ink); border-radius: 2px; }
-.side-risk .foot { display: flex; justify-content: space-between; font-size: .72rem; color: var(--ink-soft); }
+.side-risk .foot { display: flex; justify-content: space-between; font-size: .8rem; color: var(--ink-soft); }
 
-.nav-group { color: var(--ink-muted); font-size: .66rem; text-transform: uppercase; letter-spacing: .13em; font-weight: 700;
+.nav-group { color: var(--ink-muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .13em; font-weight: 700;
              margin: 0; padding: .9rem 0 .25rem .75rem; line-height: 1.2; }
 section[data-testid="stSidebar"] .stButton button { justify-content: flex-start; border: 1px solid transparent; background: transparent;
         color: var(--ink-soft); padding: .35rem .75rem; min-height: 2.25rem; font-weight: 500; transition: background .12s ease; }
@@ -48,7 +49,7 @@ section[data-testid="stSidebar"] .stButton button[kind="primary"] { background: 
         border: 1px solid var(--brand-line); font-weight: 600; }
 section[data-testid="stSidebar"] .stButton button[kind="primary"] span[data-testid="stIconMaterial"] { color: var(--brand); }
 .side-sep { border-top: 1px solid var(--line-soft); margin: .9rem 0 .7rem; }
-.side-foot { color: var(--ink-muted); font-size: .74rem; line-height: 1.45; margin-top: .4rem; }
+.side-foot { color: var(--ink-muted); font-size: .8rem; line-height: 1.45; margin-top: .4rem; }
 
 /* ------------------------------------------------------------ page header */
 .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; flex-wrap: wrap;
@@ -56,13 +57,13 @@ section[data-testid="stSidebar"] .stButton button[kind="primary"] span[data-test
 .page-title { display: flex; align-items: center; gap: .8rem; }
 .page-icon { width: 2.6rem; height: 2.6rem; border-radius: 12px; display: grid; place-items: center; font-size: 1.35rem;
              background: var(--brand-soft); color: var(--brand); border: 1px solid var(--brand-line); }
-.eyebrow { color: var(--brand-2); font-size: .68rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
+.eyebrow { color: var(--brand-2); font-size: .8rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
 .page-title h1 { font-size: 1.6rem !important; font-weight: 800 !important; letter-spacing: -.02em; margin: 0 !important;
                  padding: 0 !important; line-height: 1.15 !important; color: var(--ink); }
 .page-note { color: var(--ink-soft); font-size: .84rem; margin-top: .1rem; }
 .chips { display: flex; gap: .4rem; flex-wrap: wrap; }
 
-.chip { display: inline-flex; align-items: center; gap: .4rem; padding: .26rem .65rem; border-radius: 999px; font-size: .74rem;
+.chip { display: inline-flex; align-items: center; gap: .4rem; padding: .26rem .65rem; border-radius: 999px; font-size: .8rem;
         font-weight: 600; border: 1px solid; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .chip .dot { width: .45rem; height: .45rem; border-radius: 50%; display: inline-block; }
 .chip .dot.pulse { animation: pulse 1.8s ease-in-out infinite; }
@@ -74,16 +75,16 @@ div[data-testid="stVerticalBlockBorderWrapper"], div[data-testid="stForm"] { bor
 .kpi { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: .85rem 1rem .8rem;
        position: relative; overflow: hidden; min-height: 7.4rem; }
 .kpi::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--accent, var(--line)); }
-.kpi-label { color: var(--ink-muted); font-size: .68rem; text-transform: uppercase; letter-spacing: .1em; font-weight: 700;
+.kpi-label { color: var(--ink-muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .1em; font-weight: 700;
              display: flex; align-items: center; gap: .35rem; }
 .kpi-value { color: var(--ink); font-size: 1.85rem; font-weight: 800; line-height: 1.2; letter-spacing: -.02em;
              font-variant-numeric: tabular-nums; margin-top: .15rem; }
-.kpi-sub { color: var(--ink-muted); font-size: .74rem; }
+.kpi-sub { color: var(--ink-muted); font-size: .8rem; }
 
 .sec-title { color: var(--ink); font-weight: 700; font-size: 1rem; margin: .1rem 0 .55rem 0; display: flex; gap: .5rem;
              align-items: center; flex-wrap: wrap; }
 .sec-title .mi { color: var(--brand); }
-.sec-title small { color: var(--ink-muted); font-weight: 500; font-size: .76rem; }
+.sec-title small { color: var(--ink-muted); font-weight: 500; font-size: .8rem; }
 
 .empty { display: flex; align-items: center; gap: .6rem; color: var(--ink-soft); font-size: .86rem; padding: .9rem 1rem;
          border: 1px dashed var(--line); border-radius: 12px; background: var(--surface);
@@ -103,7 +104,7 @@ div[data-testid="stVerticalBlockBorderWrapper"], div[data-testid="stForm"] { bor
 .protect-off b { color: var(--ink); }
 .protect-off > div { font-size: .9rem; line-height: 1.5; }
 .protect-off small { color: var(--ink-muted); }
-.side-off { margin-top: .45rem; font-size: .72rem; font-weight: 700; color: var(--amber); }
+.side-off { margin-top: .45rem; font-size: .8rem; font-weight: 700; color: var(--amber); }
 
 /* ------------------------------------------------------------ incidents */
 .inc-head { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin-bottom: .6rem; }
@@ -112,19 +113,21 @@ div[data-testid="stVerticalBlockBorderWrapper"], div[data-testid="stForm"] { bor
                background: var(--line-soft); border: 1px solid var(--line-soft); border-radius: 12px; overflow: hidden; }
 .detail-grid div { background: var(--surface); padding: .55rem .8rem; }
 .detail-grid b { display: block; color: var(--ink); font-size: .95rem; font-weight: 600; overflow-wrap: anywhere; }
-.detail-grid span { color: var(--ink-muted); font-size: .66rem; text-transform: uppercase; letter-spacing: .09em; font-weight: 700; }
+.detail-grid span { color: var(--ink-muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .09em; font-weight: 700; }
 .explain { color: var(--ink-soft); font-size: .88rem; margin: 0 0 .6rem 0; }
-.reco { border: 1px solid var(--brand-line); background: var(--brand-soft); padding: .7rem .9rem; border-radius: 12px; color: var(--ink);
-        display: flex; gap: .7rem; align-items: flex-start; }
+/* The recommended action is the answer on an incident card: larger text and an accent edge. */
+.reco { border: 1px solid var(--brand-line); border-left: 4px solid var(--brand); background: var(--brand-soft); padding: .8rem 1rem;
+        border-radius: 12px; color: var(--ink); display: flex; gap: .7rem; align-items: flex-start; font-size: 1.05rem;
+        font-weight: 500; line-height: 1.45; }
 .reco .mi { color: var(--brand); font-size: 1.3rem; margin-top: .1rem; }
-.reco b { color: var(--brand); font-size: .66rem; letter-spacing: .1em; text-transform: uppercase; display: block; margin-bottom: .1rem; }
+.reco b { color: var(--brand); font-size: .8rem; letter-spacing: .1em; text-transform: uppercase; display: block; margin-bottom: .1rem; }
 div[data-testid="stExpander"] details { border-radius: var(--radius); background: var(--surface); }
 div[data-testid="stExpander"] summary { font-weight: 600; }
 
 /* ------------------------------------------------------------ activity feed */
 .feed { display: flex; flex-direction: column; max-height: 640px; overflow-y: auto; padding-right: .3rem; }
 .feed-row { display: grid; grid-template-columns: 4.4rem 1rem 1fr; gap: .5rem; align-items: start; padding: .15rem 0; font-size: .82rem; }
-.feed-time { color: var(--ink-muted); font-family: var(--mono); font-size: .72rem; padding-top: .15rem; text-align: right; }
+.feed-time { color: var(--ink-muted); font-family: var(--mono); font-size: .8rem; padding-top: .15rem; text-align: right; }
 .feed-rail { position: relative; height: 100%; min-height: 2.6rem; }
 .feed-rail::before { content: ""; position: absolute; left: 50%; top: 0; bottom: -.3rem; width: 1px; background: var(--line); }
 .feed-rail i { position: absolute; left: 50%; top: .35rem; width: .6rem; height: .6rem; border-radius: 50%; transform: translateX(-50%);
@@ -133,19 +136,26 @@ div[data-testid="stExpander"] summary { font-weight: 600; }
 .agent { font-weight: 700; }
 .feed-type { color: var(--ink); font-weight: 600; }
 .feed-sum { color: var(--ink-soft); }
-.feed-hash { color: var(--ink-faint); font-family: var(--mono); font-size: .68rem; }
+.feed-hash { color: var(--ink-faint); font-family: var(--mono); font-size: .8rem; }
+.feed:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 8px; }
 
 /* ------------------------------------------------------------ forms */
 div[data-testid="stForm"] { background: var(--surface); }
 .stButton button[kind="primary"], .stFormSubmitButton button[kind="primaryFormSubmit"] { color: var(--on-brand); font-weight: 700; }
-.field-hint { color: var(--ink-muted); font-size: .76rem; margin: -.3rem 0 .4rem 0; }
+.field-hint { color: var(--ink-muted); font-size: .8rem; margin: -.3rem 0 .4rem 0; }
 
 @media (max-width: 900px) { .detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* Phones: 44 px touch targets for menu rows, buttons and toggles. */
+@media (max-width: 640px) {
+  .stButton button, .stFormSubmitButton button, .stDownloadButton button,
+  section[data-testid="stSidebar"] .stButton button { min-height: 44px; }
+  .stCheckbox label { min-height: 44px; align-items: center; }
+}
 
 /* ------------------------------------------------------------ settings search and appearance */
 .search-none { color: var(--ink-muted); font-size: .86rem; padding: .4rem 0 .8rem; }
 .swatches { display: flex; gap: .5rem; flex-wrap: wrap; margin: .2rem 0 .6rem; }
-.swatch { display: inline-flex; align-items: center; gap: .45rem; font-size: .78rem; color: var(--ink-soft); }
+.swatch { display: inline-flex; align-items: center; gap: .45rem; font-size: .8rem; color: var(--ink-soft); }
 .swatch i { width: 1.1rem; height: 1.1rem; border-radius: 50%; border: 1px solid var(--line); display: inline-block; }
 .preview { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; padding: .7rem .8rem; border-radius: 12px;
            border: 1px solid var(--line); background: var(--surface-2); margin-top: .4rem; }
