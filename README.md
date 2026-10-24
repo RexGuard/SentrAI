@@ -8,9 +8,105 @@ title: SentrAI
 
 > *"A sentry doesn't chase you. It just guards the gate."*
 
-Small organizations already get security alerts. Breaches happen because nobody acts on them in time, and afterwards nobody can prove who knew what and when. SentrAI watches the web, database and OS layers, turns every anomaly into a live **0 to 100 risk index**, and when the organization's own risk tolerance is crossed it applies a **temporary, reversible fix** and produces a tamper-evident **evidence report** for leadership.
+SentrAI reads the logs you approve, turns what it sees into a live **0 to 100 risk index**, and when your own risk tolerance is crossed it applies a **temporary, reversible fix** inside your network and writes a tamper-evident **evidence report**. It never hacks back.
 
-## Highlights
+📘 **[Full install guide](https://rexguard.github.io/SentrAI/docs/)**, with screenshots, sign-in help, settings and troubleshooting.
+
+## Install
+
+### 1. What you need
+
+| | Windows laptop | Linux or macOS laptop | Linux server |
+| --- | --- | --- | --- |
+| System | Windows 10 or 11 | any recent Linux, or macOS | Linux with systemd |
+| Python | 3.12, on your PATH | 3.11 or newer, with `venv` | 3.10 or newer, with `venv` |
+| Rights | your normal account | your normal account | `sudo` |
+| Also | Git, or the ZIP from GitHub | Git | Git, plus `nft` or `iptables` to open the dashboard to other computers |
+
+On Debian or Ubuntu: `sudo apt install python3-venv git`. No Docker needed: each part makes its own Python environment on first run, so the first start takes a minute or two longer.
+
+### 2. Get the code
+
+```bash
+git clone https://github.com/RexGuard/SentrAI
+cd SentrAI/mvp
+```
+
+No Git? On this page choose **Code**, then **Download ZIP**, unzip it and open the `mvp` folder. Every command below runs from `mvp`.
+
+### 3a. Run it on your own computer
+
+**Windows** (PowerShell, in the `mvp` folder):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\run.ps1
+```
+
+**Linux or macOS:**
+
+```bash
+./run.sh
+```
+
+The first run asks a few setup questions; press **Enter** to keep the defaults. The dashboard opens at `http://127.0.0.1:8501` and the console prints your **dashboard sign-in once**, so copy the password straight away. On Linux and macOS each part logs to `mvp/.run_logs/<part>.log`.
+
+Stop everything with `.\stop.ps1` (Windows) or `./stop.sh`.
+
+| Windows | Linux and macOS | What it does |
+| --- | --- | --- |
+| `-Speed 60` | `--speed 60` | runs the timers faster for a test (1 real minute = 1 hour). The default is real time |
+| `-NoDashboard` | `--no-dashboard` | starts everything but the dashboard |
+| `-NoBrowser` | `--no-browser` | does not open the browser |
+| `-CorePort 8100` | `--core-port 8100` | when port 8000 is taken |
+| `-DashboardPort 8601` | `--dashboard-port 8601` | when port 8501 is taken |
+
+### 3b. Or install it on a Linux server
+
+The installer sets SentrAI up as systemd services that start at boot, with HTTPS for the dashboard and a firewall rule so only the computers you name can reach it. Replace `203.0.113.10` with **your own computer's public IP** (the one you manage the server from):
+
+```bash
+sudo ./deploy/install.sh --protect 203.0.113.10 --admin-email you@example.com
+```
+
+It then asks for the dashboard port, allowed IPs, sign-in email and a password (press **Enter** to keep each default, or to have a password made for you). At the end it prints the dashboard address, `https://<your server>:8501`, and your sign-in. Your browser warns once about the self-made certificate; accept it and sign in.
+
+| Option | What it does |
+| --- | --- |
+| `--protect IP` | never block this IP, and open the dashboard to it. Repeat for each address you manage from |
+| `--admin-email EMAIL` | the dashboard sign-in email |
+| `--dashboard-local` | keep the dashboard on the server only; reach it with `ssh -L 8501:127.0.0.1:8501 you@your-server` |
+| `--dashboard-allow IP` | replace the list of IPs that can open the dashboard (when your own IP changes) |
+| `--no-questions` (or `-y`) | never ask; use the options given and the defaults, for scripts |
+| `--reset-password` | make a new dashboard password and print it |
+
+Upgrade by running `git pull` and the same install command again; settings, sign-in and records are kept. Remove it with `sudo ./deploy/uninstall.sh` (add `--purge` to also delete settings and records). All options are in the [server guide](https://rexguard.github.io/SentrAI/docs/server.html).
+
+### 4. Protect your own IP first
+
+SentrAI never blocks the addresses in `PROTECTED_IPS`. Your own machine (`127.0.0.1`, `::1`) is always in it, and every `--protect` address is added on a server install. **Add the IP you manage from before you turn on any blocking**, or SentrAI could lock you out. Change it on the dashboard's **Configuration** page, or in `/etc/cactai/cactai.env` on a server (then `sudo systemctl restart cactai.target`).
+
+### 5. Point it at your logs
+
+SentrAI only reads the logs you approve. On the dashboard, open **Collector** and press **Scan running programs** to pick log files from the programs on the machine. On a Linux machine with nginx or SSH you can approve those in one step:
+
+```bash
+cd lab && .venv/bin/python -m collector.collector --add-system-logs
+```
+
+### 6. Decide how blocks take effect
+
+Out of the box a block only goes on SentrAI's own blocklist (`/blocklist`, for your app or proxy to read). For blocks to stop traffic on their own, turn on one of:
+
+- **Host firewall:** set `CACTAI_FIREWALL=auto` (or `nftables`, `iptables`, `netsh` on Windows). It starts as a dry run that only logs the command it would run. When the commands look right, set `CACTAI_FIREWALL_ENFORCE=1` (needs root or administrator rights).
+- **Webhook:** set `CACTAI_RESPONDER_WEBHOOK_URL` (and `CACTAI_RESPONDER_WEBHOOK_SECRET`) so your own gateway, proxy or WAF applies each block and unblock.
+
+See [Firewall blocking](https://rexguard.github.io/SentrAI/docs/settings.html#firewall-blocking) and the [full variable list](https://github.com/RexGuard/SentrAI/blob/main/mvp/README.md#variables).
+
+### Something not working?
+
+Port clashes, missing packages and a dashboard you can't reach are covered in [Troubleshooting](https://rexguard.github.io/SentrAI/docs/troubleshooting.html). Lost the dashboard password? Run `python cactai_config.py admin --reset` in `mvp` (on a server, `sudo cactai-admin --reset`).
+
+## What it does
 
 - **CIA + NA:** Confidentiality, Integrity, Availability, plus Non-repudiation and Authentication.
 - **0 to 100 risk index** with an inaction penalty, so ignored alerts get louder over time.
@@ -19,20 +115,15 @@ Small organizations already get security alerts. Breaches happen because nobody 
 - **Hash-chained audit log** and security evidence report (Markdown, JSON, PDF).
 - **Never hacks back:** it holds the line and never crosses it.
 
-## Documentation
-
-📄 **[Full project plan](https://rexguard.github.io/SentrAI/Cybersecurity%20+%20AI.html)**: problem, data collection per layer, risk formula, Jev pipeline, hotpatch workflow, notifications, accountability reports, ethics, agent design, stack, I/O schemas and MVP demo script. ([Markdown source](https://github.com/RexGuard/SentrAI/blob/main/Cybersecurity%20%2B%20AI.md))
-
-## Working prototype
-
-The MVP runs on one laptop or a Linux server: SentrAI reads the logs you approve, scores the risk, alerts the operator, auto-blocks the attackers when the risk crosses 80, and writes a hash-chained evidence report.
-
-- 🛠️ **[MVP code and how to run it](https://github.com/RexGuard/SentrAI/tree/main/mvp)**: `run.ps1` / `run.sh` start everything, `deploy/install.sh` installs it on a server, with automated tests for every part.
-- 🎬 **[Video script](https://github.com/RexGuard/SentrAI/blob/main/mvp/pitch/VIDEO_SCRIPT.md)**, [slide outline](https://github.com/RexGuard/SentrAI/blob/main/mvp/pitch/SLIDES.md), [judge Q&A](https://github.com/RexGuard/SentrAI/blob/main/mvp/pitch/QA_PREP.md) and [sources](https://github.com/RexGuard/SentrAI/blob/main/mvp/research/SOURCES.md).
-
-- 🗺️ **[Roadmap](https://rexguard.github.io/SentrAI/ROADMAP.html)**: 9 phases from the MVP to a pilot, with effort, owners and done-when checks.
-
 ![SentrAI architecture](mvp/pitch/architecture.svg)
+
+## More
+
+- 📘 **[Install guide](https://rexguard.github.io/SentrAI/docs/)**: laptop, server, sign-in, settings, troubleshooting.
+- 🛠️ **[MVP README](https://github.com/RexGuard/SentrAI/blob/main/mvp/README.md)**: configuration, every variable, the parts and the tests. Server details in [deploy/README.md](https://github.com/RexGuard/SentrAI/blob/main/mvp/deploy/README.md).
+- 📄 **[Full project plan](https://rexguard.github.io/SentrAI/Cybersecurity%20+%20AI.html)**: problem, data per layer, risk formula, Jev pipeline, hotpatch workflow, reports, ethics and stack. ([Markdown source](https://github.com/RexGuard/SentrAI/blob/main/Cybersecurity%20%2B%20AI.md))
+- 🗺️ **[Roadmap](https://rexguard.github.io/SentrAI/ROADMAP.html)**: 9 phases from the MVP to a pilot.
+- 🎬 [Video script](https://github.com/RexGuard/SentrAI/blob/main/mvp/pitch/VIDEO_SCRIPT.md), [slide outline](https://github.com/RexGuard/SentrAI/blob/main/mvp/pitch/SLIDES.md), [judge Q&A](https://github.com/RexGuard/SentrAI/blob/main/mvp/pitch/QA_PREP.md) and [sources](https://github.com/RexGuard/SentrAI/blob/main/mvp/research/SOURCES.md).
 
 ## Team
 
@@ -44,4 +135,4 @@ The MVP runs on one laptop or a Linux server: SentrAI reads the logs you approve
 
 ## Status
 
-Plan finalized. MVP working and tested. Presentation video due 29 Sep 2026.
+MVP working and tested on Windows and Linux, ready to install on real machines. Detection rules were first tuned on demo logs, so expect to adjust them on your own. 24-hour hackathon build: 2 to 3 Nov 2026.
