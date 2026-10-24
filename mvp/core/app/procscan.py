@@ -411,10 +411,15 @@ def scan(profile: dict[str, Any] | None = None, watched: set[str] | None = None,
     found: dict[str, dict[str, Any]] = {}
     notes: list[str] = []
     own_pid = os.getpid()
+    from .threatscan import check_process  # threatscan imports this module
+    threats: list[dict[str, Any]] = []
     for p in sorted(procs, key=lambda x: x.pid):
         if is_protected(p.name or p.exe, skip):
             skipped += 1
             continue
+        for hit in ([] if p.pid == own_pid else check_process(p)):
+            threats.append({**hit, "pid": p.pid, "name": p.name, "exe": hide_home(p.exe, homes) if p.exe else "",
+                            "account": account(p.user)})
         prog = match(p)
         what = _describe(prog, p)
         if prog and prog.note:
@@ -433,7 +438,7 @@ def scan(profile: dict[str, Any] | None = None, watched: set[str] | None = None,
                                                          -s["files_found"], s["path"]))
     return {"platform": system, "enabled": True, "scanned": len(procs), "skipped_protected": skipped,
             "recognised": len(rows), "processes": rows[:MAX_PROCESSES],
-            "suggestions": suggestions[:MAX_SUGGESTIONS], "notes": sorted(set(notes)), "error": error,
+            "suggestions": suggestions[:MAX_SUGGESTIONS], "threats": threats[:MAX_SUGGESTIONS], "notes": sorted(set(notes)), "error": error,
             "took_s": round(time.time() - started, 2)}
 
 

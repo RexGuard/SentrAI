@@ -97,7 +97,7 @@ def test_collector_buffers_when_core_down(monkeypatch, tmp_path):
     def _boom(*a, **k):
         raise RuntimeError("connection refused")
 
-    monkeypatch.setattr(collector.requests, "post", _boom)
+    monkeypatch.setattr(collector.requests.Session, "post", _boom)
     assert col.flush() is False
     # Event stays buffered for retry.
     assert len(col.pending) == 1

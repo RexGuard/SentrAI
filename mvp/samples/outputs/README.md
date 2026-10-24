@@ -1,6 +1,6 @@
 # SentrAI output samples
 
-What people outside the dashboard receive, in the SentrAI brand kit (navy + steel blue, shield-and-eye mark).
+What people outside the dashboard receive, in the SentrAI brand kit (navy + steel blue, three-arc logo).
 All data is sample data (RFC 5737 IPs, fictional incident).
 
 | File | What it is | Made by |

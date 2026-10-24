@@ -280,7 +280,8 @@ def test_collector_restart_sends_nothing_twice(tmp_path, monkeypatch):
     auth = tmp_path / "auth.log"
     auth.write_text("\n".join(lines("auth.log")[:5]) + "\n")
     sent: list[dict] = []
-    monkeypatch.setattr(collector.requests, "post", lambda url, json, timeout, headers=None: (sent.extend(json), _Resp())[1])
+    monkeypatch.setattr(collector.requests.Session, "post",
+                        lambda self, url, json, timeout, headers=None: (sent.extend(json), _Resp())[1])
     try:
         c = _collector_for(auth, monkeypatch)
         c.collect()
@@ -306,7 +307,7 @@ def test_positions_are_saved_only_after_core_accepts(tmp_path, monkeypatch):
     def down(*a, **k):
         raise RuntimeError("connection refused")
 
-    monkeypatch.setattr(collector.requests, "post", down)
+    monkeypatch.setattr(collector.requests.Session, "post", down)
     try:
         c = _collector_for(auth, monkeypatch)
         c.collect()

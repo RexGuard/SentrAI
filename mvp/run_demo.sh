@@ -125,6 +125,9 @@ CACTAI_API_TOKEN="$("$PY_LAB" "$ROOT/cactai_config.py" token | tail -n 1)"
 [ -n "$CACTAI_API_TOKEN" ] || { echo "Could not read the API token (python cactai_config.py token)." >&2; exit 1; }
 export CACTAI_API_TOKEN
 
+# The dashboard sign-in (email + password). Made on first run; the password is shown only then.
+SIGN_IN="$("$PY_LAB" "$ROOT/cactai_config.py" admin)" || { echo "Could not set up the dashboard sign-in." >&2; exit 1; }
+
 export PYTHONUTF8=1 PYTHONIOENCODING=utf-8 PYTHONUNBUFFERED=1
 export DEMO_SPEED CACTAI_CORE_URL="$CORE" CACTAI_PUBLIC_URL="${CACTAI_PUBLIC_URL:-$CORE}"
 
@@ -203,5 +206,6 @@ echo
 echo "Portal:    http://127.0.0.1:5000"
 echo "Core API:  $CORE"
 echo "Dashboard: $DASH"
+[ "$NO_DASHBOARD" = 1 ] || printf '%s\n' "$SIGN_IN"
 echo "Logs:      mvp/.demo_logs/  (tail -f .demo_logs/core.log)"
 echo "Stop everything with ./stop_demo.sh"

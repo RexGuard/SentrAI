@@ -13,6 +13,7 @@ import hmac
 import html
 import json
 import os
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -21,10 +22,13 @@ from typing import Any
 import streamlit as st
 
 from cactai_ui import shaping as sh
+from cactai_ui import signin
+from cactai_ui import theme as th
 from cactai_ui.api import CoreClient, CoreError
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 import cactai_config as cfg  # noqa: E402
+import setup_chat  # noqa: E402
 
 cfg.load()
 
@@ -32,46 +36,102 @@ DEFAULT_CORE = os.environ.get("CACTAI_CORE_URL", "http://127.0.0.1:8000")
 DEFAULT_OPERATOR = os.environ.get("CACTAI_OPERATOR", "operator")
 REFRESH_SECONDS = 2
 
-# SentrAI brand mark: assets/brand/mark-dark.svg (shield with an open eye), inlined so it needs no file.
-SHIELD = ('<svg viewBox="0 0 64 64" aria-hidden="true">'
-          '<path d="M32 4 L54 11.5 V29 C54 43.5 44.8 54.2 32 60 C19.2 54.2 10 43.5 10 29 V11.5 Z" fill="#16264a" '
-          'stroke="#7fb2ff" stroke-width="3" stroke-linejoin="round"/>'
-          '<path d="M17 32 C22.5 24 27 21.5 32 21.5 C37 21.5 41.5 24 47 32 C41.5 40 37 42.5 32 42.5 '
-          'C27 42.5 22.5 40 17 32 Z" fill="#7fb2ff"/><circle cx="32" cy="32" r="6" fill="#0b111d"/>'
-          '<circle cx="34.2" cy="29.8" r="1.8" fill="#e7edf6"/></svg>')
+# Look: Black or White theme plus an accent, picked under Configuration > Appearance and saved with the settings.
+LOOK = cfg.appearance()
+THEME = LOOK.get("theme") if LOOK.get("theme") in th.THEMES else th.DEFAULT_THEME
+ACCENT = LOOK.get("accent") or th.DEFAULT_ACCENT
+sh.set_palette(th.chart_colors(THEME))
+
+
+# SentrAI logo: assets/brand/mark.svg and wordmark.svg, copied into cactai_ui so the console needs no other folder.
+def _logo_svg(name: str) -> str:
+    svg = (Path(__file__).parent / "cactai_ui" / name).read_text(encoding="utf-8")
+    svg = re.sub(r'\s*<title>.*?</title>|\s(width|height)="[\d.]+"', "", svg)
+    return svg.replace('role="img" aria-label="SentrAI"', 'aria-hidden="true"').replace("\n", "")
+
+
+BRAND = ('<div class="brand"><div class="brand-mark">' + _logo_svg("mark.svg") + '</div><div>'
+         '<div class="brand-name" role="img" aria-label="SentrAI">' + _logo_svg("wordmark.svg") + '</div>'
+         '<div class="brand-tag">Risk Console</div></div></div>')
 # Tab icon from the brand kit when it is in the checkout, else the emoji.
 _FAVICON = Path(__file__).resolve().parents[2] / "assets" / "brand" / "favicon-32.png"
 PAGE_ICON = str(_FAVICON) if _FAVICON.exists() else "🛡️"
 st.set_page_config(page_title="SentrAI · Risk Console", page_icon=PAGE_ICON, layout="wide",
                    initial_sidebar_state="expanded")
 CSS = (Path(__file__).parent / "cactai_ui" / "console.css").read_text(encoding="utf-8")
-st.markdown(f"<style>{CSS}</style>", unsafe_allow_html=True)
+st.markdown(f"<style>{th.css(THEME, ACCENT)}{CSS}</style>", unsafe_allow_html=True)
+
+
+def _apply_streamlit_theme() -> bool:
+    """Point Streamlit's own theme (buttons, toggles, tables) at the saved look. True when it changed.
+
+    Streamlit sends the theme when a run starts, so a change shows from the next run on."""
+    changed = False
+    for key, value in th.streamlit_options(THEME, ACCENT).items():
+        if st.get_option(key) != value:
+            st._config.set_option(key, value)
+            changed = True
+    return changed
+
+
+if _apply_streamlit_theme():
+    st.rerun()
 
 
 # ------------------------------------------------------------------ login
 
+def _client_ip() -> str:
+    try:
+        ip = st.context.ip_address
+    except Exception:  # noqa: BLE001 - no browser behind this run
+        ip = None
+    return ip if isinstance(ip, str) and ip else "local"  # a test run has no real address
+
+
+def check_login(email: str, password: str, account: dict[str, str]) -> bool:
+    if not hmac.compare_digest(email.strip().lower().encode(), account["email"].strip().lower().encode()):
+        cfg.check_password(password, cfg.hash_password("x"))  # same work either way, so timing tells nothing
+        return False
+    if account["plain"]:
+        return hmac.compare_digest(password.encode(), account["plain"].encode())
+    return cfg.check_password(password, account["hash"])
+
+
 def login() -> None:
-    """Ask for the dashboard password (setup wizard, section 6) once per browser session.
+    """Ask for the dashboard email and password (setup wizard section 6) once per browser session.
 
-    Without a password the console opens straight away, as it did before; the core API
-    still needs its token either way.
+    run_demo and deploy/install.sh make the sign-in on first run (python cactai_config.py admin).
+    CACTAI_DASHBOARD_LOGIN=off skips it, for local testing only. The core API needs its token either way.
     """
-    password = os.environ.get(cfg.PASSWORD_ENV, "")
-    if not password or st.session_state.get("signed_in"):
+    if not cfg.login_required() or st.session_state.get("signed_in"):
         return
+    account = cfg.dashboard_login()
     _, mid, _ = st.columns([1, 1.2, 1])
+    brand = BRAND
+    if not account["hash"] and not account["plain"]:
+        with mid.container(border=True):
+            st.markdown(brand, unsafe_allow_html=True)
+            st.warning("No dashboard sign-in is set up yet. On this machine, run "
+                       "`python cactai_config.py admin` (on a server: `sudo cactai-admin`), then reload this page.")
+        st.stop()
     with mid.form("login"):
-        st.markdown('<div class="brand"><div class="brand-mark">' + SHIELD + '</div><div>'
-                    '<div class="brand-name">Sentr<span>AI</span></div>'
-                    '<div class="brand-tag">Risk Console</div></div></div>', unsafe_allow_html=True)
-        typed = st.text_input("Password", type="password")
+        st.markdown(brand, unsafe_allow_html=True)
+        email = st.text_input("Email", autocomplete="username",
+                              placeholder=account["email"] if account["email"].endswith(".local") else "")
+        typed = st.text_input("Password", type="password", autocomplete="current-password")
         if st.form_submit_button("Sign in", type="primary", width="stretch"):
-            if hmac.compare_digest(typed.encode(), password.encode()):
-                st.session_state.signed_in = True
+            ip = _client_ip()
+            wait = signin.wait_seconds(ip)
+            if wait:
+                st.error(f"Too many wrong tries. Wait {int(wait) // 60 + 1} min and try again.")
+            elif check_login(email, typed, account):
+                signin.succeeded(ip)
+                st.session_state.signed_in = account["email"]
                 st.rerun()
-            st.error("Wrong password.")
+            else:
+                signin.failed(ip)
+                st.error("Wrong email or password.")
     st.stop()
-
 
 login()
 
@@ -101,6 +161,11 @@ def kpi(label: str, value: str, sub: str = "", color: str | None = None, ico: st
 def section(title: str, note: str = "", ico: str = "") -> None:
     st.markdown(f'<div class="sec-title">{icon(ico) if ico else ""}{title} <small>{html.escape(note)}</small></div>',
                 unsafe_allow_html=True)
+
+
+def code(text) -> str:
+    """Inline code for markdown shown with unsafe_allow_html: a file name can hold a backtick or a tag."""
+    return f"<code>{html.escape(str(text))}</code>"
 
 
 def empty(text: str, ico: str = "inbox", good: bool = False) -> None:
@@ -139,7 +204,7 @@ def show_flash() -> None:
 st.session_state.setdefault("core_url", DEFAULT_CORE)
 st.session_state.setdefault("operator", DEFAULT_OPERATOR)
 st.session_state.setdefault("auto_refresh", True)
-st.session_state.setdefault("page", "config")
+st.session_state.setdefault("page", "config" if cfg.setup_done() else "chat")  # new machine: guided setup
 st.session_state.setdefault("seen", {})
 TOKEN = cfg.api_token()
 client = CoreClient(st.session_state.core_url, token=TOKEN)
@@ -246,12 +311,7 @@ def menu() -> None:
 
 
 with st.sidebar:
-    st.markdown(
-        '<div class="brand"><div class="brand-mark">' + SHIELD + '</div><div>'
-        '<div class="brand-name">Sentr<span>AI</span></div>'
-        '<div class="brand-tag">Risk Console</div></div></div>',
-        unsafe_allow_html=True,
-    )
+    st.markdown(BRAND, unsafe_allow_html=True)
     menu()
     st.markdown('<div class="side-sep"></div>', unsafe_allow_html=True)
     st.toggle(f"Auto-refresh every {REFRESH_SECONDS} s", key="auto_refresh")
@@ -259,7 +319,8 @@ with st.sidebar:
                  help="POST /demo/reset: clears state for a fresh take"):
         run_action("Demo reset", lambda: client.reset_demo(), rerun=False)
         st.session_state.seen = {}
-    if st.session_state.get("signed_in") and st.button("Sign out", icon=":material/logout:", width="stretch"):
+    if st.session_state.get("signed_in") and st.button("Sign out", icon=":material/logout:", width="stretch",
+                                                       help=f"Signed in as {st.session_state.signed_in}"):
         st.session_state.signed_in = False
         st.rerun()
     st.markdown('<div class="side-foot">A sentry doesn\'t chase you. It just guards the gate.</div>',
@@ -426,56 +487,166 @@ def decision_controls(inc: dict) -> None:
 
 # ------------------------------------------------------------------ pages
 
+def matches(query: str, *texts: str) -> bool:
+    """Every word of the search appears somewhere in the texts (case-insensitive)."""
+    hay = " ".join(texts).lower()
+    return all(word in hay for word in query.lower().split())
+
+
+class fold:
+    """A settings group: a closed expander normally, an open card while searching (so the hits show)."""
+
+    def __init__(self, title: str, searching: bool, ico: str = "") -> None:
+        self.title, self.searching, self.ico = title, searching, ico
+
+    def __enter__(self):
+        self.box = st.container(border=True) if self.searching else st.expander(self.title)
+        self.box.__enter__()
+        if self.searching:
+            section(self.title, ico=self.ico)
+        return self
+
+    def __exit__(self, *exc):
+        return self.box.__exit__(*exc)
+
+
+APPEARANCE_WORDS = "appearance look theme colour color accent black white dark light mono violet blue custom logo"
+
+
 def page_config() -> None:
     header("Configuration", f"Saved to {cfg.config_path()} · read by every part when it starts")
-    current = {f.env: f.default for f in cfg.FIELDS.values()} | cfg.read()
-    values = {}
-    preset = cfg.SECTIONS[0]
-    with st.container(border=True):
-        section(preset.title, preset.about, "verified_user")
-        values |= preset_settings(current)
-        protection_switch()
+    o1, o2 = st.columns([4, 1], vertical_alignment="center")
+    query = o1.text_input("Search settings", key="cfg_search", icon=":material/search:", label_visibility="collapsed",
+                          placeholder="Search settings: telegram, threshold, password, theme...").strip()
+    if o2.button("Set up with Cyanide", icon=":material/forum:", width="stretch",
+                 help="Rather answer a few questions? Cyanide walks you through setup in the Chat page."):
+        start_setup()
+    # Unsaved edits survive a search hiding their field (Streamlit forgets a widget it does not draw).
+    draft = st.session_state.setdefault("cfg_draft", {})
+    current = {f.env: f.default for f in cfg.FIELDS.values()} | cfg.read() | draft
+    values, new_password, shown = dict(current), "", 0
 
-    # Everything else is folded away; the arrow on each row opens it.
-    with st.expander("Dashboard"):  # no icon, so the row shows its arrow
-        st.caption("This browser session only.")
-        c1, c2 = st.columns(2)
-        # Own widget keys: Streamlit drops a widget's state when you leave the page.
-        st.session_state.core_url = c1.text_input("Core API URL", value=st.session_state.core_url).strip()
-        st.session_state.operator = c2.text_input("Operator name (recorded on your approvals)",
-                                                  value=st.session_state.operator).strip() or "operator"
+    if not query or matches(query, APPEARANCE_WORDS):
+        shown += 1
+        with st.container(border=True):
+            section("Appearance", "Saved at once, for everyone who opens this console", "palette")
+            appearance_settings()
+
+    preset = cfg.SECTIONS[0]
+    preset_words = [preset.title, preset.about, "protection monitor only"] + \
+        [f"{cfg.FIELDS[e].prompt} {e}" for e in cfg.PRESET_FIELDS] + [p.label for p in cfg.PRESETS.values()]
+    if not query or matches(query, *preset_words):
+        shown += 1
+        with st.container(border=True):
+            section(preset.title, preset.about, "verified_user")
+            values |= preset_settings(current)
+            protection_switch()
+
+    if not query or matches(query, "Dashboard core api url operator name approvals"):
+        shown += 1
+        with fold("Dashboard", bool(query), "dashboard"):
+            st.caption("This browser session only.")
+            c1, c2 = st.columns(2)
+            # Own widget keys: Streamlit drops a widget's state when you leave the page.
+            st.session_state.core_url = c1.text_input("Core API URL", value=st.session_state.core_url).strip()
+            st.session_state.operator = c2.text_input("Operator name (recorded on your approvals)",
+                                                      value=st.session_state.operator).strip() or "operator"
     for s in cfg.SECTIONS[1:]:
-        with st.expander(s.title):
+        fields = [f for f in s.fields if f.env not in cfg.PRESET_FIELDS]  # those live under the preset
+        whole = not query or matches(query, s.title, s.about)
+        if s.key == "ai":  # one panel: provider, key, model and the connection test belong together
+            if whole or any(matches(query, f.prompt, f.env) for f in s.fields):
+                shown += 1
+                with fold(s.title, bool(query), "smart_toy"):
+                    st.caption(s.about)
+                    values |= ai_settings(current)
+            continue
+        hits = fields if whole else [f for f in fields if matches(query, f.prompt, f.env)]
+        if not hits:
+            continue
+        shown += 1
+        with fold(s.title, bool(query), "tune"):
             st.caption(s.about)
-            if s.key == "ai":
-                values |= ai_settings(current)
-                continue
-            fields = [f for f in s.fields if f.env not in cfg.PRESET_FIELDS]  # those live under the preset
-            if len(fields) < len(s.fields):
+            if len(fields) < len(s.fields) and whole:
                 st.caption("Detection and response values are set under Security preset.")
             cols = st.columns(2)
-            for n, f in enumerate(fields):
+            for n, f in enumerate(hits):
                 if f.generated:  # shown, never edited here: every part must restart with the same value
-                    values[f.env] = current[f.env]
                     cols[n % 2].text_input(f.prompt, value=current[f.env], key=f"cfg_{f.env}", type="password",
                                            disabled=True, help=f"Environment variable {f.env}. Generated by setup; "
                                            "python cactai_config.py token prints it.")
                     continue
+                if f.hashed:  # never shown: a new one replaces it, blank keeps it
+                    typed = cols[n % 2].text_input("New dashboard password (blank keeps the current one)",
+                                                   key=f"cfg_{f.env}", type="password",
+                                                   help=f"At least {cfg.MIN_PASSWORD} characters. Saved only as a "
+                                                        "hash; applies at the next sign-in.")
+                    if typed and len(typed) < cfg.MIN_PASSWORD:
+                        cols[n % 2].error(f"Use at least {cfg.MIN_PASSWORD} characters; the old password stays.")
+                        typed = ""
+                    new_password = typed
+                    continue
                 values[f.env] = cols[n % 2].text_input(
                     f.prompt, value=current[f.env], key=f"cfg_{f.env}", help=f"Environment variable {f.env}",
                     type="password" if f.secret else "default").strip()
+    if not shown:
+        st.markdown(f'<div class="search-none">{icon("search_off")} No setting matches "{html.escape(query)}". '
+                    'Try a shorter word, like "email", "block" or "key".</div>', unsafe_allow_html=True)
+    saved = cfg.read()
+    draft.update({env: v for env, v in values.items() if env in cfg.FIELDS and v != saved.get(env, cfg.FIELDS[env].default)})
+    for env in [e for e in draft if values.get(e) == saved.get(e, cfg.FIELDS[e].default)]:
+        draft.pop(env)  # changed back by hand
     if st.button("Save settings", icon=":material/save:", type="primary"):
         bad = [f.prompt for f in cfg.FIELDS.values() if not cfg.valid(f, values[f.env])]
         if bad:
             st.error("Please enter a number for: " + "; ".join(bad))
         else:
+            if new_password:  # hashed only on Save: hashing is slow on purpose
+                values[cfg.HASH_ENV] = cfg.hash_password(new_password)
             path = cfg.save(values)
+            draft.clear()
+            cfg.mark_setup_done("dashboard")
             ai, err = safe(client.ai_reload)
             if err:
                 st.success(f"Saved to {path}. Start the demo (run_demo.ps1) so the core picks them up.")
             else:
                 st.success(f"Saved to {path}. Cyanide switched to the new AI settings ({ai.get('chat')}). "
                            "Restart the demo (stop_demo.ps1, then run_demo.ps1) for the other settings.")
+
+
+def _save_look() -> None:
+    accent = st.session_state.look_accent
+    if accent == th.CUSTOM:
+        accent = th.parse_hex(st.session_state.get("look_custom", "")) or th.ACCENTS["violet"][1]
+    cfg.save_appearance(st.session_state.look_theme, accent)
+
+
+def appearance_settings() -> None:
+    """Black or White, and the accent colour: Mono, a preset, or any colour from the picker."""
+    custom = th.parse_hex(ACCENT) if ACCENT not in th.ACCENTS else None
+    c1, c2, c3 = st.columns([1.1, 1.6, 1], vertical_alignment="bottom")
+    c1.segmented_control("Theme", list(th.THEMES), key="look_theme", default=THEME, required=True,
+                         format_func=lambda k: th.THEMES[k].label, on_change=_save_look)
+    accents = [*th.ACCENTS, th.CUSTOM]
+    c2.segmented_control("Accent colour", accents, key="look_accent", default=th.CUSTOM if custom else
+                         (ACCENT if ACCENT in th.ACCENTS else th.DEFAULT_ACCENT), required=True,
+                         format_func=lambda k: th.ACCENTS[k][0] if k in th.ACCENTS else "Custom",
+                         on_change=_save_look,
+                         help="Mono uses white on Black and black on White. Violet is the logo's colour.")
+    if st.session_state.get("look_accent") == th.CUSTOM:
+        c3.color_picker("Custom colour", value=custom or th.ACCENTS["violet"][1], key="look_custom",
+                        on_change=_save_look)
+    p = th.palette(THEME, ACCENT)
+    warn = th.risk_like(th.accent_hex(ACCENT))
+    st.markdown(
+        f'<div class="preview"><div class="brand-mark" style="width:2rem;height:2rem">{_logo_svg("mark.svg")}</div>'
+        f'<span class="btn">Approve block</span><span class="soft">Selected</span>'
+        f'<span class="lnk">A link</span>'
+        f'<span style="margin-left:auto;font-size:.76rem;color:var(--ink-muted)">accent {p["brand-fill"]} · '
+        f'risk colours stay green / amber / red</span></div>', unsafe_allow_html=True)
+    if warn:
+        st.caption(f"This colour looks like the {warn} risk colour, so buttons may read as alerts. "
+                   "A blue, violet or neutral accent keeps them apart.")
 
 
 def protection_switch() -> None:
@@ -670,7 +841,21 @@ def page_chat() -> None:
     Not auto-refreshed, so a rerun never interrupts typing.
     """
     show_flash()
-    if header("Chat", "ask the orchestrator what it sees and why it acted · it suggests, you decide") is None:
+    online = header("Chat", "ask the orchestrator what it sees and why it acted · it suggests, you decide") is not None
+    if st.session_state.get("setup_chat"):  # scripted, so it works with the core offline too
+        setup_conversation()
+        return
+    if not cfg.setup_done() and not st.session_state.get("setup_later"):
+        with st.container(border=True):
+            s1, s2, s3 = st.columns([6, 2, 1], vertical_alignment="center")
+            s1.markdown("**New here?** Cyanide can set SentrAI up with you in a few plain questions, "
+                        "so you don't need the Configuration page.")
+            if s2.button("Set up with Cyanide", icon=":material/forum:", type="primary", width="stretch"):
+                start_setup()
+            if s3.button("Not now", width="stretch"):
+                st.session_state.setup_later = True
+                st.rerun()
+    if not online:
         return
     hist, err = safe(client.chat_history, {})
     if err:
@@ -681,7 +866,9 @@ def page_chat() -> None:
     incidents, _ = fetch("incidents", [])
     by_id = {str(i.get("id")): i for i in incidents or [] if i.get("id")}
 
-    c1, c2, c3 = st.columns([4, 6, 2], vertical_alignment="bottom")
+    c1, c2, c4, c3 = st.columns([4, 5, 2, 2], vertical_alignment="bottom")
+    if c4.button("Setup", icon=":material/tune:", width="stretch", help="Let Cyanide walk you through setup"):
+        start_setup()
     about = c1.selectbox("Talk about", [""] + sorted(by_id, reverse=True), key="chat_about",
                          format_func=lambda i: f"{i} · {sh.category_label(by_id[i].get('category'))}" if i
                          else "The whole operation")
@@ -711,6 +898,89 @@ def page_chat() -> None:
         st.rerun()
 
 
+def start_setup() -> None:
+    st.session_state.setup_chat = setup_chat.SetupChat()
+    go("chat")
+
+
+def setup_conversation() -> None:
+    """Cyanide asks the setup questions (mvp/setup_chat.py); the user answers with a button or by typing.
+
+    Kept in this browser session only, never in the core's chat history, because some answers are
+    secrets. Nothing is saved until the user confirms the summary.
+    """
+    sc: setup_chat.SetupChat = st.session_state.setup_chat
+    t1, t2 = st.columns([5, 1], vertical_alignment="center")
+    t1.caption("Guided setup · nothing is saved until you confirm the summary · the Configuration page "
+               "shows the same settings")
+    if t2.button("Close setup" if sc.state in ("saved", "cancelled") else "Leave setup",
+                 icon=":material/close:", width="stretch"):
+        del st.session_state.setup_chat
+        st.session_state.setup_later = True
+        st.rerun()
+    with st.container(height=540, border=True):
+        for m in sc.messages:
+            mine = m["role"] == "user"
+            with st.chat_message("user" if mine else "assistant", avatar="👤" if mine else "🧪"):
+                st.markdown(m["text"].replace("\n", "  \n") if mine else m["text"])
+    answer = None
+    options = sc.options()
+    if options:
+        cols = st.columns(min(len(options), 4))
+        for n, (value, label) in enumerate(options):
+            if cols[n % len(cols)].button(label, key=f"setup_{len(sc.messages)}_{value}", width="stretch",
+                                          type="primary" if n == 0 and sc.state == "review" else "secondary"):
+                answer = value
+    if sc.secret:
+        with st.form(f"setup_secret_{len(sc.messages)}", clear_on_submit=True, border=False):
+            f1, f2 = st.columns([5, 1], vertical_alignment="bottom")
+            typed = f1.text_input("Your answer (hidden; it is never shown in the chat)", type="password")
+            if f2.form_submit_button("Send", type="primary", width="stretch") and typed:
+                answer = typed
+    elif sc.state in ("asking", "review"):
+        answer = st.chat_input("Type your answer…") or answer
+    if not answer:
+        return
+    with st.spinner("Cyanide is reading your answer…"):
+        sc.answer(answer, interpret=setup_interpreter)
+    if sc.state == "save":
+        save_setup(sc)
+    st.rerun()
+
+
+def setup_interpreter(question: str, options: list[tuple[str, str]], answer: str) -> dict | None:
+    """The AI model's reading of an answer the script could not match; None when the core is offline."""
+    result, err = safe(lambda: client.setup_interpret(question, options, answer))
+    return None if err or not isinstance(result, dict) else result
+
+
+def save_setup(sc: "setup_chat.SetupChat") -> None:
+    values = sc.values()
+    bad = [f.prompt for f in cfg.FIELDS.values() if not cfg.valid(f, values.get(f.env, f.default))]
+    if bad:
+        sc.state = "review"
+        sc.messages.append({"role": "assistant", "text": "I can't save yet; these values are not valid: "
+                            + "; ".join(bad) + ". Fix them on the Configuration page, or start over."})
+        return
+    path = cfg.save(values)
+    cfg.mark_setup_done("chat")
+    for key in [k for k in st.session_state if str(k).startswith("cfg_")]:  # Configuration shows the new values
+        del st.session_state[key]
+    st.session_state.operator = values.get("CACTAI_OPERATOR") or st.session_state.operator
+    ai, err = safe(client.ai_reload)
+    note = f"Saved to {path}. "
+    note += ("The core isn't running, so start SentrAI (run_demo) and every part will use these settings."
+             if err else f"I've switched to the new AI settings ({ai.get('chat')}). Restart SentrAI "
+                         "(stop_demo, then run_demo) so the other parts pick up the rest.")
+    deploy = setup_chat.deploy_command(sc)
+    if deploy:
+        note += ("\n\nWho can open the dashboard is a firewall setting, which needs admin rights. On a Linux "
+                 f"server, run this once from the `mvp` folder to apply it:\n\n```\n{deploy}\n```\n\n"
+                 "It keeps everything you saved here. On Windows or a demo machine the dashboard stays on this "
+                 "computer" + (f"; start run_demo with `--dashboard-port {sc.notes['port']}` (Windows: `-DashboardPort {sc.notes['port']}`)" if sc.notes.get("port", "8501") != "8501" else "") + ".")
+    sc.saved(note + "\n\nYou can change anything later here or on the Configuration page.")
+
+
 def chat_message(m: dict, assistant: str, by_id: dict[str, dict]) -> None:
     mine = m.get("role") == "operator"
     who = m.get("operator") or st.session_state.operator if mine else assistant
@@ -732,6 +1002,9 @@ def chat_suggestion(mid: Any, n: int, s: dict, inc: dict | None) -> None:
     """A suggested decision. Pressing it calls the same endpoints as the Approvals page."""
     if s.get("kind") == "watch_log":
         watch_suggestion(mid, n, s)
+        return
+    if s.get("kind") == "quarantine_file":
+        quarantine_suggestion(mid, n, s)
         return
     inc_id, decision = str(s.get("incident")), str(s.get("decision"))
     ok, why_not = sh.suggestion_state(inc, decision)
@@ -780,6 +1053,19 @@ def watch_suggestion(mid: Any, n: int, s: dict) -> None:
             st.caption(str(s["reason"]))
         if st.button(f"Confirm: {label}", key=f"sugg_{mid}_{n}", type="primary"):
             run_action(label, lambda: client.watch_log(str(s.get("file_id")), st.session_state.operator), rerun=False)
+            st.rerun()
+
+
+def quarantine_suggestion(mid: Any, n: int, s: dict) -> None:
+    """A file Cyanide thinks is hostile. Pressing it moves the file into quarantine (it can be restored)."""
+    label = str(s.get("label") or "Quarantine file")
+    with st.container(border=True):
+        st.markdown(f"💡 **Suggested: {html.escape(label)}**")
+        if s.get("reason"):
+            st.caption(str(s["reason"]))
+        if st.button(f"Confirm: {label}", key=f"sugg_{mid}_{n}", type="primary"):
+            run_action(label, lambda: client.quarantine(str(s.get("finding_id")), st.session_state.operator,
+                                                        str(s.get("reason") or "")), rerun=False)
             st.rerun()
 
 
@@ -836,6 +1122,7 @@ def page_collector() -> None:
               "No agent data.")
     scout_proposals()
     log_discovery()
+    threat_panel()
     with st.container(border=True):
         section("Malicious events collected", "newest first", "warning")
         table(sh.classification_rows(records)[["Time", "Event", "Category", "Layer agent", "Incident", "Raw log line"]],
@@ -852,7 +1139,7 @@ def scout_proposals() -> None:
                 "travel_explore")
         for p in waiting:
             c1, c2, c3 = st.columns([6, 1, 1])
-            c1.markdown(f"**{html.escape(str(p.get('name')))}** · `{p.get('path')}` · {p.get('layer')}  \n"
+            c1.markdown(f"**{html.escape(str(p.get('name')))}** · {code(p.get('path'))} · {html.escape(str(p.get('layer')))}  \n"
                         f"<span style='opacity:.7'>{html.escape(str(p.get('why') or ''))}</span>",
                         unsafe_allow_html=True)
             pid = p.get("id")
@@ -882,6 +1169,9 @@ def log_discovery() -> None:
                    f"ones skipped.")
         if latest.get("error"):
             st.warning(f"The scan hit a problem: {latest['error']}")
+        for t in latest.get("threats") or []:
+            st.error(f"{SEVERITY_ICON.get(str(t.get('severity')), '⚪')} Suspicious program: {t.get('label')} · "
+                     f"{t.get('name')} (pid {t.get('pid')}, account {t.get('account') or 'unknown'})")
         found = latest.get("suggestions") or []
         known = [s for s in found if s.get("recognised", True)]
         other = [s for s in found if not s.get("recognised", True)]
@@ -897,11 +1187,70 @@ def log_discovery() -> None:
             st.caption(f"ℹ️ {note}")
 
 
+SEVERITY_ICON = {"critical": "🔴", "high": "🟠", "medium": "🟡"}
+
+
+def threat_panel() -> None:
+    """Threat scan: look inside the configured folders for web shells, miners, reverse shells and the like."""
+    with st.container(border=True):
+        section("Check for threats", "read-only look inside your chosen folders · files move to quarantine only "
+                                     "when you press it", "bug_report")
+        if st.button("Scan for threats", icon=":material/policy:", key="scan_threats"):
+            with st.spinner("Checking files…"):
+                run_action("Threat scan finished", lambda: client.scan_threats(st.session_state.operator), rerun=False)
+        latest, err = safe(client.latest_threats, None)
+        if err or not latest:
+            st.caption("Threat scanning is not available on this core.")
+            return
+        if latest.get("note"):
+            st.caption(latest["note"])
+        if not latest.get("scanned_at"):
+            st.caption("No threat scan yet. Set the folders under threat_scan.paths in the system profile "
+                       "(or CACTAI_THREAT_PATHS); Cyanide can also run one when you ask in Chat.")
+        else:
+            c = latest.get("counts") or {}
+            st.caption(f"Last scan {sh.short_time(latest.get('scanned_at'))}: {latest.get('files_checked', 0)} files in "
+                       f"{', '.join(latest.get('roots') or [])} · {c.get('critical', 0)} critical, {c.get('high', 0)} high, "
+                       f"{c.get('medium', 0)} worth a look")
+            if latest.get("missing"):
+                st.warning("Folders not found: " + ", ".join(latest["missing"]))
+            found = latest.get("findings") or []
+            if not found:
+                empty("Nothing suspicious found.", "verified_user", good=True)
+            for f in found[:25]:
+                threat_row(f)
+        held, _ = safe(client.quarantined, [])
+        if held:
+            with st.expander(f"In quarantine ({len(held)})"):
+                for q in held:
+                    c1, c2 = st.columns([5, 1])
+                    c1.caption(f"{q.get('name')} · from `{q.get('original')}` · {(q.get('finding') or {}).get('label')} · "
+                               f"by {q.get('operator')} {sh.short_time(q.get('at'))}")
+                    if c2.button("Restore", key=f"restore_{q.get('id')}", icon=":material/undo:"):
+                        run_action(f"Restored {q.get('name')}",
+                                   lambda qid=q.get("id"): client.restore(qid, st.session_state.operator), rerun=False)
+                        st.rerun()
+
+
+def threat_row(f: dict) -> None:
+    where = code(f.get('path')) + (f" → {code(f.get('entry'))}" if f.get("entry") else "") + \
+        (f" line {html.escape(str(f.get('line')))}" if f.get("line") else "")
+    c1, c2 = st.columns([5, 1])
+    c1.markdown(f"{SEVERITY_ICON.get(str(f.get('severity')), '⚪')} **{html.escape(str(f.get('label')))}** · "
+                f"{html.escape(str(f.get('kind', '')).replace('_', ' '))} · {where}", unsafe_allow_html=True)
+    if f.get("snippet"):
+        c1.code(str(f["snippet"]), language=None)
+    if c2.button("Quarantine", key=f"quar_{f.get('id')}", icon=":material/block:"):
+        run_action(f"Quarantined {f.get('path')}",
+                   lambda fid=f.get("id"): client.quarantine(fid, st.session_state.operator), rerun=False)
+        st.rerun()
+
+
 def scan_suggestion(s: dict) -> None:
     """One place the scan found logs, with a Watch button per file not yet watched."""
     files = s.get("files") or []
     state = "✅ already watched" if s.get("already_watched") else f"{len(files)} log file(s)"
-    st.markdown(f"**{html.escape(str(s.get('program')))}** · `{s.get('path')}` · {s.get('layer')} · {state}  \n"
+    st.markdown(f"**{html.escape(str(s.get('program')))}** · {code(s.get('path'))} · {html.escape(str(s.get('layer')))} · {state}  \n"
                 f"<span style='opacity:.7'>{html.escape(', '.join(s.get('reasons') or []))}</span>",
                 unsafe_allow_html=True)
     for f in files:
@@ -947,7 +1296,7 @@ def page_classifier() -> None:
             f"- Brute force: **{os.environ.get('BRUTE_FORCE_COUNT', '5')}** failed logins within "
             f"**{os.environ.get('BRUTE_FORCE_WINDOW_S', '60')} s**\n"
             f"- Bulk exfiltration: **{os.environ.get('EXPORT_ROWS_THRESHOLD', '100')}** rows or more in one export\n"
-            "- Signatures: SQL injection, XSS, privilege escalation, port scans, misconfiguration")
+            "- Signatures: SQL injection, XSS, privilege escalation, port scans, misconfiguration, log tampering")
     with st.container(border=True):
         section("Classifications", "newest first · 0.4-0.6 malicious means needs review, never auto-contained", "label")
         table(rows, "No malicious classifications yet.", column_config={
@@ -1022,7 +1371,7 @@ def page_review() -> None:
 
     g, h = st.columns([5, 7])
     with g, st.container(border=True):
-        section("Risk gauge", f"threshold {threshold:.0f} · white line", "speed")
+        section("Risk gauge", f"threshold {threshold:.0f} · the bold tick", "speed")
         st.plotly_chart(sh.gauge_figure(idx, threshold, band), width="stretch", config={"displayModeBar": False}, key="gauge")
         st.markdown(f'<div style="text-align:center;margin-top:-.4rem">{pill(sh.BAND_LABELS.get(band, band), color)}</div>',
                     unsafe_allow_html=True)

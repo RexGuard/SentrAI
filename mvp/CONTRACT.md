@@ -70,12 +70,30 @@ For counting SSH guesses: one failed attempt shows up as `failed_auth` (password
 `invalid_user` (every server, once per connection); PAM lines repeat them, so don't add them on
 top. `src_ip` + `port` identifies one connection.
 
+### Webhook source (any tool → core, `POST /webhook/<name>`)
+Same token as `/events`. The body is a JSON object, a list of objects, or an object holding a list
+under `events`, `alerts`, `records`, `items`, `logs` or `data`. Each object becomes one Event
+(`core/app/webhook.py`): fields come from the `<name>` entry of `CACTAI_WEBHOOK_MAPS` (dotted paths,
+or `=value` for a fixed value), then from common key names (`src_ip`/`client_ip`/`remote_addr`,
+`message`/`msg`/`full_log`, `host`/`hostname`/`agent.name`, ...). `source` is always
+`webhook_<name>`, `raw` is capped at 8,000 characters (the whole object as JSON when no text field
+is found), `event_id` is `wh-<name>-<id or hash of the object>`, and `?layer=` / `?host=` set
+defaults. Returns `{"accepted": n, "risk_index": int, "events": [event ids]}`.
+
+### Line chain
+Every event the collector sends carries `chain: {"stream", "seq", "prev", "hash"}`:
+`hash = sha256(prev + json([event_id, timestamp, host, layer, source, raw]))` (compact JSON, `ensure_ascii=False`),
+`prev` is the previous event's hash (64 zeros for #1), `seq` counts up from 1 per `stream` (one per collector,
+kept in `collector-state.json` once delivered). The core checks each one (`integrity.py`): a changed line, a
+missing run of events or one that does not follow its predecessor becomes an `audit_integrity` event
+(log tampering). Events without `chain` are accepted as before.
+
 ### Categories (exact strings)
-`benign, brute_force, sql_injection, xss, port_scan, privilege_escalation, data_exfiltration, misconfiguration`
+`benign, brute_force, sql_injection, xss, port_scan, privilege_escalation, data_exfiltration, misconfiguration, log_tampering, malware, prompt_injection`
 
 ### Severity → base points
 low 5-10, medium 15-25, high 30-45, critical 50-70. Default mapping:
-brute_force=high(30), sql_injection=high(40), xss=medium(20), port_scan=medium(15), privilege_escalation=critical(60), data_exfiltration=critical(70), misconfiguration=medium(20), benign=0.
+brute_force=high(30), sql_injection=high(40), xss=medium(20), port_scan=medium(15), privilege_escalation=critical(60), data_exfiltration=critical(70), misconfiguration=medium(20), log_tampering=critical(55), malware=critical(65), prompt_injection=critical(60), benign=0.
 
 ### Risk index
 `risk_index = round(100 * (1 - exp(-raw/60)))`, raw = sum of open incident points (base × ai_confidence × asset_criticality) + inaction penalty (+5 per demo-hour unacknowledged, capped +30 per incident) − resolved incidents.
@@ -105,6 +123,9 @@ that signature (HMAC of the path with the token), which fits that one report onl
 | POST | `/incidents/{id}/permanent` | `{"operator", "justification"}` |
 | POST | `/incidents/{id}/ack` | `{"operator", "channel"}` records acknowledgement |
 | GET | `/audit` | hash-chained records `[{"seq","ts","type","data","prev_hash","hash"}]` + `{"chain_valid": bool}` |
+| GET | `/audit/fingerprint` | `{"seq","head","at","line"}`: the current signed fingerprint (`SENTRAI-FP v1 ...`) |
+| GET | `/audit/remote-copy` | `{"enabled", "url", "ok", "audit_seq", "lines_sent", "last_sent_at", "error", ...}`: the off-box copy |
+| GET | `/audit/verify?fingerprint=<line>` | `{"ok": bool, "reason": str}`: does the chain on disk still match a fingerprint sent earlier |
 | GET | `/reports/{incident_id}` | evidence report JSON |
 | GET | `/reports/{incident_id}.md` | same report as Markdown |
 | GET | `/protection` | `{"protection": "on" \| "off", "monitor_only", "changed_at", "changed_by", "reason", "active_actions": [...ids]}` |
@@ -115,9 +136,15 @@ that signature (HMAC of the path with the token), which fits that one report onl
 | GET | `/chat` | `{"assistant", "model", "messages": [{"id","role": "operator" \| "assistant","text","ts","incident", ...}]}` |
 | POST | `/chat` | `{"operator", "message", "incident": id or null}` → the assistant message, with `"looked_at": [...]` and `"suggestions": [{"incident","decision","label","reason","status"}]`. Read-only: a suggestion changes nothing until the operator confirms it through the decision/rollback/permanent/ack endpoints above. Logged to the audit trail as `operator_chat`. |
 | POST | `/chat/clear` | empties the chat history (also cleared by `/demo/reset`) |
+| POST | `/chat/setup/interpret` | guided setup in the Chat page. `{"question", "options": [{"value","label"}], "answer"}` → `{"ai": bool, "choice": an option value or "", "reply"}`. The model maps an answer the scripted setup could not match to an option, or answers the user's question. Without an AI model `{"ai": false, "choice": "", "reply": ""}`. Never sent secrets; saves nothing, not audited. |
 | GET | `/ai` | the AI model Cyanide and the chat use now: `{"engine","planner","chat","online","provider","model","key_source","off_reason"}`; `off_reason` says why it is off (no key, missing model, package not installed...) |
 | POST | `/ai/reload` | reads the saved AI settings again and switches Cyanide and the chat to them (no restart); returns the same shape as `GET /ai` |
 | POST | `/ai/test` | one real request to the provider. Body `{"provider","api_key","base_url","model"}` tests those values (saved or not) without switching anything; no body tests what Cyanide uses now. Returns `{"ok","provider","model","ms","error","hint","tested"}` |
+| POST | `/threats/scan` | `{"operator", "paths": optional list}`: read-only threat scan of the folders in `threat_scan.paths` (or `paths`); returns `{"roots","files_checked","counts","findings":[{"id","path","entry","line","key","kind","severity","label","snippet","sha256"}],"new_alerts"}`. New critical/high findings are ingested as events with `source: "threat_scan"` (category `malware`), each once; audited as `threat_scan` |
+| GET | `/threats` | latest threat scan, same shape |
+| POST | `/threats/{id}/quarantine` | `{"operator", "reason": optional}`: moves that file (by finding id, only if unchanged since the scan) into quarantine; audited as `file_quarantined` |
+| GET | `/quarantine` | files in quarantine: `[{"id","name","original","sha256","finding","operator","at"}]` |
+| POST | `/quarantine/{id}/restore` | `{"operator"}`: puts the file back; audited as `file_restored` |
 | GET | `/log-sources` | extra log files the collector watches (approved from a process scan, or from Scout) |
 | GET | `/log-sources/pending` | Scout proposals waiting for an operator: `[{"id","name","path","layer","format","why","goal","proposed_at"}]` |
 | POST | `/log-sources/pending/{id}` | `{"operator", "approve": bool, "layer": optional, "reason": optional}`: approve adds the file to the collector list, reject drops it; audited as `log_source_added` / `log_source_rejected` |
@@ -148,6 +175,16 @@ that signature (HMAC of the path with the token), which fits that one report onl
   "snapshot_hash": "..." }
 ```
 Containment is enforced by the target app polling `/blocklist` (real effect: blocked IPs/users get HTTP 403). No host firewall changes by default.
+
+## Witness (owner: core; `witness/witness.py`)
+The off-box copy. The core sends `POST /append {"stream", "items"}` with the append token as it goes:
+- `audit-<host>-<first 12 of record 1's hash>`: audit records exactly as stored (`seq, ts, type, data, prev_hash, hash`).
+  Each must continue the copy (`seq` = last + 1, `prev_hash` = last hash) and match its own hash, else `409`.
+  The same record sent twice is accepted once.
+- `lines-<collector stream>`: events with their `chain` (see "Line chain"). A stream may start mid-chain; one that
+  does not follow is kept with a note.
+`GET /head?stream=` answers `{"stream","seq","hash"}` to either token. `GET /records?stream=&from=` and
+`GET /streams` need the read token. There is no way to change or delete anything (`PUT`/`DELETE`/`PATCH` are `405`).
 
 ## Target app (owner: lab)
 - Flask on :5000: `/` , `/login` (POST form user/password), `/search?q=` (deliberately naive, logs SQLi-looking queries; uses SQLite with a fake `members` table of synthetic data), `/export` (bulk export, triggers data_exfiltration events), `/admin/run?cmd=` simulated command endpoint that NEVER executes anything, only logs "shell spawned" style event.

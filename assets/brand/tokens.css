@@ -1,5 +1,6 @@
-/* SentrAI brand tokens. Night-watch navy with a steel-blue accent.
-   Dark values match the Risk Console (mvp/dashboard/cactai_ui/console.css).
+/* SentrAI brand tokens. Two themes, Black and White, with a monochrome brand: the brand colour is the ink
+   itself (black on White, white on Black). Violet, the logo's colour, is the optional accent.
+   Values match the Risk Console (mvp/dashboard/cactai_ui/theme.py, Mono accent).
    Risk colours (green / amber / red) are for risk bands and status only, never for branding.
    Use: <link rel="stylesheet" href="assets/brand/tokens.css">, then var(--sn-*). */
 :root {
@@ -24,79 +25,86 @@
   --sn-radius: 14px;
   --sn-radius-pill: 999px;
 
-  /* Fixed brand colours (same in both themes) */
-  --sn-navy-950: #0b111d;
-  --sn-navy-900: #121a29;
-  --sn-navy-800: #172134;
-  --sn-navy-700: #1d2940;
-  --sn-steel-700: #1f4fb8;
-  --sn-steel-500: #4c8dff;
-  --sn-steel-300: #7fb2ff;
+  /* Fixed colours (same in both themes) */
+  --sn-black-950: #0a0a0a;
+  --sn-black-900: #141414;
+  --sn-black-800: #1b1b1b;
+  --sn-black-700: #262626;
+  --sn-white: #ffffff;
+  --sn-logo-indigo: #522bbe;
+  --sn-logo-violet: #8057f0;
+  --sn-logo-periwinkle: #697ef5;
 
-  /* Light theme (default) */
-  --sn-bg: #f5f7fb;
+  /* White theme (default) */
+  --sn-bg: #fafafa;
   --sn-surface: #ffffff;
-  --sn-surface-2: #eef2f8;
-  --sn-surface-3: #e3e9f3;
-  --sn-ink: #0f1a2c;
-  --sn-ink-soft: #44536b;
-  --sn-ink-muted: #626f86;
-  --sn-line: #d5dce8;
-  --sn-line-soft: #e4e9f1;
-  --sn-brand: #1f4fb8;       /* links, primary buttons (white text on it: 7.3:1) */
-  --sn-brand-2: #2f6fe0;     /* hover, focus ring, large accents */
-  --sn-brand-soft: #e3ecfd;  /* selected rows, badges */
-  --sn-brand-line: #b7cbf3;
+  --sn-surface-2: #f4f4f4;
+  --sn-surface-3: #e8e8e8;
+  --sn-ink: #0a0a0a;
+  --sn-ink-soft: #404040;
+  --sn-ink-muted: #666666;
+  --sn-line: #dedede;
+  --sn-line-soft: #ebebeb;
+  --sn-brand: #0a0a0a;
+  --sn-brand-2: #404040;
+  --sn-brand-soft: #e8e8e8;
+  --sn-brand-line: #b7b7b7;
   --sn-on-brand: #ffffff;
-  --sn-safe: #1a7447;
-  --sn-warn: #8f5d00;
-  --sn-danger: #c0282e;
-  --sn-shadow: 0 1px 2px rgba(15, 26, 44, .06), 0 8px 24px rgba(15, 26, 44, .07);
+  --sn-accent: #7b54e6;
+  --sn-accent-fill: #8057f0;
+  --sn-safe: #15803d;
+  --sn-warn: #a16207;
+  --sn-danger: #dc2626;
+  --sn-shadow: 0 1px 2px rgba(0, 0, 0, .05), 0 8px 24px rgba(0, 0, 0, .06);
   color-scheme: light;
 }
 
-/* Dark theme: follows the OS unless a page forces light with data-theme="light". */
+/* Black theme: follows the OS unless a page forces White with data-theme="light". */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --sn-bg: #0b111d;
-    --sn-surface: #121a29;
-    --sn-surface-2: #172134;
-    --sn-surface-3: #1d2940;
-    --sn-ink: #e7edf6;
-    --sn-ink-soft: #a5b2c6;
-    --sn-ink-muted: #6f7d93;
-    --sn-line: #26324a;
-    --sn-line-soft: #1e293d;
-    --sn-brand: #7fb2ff;
-    --sn-brand-2: #4c8dff;
-    --sn-brand-soft: #16264a;
-    --sn-brand-line: #2d4777;
-    --sn-on-brand: #0b111d;
+    --sn-bg: #0a0a0a;
+    --sn-surface: #141414;
+    --sn-surface-2: #1b1b1b;
+    --sn-surface-3: #262626;
+    --sn-ink: #f5f5f5;
+    --sn-ink-soft: #b3b3b3;
+    --sn-ink-muted: #8c8c8c;
+    --sn-line: #2e2e2e;
+    --sn-line-soft: #212121;
+    --sn-brand: #f5f5f5;
+    --sn-brand-2: #b3b3b3;
+    --sn-brand-soft: #262626;
+    --sn-brand-line: #4c4c4c;
+    --sn-on-brand: #0a0a0a;
+    --sn-accent: #a88cf5;
+    --sn-accent-fill: #8057f0;
     --sn-safe: #6fcf97;
     --sn-warn: #e8b34a;
     --sn-danger: #e5484d;
-    --sn-shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px rgba(0, 0, 0, .28);
+    --sn-shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .4);
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --sn-bg: #0b111d;
-  --sn-surface: #121a29;
-  --sn-surface-2: #172134;
-  --sn-surface-3: #1d2940;
-  --sn-ink: #e7edf6;
-  --sn-ink-soft: #a5b2c6;
-  --sn-ink-muted: #6f7d93;
-  --sn-line: #26324a;
-  --sn-line-soft: #1e293d;
-  --sn-brand: #7fb2ff;
-  --sn-brand-2: #4c8dff;
-  --sn-brand-soft: #16264a;
-  --sn-brand-line: #2d4777;
-  --sn-on-brand: #0b111d;
+  --sn-bg: #0a0a0a;
+  --sn-surface: #141414;
+  --sn-surface-2: #1b1b1b;
+  --sn-surface-3: #262626;
+  --sn-ink: #f5f5f5;
+  --sn-ink-soft: #b3b3b3;
+  --sn-ink-muted: #8c8c8c;
+  --sn-line: #2e2e2e;
+  --sn-line-soft: #212121;
+  --sn-brand: #f5f5f5;
+  --sn-brand-2: #b3b3b3;
+  --sn-brand-soft: #262626;
+  --sn-brand-line: #4c4c4c;
+  --sn-on-brand: #0a0a0a;
+  --sn-accent: #a88cf5;
+  --sn-accent-fill: #8057f0;
   --sn-safe: #6fcf97;
   --sn-warn: #e8b34a;
   --sn-danger: #e5484d;
-  --sn-shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px rgba(0, 0, 0, .28);
+  --sn-shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .4);
   color-scheme: dark;
 }

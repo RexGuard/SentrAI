@@ -2,7 +2,7 @@
 title: SentrAI Roadmap
 ---
 
-# 🛡️ SentrAI Roadmap
+# SentrAI Roadmap
 
 From the working hackathon MVP (27 Sep 2026) to a product a Singapore SME or private school can run in production.
 

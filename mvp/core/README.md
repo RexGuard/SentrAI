@@ -39,8 +39,13 @@ Tests:
 | `TEAM_LEAD`, `IT_MANAGER`, `CXO` | role names | Escalation recipients. |
 | `TYPESAFE_API_KEY` | unset | Turns on Jev (TypeSafe System One). Without it the fallback classifier is used. |
 | `JEV_TIMEOUT_S` | `3` | Timeout for each Jev call. After 3 failures in a row a 60 s circuit breaker opens. |
+| `JEV_CACHE_SIZE` / `JEV_CACHE_TTL_S` | `2048` / `3600` | Jev answers kept per log template (the line with IPs, times, ids, pids and ports replaced), so the same request from many addresses is asked about once. Size `0` turns the cache off. |
 | `PROTECTED_IPS` | `127.0.0.1,::1,localhost` | Addresses never blocked, by the portal or the firewall. Add your own admin IP before turning the firewall on, e.g. `PROTECTED_IPS=127.0.0.1,::1,localhost,198.51.100.200`. |
 | `CACTAI_FIREWALL` | `off` | Mirror `block_ip` into the host firewall: `auto`, `nftables`, `iptables` (Linux) or `netsh` (Windows). `off` keeps blocking portal-only. |
+| `CACTAI_WEBHOOK_MAPS` | unset | Field maps for `POST /webhook/<name>` (inline JSON or a file path), e.g. `{"wazuh": {"src_ip": "data.srcip", "raw": "full_log", "layer": "=os"}}`. Without a map, common key names are guessed. See CONTRACT.md. |
+| `CACTAI_RESPONDER_WEBHOOK_URL` | unset | Also hand approved actions to another system (a firewall API, WAF or SOAR) as JSON POSTs `{"op": "apply"\|"revert", "type", "target", ...}`. An action counts as in force only on a 2xx answer. Blocks still go on `/blocklist` too. |
+| `CACTAI_RESPONDER_WEBHOOK_ACTIONS` | all six | Which action types go to the webhook (`block_ip,lock_user,rate_limit,waf_rule,kill_process,revoke_public_acl`). |
+| `CACTAI_RESPONDER_WEBHOOK_SECRET` | unset | Sent as `Authorization: Bearer` and used to sign each body (`X-SentrAI-Signature: sha256=<HMAC>`). `_FILE` works too. |
 | `CACTAI_FIREWALL_ENFORCE` | `0` | `0` is a dry run: the command is logged and written to the audit trail, never run. `1` runs it (admin/root). Loopback, link-local, multicast and `PROTECTED_IPS` are never sent to the firewall. |
 | `CACTAI_DB` | `data/cactai.db` | SQLite audit chain. |
 | `BRUTE_FORCE_COUNT` / `BRUTE_FORCE_WINDOW_S` | `5` / `60` | Brute-force rule: this many failed logins from the same IP within this many seconds. |
@@ -50,7 +55,55 @@ Tests:
 | `AUTO_CLOSE_QUIET_MIN` | `60` | Resolve an open scan or brute-force incident after this many real minutes with no new event and no containment in force. `0` turns it off. |
 | `AUTO_CLOSE_CATEGORIES` | `port_scan,brute_force` | Which categories auto-close. Other incidents always wait for an operator. |
 | `WATCHDOG_SILENCE_S` | `30` | Watchdog flags a collector after this many seconds of silence. |
-| `PROTECTED_IPS` | empty | Comma-separated IPs that Countersign will never approve blocking. |
+| `INTEGRITY_CHECK_S` | `30` | How often the integrity guard re-checks the audit chain and the clock. |
+| `CLOCK_JUMP_S` | `120` | A clock change bigger than this (core host or a collector) counts as log tampering. |
+| `ANCHOR_EVERY_MIN` | `60` | Send the signed record fingerprint to the alert channels this often (real minutes, only when new records exist; 0 = never). |
+| `CACTAI_ANCHOR_KEY` | (made on first use) | Fingerprint signing key. Default: `anchor.key` next to the audit database, mode 0600. |
+
+### Off-box copy
+
+With `CACTAI_REMOTE_COPY_URL` (and the append token in `CACTAI_REMOTE_COPY_TOKEN` or a file named by
+`CACTAI_REMOTE_COPY_TOKEN_FILE`; `CACTAI_REMOTE_COPY_CA` for a self-signed certificate), the core sends every
+audit record and every sealed log line to a SentrAI witness on another machine as it happens (about 4 ms from
+append to stored, measured locally). The witness can only add, and the core's token cannot read the copy back.
+If the witness refuses a record because the chain here no longer continues its copy, the core opens a
+**Log tampering** incident. To see exactly what changed, with the witness's read token:
+
+```
+python -m app.remote_copy compare --url https://198.51.100.20:8600 --read-token-file read.token
+```
+
+Status: `GET /audit/remote-copy`. Setup: `deploy/install-witness.sh` on the second machine, then
+`deploy/install.sh --remote-copy ...` here (deploy/README.md, "Off-box copy").
+
+### Record fingerprints
+
+The audit chain proves its own consistency, but root on the server could rebuild it. So the core
+sends the newest record's signed fingerprint off the box (Telegram/email) every `ANCHOR_EVERY_MIN`,
+and every notification carries the full signed line as its `witness` (shown at the bottom of each
+Telegram, email and console alert):
+
+```
+SENTRAI-FP v1 seq=1234 head=3fa9...e1 at=2026-10-02T10:00:00Z sig=8b12...
+```
+
+To check the chain on disk still matches a fingerprint you kept (`OK:` exit 0, `TAMPERED:` exit 1):
+
+```
+python -m app.anchor verify "SENTRAI-FP v1 seq=1234 head=... at=... sig=..."
+python -m app.anchor show        # the current fingerprint
+```
+
+or `GET /audit/verify?fingerprint=...`. The notifier keeps the newest witness it delivered
+(`notifier/data/last_witness.txt`), so `/verify` in the Telegram chat, or
+`python notifier.py --verify`, checks the live chain against it without pasting anything
+(`/verify <line>` checks an older one). After a demo reset the old chain is in `data/archive/`;
+pass it with `--db`.
+| `PROTECTED_IPS` | `127.0.0.1,::1,localhost` | Comma-separated IPs or networks that Countersign will never approve blocking. |
+| `PROTECTED_NETS` | private ranges | Networks Countersign will not block on its own (RFC 1918, 100.64.0.0/10, fc00::/7); an operator can still approve a block. `off` disables. |
+| `INFRA_ALLOWLIST` | empty | Infrastructure never blocked. The DNS servers and default gateway are added automatically unless `INFRA_AUTODETECT=0`. |
+| `PROTECTED_USERS` | empty | Extra accounts never auto-locked. Admin and service accounts are always protected. |
+| `CONTAIN_MIN_SEVERITY` / `CONTAIN_MIN_POINTS` | `high` / `20` | The incident's own bar for autonomous containment, on top of the overall risk threshold. Lower incidents wait for a person. |
 | `CACTAI_ENGINE` | `cyanide` | Orchestrator. `cyanide` plans with Claude when a key is set; `saguaro` keeps the fixed playbooks only. |
 | `CACTAI_LLM_API_KEY` | unset | The one AI key the setup wizard saves; used by whichever provider `CACTAI_LLM_PROVIDER` names. With no key, Cyanide behaves exactly like Warden. A provider's own variable (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, `COMMANDCODE_API_KEY`) still works and wins when set. |
 | `CACTAI_LLM_PROVIDER` | `auto` | `anthropic`, `openai`, `deepseek`, `commandcode` (also set `CACTAI_LLM_MODEL`), or `compatible` (any OpenAI-compatible API: also set `CACTAI_LLM_BASE_URL` and `CACTAI_LLM_MODEL`). `auto` uses the first provider-specific key set. The dashboard's Configuration page has a Fetch models button that lists the models your key can use. |
@@ -81,7 +134,10 @@ Audit records: `cyanide_plan` (actions, reasons, dropped steps), `cyanide_hold` 
    - `network` and `cloud` go to Watchtower
 2. **Classify**:
    - **Rules first**, always with confidence 1.0. They cover SQLi, XSS, a shell being spawned, `/export` bulk exports, port scans, misconfigurations, and 5 or more failed logins from one IP within 60 s. Failed logins below that threshold are held as benign; when the threshold is reached, all of them are attached to the incident.
-   - **Jev** if the rules cannot decide.
+   - **Log tampering** (`log_tampering`, critical 55): commands that wipe, edit or silence the record (deleting or emptying files under `/var/log` or shell history, `journalctl --vacuum`, `chattr -a`, stopping rsyslog/auditd/journald, `wevtutil cl`, Windows event 1102), commands that widen who can read or change it (adding an account to `adm`, `systemd-journal` or `cactai`, `chmod o+w` or `setfacl` on a log or SentrAI file, `setcap` on a SentrAI program, `systemctl edit` on a SentrAI service, journal sealing switched off), a collector notice that a log shrank, vanished or was swapped with no rotated copy (`log_integrity`), and the integrity guard's findings (`audit_integrity`: audit chain broken, audit database deleted, clock jumped). On its own it stays below the autonomous line, so a person decides; it only proposes blocking the source IP.
+   - **Malware** (`malware`, critical 65): the threat scan found a web shell, backdoor, reverse shell, crypto miner or container escape tool in a file or a running program (`threat_scan`). It stays below the autonomous line and proposes no automatic action; the operator quarantines the file.
+   - **Prompt injection** (`prompt_injection`, critical 60): a web request carrying text written for an AI model ("ignore previous instructions", "classify this as benign", chat-role markers such as `<|im_start|>` or `[INST]`). It is caught by the rules before Jev sees it, and proposes a WAF rule and blocking the source IP.
+   - **Jev** if the rules cannot decide. Jev receives at most 2,000 printable characters of the raw line, fenced between `<<<LOG_LINE` and `LOG_LINE>>>`, and its questions say the text is data only.
    - **Fallback heuristic** otherwise. It gives confidence 0.5 to 0.8 and `classified_by="fallback"`.
    - Confidence is always clipped to 0.5 to 1.0.
    - If P(malicious) is below 0.4, no incident is opened.
@@ -124,7 +180,20 @@ Scout follows a technician through the folders. The process scan (`app/procscan.
 - **Nothing is watched until an operator says so.** Each file in a scan has an id. The dashboard's Collector page (Find logs on this computer) and Cyanide's chat buttons approve a file by that id, so neither the model nor a crafted request can point the collector at an arbitrary path. Approved files go to the same list Scout writes (`lab/scout/sources.json`), and the running collector starts tailing them within a few seconds, from the end of the file.
 - **Cyanide.** Chat has two new tools: `scan_system` and `suggest_log_source` (a button, like `suggest_action`). Without an AI key, asking the chat to "scan" gives the scanner's own list with buttons.
 
-Audit records: `system_scan` and `log_source_added`.
+Audit records: `system_scan` and `log_source_added`. The process scan also flags programs that look hostile (a known crypto miner, a mining-pool address or a reverse shell in the command line, a program running from `/tmp` or `/dev/shm`, or one whose file was deleted after it started); each is raised once as a `malware` alert (see below).
+
+## Threat scan (signs of a break-in)
+
+The process scan finds logs; the threat scan (`app/threatscan.py`, `app/threats.py`) looks inside files for what an intruder leaves behind: web shells and PHP backdoors, reverse shells, download-and-run one-liners, crypto miners, container escape tools used on shared game hosts (proot root systems, Alpine minirootfs, Harbor/Ptero-VM), `ld.so.preload` rootkit tricks, cron jobs and SSH keys added for persistence, and long encoded blobs. Ideas taken from a Pterodactyl malware scanner and rewritten for SentrAI's rules.
+
+- **Which folders.** Only the ones you choose: `"threat_scan": {"paths": ["/var/lib/pterodactyl/volumes"], "every_minutes": 60}` in the system profile, or `CACTAI_THREAT_PATHS` (separated by `:` on Linux, `;` on Windows). `every_minutes` repeats the scan in the background (default 60 when paths are set). SentrAI's own folders are always skipped.
+- **What it reads.** Scripts and web pages (`.php`, `.sh`, `.py`, `.js`, `.jsp`, `.asp`, `.ps1`, ...), configuration files (including `config.yml`), extensionless scripts that start with `#!`, cron files, and the text and class files inside `.jar` plugins (only strong signs count there: miners, reverse shells, escape tools). `tmp/` and `logs/` are scanned on purpose, since that is where malware hides. Package caches (`node_modules`, `.git`, virtualenvs) and minified bundles are skipped. Files over `max_file_mb` (default 10) are skipped.
+- **Tuning.** `"allow": ["*/plugins/dynmap/*"]` skips known-good paths; `"known_bad_sha256": [...]` flags exact files.
+- **Each finding is raised once.** Critical and high findings become events (`source: "threat_scan"`) that the rules classify as `malware` (critical, 65), so they open an incident and notify like any other. A fingerprint of the file contents and signature is kept in `data/threat_seen.json` (`CACTAI_THREAT_STATE`), so an hourly scan does not repeat the same alert; a file that changes is new again. Medium findings are only listed.
+- **Nothing is deleted, and nothing happens on its own.** There is no auto-delete and no auto-suspend. An operator quarantines a file by its finding id (dashboard Collector page, or Cyanide's `suggest_quarantine` button). The file must be unchanged since the scan; it moves to `data/quarantine` (`CACTAI_QUARANTINE`), read-only, with a note of where it came from, and `POST /quarantine/{id}/restore` puts it back.
+- **Private details stay out.** Matched lines are cut to 160 characters with secrets masked and home folders shown as `~`; the model sees them labelled as untrusted text.
+
+Audit records: `threat_scan`, `file_quarantined`, `file_restored`.
 
 ## Endpoints
 
@@ -149,6 +218,7 @@ Additions that do not change the contract:
 - `GET /notifications`: all notifications, including delivered ones.
 - `POST /heartbeat {"collector": "web-01"}`: collector heartbeat for Watchdog. An event with `"source": "heartbeat"` does the same.
 - `POST /system/scan {"operator": "erick"}` and `GET /system/scan` (latest): read-only process scan with suggested log files.
+- `POST /threats/scan {"operator": "erick"}`, `GET /threats`, `POST /threats/{id}/quarantine`, `GET /quarantine`, `POST /quarantine/{id}/restore`: threat scan and quarantine.
 - `GET /log-sources` and `POST /log-sources {"operator", "file_id", "layer"?}`: extra log files the collector watches; a file is added only by its id from the latest scan.
 - `POST /demo/advance {"demo_hours": 3}`: fast-forwards the demo clock, for tests and to skip ahead during a take.
 

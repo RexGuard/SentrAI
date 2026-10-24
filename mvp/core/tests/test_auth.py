@@ -65,3 +65,11 @@ def test_signed_report_link_opens_without_the_token(anon):
     other = url.path.replace(note["incident"], "RSK-2026-999")
     assert anon.get(f"{other}?{url.query}").status_code == 401  # a signature fits one report only
     assert anon.get(f"/reports/{note['incident']}?{url.query}").status_code == 401  # the .md path only
+
+
+@pytest.mark.parametrize("path", ["/health", "/incidents"])
+def test_responses_carry_browser_security_headers(anon, path):
+    r = anon.get(path)  # an open path and a refused one
+    assert r.headers["x-content-type-options"] == "nosniff"
+    assert r.headers["x-frame-options"] == "DENY"
+    assert r.headers["referrer-policy"] == "no-referrer"

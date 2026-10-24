@@ -2,7 +2,7 @@
 title: SentrAI
 ---
 
-# 🛡️ SentrAI
+<h1><picture><source media="(prefers-color-scheme: dark)" srcset="assets/brand/logo-dark.svg"><img src="assets/brand/logo.svg" alt="SentrAI" width="300"></picture></h1>
 
 **An accountability-based security system for organizations that can't afford a security team.**
 

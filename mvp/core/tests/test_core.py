@@ -70,9 +70,10 @@ def test_threshold_triggers_autonomous_block(client):
     assert incs["RSK-2026-082"]["category"] == "sql_injection"
     assert all(i["status"] == "contained" for i in incs.values())
     bl = client.get("/blocklist").json()
-    assert "203.0.113.45" in bl["ips"] and "admin" in bl["users"]
+    # admin is an admin account: never auto-locked, so only the IP block and rate limit apply.
+    assert "203.0.113.45" in bl["ips"] and bl["users"] == []
     acts = incs["RSK-2026-081"]["actions"]
-    assert {a["type"] for a in acts} == {"block_ip", "lock_user", "rate_limit"}
+    assert {a["type"] for a in acts} == {"block_ip", "rate_limit"}
     assert all(a["mode"] == "autonomous" and a["approved_by"] == "Countersign" and a["status"] == "active" for a in acts)
     assert all(len(a["snapshot_hash"]) == 64 and a["verified"] for a in acts)
     assert r["risk_index"] < 80  # contained incidents no longer count
@@ -82,6 +83,8 @@ def test_threshold_triggers_autonomous_block(client):
         assert t in types
     assert any(x["type"] == "needle_review" and x["data"]["agent"] == "Countersign" and x["data"]["approved"]
                for x in audit["records"])
+    assert any({"type": "lock_user", "target": "admin", "why": "protected account"} in x["data"].get("denied", [])
+               for x in audit["records"] if x["type"] == "needle_review")
     pending = client.get("/notifications/pending").json()
     auto = [n for n in pending if n["kind"] == "autonomous_action"]
     assert auto and "CXO" in auto[0]["recipients"]

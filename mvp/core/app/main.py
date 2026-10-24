@@ -15,9 +15,10 @@ from pydantic import BaseModel, ConfigDict
 
 from .config import Settings, sign
 from .reports import build_report, render_markdown, render_pdf
-from . import ai
+from . import ai, anchor, webhook
 from .chat import OperatorChat, default_chat_provider
 from .discovery import Discovery
+from .threats import ThreatWatch
 from .cyanide import Cyanide, default_planner
 from .saguaro import BadRequestError, ConflictError, Saguaro
 
@@ -84,11 +85,32 @@ class LogSourceIn(BaseModel):
     layer: Optional[str] = None
 
 
+class ThreatScanIn(BaseModel):
+    operator: str = "operator"
+    paths: Optional[list[str]] = None
+
+
+class QuarantineIn(BaseModel):
+    operator: str
+    reason: str = ""
+
+
 class PendingDecisionIn(BaseModel):
     operator: str
     approve: bool
     layer: Optional[str] = None
     reason: str = ""
+
+
+class SetupOption(BaseModel):
+    value: str
+    label: str = ""
+
+
+class SetupInterpretIn(BaseModel):
+    question: str
+    options: list[SetupOption]
+    answer: str
 
 
 class AITestIn(BaseModel):
@@ -124,20 +146,38 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             except Exception:  # never let the loop die
                 log.exception("tick failed")
 
+    async def threat_scanner() -> None:
+        """Repeat the threat scan every threat_scan.every_minutes (off when no folders are set)."""
+        while True:
+            every = threats.every_s()
+            await asyncio.sleep(every or 300)
+            if every:
+                try:
+                    await asyncio.to_thread(threats.scan, "schedule")
+                except Exception:
+                    log.exception("threat scan failed")
+
     @contextlib.asynccontextmanager
     async def lifespan(_: FastAPI):
         task = asyncio.create_task(ticker()) if core.settings.background else None
+        scanner = asyncio.create_task(threat_scanner()) if core.settings.background else None
+        if core.remote is not None and core.settings.background:
+            core.remote.start()
         yield
-        if task:
-            task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await task
+        for t in (task, scanner):
+            if t:
+                t.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await t
+        if core.remote is not None:
+            core.remote.stop()
         core.audit.close()
 
     # Operator chat: read-only tools plus suggestion buttons; answers from the core's own
     # explanations when no AI key is set (or when the fixed-playbook engine runs).
-    discovery = Discovery(core)
-    chat = OperatorChat(core, default_chat_provider() if isinstance(core, Cyanide) else None, discovery)
+    threats = ThreatWatch(core)
+    discovery = Discovery(core, threats)
+    chat = OperatorChat(core, default_chat_provider() if isinstance(core, Cyanide) else None, discovery, threats)
     chat.off_reason = core.ai_off_reason = ai.why_off()
 
     def require_token(request: Request) -> None:
@@ -156,9 +196,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                                 headers={"WWW-Authenticate": "Bearer"})
 
     app = FastAPI(title="SentrAI core", version="0.1.0", lifespan=lifespan, dependencies=[Depends(require_token)])
+    # The signed report link opens in a browser: no framing, no type sniffing, and the ?sig= stays
+    # out of the Referer of anything the page links to.
+    @app.middleware("http")
+    async def security_headers(request: Request, call_next):
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        return response
+
     app.state.core = core
     app.state.chat = chat
     app.state.discovery = discovery
+    app.state.threats = threats
 
     def not_found(iid: str) -> HTTPException:
         return HTTPException(status_code=404, detail=f"incident {iid} not found")
@@ -171,6 +222,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def post_events(payload: Union[list[EventIn], EventIn] = Body(...)) -> dict[str, Any]:
         items = payload if isinstance(payload, list) else [payload]
         return core.ingest([e.model_dump() for e in items])
+
+    webhook_maps = webhook.load_maps()
+
+    @app.post("/webhook/{name}")
+    def post_webhook(name: str, payload: Any = Body(...), layer: Optional[str] = Query(None),
+                     host: Optional[str] = Query(None)) -> dict[str, Any]:
+        """Any JSON from another tool, mapped onto the /events contract (webhook.py). Same token as /events."""
+        try:
+            events = webhook.to_events(payload, name, webhook_maps, layer, host)
+        except webhook.WebhookError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {**core.ingest(events), "events": [e["event_id"] for e in events]}
 
     @app.get("/risk")
     def get_risk(history: int = Query(600, ge=0, le=3600)) -> dict[str, Any]:
@@ -231,6 +294,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             records = records[-limit:]
         return {"chain_valid": valid, "first_invalid_seq": bad, "count": total,
                 "head_hash": core.audit.head_hash(), "records": records}
+
+    @app.get("/audit/verify")
+    def get_audit_verify(fingerprint: str = Query(..., description="a SENTRAI-FP line from an alert")) -> dict[str, Any]:
+        ok, why = anchor.verify(core.audit, fingerprint, core.anchor_key)
+        return {"ok": ok, "reason": why}
+
+    @app.get("/audit/fingerprint")
+    def get_audit_fingerprint() -> dict[str, Any]:
+        fp = anchor.fingerprint(core.audit, core.anchor_key)
+        return {"seq": fp.seq, "head": fp.head, "at": fp.at, "line": fp.line()}
+
+    @app.get("/audit/remote-copy")
+    def get_remote_copy() -> dict[str, Any]:
+        """Whether the off-box copy is on, and how far it has got (remote_copy.py)."""
+        if core.remote is None:
+            return {"enabled": False}
+        return {"enabled": True, **core.remote.status}
 
     # The .md and .pdf routes must be registered before the JSON route.
     @app.get("/reports/{iid}.pdf")
@@ -307,6 +387,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
+    @app.post("/chat/setup/interpret")
+    def post_setup_interpret(body: SetupInterpretIn) -> dict[str, Any]:
+        return chat.interpret_setup(body.question, [o.model_dump() for o in body.options], body.answer)
+
     @app.post("/chat/clear")
     def clear_chat() -> dict[str, Any]:
         return chat.clear()
@@ -319,6 +403,39 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/system/scan")
     def get_scan() -> dict[str, Any]:
         return discovery.latest() or {"suggestions": [], "processes": [], "scanned_at": None}
+
+    # Threat scan: read-only look inside chosen folders for web shells, miners, reverse shells and the
+    # like. New critical/high findings open a "malware" incident; files are quarantined only by id.
+    @app.post("/threats/scan")
+    def post_threat_scan(body: Optional[ThreatScanIn] = None) -> dict[str, Any]:
+        return threats.scan((body.operator if body else None) or "operator", body.paths if body else None)
+
+    @app.get("/threats")
+    def get_threats() -> dict[str, Any]:
+        return threats.latest() or {"findings": [], "scanned_at": None,
+                                    "every_minutes": round(threats.every_s() / 60) or None}
+
+    @app.post("/threats/{finding_id}/quarantine")
+    def quarantine_threat(finding_id: str, body: QuarantineIn) -> dict[str, Any]:
+        try:
+            return threats.quarantine(finding_id, body.operator, body.reason)
+        except KeyError as e:
+            raise HTTPException(404, str(e).strip("'\""))
+        except ValueError as e:
+            raise HTTPException(409, str(e))
+
+    @app.get("/quarantine")
+    def get_quarantine() -> list[dict[str, Any]]:
+        return threats.quarantined()
+
+    @app.post("/quarantine/{qid}/restore")
+    def restore_quarantined(qid: str, body: OperatorIn) -> dict[str, Any]:
+        try:
+            return threats.restore(qid, body.operator)
+        except KeyError as e:
+            raise HTTPException(404, str(e).strip("'\""))
+        except ValueError as e:
+            raise HTTPException(409, str(e))
 
     @app.get("/log-sources")
     def get_log_sources() -> list[dict[str, Any]]:

@@ -23,7 +23,13 @@ done
 systemctl disable --now cactai.target cactai-core cactai-collector cactai-dashboard cactai-notifier 2>/dev/null || true
 rm -f /etc/systemd/system/cactai.target /etc/systemd/system/cactai-{core,collector,dashboard,notifier}.service
 systemctl daemon-reload
-rm -f /usr/local/bin/cactai-scout
+rm -f /usr/local/bin/cactai-scout /usr/local/bin/cactai-admin
+if [ -x /usr/local/sbin/cactai-dashboard-firewall ]; then /usr/local/sbin/cactai-dashboard-firewall remove; fi
+rm -f /usr/local/sbin/cactai-dashboard-firewall
+if command -v ufw >/dev/null 2>&1; then  # the allow rules install.sh added for the dashboard
+    ufw status numbered 2>/dev/null | grep sentrai-dashboard | sed -n 's/^\[ *\([0-9]*\)\].*/\1/p' | sort -rn \
+        | while read -r n; do ufw --force delete "$n" >/dev/null; done
+fi
 [ -f "$PREFIX/mvp/core/app/main.py" ] && rm -rf "$PREFIX"
 if [ "$PURGE" = 1 ]; then
     rm -rf /etc/cactai /var/lib/cactai

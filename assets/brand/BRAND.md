@@ -1,25 +1,28 @@
 # SentrAI brand kit
 
 SentrAI is a sentry for small networks: it watches, blocks inside its own walls, and never hacks back.
-The look is a night watch: deep navy, a steel-blue light, and one open eye on a shield.
+The look is a night watch in black and white: two themes, Black and White, with one optional accent. The logo is three interlocking violet-to-blue arcs that close in on one another and guard the space in the middle.
 Open `preview.html` in a browser to see every asset in light and dark.
 
 ## Files
 
 | File | Use |
 |---|---|
-| `logo.svg` | Horizontal logo for light backgrounds (mark + "SentrAI" wordmark) |
-| `logo-dark.svg` | Horizontal logo for dark backgrounds |
-| `mark.svg` | Shield-and-eye mark, light backgrounds |
-| `mark-dark.svg` | Mark for dark backgrounds (console sidebar, slides, alerts) |
-| `mark-mono.svg` | One-colour mark, takes `currentColor` (print, stamps, PDF headers) |
-| `favicon.svg` | Browser tab icon, switches shade with the OS theme |
+| `logo.svg` | Horizontal logo for light backgrounds (mark + "SentrAI" wordmark, transparent) |
+| `logo-dark.svg` | Horizontal logo for dark backgrounds (light wordmark, transparent) |
+| `mark.svg` | The mark on its own (three arcs), transparent |
+| `mark-dark.svg` | Mark for dark backgrounds (the same colours; they read on navy too) |
+| `mark-mono.svg` | One-colour mark, takes `currentColor` (print, stamps, embossing) |
+| `wordmark.svg` | "SentrAI" lettering on its own, takes `currentColor` |
+| `favicon.svg` | Browser tab icon (the mark with a little padding) |
+| `png/` | Transparent PNGs: `mark-` and `mark-mono-` at 64 to 1024 px, `logo-`, `logo-dark-` and `wordmark-` at 64 to 512 px tall (the wordmark files are cropped to the letters) |
+| `source/sentrai-logo-original.png` | The original logo artwork the SVGs were traced from |
 | `favicon.ico`, `favicon-16/32/48.png` | Fallback tab icons |
-| `apple-touch-icon.png` (180), `icon-192.png`, `icon-512.png` | Home-screen and PWA icons |
+| `apple-touch-icon.png` (180), `icon-192.png`, `icon-512.png` | Home-screen and PWA icons (mark on white) |
 | `social-card.png` (1200x630) | Link preview image (`og:image`) |
 | `tokens.css` | Colour, type and radius tokens as `--sn-*` CSS variables, light and dark |
 | `tokens.json` | The same tokens for Python (Streamlit, report PDFs, the deck, Telegram/email templates) |
-| `build_icons.py` | Re-renders the PNG/ICO files from the SVGs |
+| `build_icons.py` | Re-renders the PNG/ICO files, social card and `png/` exports from the SVGs |
 
 Head snippet for a web page:
 
@@ -35,30 +38,33 @@ Head snippet for a web page:
 
 Dark values are the Risk Console's own (`mvp/dashboard/cactai_ui/console.css`), so the site, console, alerts and reports share one palette.
 
-| Token | Light | Dark | Role |
+| Token | White | Black | Role |
 |---|---|---|---|
-| `--sn-bg` | `#f5f7fb` | `#0b111d` | Page background |
-| `--sn-surface` | `#ffffff` | `#121a29` | Cards, panels |
-| `--sn-surface-2` | `#eef2f8` | `#172134` | Raised or alternate rows |
-| `--sn-surface-3` | `#e3e9f3` | `#1d2940` | Hover, inputs |
-| `--sn-ink` | `#0f1a2c` | `#e7edf6` | Main text |
-| `--sn-ink-soft` | `#44536b` | `#a5b2c6` | Secondary text |
-| `--sn-ink-muted` | `#626f86` | `#6f7d93` | Timestamps, hints (dark: 14px+ only) |
-| `--sn-line` | `#d5dce8` | `#26324a` | Borders |
-| `--sn-brand` | `#1f4fb8` | `#7fb2ff` | Links, primary buttons, the wordmark "AI" |
-| `--sn-brand-2` | `#2f6fe0` | `#4c8dff` | Hover, focus ring |
-| `--sn-brand-soft` | `#e3ecfd` | `#16264a` | Selected rows, badges |
-| `--sn-on-brand` | `#ffffff` | `#0b111d` | Text on a brand-filled button |
-| `--sn-safe` | `#1a7447` | `#6fcf97` | Low risk, allowed, healthy |
-| `--sn-warn` | `#8f5d00` | `#e8b34a` | Medium risk, waiting for approval |
-| `--sn-danger` | `#c0282e` | `#e5484d` | High risk, blocked |
+| `--sn-bg` | `#fafafa` | `#0a0a0a` | Page background |
+| `--sn-surface` | `#ffffff` | `#141414` | Cards, panels |
+| `--sn-surface-2` | `#f4f4f4` | `#1b1b1b` | Raised or alternate rows |
+| `--sn-surface-3` | `#e8e8e8` | `#262626` | Hover, inputs |
+| `--sn-ink` | `#0a0a0a` | `#f5f5f5` | Main text |
+| `--sn-ink-soft` | `#404040` | `#b3b3b3` | Secondary text |
+| `--sn-ink-muted` | `#666666` | `#8c8c8c` | Timestamps, hints |
+| `--sn-line` | `#dedede` | `#2e2e2e` | Borders |
+| `--sn-brand` | `#0a0a0a` | `#f5f5f5` | Links, primary buttons (Mono: the ink itself) |
+| `--sn-brand-2` | `#404040` | `#b3b3b3` | Hover, focus ring |
+| `--sn-brand-soft` | `#e8e8e8` | `#262626` | Selected rows, badges |
+| `--sn-on-brand` | `#ffffff` | `#0a0a0a` | Text on a brand-filled button |
+| `--sn-accent` | `#7b54e6` | `#a88cf5` | Optional violet accent text (the logo's colour) |
+| `--sn-safe` | `#15803d` | `#6fcf97` | Low risk, allowed, healthy |
+| `--sn-warn` | `#a16207` | `#e8b34a` | Medium risk, waiting for approval |
+| `--sn-danger` | `#dc2626` | `#e5484d` | High risk, blocked |
 
-Fixed shades for logos and slides: navy `#0b111d` `#121a29` `#172134` `#1d2940`, steel `#1f4fb8` `#4c8dff` `#7fb2ff`.
+Fixed shades for slides: black `#0a0a0a` `#141414` `#1b1b1b` `#262626`, white `#ffffff`.
+Logo colours (the logo keeps them in both themes and with every accent): indigo `#522bbe`, violet `#8057f0`, periwinkle `#697ef5`; wordmark ink `#1d212b` on White, `#f3f5fa` on Black.
 
 Rules:
-- Blue is the brand; green, amber and red mean risk and nothing else. No cactus greens anywhere a person looks.
-- Text colours pass WCAG AA (4.5:1) on `--sn-bg` and `--sn-surface` in both themes, except dark `--sn-ink-muted` on surfaces (4.2:1), which is for 14px+ secondary text.
-- Dark theme is the default for the console, slides and alerts. The website follows the visitor's OS setting.
+- The UI is black and white; the violet logo and the accent picked in the console are the only other colours. Green, amber and red mean risk and nothing else.
+- The console's accent is set in Configuration > Appearance: Mono, Violet, Blue or a custom colour. `mvp/dashboard/cactai_ui/theme.py` derives readable shades from it.
+- Text colours pass WCAG AA (4.5:1) on `--sn-bg` and `--sn-surface` in both themes.
+- Black is the default for the console, slides and alerts. The website follows the visitor's OS setting.
 
 ## Type
 
@@ -70,9 +76,10 @@ Scale: 12 / 14 / 16 / 20 / 28 / 40 px (`--sn-text-xs` to `--sn-text-2xl`).
 ## Logo use
 
 - Leave clear space around the logo of at least half the mark's width.
-- Use `mark.svg` / `logo.svg` on light, `mark-dark.svg` / `logo-dark.svg` on dark. Don't recolour, stretch, or add effects.
-- Below 24px use the favicon files; they have a bigger eye drawn for small sizes.
-- The wordmark is always "SentrAI", with "AI" in brand blue. Never "Sentrai" or "SENTRAI".
+- Use `logo.svg` on light and `logo-dark.svg` on dark; the mark keeps its three colours on both. Don't recolour, stretch, rotate, or add effects.
+- The gaps between the arcs are part of the mark: place it on a plain background so they stay visible.
+- Where an SVG won't do (slides, Word, email), use the transparent PNGs in `png/`.
+- The wordmark is always "SentrAI", set in one colour. Never "Sentrai" or "SENTRAI".
 
 ## Voice
 

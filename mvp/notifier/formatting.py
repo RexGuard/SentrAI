@@ -13,6 +13,9 @@ CATEGORY_LABELS = {
     "privilege_escalation": "Privilege escalation",
     "data_exfiltration": "Data exfiltration",
     "misconfiguration": "Misconfiguration",
+    "log_tampering": "Log tampering",
+    "malware": "Malware found",
+    "prompt_injection": "Prompt injection",
 }
 
 KIND_HEADERS = {
@@ -23,7 +26,10 @@ KIND_HEADERS = {
     "autonomous_action": ("🛡️", "Autonomous containment applied"),
     "containment": ("🛡️", "Containment applied"),
     "report": ("📄", "Evidence report ready"),
+    "audit_anchor": ("🔏", "Record fingerprint"),
 }
+# Kinds that are not about one incident: shown as a short note (header, title, text), no risk or buttons.
+NOTICE_KINDS = ("audit_anchor",)
 
 # Callback data: "<verb>:<incident_id>" (Telegram limits callback_data to 64 bytes).
 APPROVE = "approve"
@@ -42,12 +48,12 @@ def band_for(index: Any) -> str:
 
 BAND_EMOJI = {"green": "🟢", "amber": "🟠", "red": "🔴", "critical": "🚨", "unknown": "⚪"}
 
-# SentrAI brand kit (assets/brand/tokens.json): navy-950, light brand (buttons) and steel-300 (the "AI" on navy).
+# SentrAI brand kit (assets/brand/tokens.json): black-950 header band, black buttons, white wordmark on black.
 BRAND = "SentrAI"
 TAGLINE = "A sentry doesn't chase you. It just guards the gate."
-BRAND_NAVY, BRAND_BLUE, BRAND_BLUE_SOFT = "#0b111d", "#1f4fb8", "#7fb2ff"
+BRAND_DARK, BRAND_BUTTON, BRAND_ON_DARK = "#0a0a0a", "#0a0a0a", "#ffffff"
 # Green, amber and red mean risk and nothing else (light-theme safe/warn/danger; critical is a deeper red).
-BAND_COLORS = {"green": "#1a7447", "amber": "#8f5d00", "red": "#c0282e", "critical": "#8a1c22", "unknown": "#626f86"}
+BAND_COLORS = {"green": "#1a7447", "amber": "#8f5d00", "red": "#c0282e", "critical": "#8a1c22", "unknown": "#666666"}
 
 
 def risk_meter(index: Any, cells: int = 10, full: str = "▰", empty: str = "▱") -> str:
@@ -106,13 +112,40 @@ def alert_fields(notification: dict, incident: dict | None = None, risk: dict | 
         "penalty": (incident or {}).get("inaction_penalty"),
         "sla_breached": bool((incident or {}).get("sla_breached")),
         "status": (incident or {}).get("status") or "open",
+        "witness": witness_of(notification),
     }
+
+
+def witness_of(notification: dict) -> str:
+    """The signed audit fingerprint the core put on this notification ("SENTRAI-FP v1 ..."), or ""."""
+    w = str(notification.get("witness") or "").strip()
+    return w if w.startswith("SENTRAI-FP") else ""
+
+
+def is_notice(notification: dict) -> bool:
+    return notification_kind(notification) in NOTICE_KINDS
+
+
+def notice_lines(notification: dict) -> tuple[str, str, list[str]]:
+    """(icon, header, lines) of a notice: its title, then its text."""
+    icon, header = KIND_HEADERS.get(notification_kind(notification), ("ℹ️", "Notice"))
+    lines = [str(notification.get("title") or "")]
+    lines += str(notification.get("text") or "").splitlines()
+    w = witness_of(notification)
+    if w and not any(ln.startswith("SENTRAI-FP") for ln in lines):
+        lines.append(w)
+    return icon, header, [ln for ln in lines if ln]
 
 
 def format_telegram(notification: dict, incident: dict | None = None, risk: dict | None = None) -> str:
     """Telegram message body in HTML parse mode."""
-    f = alert_fields(notification, incident, risk)
     e = html.escape
+    if is_notice(notification):
+        icon, header, lines = notice_lines(notification)
+        # The last line of a fingerprint notice is the line to keep: monospace so it copies whole.
+        body = [e(ln) if not ln.startswith("SENTRAI-FP") else f"<code>{e(ln)}</code>" for ln in lines]
+        return "\n".join([f"{icon} <b>{e(header)}</b>  ·  <i>🛡️ {BRAND}</i>", *body])
+    f = alert_fields(notification, incident, risk)
     risk_txt = f"{f['risk_index']}/100" if f["risk_index"] is not None else "-"
     meter = risk_meter(f["risk_index"])
     lines = [
@@ -136,6 +169,8 @@ def format_telegram(notification: dict, incident: dict | None = None, risk: dict
         lines.append("<i>Temporary, reversible fix with TTL. Choose Rollback or Make Permanent.</i>")
     else:
         lines.append("<i>Your button press is recorded as an acknowledgement in the hash-chained audit log.</i>")
+    if f["witness"]:  # monospace so it copies whole; /verify checks the server still matches it
+        lines.append(f"🔏 <code>{e(f['witness'])}</code>")
     return "\n".join(lines)
 
 
@@ -169,8 +204,18 @@ _ANSI = {"green": "\033[92m", "amber": "\033[93m", "red": "\033[91m", "critical"
 def format_console(notification: dict, incident: dict | None = None, risk: dict | None = None,
                    color: bool = True, width: int = 72) -> str:
     """Boxed plain-text alert for CONSOLE mode."""
-    f = alert_fields(notification, incident, risk)
     c = _ANSI if color else {k: "" for k in _ANSI}
+    if is_notice(notification):
+        _, header, body = notice_lines(notification)
+        inner = width - 4
+        top = f"┌─ SentrAI · {header} "
+        lines = [top + "─" * max(0, width - len(top) - 1) + "┐"]
+        for text in body:
+            for chunk in _wrap(text, inner):
+                lines.append(f"│ {chunk.ljust(inner)} │")
+        lines.append("└" + "─" * (width - 2) + "┘")
+        return "\n".join(lines)
+    f = alert_fields(notification, incident, risk)
     risk_txt = f"{f['risk_index']}/100 {f['band'].upper()}" if f["risk_index"] is not None else "-"
     if f["risk_index"] is not None:
         risk_txt += " " + risk_meter(f["risk_index"], full="■", empty="·")
@@ -184,6 +229,8 @@ def format_console(notification: dict, incident: dict | None = None, risk: dict 
     if f["penalty"]:
         body.append(f"Inaction penalty +{f['penalty']} pts" + (" · SLA BREACHED" if f["sla_breached"] else ""))
     body.append(f"Recommended: {f['recommended']}")
+    if f["witness"]:
+        body.append(f"Witness: {f['witness']}")
     specs = button_specs(notification, incident)
     if specs:
         body.append("Actions: " + "  ".join(f"[{label.split(' ', 1)[-1]}]" for label, _ in specs)

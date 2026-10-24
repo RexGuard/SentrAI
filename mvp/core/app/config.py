@@ -16,6 +16,8 @@ CORE_DIR = Path(__file__).resolve().parent.parent
 sys.path.append(str(CORE_DIR.parent))
 import cactai_config  # noqa: E402
 
+from . import protect  # noqa: E402
+
 cactai_config.load()
 DEFAULT_DB = CORE_DIR / "data" / "cactai.db"
 
@@ -24,6 +26,17 @@ def sign(token: str, path: str) -> str:
     """A signature for one read-only path (a report link in an alert), so it opens in a browser
     without the API token. It reveals nothing about the token and works for that path only."""
     return hmac.new(token.encode(), path.encode(), hashlib.sha256).hexdigest()[:32]
+
+
+def _secret(name: str) -> str:
+    """NAME, or the contents of the file named by NAME_FILE (kept where only this service reads it)."""
+    path = os.getenv(f"{name}_FILE", "").strip()
+    if path:
+        try:
+            return Path(path).read_text(encoding="utf-8").strip()
+        except OSError:
+            return ""
+    return os.getenv(name, "").strip()
 
 
 def _f(name: str, default: float) -> float:
@@ -69,23 +82,55 @@ class Settings:
     )
     watchdog_silence_s: float = field(default_factory=lambda: _f("WATCHDOG_SILENCE_S", 30.0))
     tick_s: float = field(default_factory=lambda: _f("TICK_S", 1.0))
+    # Integrity guard (integrity.py): how often the audit chain is re-checked, and how big a clock
+    # jump (seconds) counts as tampering.
+    integrity_check_s: float = field(default_factory=lambda: _f("INTEGRITY_CHECK_S", 30.0))
+    clock_jump_s: float = field(default_factory=lambda: _f("CLOCK_JUMP_S", 120.0))
+    # Send the signed audit fingerprint to the alert channels this often, in real minutes (0 = never; anchor.py).
+    anchor_every_min: float = field(default_factory=lambda: _f("ANCHOR_EVERY_MIN", 60.0))
+    # Off-box copy (remote_copy.py): a SentrAI witness on another machine that keeps every audit
+    # record and log line where this server's root cannot change them. Empty URL = off.
+    remote_copy_url: str = field(default_factory=lambda: os.getenv("CACTAI_REMOTE_COPY_URL", "").strip().rstrip("/"))
+    remote_copy_token: str = field(default_factory=lambda: _secret("CACTAI_REMOTE_COPY_TOKEN"))
+    remote_copy_ca: str = field(default_factory=lambda: os.getenv("CACTAI_REMOTE_COPY_CA", "").strip())
     id_year: int = field(default_factory=lambda: _i("ID_YEAR", 2026))
     id_start: int = field(default_factory=lambda: _i("ID_START", 81))
     history_len: int = 3600
     jev_timeout_s: float = field(default_factory=lambda: _f("JEV_TIMEOUT_S", 3.0))
+    # Jev answers kept per log template (IPs, times and ids stripped); 0 turns the cache off.
+    jev_cache_size: int = field(default_factory=lambda: _i("JEV_CACHE_SIZE", 2048))
+    jev_cache_ttl_s: float = field(default_factory=lambda: _f("JEV_CACHE_TTL_S", 3600.0))
     needle_min_confidence: float = field(default_factory=lambda: _f("NEEDLE_MIN_CONFIDENCE", 0.6))
-    # Never auto-block the demo machine itself (loopback) or protected accounts.
+    # Never auto-block the demo machine itself (loopback), this machine's DNS servers and gateway
+    # (INFRA_AUTODETECT=0 turns that off) or anything in INFRA_ALLOWLIST. Entries may be networks (10.0.0.0/24).
     protected_ips: set[str] = field(
-        default_factory=lambda: {x.strip() for x in os.getenv("PROTECTED_IPS", "127.0.0.1,::1,localhost").split(",") if x.strip()}
+        default_factory=lambda: protect.split(os.getenv("PROTECTED_IPS", "127.0.0.1,::1,localhost"))
+        | protect.split(os.getenv("INFRA_ALLOWLIST", ""))
+        | (protect.detect_infra() if os.getenv("INFRA_AUTODETECT", "1").strip().lower() not in protect.OFF else set())
     )
+    # Private networks: an autonomous block of these waits for a person (an operator can still approve it).
+    protected_nets: set[str] = field(default_factory=lambda: protect.nets(os.getenv("PROTECTED_NETS", protect.PRIVATE_NETS)))
+    # Admin and service accounts are always protected; PROTECTED_USERS adds more.
     protected_users: set[str] = field(
-        default_factory=lambda: {x.strip() for x in os.getenv("PROTECTED_USERS", "").split(",") if x.strip()}
+        default_factory=lambda: protect.split(protect.DEFAULT_USERS) | protect.split(os.getenv("PROTECTED_USERS", ""))
     )
+    # Autonomous containment also needs the incident itself to be serious, not only the overall index:
+    # its own severity at least CONTAIN_MIN_SEVERITY and its own points at least CONTAIN_MIN_POINTS.
+    contain_min_severity: str = field(default_factory=lambda: os.getenv("CONTAIN_MIN_SEVERITY", "high").strip().lower())
+    contain_min_points: float = field(default_factory=lambda: _f("CONTAIN_MIN_POINTS", 20.0))
     # Host firewall for block_ip (app/firewall.py): off keeps blocking portal-only; enforce=False is a dry run.
     firewall: str = field(default_factory=lambda: os.getenv("CACTAI_FIREWALL", "off"))
     firewall_enforce: bool = field(
         default_factory=lambda: os.getenv("CACTAI_FIREWALL_ENFORCE", "0").strip().lower() in ("1", "true", "yes", "on")
     )
+    # Responder webhook (responders.WebhookResponder): hand these action types to another system by URL.
+    responder_webhook_url: str = field(default_factory=lambda: os.getenv("CACTAI_RESPONDER_WEBHOOK_URL", "").strip())
+    responder_webhook_actions: tuple[str, ...] = field(default_factory=lambda: tuple(
+        x.strip() for x in os.getenv("CACTAI_RESPONDER_WEBHOOK_ACTIONS",
+                                     "block_ip,lock_user,rate_limit,waf_rule,kill_process,revoke_public_acl").split(",")
+        if x.strip()))
+    responder_webhook_secret: str = field(default_factory=lambda: _secret("CACTAI_RESPONDER_WEBHOOK_SECRET"), repr=False)
+    responder_webhook_timeout_s: float = field(default_factory=lambda: _f("CACTAI_RESPONDER_WEBHOOK_TIMEOUT_S", 3.0))
     jev_budget_s: float = field(default_factory=lambda: _f("JEV_BUDGET_S", 2.0))
     # Protection switch override at start: "1"/"0", or unset to use the last choice saved in protection.json.
     monitor_only: str | None = field(default_factory=lambda: os.getenv("CACTAI_MONITOR_ONLY"))

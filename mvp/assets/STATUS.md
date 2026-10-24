@@ -2,7 +2,7 @@
 
 ## Done
 - `make_assets.py` generates all 7 PNGs (1920x1080) in the SentrAI brand kit dark theme
-  (navy `#0b111d`, steel blue `#7fb2ff`, shield-and-eye mark from `assets/brand/mark-dark.svg`):
+  (navy `#0b111d`, steel blue `#7fb2ff`, the three-arc logo from `assets/brand/mark.svg` and `wordmark.svg`):
   `hook_championtutor.png`, `risk_formula.png`, `risk_timeline.png`, `sentry_ethics.png`,
   `evidence_report_mock.png`, `title_card.png`, `end_card.png`.
   Green, amber and red appear only as risk colours; blue is the brand.

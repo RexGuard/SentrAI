@@ -11,6 +11,14 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 
+@pytest.fixture(autouse=True)
+def _no_login(monkeypatch):
+    """Page tests open the console directly; the sign-in has its own tests."""
+    monkeypatch.setenv("CACTAI_DASHBOARD_LOGIN", "off")
+    from cactai_ui import signin
+    signin._fails.clear()  # wrong tries from one test must not lock the next one out
+
+
 def _free_port() -> int:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))

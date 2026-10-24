@@ -7,6 +7,7 @@ every change and restored on startup (state.py), so a restart keeps them. POST /
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import math
 import threading
@@ -30,13 +31,15 @@ from .agents import (
     Watchdog,
 )
 from . import firewall
+from . import anchor, remote_copy
 from .audit import AuditLog
-from .classifier import Classification, default_chain
+from .classifier import Classification, JevCache, default_chain
 from .clock import DemoClock, fmt_demo_hours
 from .config import Settings, sign
+from .integrity import IntegrityGuard
 from .jev_client import JevClient
 from .netlogs import enrich
-from .responders import BlocklistResponder, Responders, SimulatedResponder
+from .responders import BlocklistResponder, Responders, SimulatedResponder, WebhookResponder
 from .risk import SEVERITY, band, band_rank, inaction_penalty, risk_index
 from .rules import TRIPWIRE_REASONS, RulesEngine
 from .state import StateStore
@@ -53,6 +56,9 @@ TITLES = {
     "privilege_escalation": "Shell spawned / privilege escalation",
     "data_exfiltration": "Bulk data export",
     "misconfiguration": "Misconfiguration",
+    "log_tampering": "Log tampering",
+    "malware": "Malware found",
+    "prompt_injection": "Prompt injection",
 }
 
 BUTTONS_DECIDE = [
@@ -89,6 +95,19 @@ LEGACY_AGENT_NAMES = {"Saguaro": "Warden", "Root": "Gatehouse", "Reservoir": "Va
                       "AreoleLinux": "Garrison-Linux", "AreoleWin": "Garrison-Win", "Needle": "Countersign"}
 
 
+AUDIT_RAW_CHARS = 200
+
+
+def raw_summary(raw: Any) -> dict[str, Any]:
+    """What the audit chain keeps of a log line: a short printable excerpt, its length and its SHA-256.
+    The chain only needs enough to prove which line it was, and must not keep a permanent copy of the
+    passwords, tokens or personal data that people and attackers put in requests."""
+    text = "" if raw is None else str(raw)
+    excerpt = "".join(ch if ch.isprintable() else " " for ch in text[:AUDIT_RAW_CHARS])
+    return {"raw": excerpt + ("..." if len(text) > AUDIT_RAW_CHARS else ""), "raw_len": len(text),
+            "raw_sha256": hashlib.sha256(text.encode("utf-8", "replace")).hexdigest()}
+
+
 class Saguaro(Agent):
     name = "Warden"
     role = "lead orchestrator: routes events, merges findings, owns the risk index"
@@ -103,17 +122,29 @@ class Saguaro(Agent):
         self.jev = JevClient(s.jev_timeout_s)
         # The three parts: events arrive from collectors via POST /events, the classifier
         # chain labels them, and the responders carry out approved containment.
-        self.classifier, self.jev_step = default_chain(self.rules, self.jev)
+        self.classifier, self.jev_step = default_chain(self.rules, self.jev, JevCache(s.jev_cache_size, s.jev_cache_ttl_s))
         self.blocklist_responder = firewall.from_settings(s.firewall, s.firewall_enforce, s.protected_ips)
         self.responders = Responders(self.blocklist_responder, SimulatedResponder())
+        if s.responder_webhook_url:
+            # Registered last, so it takes the listed types; the blocklist still applies its own first.
+            bl = self.blocklist_responder
+            hook = WebhookResponder(s.responder_webhook_url, s.responder_webhook_actions, s.responder_webhook_secret,
+                                    s.responder_webhook_timeout_s, inner=lambda t: bl if t in bl.actions else None)
+            self.responders = Responders(self.blocklist_responder, SimulatedResponder(), hook)
         self.root = Root(self.classifier)
         self.reservoir = Reservoir(self.classifier)
         self.spinenet = SpineNet(self.classifier)
         self.areole_linux = AreoleLinux(self.classifier, self.responders)
         self.areole_win = AreoleWin(self.classifier, self.responders)
-        self.needle = Needle(s.needle_min_confidence, self.responders.allowlist, s.protected_ips, s.protected_users)
+        self.needle = Needle(s.needle_min_confidence, self.responders.allowlist, s.protected_ips, s.protected_users,
+                             s.protected_nets, s.contain_min_severity, s.contain_min_points)
         self.watchdog = Watchdog(s.watchdog_silence_s)
         self.scribe = Scribe(self.audit, self.clock)
+        self.integrity = IntegrityGuard(self.audit, s.integrity_check_s, s.clock_jump_s)
+        self.remote = remote_copy.from_settings(self.audit, s)  # off-box copy; started by the app (main.py)
+        self.anchor_key = anchor.load_key(s.db_path)
+        self._anchor_next = time.monotonic() + 60.0 * s.anchor_every_min
+        self._anchor_seq = 0
         self.helpdesk = HelpDesk()
         self.lock = threading.RLock()
         self._protection_file = s.db_path.parent / "protection.json"
@@ -192,6 +223,7 @@ class Saguaro(Agent):
     # --------------------------------------------------------------- ingestion
     def ingest(self, events: list[dict[str, Any]]) -> dict[str, Any]:
         accepted = 0
+        tampering: list[dict[str, Any]] = []  # broken line chains and clock jumps, classified after this batch
         # Cap the total time one request may spend waiting on Jev; the rest use the fallback.
         self.jev_step.deadline = time.monotonic() + self.settings.jev_budget_s
         for raw_ev in events:
@@ -208,12 +240,18 @@ class Saguaro(Agent):
             with self.lock:
                 if ev["event_id"] in self.events:
                     continue  # duplicate delivery
+                if (broken := self.integrity.chained(raw_ev)) is not None:
+                    tampering.append(broken)
+                if self.remote is not None:
+                    self.remote.add_line(raw_ev)  # off the box as it arrives
                 self.events[ev["event_id"]] = {**ev, "category": None}
                 recovered = self.watchdog.observe(str(ev["host"]), now, heartbeat)
                 if recovered:
                     self.scribe.record(self.watchdog.name, "collector_recovered", recovered)
             accepted += 1
             if heartbeat:
+                if (jump := self.integrity.heartbeat(str(ev["host"]), ev.get("timestamp"))) is not None:
+                    tampering.append(jump)
                 with self.lock:
                     self.events[ev["event_id"]].update(category="benign", classified_by="rules", reason="heartbeat")
                 continue
@@ -221,6 +259,8 @@ class Saguaro(Agent):
             cls = agent.analyze(ev, now)  # may call Jev: done outside the lock
             with self.lock:
                 self._apply_classification(ev, cls, agent, now)
+        if tampering:
+            self.ingest(tampering)
         with self.lock:
             self._trim_events()
             now = self.clock.now()
@@ -266,7 +306,7 @@ class Saguaro(Agent):
             "event_classified",
             {
                 "event_id": ev["event_id"],
-                "raw": ev.get("raw"),
+                **raw_summary(ev.get("raw")),
                 "category": cls.category,
                 "confidence": cls.confidence,
                 "malicious": cls.malicious,
@@ -378,6 +418,7 @@ class Saguaro(Agent):
             inc["classification_reason"] = cls.reason  # a decoy touch is the strongest evidence: lead with it
         if changed:
             inc["points"] = round(inc["base_points"] * inc["ai_confidence"] * inc["asset_criticality"], 1)
+            inc["_autonomous_denied"] = False  # stronger evidence: Countersign looks again
         self._describe(inc, self._agent(inc["analyzed_by"]))
 
     # ------------------------------------------------------------- risk engine
@@ -385,7 +426,8 @@ class Saguaro(Agent):
         end = inc["_acked_ts"] if inc["_acked_ts"] is not None else (inc.get("_closed_ts") or now)
         hours = self.clock.demo_hours(inc["_opened_ts"], end)
         inc["time_unaddressed_hours"] = round(hours, 2)
-        inc["inaction_penalty"] = inaction_penalty(hours, self.settings.penalty_per_hour, self.settings.penalty_cap)
+        inc["inaction_penalty"] = inaction_penalty(hours, self.settings.penalty_per_hour, self.settings.penalty_cap,
+                                                  inc.get("severity", "high"))
         if hours > self.settings.sla_hours:
             inc["sla_breached"] = True
         inc["contribution"] = round(inc["points"] + inc["inaction_penalty"], 1) if inc["status"] in RISK_STATUSES else 0.0
@@ -414,6 +456,31 @@ class Saguaro(Agent):
                              f"Monitoring on that host may be blind.", [])
             self._evaluate(now)
             self._record_history(now)
+            self._send_fingerprint(now)
+            findings = self.integrity.check()
+            if self.remote is not None:
+                refused, notes = self.remote.take()
+                findings += refused
+                for rtype, data in notes:
+                    self.scribe.record(self.name, rtype, data)
+        if findings:
+            self.ingest(findings)  # a broken audit chain, a deleted audit file or a clock jump
+
+    def _send_fingerprint(self, now: float, force: bool = False) -> dict[str, Any] | None:
+        """Every ANCHOR_EVERY_MIN real minutes (when new records were written), send the newest
+        record's signed fingerprint to the alert channels: a copy the server cannot recall (anchor.py)."""
+        every = self.settings.anchor_every_min
+        if not force and (every <= 0 or time.monotonic() < self._anchor_next):
+            return None
+        self._anchor_next = time.monotonic() + 60.0 * max(every, 1.0)
+        fp = anchor.fingerprint(self.audit, self.anchor_key)
+        if fp.seq == self._anchor_seq and not force:
+            return None
+        self._anchor_seq = fp.seq
+        return self._notify(now, "audit_anchor", None, [self.settings.on_duty], f"Record fingerprint {fp.short()}",
+                            f"Fingerprint of audit records 1 to {fp.seq}. Keep this message: if the audit log on "
+                            f"the server is ever rebuilt, this line proves it (python -m app.anchor verify).\n"
+                            f"{fp.line()}", [])
 
     def _evaluate(self, now: float) -> None:
         self._expire_actions(now)
@@ -543,6 +610,9 @@ class Saguaro(Agent):
         nid = f"ntf-{self._next_notif:04d}"
         self._next_notif += 1
         r = self._last_risk
+        # The signed fingerprint of the audit chain right now. Every alert carries it off the box, so
+        # each message in Telegram or email is a witness the server cannot recall (anchor.py).
+        witness = anchor.fingerprint(self.audit, self.anchor_key).line()
         n = {
             "id": nid,
             "incident": incident_id,
@@ -554,6 +624,7 @@ class Saguaro(Agent):
             "band": r["band"],
             "buttons": buttons,
             "report_url": self._report_url(incident_id) if incident_id else None,
+            "witness": witness,
             "created_at": self.clock.iso(now),
             "delivered": False,
             "delivered_at": None,
@@ -584,8 +655,10 @@ class Saguaro(Agent):
                 inc["_notified_open"] = True
                 kind = "needs_review" if inc["needs_review"] else "incident_opened"
                 extra = "\nClassifier uncertain: needs review, no automatic action will be taken." if inc["needs_review"] else ""
+                fp = anchor.fingerprint(self.audit, None).short()
                 self._notify(now, kind, inc["id"], [self.settings.on_duty], self._headline(inc, r),
-                             f"{self._headline(inc, r)}\n{inc['explanation']}\nRecommended: {inc['recommended_action']}.{extra}",
+                             f"{self._headline(inc, r)}\n{inc['explanation']}\nRecommended: {inc['recommended_action']}.{extra}"
+                             f"\nRecord fingerprint: {fp}",
                              BUTTONS_DECIDE)
 
     def _band_changes(self, now: float, r: dict[str, Any]) -> None:
@@ -1045,7 +1118,8 @@ class Saguaro(Agent):
                 st["analyzed"] = a.analyzed
             out.append(st)
         out.append({"name": "Jev", "role": "TypeSafe System One classifier", "status": self.jev.status,
-                    "calls": self.jev.calls, "failures": self.jev.failures, "last_error": self.jev.last_error})
+                    "calls": self.jev.calls, "failures": self.jev.failures, "last_error": self.jev.last_error,
+                    "cache": self.jev_step.cache.stats()})
         return out
 
     # ------------------------------------------------------------------- demo
@@ -1060,6 +1134,7 @@ class Saguaro(Agent):
         with self.lock:
             archived = self.audit.archive_and_reset()
             self.rules.reset()
+            self.jev_step.cache.clear()
             self.responders.reset()
             self.watchdog.reset()
             self.clock._offset = 0.0

@@ -152,6 +152,39 @@ def path_key(path: Path) -> str:
     return str(path.absolute())
 
 
+# Line chain (CONTRACT.md "Line chain"): every event the collector sends carries a seal linking it
+# to the one before, so the core can tell when a batch went missing or a line was changed after
+# it was read. The fields sealed are the ones that say what happened, where and when.
+CHAIN_FIELDS = ("event_id", "timestamp", "host", "layer", "source", "raw")
+GENESIS = "0" * 64
+
+
+def chain_hash(prev: str, event: dict[str, Any]) -> str:
+    body = json.dumps([event.get(k) for k in CHAIN_FIELDS], separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256((prev + body).encode("utf-8")).hexdigest()
+
+
+class LineChain:
+    """Seals events in the order they are sent. ``checkpoint()`` is saved with the read positions,
+    once the sealed events have reached the core, so a restart carries on the same chain."""
+
+    def __init__(self, saved: dict | None = None) -> None:
+        saved = saved or {}
+        self.stream = str(saved.get("stream") or f"{real_host()}-{uuid.uuid4().hex[:8]}")
+        self.seq = int(saved.get("seq") or 0)
+        self.head = str(saved.get("hash") or GENESIS)
+
+    def seal(self, event: dict[str, Any]) -> dict[str, Any]:
+        self.seq += 1
+        h = chain_hash(self.head, event)
+        event["chain"] = {"stream": self.stream, "seq": self.seq, "prev": self.head, "hash": h}
+        self.head = h
+        return event
+
+    def checkpoint(self) -> dict:
+        return {"stream": self.stream, "seq": self.seq, "hash": self.head}
+
+
 class OffsetStore:
     """Where each log was read up to, saved as JSON so a restart resumes instead of re-sending."""
 
@@ -181,6 +214,7 @@ class OffsetStore:
 
 
 HEAD_BYTES = 256            # the start of a file identifies it across renames and restarts
+ROTATION_GRACE_S = 600      # a rotated copy (name.1, name.1.gz, name-20261002) this recent explains a shrink
 MAX_READ = 1 << 20          # read at most 1 MiB per file per poll
 BACKFILL = int(os.environ.get("CACTAI_COLLECTOR_BACKFILL_KB", "256")) * 1024
 
@@ -204,6 +238,9 @@ class Tailer:
         self._saved = saved
         self._start = start
         self._warned = False
+        # Log-integrity notices: the file shrank, vanished or was replaced and no rotated copy explains
+        # it, so lines may have been wiped. The source turns each one into a "log_integrity" event.
+        self.notices: list[str] = []
 
     # -- file identity
     @staticmethod
@@ -226,6 +263,27 @@ class Tailer:
         if size < head_len:
             return False
         return head is None or self._fingerprint(path, head_len) == head
+
+    def _rotated_copy(self) -> bool:
+        """True when a sibling such as access.log.1, auth.log.1.gz or secure-20261002 was written
+        recently: logrotate (rename or copytruncate) explains the shrink."""
+        name, cutoff = self.path.name, time.time() - ROTATION_GRACE_S
+        try:
+            siblings = list(self.path.parent.iterdir())
+        except OSError:
+            return True  # cannot tell: do not raise an alarm we cannot back up
+        for p in siblings:
+            if p.name != name and (p.name.startswith(name + ".") or p.name.startswith(name + "-")):
+                try:
+                    if p.stat().st_mtime >= cutoff:
+                        return True
+                except OSError:
+                    continue
+        return False
+
+    def _notice(self, what: str) -> None:
+        if not self._rotated_copy():
+            self.notices.append(what)
 
     def checkpoint(self) -> dict:
         return {"pos": self.pos, "inode": self._inode or 0, "head": self._head, "head_len": self._head_len}
@@ -312,6 +370,9 @@ class Tailer:
             if self._first and self._saved:
                 pass  # keep the saved position until the file is back
             else:
+                if self._inode is not None and self.pos > 0:
+                    self._notice(f"deleted: {self.path} disappeared after {self.pos} bytes were read, "
+                                 f"and no rotated copy was made")
                 self._first = False
                 self.pos = 0
                 self._inode = None
@@ -323,9 +384,14 @@ class Tailer:
         inode = getattr(st, "st_ino", 0)
         # Rotation (new inode) or truncation (shrunk file): start again from the top.
         if self._inode is not None and inode != self._inode:
+            if self.pos > 0:
+                self._notice(f"replaced: {self.path} was swapped for a new file after {self.pos} bytes were read, "
+                             f"and no rotated copy was made")
             lines += self._drain_rotated(self._inode, self.pos, self._head, self._head_len)
             self.pos, self._head, self._head_len = 0, None, 0
         elif st.st_size < self.pos:
+            self._notice(f"truncated: {self.path} shrank from {self.pos} to {st.st_size} bytes in place, "
+                         f"and no rotated copy was made")
             self.pos, self._head, self._head_len = 0, None, 0
         self._inode = inode
         self._remember_head(st.st_size)
@@ -360,6 +426,11 @@ class FileSource(Source):
     def checkpoint(self) -> dict | None:
         return self.tailer.checkpoint()
 
+    def integrity_events(self, host: str | None = None) -> list[dict[str, Any]]:
+        """One "log_integrity" event per notice the tailer raised (rules classify it as log tampering)."""
+        notices, self.tailer.notices = self.tailer.notices, []
+        return [make_event("os", "log_integrity", f"log-integrity {n}", host=host) for n in notices]
+
 
 class JsonLogSource(FileSource):
     """One JSON-lines log file written by the target app."""
@@ -373,7 +444,7 @@ class JsonLogSource(FileSource):
                 continue
             if event is not None:
                 events.append(event)
-        return events
+        return events + self.integrity_events()
 
 
 class HeartbeatSource(Source):
@@ -445,7 +516,8 @@ class DiscoveredLogSource(FileSource):
         self.source = f"scout:{path.name}"
 
     def poll(self) -> list[dict[str, Any]]:
-        return [server_log_event(line, self.layer, self.source, self.fmt) for line in self.tailer.read_new_lines()]
+        events = [server_log_event(line, self.layer, self.source, self.fmt) for line in self.tailer.read_new_lines()]
+        return events + self.integrity_events(real_host())
 
 
 JOURNALD_SSH = ["SYSLOG_IDENTIFIER=sshd", "SYSLOG_IDENTIFIER=sshd-session", "SYSLOG_IDENTIFIER=sshd-auth"]
@@ -557,21 +629,35 @@ def default_sources(logs_dir: Path, heartbeat_interval: float = 10.0, store: Off
             HeartbeatSource(heartbeat_interval)]
 
 
+POLL_S = float(os.environ.get("CACTAI_COLLECTOR_POLL_S", "0.05"))  # how often logs are checked for new lines
+RETRY_MAX_S = 30.0  # longest wait between attempts while the core is unreachable
+CHAIN_KEY = "_chain"  # the line chain's head in collector-state.json
+
+
 class Collector:
+    """Streams events to the core: logs are checked every ``poll_interval`` seconds (50 ms) and new
+    lines are sent at once over one kept-alive connection. While the core is unreachable they are
+    buffered and retried, waiting ``flush_interval`` seconds at first and up to 30 s."""
+
     def __init__(self, core_url: str, logs_dir: Path,
                  flush_interval: float = 1.0, heartbeat_interval: float = 10.0,
-                 sources: list[Source] | None = None, token: str = ""):
+                 sources: list[Source] | None = None, token: str = "", poll_interval: float = POLL_S):
         self.core_url = core_url.rstrip("/")
         self.headers = {"Authorization": f"Bearer {token}"} if token else {}
         self.logs_dir = logs_dir
         self.flush_interval = flush_interval
+        self.poll_interval = poll_interval
         self.heartbeat_interval = heartbeat_interval
         self.watch_sources = sources is None  # default set: also pick up newly approved log files
         self.store = OffsetStore() if sources is None else None
         self.sources = sources if sources is not None else default_sources(logs_dir, heartbeat_interval, self.store)
+        self.chain = LineChain(self.store.get(CHAIN_KEY) if self.store else None)
+        self.session = requests.Session()
         self._sources_stamp: float | None = None
         self._tail_from_end = False
         self._started = time.time()
+        self._sent_since_report = 0
+        self._next_report = 0.0
         self.pending: list[dict] = []
 
     def refresh_discovered(self) -> list[Source]:
@@ -601,7 +687,7 @@ class Collector:
         if self.watch_sources:
             self.refresh_discovered()
         for source in self.sources:
-            self.pending.extend(source.poll())
+            self.pending.extend(self.chain.seal(ev) for ev in source.poll())
 
     def flush(self) -> bool:
         """POST pending events. Keep them buffered if core is down."""
@@ -610,15 +696,18 @@ class Collector:
             return True
         batch = self.pending
         try:
-            resp = requests.post(f"{self.core_url}/events", json=batch, headers=self.headers, timeout=3)
+            resp = self.session.post(f"{self.core_url}/events", json=batch, headers=self.headers, timeout=3)
             resp.raise_for_status()
             body = {}
             try:
                 body = resp.json()
             except Exception:
                 pass
-            print(f"[collector] sent {len(batch)} events -> core "
-                  f"(risk_index={body.get('risk_index', '?')})", flush=True)
+            self._sent_since_report += len(batch)
+            if time.monotonic() >= self._next_report:  # streaming sends often: one line every 10 s at most
+                print(f"[collector] sent {self._sent_since_report} events -> core "
+                      f"(risk_index={body.get('risk_index', '?')})", flush=True)
+                self._sent_since_report, self._next_report = 0, time.monotonic() + 10.0
             self.pending = []
             self.save_positions()
             return True
@@ -631,16 +720,26 @@ class Collector:
         """Everything polled so far has reached core: remember where each log was read up to."""
         if self.store is None:
             return
-        self.store.save({s.key: cp for s in self.sources if s.key and (cp := s.checkpoint()) is not None})
+        self.store.save({**{s.key: cp for s in self.sources if s.key and (cp := s.checkpoint()) is not None},
+                         CHAIN_KEY: self.chain.checkpoint()})
 
     def run(self) -> None:
-        print(f"[collector] tailing {self.logs_dir} -> {self.core_url}/events "
-              f"(flush {self.flush_interval}s, heartbeat {self.heartbeat_interval}s)",
-              flush=True)
+        print(f"[collector] streaming {self.logs_dir} -> {self.core_url}/events "
+              f"(checks every {self.poll_interval * 1000:.0f} ms, heartbeat {self.heartbeat_interval}s, "
+              f"chain {self.chain.stream} at #{self.chain.seq})", flush=True)
+        retry_at, wait, idle_save = 0.0, self.flush_interval, 0.0
         while True:
             self.collect()
-            self.flush()
-            time.sleep(self.flush_interval)
+            now = time.monotonic()
+            if self.pending and now >= retry_at:
+                if self.flush():
+                    wait = self.flush_interval
+                else:
+                    retry_at, wait = now + wait, min(wait * 2, RETRY_MAX_S)
+            elif not self.pending and now >= idle_save:
+                self.save_positions()  # nothing waiting: everything read so far has been delivered
+                idle_save = now + 1.0
+            time.sleep(self.poll_interval)
 
 
 NGINX_LOGS = [("/var/log/nginx/access.log", "web", "nginx"), ("/var/log/nginx/error.log", "web", "nginx")]
@@ -682,7 +781,10 @@ def main() -> None:
     ap.add_argument("--core", default=os.environ.get("CACTAI_CORE_URL",
                                                       "http://127.0.0.1:8000"))
     ap.add_argument("--logs", default=str(paths.logs_dir()))
-    ap.add_argument("--flush-interval", type=float, default=1.0)
+    ap.add_argument("--flush-interval", type=float, default=1.0,
+                    help="first wait before retrying when the core is unreachable (doubles up to 30 s)")
+    ap.add_argument("--poll-interval", type=float, default=POLL_S,
+                    help="seconds between checks for new log lines (default 0.05; CACTAI_COLLECTOR_POLL_S)")
     ap.add_argument("--heartbeat-interval", type=float, default=10.0)
     ap.add_argument("--add-system-logs", action="store_true",
                     help="approve this server's nginx logs and SSH login log (auth.log, secure or journald), then exit")
@@ -693,7 +795,7 @@ def main() -> None:
     logs_dir = Path(args.logs)
     logs_dir.mkdir(parents=True, exist_ok=True)
     Collector(args.core, logs_dir, args.flush_interval,
-              args.heartbeat_interval, token=cactai_config.api_token()).run()
+              args.heartbeat_interval, token=cactai_config.api_token(), poll_interval=args.poll_interval).run()
 
 
 if __name__ == "__main__":

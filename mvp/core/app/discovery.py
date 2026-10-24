@@ -64,8 +64,9 @@ def lab_logs_dir() -> Path:
 
 
 class Discovery:
-    def __init__(self, core: Any) -> None:
+    def __init__(self, core: Any, threats: Any = None) -> None:
         self.core = core
+        self.threats = threats  # ThreatWatch: hostile-looking programs are raised as alerts
         self.lock = threading.Lock()
         self.last: dict[str, Any] | None = None
         self._files: dict[str, dict[str, Any]] = {}  # file id -> file + its suggestion, from the last scan
@@ -90,9 +91,13 @@ class Discovery:
         self.core.scribe.record(self.core.name, "system_scan", {
             "by": by, "platform": result["platform"], "processes": result.get("scanned", 0),
             "recognised": result.get("recognised", 0), "skipped_protected": result.get("skipped_protected", 0),
-            "suggestions": len(result["suggestions"]), "error": result.get("error"),
+            "suggestions": len(result["suggestions"]), "threats": len(result.get("threats", [])),
+            "error": result.get("error"),
             "summary": f"{by} scanned {result.get('scanned', 0)} processes, "
-                       f"{len(result['suggestions'])} log locations found"})
+                       f"{len(result['suggestions'])} log locations found"
+                       + (f", {len(result['threats'])} suspicious programs" if result.get("threats") else "")})
+        if self.threats is not None and result.get("threats"):
+            result["new_alerts"] = self.threats.report_processes(result["threats"])
         return self.public(result)
 
     def latest(self) -> dict[str, Any] | None:
