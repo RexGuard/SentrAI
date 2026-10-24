@@ -1,0 +1,13 @@
+# Install guide pages, in reading order. Drives the docs sidebar and the next/previous links.
+- title: Start here
+  url: /docs/
+- title: Try the demo
+  url: /docs/demo.html
+- title: Install on a server
+  url: /docs/server.html
+- title: Signing in
+  url: /docs/sign-in.html
+- title: Settings
+  url: /docs/settings.html
+- title: Troubleshooting
+  url: /docs/troubleshooting.html

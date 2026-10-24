@@ -7,11 +7,17 @@
 {% include header.html %}
 <main id="main">
   <div class="wrap">
-    <div class="doc-hero"><div class="crumbs"><a href="{{ '/' | relative_url }}">Home</a> / {{ page.title | default: site.title }}</div></div>
+    <div class="doc-hero"><div class="crumbs"><a href="{{ '/' | relative_url }}">Home</a> / {% if page.nav == 'docs' and page.url != '/docs/' %}<a href="{{ '/docs/' | relative_url }}">Install guide</a> / {% endif %}{{ page.title | default: site.title }}</div></div>
     <div class="doc">
-      <aside class="toc" aria-label="On this page"><p>On this page</p><ol id="toc"></ol></aside>
+      <aside class="toc" aria-label="On this page">
+        {% if page.nav == 'docs' %}<nav class="docs-nav" aria-label="Install guide"><p>Install guide</p><ol>
+          {% for d in site.data.docs %}<li><a href="{{ d.url | relative_url }}"{% if page.url == d.url %} aria-current="page"{% endif %}>{{ d.title }}</a></li>{% endfor %}
+        </ol></nav>{% endif %}
+        <div class="toc-here"><p>On this page</p><ol id="toc"></ol></div>
+      </aside>
       <article class="prose">
         {{ content }}
+        {% if page.nav == 'docs' %}{% include docs-pager.html %}{% endif %}
       </article>
     </div>
   </div>
@@ -26,7 +32,7 @@
       var li = document.createElement('li'), a = document.createElement('a');
       a.href = '#' + h.id; a.textContent = h.textContent; li.appendChild(a); list.appendChild(li);
     });
-    if (!heads.length) document.querySelector('.toc').style.display = 'none';
+    if (!heads.length) document.querySelector(document.querySelector('.docs-nav') ? '.toc-here' : '.toc').style.display = 'none';
     var links = list.querySelectorAll('a'), top = document.querySelector('.to-top');
     function onScroll() {
       var current = 0;
