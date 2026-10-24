@@ -1,0 +1,1434 @@
+{
+  "name": "SentrAI",
+  "description": "SentrAI is an accountability-based security system for small organizations: it watches web, database and OS layers, turns anomalies into a 0-100 risk index, applies temporary reversible hotpatches when risk tolerance is crossed, and produces hash-chained evidence reports. The repo holds the project plan site (Jekyll) and a Python MVP (FastAPI core, Streamlit dashboard, Flask target lab, notifier). Note: this project has over 100 source files; consider scoping analysis to a subdirectory for faster results.",
+  "languages": [
+    "css",
+    "html",
+    "json",
+    "markdown",
+    "powershell",
+    "python",
+    "shell",
+    "toml",
+    "yaml"
+  ],
+  "frameworks": [
+    "FastAPI",
+    "Pydantic",
+    "Uvicorn",
+    "Streamlit",
+    "Flask",
+    "Pytest",
+    "Jekyll",
+    "GitHub Actions",
+    "systemd"
+  ],
+  "files": [
+    {
+      "path": ".github/workflows/tests.yml",
+      "language": "yaml",
+      "sizeLines": 72,
+      "fileCategory": "infra"
+    },
+    {
+      "path": "Cybersecurity + AI.md",
+      "language": "markdown",
+      "sizeLines": 475,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "README.md",
+      "language": "markdown",
+      "sizeLines": 47,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "ROADMAP.md",
+      "language": "markdown",
+      "sizeLines": 269,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "_config.yml",
+      "language": "yaml",
+      "sizeLines": 31,
+      "fileCategory": "config"
+    },
+    {
+      "path": "_includes/footer.html",
+      "language": "html",
+      "sizeLines": 16,
+      "fileCategory": "markup"
+    },
+    {
+      "path": "_includes/head.html",
+      "language": "html",
+      "sizeLines": 15,
+      "fileCategory": "markup"
+    },
+    {
+      "path": "_includes/header.html",
+      "language": "html",
+      "sizeLines": 15,
+      "fileCategory": "markup"
+    },
+    {
+      "path": "_layouts/default.html",
+      "language": "html",
+      "sizeLines": 42,
+      "fileCategory": "markup"
+    },
+    {
+      "path": "assets/cactai.css",
+      "language": "css",
+      "sizeLines": 324,
+      "fileCategory": "markup"
+    },
+    {
+      "path": "docs/STATUS.md",
+      "language": "markdown",
+      "sizeLines": 21,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "index.html",
+      "language": "html",
+      "sizeLines": 290,
+      "fileCategory": "markup"
+    },
+    {
+      "path": "mvp/CONTRACT.md",
+      "language": "markdown",
+      "sizeLines": 163,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "mvp/README.md",
+      "language": "markdown",
+      "sizeLines": 244,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "mvp/REVIEW.md",
+      "language": "markdown",
+      "sizeLines": 72,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "mvp/STATUS.md",
+      "language": "markdown",
+      "sizeLines": 16,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "mvp/assets/STATUS.md",
+      "language": "markdown",
+      "sizeLines": 21,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "mvp/assets/make_assets.py",
+      "language": "python",
+      "sizeLines": 427,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/cactai_config.py",
+      "language": "python",
+      "sizeLines": 416,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/cactai_llm.py",
+      "language": "python",
+      "sizeLines": 384,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/core/CONTRACT_REQUESTS.md",
+      "language": "markdown",
+      "sizeLines": 16,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "mvp/core/README.md",
+      "language": "markdown",
+      "sizeLines": 178,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "mvp/core/STATUS.md",
+      "language": "markdown",
+      "sizeLines": 36,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "mvp/core/app/__init__.py",
+      "language": "python",
+      "sizeLines": 1,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/core/app/agents.py",
+      "language": "python",
+      "sizeLines": 339,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/core/app/ai.py",
+      "language": "python",
+      "sizeLines": 82,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/core/app/audit.py",
+      "language": "python",
+      "sizeLines": 135,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/core/app/chat.py",
+      "language": "python",
+      "sizeLines": 374,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/core/app/classifier.py",
+      "language": "python",
+      "sizeLines": 133,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/core/app/clock.py",
+      "language": "python",
+      "sizeLines": 45,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/core/app/config.py",
+      "language": "python",
+      "sizeLines": 95,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/core/app/cyanide.py",
+      "language": "python",
+      "sizeLines": 342,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/core/app/discovery.py",
+      "language": "python",
+      "sizeLines": 185,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/core/app/firewall.py",
+      "language": "python",
+      "sizeLines": 241,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/core/app/jev_client.py",
+      "language": "python",
+      "sizeLines": 133,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/core/app/main.py",
+      "language": "python",
+      "sizeLines": 379,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/core/app/netlogs.py",
+      "language": "python",
+      "sizeLines": 184,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/core/app/pdfdoc.py",
+      "language": "python",
+      "sizeLines": 270,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/core/app/procscan.py",
+      "language": "python",
+      "sizeLines": 497,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/core/app/reports.py",
+      "language": "python",
+      "sizeLines": 339,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/core/app/responders.py",
+      "language": "python",
+      "sizeLines": 108,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/core/app/risk.py",
+      "language": "python",
+      "sizeLines": 57,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/core/app/rules.py",
+      "language": "python",
+      "sizeLines": 365,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/core/app/saguaro.py",
+      "language": "python",
+      "sizeLines": 1070,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/core/app/state.py",
+      "language": "python",
+      "sizeLines": 71,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/core/profiles/tuition_centre.json",
+      "language": "json",
+      "sizeLines": 21,
+      "fileCategory": "config"
+    },
+    {
+      "path": "mvp/core/requirements.txt",
+      "language": "txt",
+      "sizeLines": 11,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "mvp/core/tests/__init__.py",
+      "language": "python",
+      "sizeLines": 0,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/core/tests/conftest.py",
+      "language": "python",
+      "sizeLines": 48,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/core/tests/test_ai.py",
+      "language": "python",
+      "sizeLines": 117,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/core/tests/test_auth.py",
+      "language": "python",
+      "sizeLines": 67,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/core/tests/test_chat.py",
+      "language": "python",
+      "sizeLines": 131,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/core/tests/test_core.py",
+      "language": "python",
+      "sizeLines": 304,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/core/tests/test_cyanide.py",
+      "language": "python",
+      "sizeLines": 167,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/core/tests/test_discovery.py",
+      "language": "python",
+      "sizeLines": 220,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/core/tests/test_firewall.py",
+      "language": "python",
+      "sizeLines": 241,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/core/tests/test_llm.py",
+      "language": "python",
+      "sizeLines": 206,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/core/tests/test_parts.py",
+      "language": "python",
+      "sizeLines": 65,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/core/tests/test_persistence.py",
+      "language": "python",
+      "sizeLines": 155,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/core/tests/test_protection.py",
+      "language": "python",
+      "sizeLines": 107,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/core/tests/test_realworld.py",
+      "language": "python",
+      "sizeLines": 180,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/core/tests/test_spines.py",
+      "language": "python",
+      "sizeLines": 60,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/dashboard/.streamlit/config.toml",
+      "language": "toml",
+      "sizeLines": 37,
+      "fileCategory": "config"
+    },
+    {
+      "path": "mvp/dashboard/STATUS.md",
+      "language": "markdown",
+      "sizeLines": 31,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "mvp/dashboard/app.py",
+      "language": "python",
+      "sizeLines": 1134,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/dashboard/cactai_ui/__init__.py",
+      "language": "python",
+      "sizeLines": 1,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/dashboard/cactai_ui/api.py",
+      "language": "python",
+      "sizeLines": 171,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/dashboard/cactai_ui/console.css",
+      "language": "css",
+      "sizeLines": 160,
+      "fileCategory": "markup"
+    },
+    {
+      "path": "mvp/dashboard/cactai_ui/shaping.py",
+      "language": "python",
+      "sizeLines": 628,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/dashboard/dev/fake_core.py",
+      "language": "python",
+      "sizeLines": 582,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/dashboard/requirements.txt",
+      "language": "txt",
+      "sizeLines": 8,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "mvp/dashboard/tests/conftest.py",
+      "language": "python",
+      "sizeLines": 39,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/dashboard/tests/test_api_fake_core.py",
+      "language": "python",
+      "sizeLines": 64,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/dashboard/tests/test_menu.py",
+      "language": "python",
+      "sizeLines": 269,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/dashboard/tests/test_shaping.py",
+      "language": "python",
+      "sizeLines": 115,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/deck/STATUS.md",
+      "language": "markdown",
+      "sizeLines": 22,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "mvp/deck/build.py",
+      "language": "python",
+      "sizeLines": 392,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/deck/make_assets.py",
+      "language": "python",
+      "sizeLines": 277,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/deploy/README.md",
+      "language": "markdown",
+      "sizeLines": 87,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "mvp/deploy/cactai-collector.service",
+      "language": "service",
+      "sizeLines": 25,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/deploy/cactai-core.service",
+      "language": "service",
+      "sizeLines": 25,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/deploy/cactai-dashboard.service",
+      "language": "service",
+      "sizeLines": 25,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/deploy/cactai-notifier.service",
+      "language": "service",
+      "sizeLines": 25,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/deploy/cactai.target",
+      "language": "target",
+      "sizeLines": 7,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/deploy/install.sh",
+      "language": "shell",
+      "sizeLines": 246,
+      "fileCategory": "script"
+    },
+    {
+      "path": "mvp/deploy/uninstall.sh",
+      "language": "shell",
+      "sizeLines": 34,
+      "fileCategory": "script"
+    },
+    {
+      "path": "mvp/eval/README.md",
+      "language": "markdown",
+      "sizeLines": 31,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "mvp/eval/build_dataset.py",
+      "language": "python",
+      "sizeLines": 264,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/eval/evaluate.py",
+      "language": "python",
+      "sizeLines": 218,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/eval/realworld/README.md",
+      "language": "markdown",
+      "sizeLines": 56,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "mvp/eval/realworld/build_replay.py",
+      "language": "python",
+      "sizeLines": 332,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/eval/realworld/score_replay.py",
+      "language": "python",
+      "sizeLines": 278,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/eval/realworld/test_realworld_eval.py",
+      "language": "python",
+      "sizeLines": 34,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/eval/test_evaluate.py",
+      "language": "python",
+      "sizeLines": 50,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/integration/STATUS.md",
+      "language": "markdown",
+      "sizeLines": 26,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "mvp/integration/test_e2e.py",
+      "language": "python",
+      "sizeLines": 194,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/lab/README.md",
+      "language": "markdown",
+      "sizeLines": 166,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "mvp/lab/STATUS.md",
+      "language": "markdown",
+      "sizeLines": 42,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "mvp/lab/attacks/__init__.py",
+      "language": "python",
+      "sizeLines": 1,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/lab/attacks/_common.py",
+      "language": "python",
+      "sizeLines": 81,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/lab/attacks/benign.py",
+      "language": "python",
+      "sizeLines": 62,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/lab/attacks/brute_force.py",
+      "language": "python",
+      "sizeLines": 47,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/lab/attacks/exfil.py",
+      "language": "python",
+      "sizeLines": 46,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/lab/attacks/shell.py",
+      "language": "python",
+      "sizeLines": 45,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/lab/attacks/spines.py",
+      "language": "python",
+      "sizeLines": 62,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/lab/attacks/sqli.py",
+      "language": "python",
+      "sizeLines": 51,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/lab/collector/__init__.py",
+      "language": "python",
+      "sizeLines": 1,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/lab/collector/collector.py",
+      "language": "python",
+      "sizeLines": 703,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/lab/collector/parsers.py",
+      "language": "python",
+      "sizeLines": 313,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/lab/fake_core.py",
+      "language": "python",
+      "sizeLines": 90,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/lab/replay/__init__.py",
+      "language": "python",
+      "sizeLines": 1,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/lab/replay/simulate.py",
+      "language": "python",
+      "sizeLines": 120,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/lab/requirements.txt",
+      "language": "txt",
+      "sizeLines": 12,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "mvp/lab/scenario.py",
+      "language": "python",
+      "sizeLines": 73,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/lab/scout/__init__.py",
+      "language": "python",
+      "sizeLines": 1,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/lab/scout/__main__.py",
+      "language": "python",
+      "sizeLines": 138,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/lab/scout/agent.py",
+      "language": "python",
+      "sizeLines": 141,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/lab/scout/sources.py",
+      "language": "python",
+      "sizeLines": 102,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/lab/scout/tools.py",
+      "language": "python",
+      "sizeLines": 117,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/lab/scout/trails.py",
+      "language": "python",
+      "sizeLines": 140,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/lab/seed/admin_password.txt",
+      "language": "txt",
+      "sizeLines": 1,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "mvp/lab/seed/members.json",
+      "language": "json",
+      "sizeLines": 4,
+      "fileCategory": "config"
+    },
+    {
+      "path": "mvp/lab/target_app/__init__.py",
+      "language": "python",
+      "sizeLines": 4,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/lab/target_app/__main__.py",
+      "language": "python",
+      "sizeLines": 4,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/lab/target_app/app.py",
+      "language": "python",
+      "sizeLines": 189,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/lab/target_app/blocklist.py",
+      "language": "python",
+      "sizeLines": 76,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/lab/target_app/db.py",
+      "language": "python",
+      "sizeLines": 118,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/lab/target_app/logger.py",
+      "language": "python",
+      "sizeLines": 103,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/lab/target_app/paths.py",
+      "language": "python",
+      "sizeLines": 55,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/lab/target_app/spines.py",
+      "language": "python",
+      "sizeLines": 100,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/lab/target_app/templates/base.html",
+      "language": "html",
+      "sizeLines": 62,
+      "fileCategory": "markup"
+    },
+    {
+      "path": "mvp/lab/target_app/templates/blocked.html",
+      "language": "html",
+      "sizeLines": 73,
+      "fileCategory": "markup"
+    },
+    {
+      "path": "mvp/lab/target_app/templates/honeypot.html",
+      "language": "html",
+      "sizeLines": 17,
+      "fileCategory": "markup"
+    },
+    {
+      "path": "mvp/lab/target_app/templates/login.html",
+      "language": "html",
+      "sizeLines": 15,
+      "fileCategory": "markup"
+    },
+    {
+      "path": "mvp/lab/target_app/templates/portal.html",
+      "language": "html",
+      "sizeLines": 11,
+      "fileCategory": "markup"
+    },
+    {
+      "path": "mvp/lab/target_app/templates/results.html",
+      "language": "html",
+      "sizeLines": 26,
+      "fileCategory": "markup"
+    },
+    {
+      "path": "mvp/lab/tests/conftest.py",
+      "language": "python",
+      "sizeLines": 20,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/lab/tests/test_app.py",
+      "language": "python",
+      "sizeLines": 76,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/lab/tests/test_attacks.py",
+      "language": "python",
+      "sizeLines": 44,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/lab/tests/test_collector.py",
+      "language": "python",
+      "sizeLines": 114,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/lab/tests/test_config_wizard.py",
+      "language": "python",
+      "sizeLines": 190,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/lab/tests/test_real_logs.py",
+      "language": "python",
+      "sizeLines": 367,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/lab/tests/test_scout.py",
+      "language": "python",
+      "sizeLines": 230,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/lab/tests/test_spines.py",
+      "language": "python",
+      "sizeLines": 125,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/notifier/STATUS.md",
+      "language": "markdown",
+      "sizeLines": 4,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "mvp/notifier/core.py",
+      "language": "python",
+      "sizeLines": 68,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/notifier/emailer.py",
+      "language": "python",
+      "sizeLines": 224,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/notifier/formatting.py",
+      "language": "python",
+      "sizeLines": 215,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/notifier/notifier.py",
+      "language": "python",
+      "sizeLines": 321,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/notifier/requirements.txt",
+      "language": "txt",
+      "sizeLines": 3,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "mvp/notifier/tests/conftest.py",
+      "language": "python",
+      "sizeLines": 42,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/notifier/tests/test_console_mode.py",
+      "language": "python",
+      "sizeLines": 41,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/notifier/tests/test_email.py",
+      "language": "python",
+      "sizeLines": 155,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/notifier/tests/test_formatting.py",
+      "language": "python",
+      "sizeLines": 60,
+      "fileCategory": "code"
+    },
+    {
+      "path": "mvp/pitch/QA_PREP.md",
+      "language": "markdown",
+      "sizeLines": 58,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "mvp/pitch/RECORDING_CHECKLIST.md",
+      "language": "markdown",
+      "sizeLines": 144,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "mvp/pitch/SLIDES.md",
+      "language": "markdown",
+      "sizeLines": 160,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "mvp/pitch/VIDEO_SCRIPT.md",
+      "language": "markdown",
+      "sizeLines": 125,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "mvp/research/SOURCES.md",
+      "language": "markdown",
+      "sizeLines": 172,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "mvp/research/SUGGESTED_EDITS.md",
+      "language": "markdown",
+      "sizeLines": 128,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "mvp/run_demo.ps1",
+      "language": "powershell",
+      "sizeLines": 177,
+      "fileCategory": "script"
+    },
+    {
+      "path": "mvp/run_demo.sh",
+      "language": "shell",
+      "sizeLines": 207,
+      "fileCategory": "script"
+    },
+    {
+      "path": "mvp/stop_demo.ps1",
+      "language": "powershell",
+      "sizeLines": 25,
+      "fileCategory": "script"
+    },
+    {
+      "path": "mvp/stop_demo.sh",
+      "language": "shell",
+      "sizeLines": 27,
+      "fileCategory": "script"
+    }
+  ],
+  "totalFiles": 164,
+  "filteredByIgnore": 26,
+  "estimatedComplexity": "large",
+  "importMap": {
+    ".github/workflows/tests.yml": [],
+    "Cybersecurity + AI.md": [],
+    "README.md": [],
+    "ROADMAP.md": [],
+    "_config.yml": [],
+    "_includes/footer.html": [],
+    "_includes/head.html": [],
+    "_includes/header.html": [],
+    "_layouts/default.html": [],
+    "assets/cactai.css": [],
+    "docs/STATUS.md": [],
+    "index.html": [],
+    "mvp/CONTRACT.md": [],
+    "mvp/README.md": [],
+    "mvp/REVIEW.md": [],
+    "mvp/STATUS.md": [],
+    "mvp/assets/STATUS.md": [],
+    "mvp/assets/make_assets.py": [],
+    "mvp/cactai_config.py": [
+      "mvp/cactai_llm.py"
+    ],
+    "mvp/cactai_llm.py": [],
+    "mvp/core/CONTRACT_REQUESTS.md": [],
+    "mvp/core/README.md": [],
+    "mvp/core/STATUS.md": [],
+    "mvp/core/app/__init__.py": [],
+    "mvp/core/app/agents.py": [
+      "mvp/core/app/audit.py",
+      "mvp/core/app/classifier.py",
+      "mvp/core/app/clock.py",
+      "mvp/core/app/responders.py",
+      "mvp/core/app/rules.py"
+    ],
+    "mvp/core/app/ai.py": [
+      "mvp/cactai_llm.py",
+      "mvp/core/app/config.py",
+      "mvp/core/app/saguaro.py"
+    ],
+    "mvp/core/app/audit.py": [],
+    "mvp/core/app/chat.py": [
+      "mvp/cactai_llm.py",
+      "mvp/core/app/config.py",
+      "mvp/core/app/saguaro.py"
+    ],
+    "mvp/core/app/classifier.py": [
+      "mvp/core/app/jev_client.py",
+      "mvp/core/app/risk.py",
+      "mvp/core/app/rules.py"
+    ],
+    "mvp/core/app/clock.py": [],
+    "mvp/core/app/config.py": [
+      "mvp/cactai_config.py"
+    ],
+    "mvp/core/app/cyanide.py": [
+      "mvp/cactai_llm.py",
+      "mvp/core/app/agents.py",
+      "mvp/core/app/config.py",
+      "mvp/core/app/saguaro.py"
+    ],
+    "mvp/core/app/discovery.py": [
+      "mvp/core/app/config.py",
+      "mvp/core/app/procscan.py"
+    ],
+    "mvp/core/app/firewall.py": [
+      "mvp/core/app/responders.py"
+    ],
+    "mvp/core/app/jev_client.py": [
+      "mvp/core/app/risk.py"
+    ],
+    "mvp/core/app/main.py": [
+      "mvp/core/app/ai.py",
+      "mvp/core/app/chat.py",
+      "mvp/core/app/config.py",
+      "mvp/core/app/cyanide.py",
+      "mvp/core/app/discovery.py",
+      "mvp/core/app/reports.py",
+      "mvp/core/app/saguaro.py"
+    ],
+    "mvp/core/app/netlogs.py": [],
+    "mvp/core/app/pdfdoc.py": [],
+    "mvp/core/app/procscan.py": [],
+    "mvp/core/app/reports.py": [
+      "mvp/core/app/clock.py",
+      "mvp/core/app/pdfdoc.py",
+      "mvp/core/app/saguaro.py"
+    ],
+    "mvp/core/app/responders.py": [],
+    "mvp/core/app/risk.py": [],
+    "mvp/core/app/rules.py": [
+      "mvp/core/app/netlogs.py"
+    ],
+    "mvp/core/app/saguaro.py": [
+      "mvp/core/app/agents.py",
+      "mvp/core/app/audit.py",
+      "mvp/core/app/classifier.py",
+      "mvp/core/app/clock.py",
+      "mvp/core/app/config.py",
+      "mvp/core/app/firewall.py",
+      "mvp/core/app/jev_client.py",
+      "mvp/core/app/netlogs.py",
+      "mvp/core/app/responders.py",
+      "mvp/core/app/risk.py",
+      "mvp/core/app/rules.py",
+      "mvp/core/app/state.py"
+    ],
+    "mvp/core/app/state.py": [
+      "mvp/core/app/audit.py"
+    ],
+    "mvp/core/profiles/tuition_centre.json": [],
+    "mvp/core/requirements.txt": [],
+    "mvp/core/tests/__init__.py": [],
+    "mvp/core/tests/conftest.py": [
+      "mvp/core/app/config.py",
+      "mvp/core/app/main.py"
+    ],
+    "mvp/core/tests/test_ai.py": [
+      "mvp/cactai_config.py",
+      "mvp/cactai_llm.py"
+    ],
+    "mvp/core/tests/test_auth.py": [
+      "mvp/core/app/config.py",
+      "mvp/core/app/main.py",
+      "mvp/core/tests/conftest.py"
+    ],
+    "mvp/core/tests/test_chat.py": [
+      "mvp/cactai_llm.py",
+      "mvp/core/app/chat.py",
+      "mvp/core/tests/conftest.py"
+    ],
+    "mvp/core/tests/test_core.py": [
+      "mvp/core/app/risk.py",
+      "mvp/core/tests/conftest.py"
+    ],
+    "mvp/core/tests/test_cyanide.py": [
+      "mvp/core/app/config.py",
+      "mvp/core/app/cyanide.py",
+      "mvp/core/tests/conftest.py"
+    ],
+    "mvp/core/tests/test_discovery.py": [
+      "mvp/cactai_llm.py",
+      "mvp/core/app/__init__.py",
+      "mvp/core/app/chat.py",
+      "mvp/core/app/discovery.py",
+      "mvp/core/app/procscan.py",
+      "mvp/core/tests/test_chat.py"
+    ],
+    "mvp/core/tests/test_firewall.py": [
+      "mvp/core/app/__init__.py",
+      "mvp/core/app/config.py",
+      "mvp/core/app/firewall.py",
+      "mvp/core/app/main.py",
+      "mvp/core/app/responders.py",
+      "mvp/core/tests/conftest.py"
+    ],
+    "mvp/core/tests/test_llm.py": [
+      "mvp/cactai_llm.py"
+    ],
+    "mvp/core/tests/test_parts.py": [
+      "mvp/core/app/classifier.py",
+      "mvp/core/app/responders.py",
+      "mvp/core/tests/conftest.py"
+    ],
+    "mvp/core/tests/test_persistence.py": [
+      "mvp/core/app/__init__.py",
+      "mvp/core/app/config.py",
+      "mvp/core/app/cyanide.py",
+      "mvp/core/app/saguaro.py",
+      "mvp/core/tests/conftest.py",
+      "mvp/core/tests/test_cyanide.py"
+    ],
+    "mvp/core/tests/test_protection.py": [
+      "mvp/core/app/config.py",
+      "mvp/core/app/main.py",
+      "mvp/core/tests/conftest.py"
+    ],
+    "mvp/core/tests/test_realworld.py": [
+      "mvp/core/app/netlogs.py",
+      "mvp/core/app/rules.py"
+    ],
+    "mvp/core/tests/test_spines.py": [
+      "mvp/core/tests/conftest.py"
+    ],
+    "mvp/dashboard/.streamlit/config.toml": [],
+    "mvp/dashboard/STATUS.md": [],
+    "mvp/dashboard/app.py": [
+      "mvp/cactai_config.py",
+      "mvp/dashboard/cactai_ui/__init__.py",
+      "mvp/dashboard/cactai_ui/api.py"
+    ],
+    "mvp/dashboard/cactai_ui/__init__.py": [],
+    "mvp/dashboard/cactai_ui/api.py": [],
+    "mvp/dashboard/cactai_ui/console.css": [],
+    "mvp/dashboard/cactai_ui/shaping.py": [],
+    "mvp/dashboard/dev/fake_core.py": [],
+    "mvp/dashboard/requirements.txt": [],
+    "mvp/dashboard/tests/conftest.py": [],
+    "mvp/dashboard/tests/test_api_fake_core.py": [
+      "mvp/dashboard/cactai_ui/api.py"
+    ],
+    "mvp/dashboard/tests/test_menu.py": [
+      "mvp/cactai_config.py",
+      "mvp/dashboard/cactai_ui/__init__.py"
+    ],
+    "mvp/dashboard/tests/test_shaping.py": [
+      "mvp/dashboard/cactai_ui/__init__.py"
+    ],
+    "mvp/deck/STATUS.md": [],
+    "mvp/deck/build.py": [],
+    "mvp/deck/make_assets.py": [],
+    "mvp/deploy/README.md": [],
+    "mvp/deploy/cactai-collector.service": [],
+    "mvp/deploy/cactai-core.service": [],
+    "mvp/deploy/cactai-dashboard.service": [],
+    "mvp/deploy/cactai-notifier.service": [],
+    "mvp/deploy/cactai.target": [],
+    "mvp/deploy/install.sh": [],
+    "mvp/deploy/uninstall.sh": [],
+    "mvp/eval/README.md": [],
+    "mvp/eval/build_dataset.py": [],
+    "mvp/eval/evaluate.py": [],
+    "mvp/eval/realworld/README.md": [],
+    "mvp/eval/realworld/build_replay.py": [],
+    "mvp/eval/realworld/score_replay.py": [],
+    "mvp/eval/realworld/test_realworld_eval.py": [
+      "mvp/eval/realworld/build_replay.py",
+      "mvp/eval/realworld/score_replay.py"
+    ],
+    "mvp/eval/test_evaluate.py": [
+      "mvp/eval/evaluate.py"
+    ],
+    "mvp/integration/STATUS.md": [],
+    "mvp/integration/test_e2e.py": [],
+    "mvp/lab/README.md": [],
+    "mvp/lab/STATUS.md": [],
+    "mvp/lab/attacks/__init__.py": [],
+    "mvp/lab/attacks/_common.py": [],
+    "mvp/lab/attacks/benign.py": [
+      "mvp/lab/attacks/__init__.py",
+      "mvp/lab/attacks/_common.py",
+      "mvp/lab/target_app/__init__.py",
+      "mvp/lab/target_app/paths.py"
+    ],
+    "mvp/lab/attacks/brute_force.py": [
+      "mvp/lab/attacks/__init__.py",
+      "mvp/lab/attacks/_common.py"
+    ],
+    "mvp/lab/attacks/exfil.py": [
+      "mvp/lab/attacks/__init__.py",
+      "mvp/lab/attacks/_common.py"
+    ],
+    "mvp/lab/attacks/shell.py": [
+      "mvp/lab/attacks/__init__.py",
+      "mvp/lab/attacks/_common.py"
+    ],
+    "mvp/lab/attacks/spines.py": [
+      "mvp/lab/attacks/__init__.py",
+      "mvp/lab/attacks/_common.py"
+    ],
+    "mvp/lab/attacks/sqli.py": [
+      "mvp/lab/attacks/__init__.py",
+      "mvp/lab/attacks/_common.py"
+    ],
+    "mvp/lab/collector/__init__.py": [],
+    "mvp/lab/collector/collector.py": [
+      "mvp/cactai_config.py",
+      "mvp/lab/collector/collector.py",
+      "mvp/lab/target_app/__init__.py",
+      "mvp/lab/target_app/paths.py"
+    ],
+    "mvp/lab/collector/parsers.py": [],
+    "mvp/lab/fake_core.py": [],
+    "mvp/lab/replay/__init__.py": [],
+    "mvp/lab/replay/simulate.py": [
+      "mvp/cactai_config.py"
+    ],
+    "mvp/lab/requirements.txt": [],
+    "mvp/lab/scenario.py": [
+      "mvp/lab/attacks/__init__.py",
+      "mvp/lab/attacks/benign.py",
+      "mvp/lab/attacks/brute_force.py",
+      "mvp/lab/attacks/spines.py",
+      "mvp/lab/attacks/sqli.py"
+    ],
+    "mvp/lab/scout/__init__.py": [],
+    "mvp/lab/scout/__main__.py": [
+      "mvp/lab/scout/sources.py",
+      "mvp/lab/scout/tools.py",
+      "mvp/lab/scout/trails.py"
+    ],
+    "mvp/lab/scout/agent.py": [
+      "mvp/cactai_llm.py",
+      "mvp/lab/scout/tools.py",
+      "mvp/lab/scout/trails.py"
+    ],
+    "mvp/lab/scout/sources.py": [],
+    "mvp/lab/scout/tools.py": [],
+    "mvp/lab/scout/trails.py": [
+      "mvp/lab/scout/tools.py"
+    ],
+    "mvp/lab/seed/admin_password.txt": [],
+    "mvp/lab/seed/members.json": [],
+    "mvp/lab/target_app/__init__.py": [
+      "mvp/lab/target_app/app.py"
+    ],
+    "mvp/lab/target_app/__main__.py": [
+      "mvp/lab/target_app/app.py"
+    ],
+    "mvp/lab/target_app/app.py": [
+      "mvp/lab/target_app/blocklist.py",
+      "mvp/lab/target_app/db.py",
+      "mvp/lab/target_app/logger.py",
+      "mvp/lab/target_app/paths.py",
+      "mvp/lab/target_app/spines.py"
+    ],
+    "mvp/lab/target_app/blocklist.py": [],
+    "mvp/lab/target_app/db.py": [
+      "mvp/lab/target_app/paths.py"
+    ],
+    "mvp/lab/target_app/logger.py": [
+      "mvp/lab/target_app/paths.py"
+    ],
+    "mvp/lab/target_app/paths.py": [
+      "mvp/cactai_config.py"
+    ],
+    "mvp/lab/target_app/spines.py": [],
+    "mvp/lab/target_app/templates/base.html": [],
+    "mvp/lab/target_app/templates/blocked.html": [],
+    "mvp/lab/target_app/templates/honeypot.html": [],
+    "mvp/lab/target_app/templates/login.html": [],
+    "mvp/lab/target_app/templates/portal.html": [],
+    "mvp/lab/target_app/templates/results.html": [],
+    "mvp/lab/tests/conftest.py": [],
+    "mvp/lab/tests/test_app.py": [
+      "mvp/lab/target_app/__init__.py",
+      "mvp/lab/target_app/blocklist.py",
+      "mvp/lab/target_app/paths.py"
+    ],
+    "mvp/lab/tests/test_attacks.py": [
+      "mvp/lab/attacks/__init__.py",
+      "mvp/lab/attacks/_common.py",
+      "mvp/lab/attacks/benign.py",
+      "mvp/lab/attacks/brute_force.py",
+      "mvp/lab/attacks/exfil.py",
+      "mvp/lab/attacks/shell.py",
+      "mvp/lab/attacks/sqli.py"
+    ],
+    "mvp/lab/tests/test_collector.py": [
+      "mvp/lab/collector/__init__.py",
+      "mvp/lab/collector/collector.py",
+      "mvp/lab/target_app/__init__.py",
+      "mvp/lab/target_app/paths.py"
+    ],
+    "mvp/lab/tests/test_config_wizard.py": [
+      "mvp/lab/target_app/__init__.py",
+      "mvp/lab/target_app/paths.py"
+    ],
+    "mvp/lab/tests/test_real_logs.py": [
+      "mvp/lab/collector/__init__.py",
+      "mvp/lab/collector/collector.py",
+      "mvp/lab/collector/parsers.py",
+      "mvp/lab/target_app/__init__.py",
+      "mvp/lab/target_app/paths.py"
+    ],
+    "mvp/lab/tests/test_scout.py": [
+      "mvp/cactai_llm.py",
+      "mvp/lab/collector/collector.py",
+      "mvp/lab/scout/__init__.py",
+      "mvp/lab/scout/__main__.py",
+      "mvp/lab/scout/agent.py",
+      "mvp/lab/scout/sources.py",
+      "mvp/lab/scout/tools.py",
+      "mvp/lab/scout/trails.py"
+    ],
+    "mvp/lab/tests/test_spines.py": [
+      "mvp/lab/collector/__init__.py",
+      "mvp/lab/collector/collector.py",
+      "mvp/lab/target_app/__init__.py",
+      "mvp/lab/target_app/blocklist.py",
+      "mvp/lab/target_app/db.py",
+      "mvp/lab/target_app/paths.py",
+      "mvp/lab/target_app/spines.py"
+    ],
+    "mvp/notifier/STATUS.md": [],
+    "mvp/notifier/core.py": [],
+    "mvp/notifier/emailer.py": [
+      "mvp/notifier/formatting.py"
+    ],
+    "mvp/notifier/formatting.py": [],
+    "mvp/notifier/notifier.py": [
+      "mvp/notifier/core.py",
+      "mvp/notifier/emailer.py",
+      "mvp/notifier/formatting.py"
+    ],
+    "mvp/notifier/requirements.txt": [],
+    "mvp/notifier/tests/conftest.py": [],
+    "mvp/notifier/tests/test_console_mode.py": [
+      "mvp/notifier/core.py",
+      "mvp/notifier/notifier.py"
+    ],
+    "mvp/notifier/tests/test_email.py": [
+      "mvp/notifier/core.py",
+      "mvp/notifier/emailer.py",
+      "mvp/notifier/notifier.py"
+    ],
+    "mvp/notifier/tests/test_formatting.py": [
+      "mvp/notifier/formatting.py"
+    ],
+    "mvp/pitch/QA_PREP.md": [],
+    "mvp/pitch/RECORDING_CHECKLIST.md": [],
+    "mvp/pitch/SLIDES.md": [],
+    "mvp/pitch/VIDEO_SCRIPT.md": [],
+    "mvp/research/SOURCES.md": [],
+    "mvp/research/SUGGESTED_EDITS.md": [],
+    "mvp/run_demo.ps1": [],
+    "mvp/run_demo.sh": [],
+    "mvp/stop_demo.ps1": [],
+    "mvp/stop_demo.sh": []
+  }
+}
