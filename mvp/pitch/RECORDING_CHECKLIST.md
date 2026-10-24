@@ -52,7 +52,7 @@ Fill in the exact commands from `mvp\run_demo.ps1` once the lead finalises it. P
 | --- | --- | --- | --- |
 | 0 | before take | Start everything | `.\mvp\run_demo.ps1` [exact flags TBD] |
 | 0b | before take | Reset state | `.\mvp\run_demo.ps1 -Reset` or `POST /demo/reset` [TBD] |
-| 1 | 1:40 | Show green dashboard | dashboard **Review** page (the home page is Configuration) |
+| 1 | 1:40 | Show green dashboard | dashboard **Review** page (it opens on Approvals when something waits, otherwise Review) |
 | 2 | 1:55 | Brute force | `[TBD: brute-force command from mvp\lab]` |
 | 3 | 2:05 | Point at the Classifier bubble, then the classification | **Classifier** page |
 | 4 | 2:18 | Telegram alert arrives | do **not** press any button |
@@ -62,7 +62,7 @@ Fill in the exact commands from `mvp\run_demo.ps1` once the lead finalises it. P
 | 8 | 3:10 | Show blocklist with TTL 2h | **Action taker** page, Active containment |
 | 9 | 3:14 | Attacker retries, gets 403 | `[TBD: retry command]` |
 | 10 | 3:18 | Open evidence report | **Reports** page |
-| 11 | 3:28 | Rollback or Make Permanent with justification | **Approvals** page |
+| 11 | 3:28 | Roll back, or tick "Keep this block forever" and Make permanent, with justification | **Approvals** page |
 | 12 | 3:36 | Show audit log, chain valid | **Audit trail** page |
 
 ## 5. Backup: replay mode
