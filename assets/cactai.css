@@ -322,3 +322,17 @@ section.alt .timeline li { background: var(--bg); }
 .to-top { position: fixed; right: 20px; bottom: 20px; width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--line); background: var(--surface); color: var(--ink); display: grid; place-items: center; text-decoration: none; box-shadow: var(--shadow); opacity: 0; pointer-events: none; transition: opacity .2s ease; }
 .to-top.show { opacity: 1; pointer-events: auto; }
 .prose hr + h2 { border-top: 0; margin-top: 0; padding-top: 0; }
+
+/* Install guide: page list above the on-page contents, and next/previous links */
+.docs-nav { margin-bottom: 24px; }
+.docs-nav a[aria-current="page"] { color: var(--ink); border-left-color: var(--brand-2); font-weight: 600; }
+.pager { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); }
+.pager a { display: block; padding: 14px 18px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--ink); text-decoration: none; font-weight: 600; }
+.pager a:hover { border-color: var(--brand-2); color: var(--ink); }
+.pager span { display: block; font-size: 12.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-soft); }
+.pager .next { grid-column: 2; text-align: right; }
+@media (max-width: 960px) {
+  .doc:has(.docs-nav) .toc { display: block; position: static; max-height: none; }
+  .doc .toc .toc-here { display: none; }
+}
+@media (max-width: 600px) { .pager { grid-template-columns: 1fr; } .pager .next { grid-column: 1; } }
