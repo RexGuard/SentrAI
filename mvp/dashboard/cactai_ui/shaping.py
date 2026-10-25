@@ -4,6 +4,7 @@ Everything here is free of Streamlit so it can be unit tested.
 """
 from __future__ import annotations
 
+import html
 import re
 from datetime import datetime
 from typing import Any, Iterable
@@ -33,13 +34,6 @@ BAND_LABELS: dict[str, str] = {
     "amber": "AMBER · operator notified",
     "red": "RED · escalated",
     "critical": "CRITICAL · autonomous containment",
-}
-# What SentrAI does in each band, in plain words, for the risk level and the band chips.
-BAND_MEANING: dict[str, str] = {
-    "green": "logged only",
-    "amber": "operator notified",
-    "red": "escalated to you",
-    "critical": "SentrAI contains on its own",
 }
 UNKNOWN_COLOR = "#8b96a8"
 
@@ -451,50 +445,72 @@ def verify_chain_links(records: list[dict]) -> bool:
 
 # ---------------------------------------------------------------- charts
 
-def risk_level_html(risk_index: float | None, threshold: float = 80, band: str | None = None,
-                    peak: float | None = None) -> str:
-    """The risk level: a straight bar over the four bands, with the threshold and today's peak marked.
+# Short word for each band in the machine list (the right-hand label under the number).
+BAND_WORD: dict[str, str] = {"green": "Calm", "amber": "Elevated", "red": "High", "critical": "Critical"}
 
-    Reads like a fuel gauge: the number, what SentrAI is doing at this level, and how far it is to the
-    threshold. Styled by .level in console.css; only the data-driven widths and colours are inline."""
-    value = None if risk_index is None else max(0.0, min(100.0, float(risk_index)))
-    band = band or band_for(value)
-    color = band_color(band)
-    threshold = max(0.0, min(100.0, float(threshold)))
-    segments = "".join(
-        f'<i style="left:{lo}%;width:{(hi + 1 if hi < 100 else 100) - lo}%;--c:{BAND_COLORS[name]}"></i>'
-        for name, lo, hi in BANDS
-    )
-    fill = f'<span class="level-fill" style="width:{value:.1f}%;background:{color}"></span>' if value is not None else ""
-    peak_mark = ""
-    if peak is not None:
-        p = max(0.0, min(100.0, float(peak)))
-        peak_mark = f'<span class="level-peak" style="left:{p:.1f}%"></span>'
-    scale = "".join(
-        f'<span style="left:{v}%"{" class=thr" if v == round(threshold) else ""}>{v}</span>'
-        for v in sorted({0, 30, 60, round(threshold), 100})
-    )
-    if value is None:
-        gap = "no reading yet"
-    elif value < threshold:
-        gap = f"<b>{threshold - value:.0f}</b> points to the threshold"
-    else:
-        gap = f"<b>{value - threshold:.0f}</b> points over the threshold"
-    peak_text = f"peak {float(peak):.0f}" if peak is not None else ""
-    label = BAND_LABELS.get(band, band).split(" · ")[0].title() if band in BAND_COLORS else "Unknown"
-    meaning = BAND_MEANING.get(band, "")
-    num = f"{value:.0f}" if value is not None else "-"
-    return (
-        f'<div class="level">'
-        f'<div class="level-top"><span class="level-num" style="color:{color}">{num}</span>'
-        f'<span class="level-of">/ 100</span>'
-        f'<span class="level-state"><b style="color:{color}">{label}</b>{meaning}</span></div>'
-        f'<div class="level-track" aria-hidden="true">{segments}{fill}{peak_mark}'
-        f'<span class="level-thr" style="left:{threshold:.1f}%"></span></div>'
-        f'<div class="level-scale" aria-hidden="true">{scale}</div>'
-        f'<div class="level-foot"><span>{gap} ({threshold:.0f})</span><span>{peak_text}</span></div>'
-        f'</div>'
-    )
+
+def parse_peers(text: str | None) -> list[tuple[str, str]]:
+    """'Office PC=http://10.0.0.5:8000, Web=https://web:8000' -> [(name, url), ...].
+
+    A bare URL is named after itself. Blank or malformed entries are skipped."""
+    peers = []
+    for item in (text or "").split(","):
+        item = item.strip()
+        if not item:
+            continue
+        name, sep, url = item.partition("=")
+        if not sep:
+            name, url = item, item
+        name, url = name.strip(), url.strip()
+        if url.startswith(("http://", "https://")):
+            peers.append((name or url, url))
+    return peers
+
+
+def machine(name: str, place: str, risk: Any = None, error: str | None = None) -> dict:
+    """One SentrAI machine for the machine list, from its /risk payload (or the error reaching it)."""
+    if error or not isinstance(risk, dict):
+        return {"name": name, "place": place, "online": False, "index": None, "band": "unknown",
+                "threshold": None, "monitor_only": False}
+    idx = risk.get("risk_index")
+    return {"name": name, "place": place, "online": True,
+            "index": None if idx is None else max(0.0, min(100.0, float(idx))),
+            "band": resolve_band(risk), "threshold": float(risk.get("threshold") or 80),
+            "monitor_only": bool(risk.get("monitor_only"))}
+
+
+def machine_rows_html(machines: list[dict]) -> str:
+    """The machine list: one row per SentrAI program, like a game's server-status screen.
+
+    Status shield on the left (protecting, protection off, or offline), the machine's name with a small
+    risk bar under it, and the risk number with its band word on the right. Styled by .machines in
+    console.css; only the data-driven widths and colours are inline."""
+    rows = []
+    for m in machines:
+        name, place = html.escape(str(m["name"])), html.escape(str(m["place"]))
+        if not m["online"]:
+            icon, state, tone = "cancel", "Offline", BAND_COLORS["critical"]
+            num, word, color, width = "0", "Offline", UNKNOWN_COLOR, 0.0
+        else:
+            color = band_color(m["band"])
+            if m["monitor_only"]:
+                icon, state, tone = "remove_moderator", "Protection off", BAND_COLORS["amber"]
+            else:
+                icon, state, tone = "verified_user", "Protecting", BAND_COLORS["green"]
+            num = "-" if m["index"] is None else f"{m['index']:.0f}"
+            word, width = BAND_WORD.get(m["band"], "Unknown"), m["index"] or 0.0
+            place = f"{place} · threshold {m['threshold']:.0f}"
+        rows.append(
+            f'<li class="machine">'
+            f'<span class="m-icon mi" style="color:{tone}" aria-hidden="true">{icon}</span>'
+            f'<span class="m-main"><span class="m-name">{name}</span>'
+            f'<span class="m-sub"><span class="m-bar" aria-hidden="true"><i style="width:{width:.0f}%;background:{color}"></i></span>'
+            f'<span class="sr">{state}. </span>{place}</span></span>'
+            f'<span class="m-risk"><span class="m-num"{" style=color:var(--ink-muted)" if not m["online"] else ""}>{num}</span>'
+            f'<span class="m-word" style="color:{color}">{word}</span></span>'
+            f'</li>'
+        )
+    return f'<ul class="machines" aria-label="SentrAI machines">{"".join(rows)}</ul>'
 
 
 def history_frame(history: Iterable[dict] | None) -> pd.DataFrame:
