@@ -34,6 +34,10 @@ cfg.load()
 
 DEFAULT_CORE = os.environ.get("CACTAI_CORE_URL", "http://127.0.0.1:8000")
 DEFAULT_OPERATOR = os.environ.get("CACTAI_OPERATOR", "operator")
+# The machine list on Review: this computer first, then any other SentrAI cores listed in CACTAI_PEERS
+# ("Office PC=http://10.0.0.5:8000, Web server=https://web:8000"). They share this console's API token.
+NODE_NAME = os.environ.get("CACTAI_NODE_NAME") or "This computer"
+PEERS = sh.parse_peers(os.environ.get("CACTAI_PEERS"))
 REFRESH_SECONDS = 2
 
 # Look: Black or White theme plus an accent, picked under Configuration > Appearance and saved with the settings.
@@ -253,6 +257,16 @@ def audit_records() -> tuple[list[dict], bool | None, str | None]:
     if valid is None and records:
         valid = sh.verify_chain_links(records)
     return records, valid, err
+
+
+def machines() -> list[dict]:
+    """Every SentrAI machine this console watches, this computer first."""
+    risk, err = fetch("risk")
+    found = [sh.machine(NODE_NAME, "Local", risk, err)]
+    for name, url in PEERS:
+        peer, perr = safe(lambda url=url: _get(url, "risk"))
+        found.append(sh.machine(name, "Remote", peer, perr))
+    return found
 
 
 if "page" not in st.session_state:  # land on what needs a person; a new machine starts with guided setup
@@ -1360,7 +1374,7 @@ def page_review() -> None:
         return
     incidents, inc_err = fetch("incidents", [])
     incidents = incidents or []
-    idx, band = risk.get("risk_index"), sh.resolve_band(risk)
+    idx = risk.get("risk_index")
     threshold = float(risk.get("threshold") or 80)
     active = [i for i in incidents if i.get("status") in sh.ACTIVE_STATUSES]
     waiting = sh.pending_approvals(incidents)
@@ -1368,8 +1382,10 @@ def page_review() -> None:
     hist = sh.history_frame(risk.get("history"))
     peak = max(float(hist["risk_index"].max()), float(idx or 0)) if not hist.empty else idx
 
-    # The risk level card says the number, the band and the headroom; these say what is new.
-    stats(("Waiting on you", str(len(waiting)), f"{len(waiting) - len(active)} contained · {len(active)} open",
+    # Each machine's own number and band are in the machine list; these add what it doesn't say.
+    stats(("Peak so far", f"{peak:.0f}" if peak is not None else "-", "on this computer",
+           sh.band_color(sh.band_for(peak)) if peak is not None and peak >= threshold else None),
+          ("Waiting on you", str(len(waiting)), f"{len(waiting) - len(active)} contained · {len(active)} open",
            sh.BAND_COLORS["amber"] if waiting else None),
           ("Inaction penalty", f"+{penalty:.0f}", "+5 per hour nobody responds",
            sh.BAND_COLORS["amber"] if penalty else None),
@@ -1377,8 +1393,10 @@ def page_review() -> None:
 
     g, h = st.columns([5, 7])
     with g, st.container(border=True):
-        section("Risk level", "SentrAI acts on its own above the threshold", "speed")
-        st.markdown(sh.risk_level_html(idx, threshold, band, peak), unsafe_allow_html=True)
+        found = machines()
+        online = sum(m["online"] for m in found)
+        section("Machines", f"{online} of {len(found)} online · SentrAI acts on its own above the threshold", "dns")
+        st.markdown(sh.machine_rows_html(found), unsafe_allow_html=True)
     with h, st.container(border=True):
         section("Risk over time", "dashed line is the threshold", "show_chart")
         if hist.empty:

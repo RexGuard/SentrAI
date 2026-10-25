@@ -142,6 +142,8 @@ behind an arrow.
 | `CACTAI_EMAIL_MODE` | `backup` | notifier: `backup` emails only when Telegram fails; `always` emails every alert too |
 | `CACTAI_DASHBOARD_URL` | `http://127.0.0.1:8501` | notifier: link in email alerts |
 | `CACTAI_CORE_URL` | `http://127.0.0.1:8000` | lab, dashboard, notifier |
+| `CACTAI_NODE_NAME` | `This computer` | dashboard: this machine's name in the Machines list on Review |
+| `CACTAI_PEERS` | unset | dashboard: other SentrAI cores to show in the Machines list, as `Name=URL, Name=URL`; they must accept this console's API token |
 | `CACTAI_LAB_LOGS` | `mvp\lab\logs` | lab: the collector tails JSON-lines logs here |
 | `CACTAI_LOG_ACCESS`, `_AUTH`, `_DB`, `_OS` | `access.jsonl`, `auth.jsonl`, `db.jsonl`, `os.jsonl` | lab: log file names |
 | `BRUTE_FORCE_COUNT` / `BRUTE_FORCE_WINDOW_S` | 5 / 60 | core: failed logins that count as brute force |
