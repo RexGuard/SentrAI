@@ -4,6 +4,7 @@ Everything here is free of Streamlit so it can be unit tested.
 """
 from __future__ import annotations
 
+import html
 import re
 from datetime import datetime
 from typing import Any, Iterable
@@ -40,7 +41,7 @@ SURFACE = "#121a29"
 TEXT_PRIMARY = "#e7edf6"
 TEXT_SECONDARY = "#a5b2c6"
 TEXT_MUTED = "#6f7d93"
-FONT = "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif"
+FONT = "IBM Plex Sans, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif"
 GRID = "rgba(255,255,255,0.07)"
 
 
@@ -444,47 +445,72 @@ def verify_chain_links(records: list[dict]) -> bool:
 
 # ---------------------------------------------------------------- charts
 
-def gauge_figure(risk_index: float | None, threshold: float = 80, band: str | None = None) -> go.Figure:
-    value = 0 if risk_index is None else max(0, min(100, float(risk_index)))
-    band = band or band_for(value)
-    color = band_color(band)
-    steps = [
-        {"range": [lo, hi + (1 if hi < 100 else 0)], "color": _fade(BAND_COLORS[name], 0.16)}
-        for name, lo, hi in BANDS
-    ]
-    fig = go.Figure(
-        go.Indicator(
-            mode="gauge+number",
-            value=value,
-            number={"font": {"size": 72, "color": color}, "valueformat": ".0f"},
-            gauge={
-                "shape": "angular",
-                "axis": {
-                    "range": [0, 100],
-                    "tickvals": [0, 30, 60, 80, 100],
-                    "tickcolor": TEXT_MUTED,
-                    "tickfont": {"color": TEXT_SECONDARY, "size": 12},
-                },
-                "bar": {"color": color, "thickness": 0.32},
-                "bgcolor": "rgba(0,0,0,0)",
-                "borderwidth": 0,
-                "steps": steps,
-                "threshold": {
-                    "line": {"color": TEXT_PRIMARY, "width": 4},
-                    "thickness": 0.9,
-                    "value": float(threshold),
-                },
-            },
-            domain={"x": [0, 1], "y": [0, 1]},
+# Short word for each band in the machine list (the right-hand label under the number).
+BAND_WORD: dict[str, str] = {"green": "Calm", "amber": "Elevated", "red": "High", "critical": "Critical"}
+
+
+def parse_peers(text: str | None) -> list[tuple[str, str]]:
+    """'Office PC=http://10.0.0.5:8000, Web=https://web:8000' -> [(name, url), ...].
+
+    A bare URL is named after itself. Blank or malformed entries are skipped."""
+    peers = []
+    for item in (text or "").split(","):
+        item = item.strip()
+        if not item:
+            continue
+        name, sep, url = item.partition("=")
+        if not sep:
+            name, url = item, item
+        name, url = name.strip(), url.strip()
+        if url.startswith(("http://", "https://")):
+            peers.append((name or url, url))
+    return peers
+
+
+def machine(name: str, place: str, risk: Any = None, error: str | None = None) -> dict:
+    """One SentrAI machine for the machine list, from its /risk payload (or the error reaching it)."""
+    if error or not isinstance(risk, dict):
+        return {"name": name, "place": place, "online": False, "index": None, "band": "unknown",
+                "threshold": None, "monitor_only": False}
+    idx = risk.get("risk_index")
+    return {"name": name, "place": place, "online": True,
+            "index": None if idx is None else max(0.0, min(100.0, float(idx))),
+            "band": resolve_band(risk), "threshold": float(risk.get("threshold") or 80),
+            "monitor_only": bool(risk.get("monitor_only"))}
+
+
+def machine_rows_html(machines: list[dict]) -> str:
+    """The machine list: one row per SentrAI program, like a game's server-status screen.
+
+    Status shield on the left (protecting, protection off, or offline), the machine's name with a small
+    risk bar under it, and the risk number with its band word on the right. Styled by .machines in
+    console.css; only the data-driven widths and colours are inline."""
+    rows = []
+    for m in machines:
+        name, place = html.escape(str(m["name"])), html.escape(str(m["place"]))
+        if not m["online"]:
+            icon, state, tone = "cancel", "Offline", BAND_COLORS["critical"]
+            num, word, color, width = "0", "Offline", UNKNOWN_COLOR, 0.0
+        else:
+            color = band_color(m["band"])
+            if m["monitor_only"]:
+                icon, state, tone = "remove_moderator", "Protection off", BAND_COLORS["amber"]
+            else:
+                icon, state, tone = "verified_user", "Protecting", BAND_COLORS["green"]
+            num = "-" if m["index"] is None else f"{m['index']:.0f}"
+            word, width = BAND_WORD.get(m["band"], "Unknown"), m["index"] or 0.0
+            place = f"{place} · threshold {m['threshold']:.0f}"
+        rows.append(
+            f'<li class="machine">'
+            f'<span class="m-icon mi" style="color:{tone}" aria-hidden="true">{icon}</span>'
+            f'<span class="m-main"><span class="m-name">{name}</span>'
+            f'<span class="m-sub"><span class="m-bar" aria-hidden="true"><i style="width:{width:.0f}%;background:{color}"></i></span>'
+            f'<span class="sr">{state}. </span>{place}</span></span>'
+            f'<span class="m-risk"><span class="m-num"{" style=color:var(--ink-muted)" if not m["online"] else ""}>{num}</span>'
+            f'<span class="m-word" style="color:{color}">{word}</span></span>'
+            f'</li>'
         )
-    )
-    fig.update_layout(
-        height=290,
-        margin={"l": 28, "r": 28, "t": 18, "b": 0},
-        paper_bgcolor="rgba(0,0,0,0)",
-        font={"color": TEXT_PRIMARY, "family": FONT},
-    )
-    return fig
+    return f'<ul class="machines" aria-label="SentrAI machines">{"".join(rows)}</ul>'
 
 
 def history_frame(history: Iterable[dict] | None) -> pd.DataFrame:
@@ -531,7 +557,7 @@ def history_figure(df: pd.DataFrame, threshold: float = 80) -> go.Figure:
         annotation_font={"color": TEXT_SECONDARY, "size": 12},
     )
     fig.update_layout(
-        height=290,
+        height=230,
         margin={"l": 8, "r": 8, "t": 10, "b": 8},
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",

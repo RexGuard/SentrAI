@@ -103,11 +103,24 @@ def test_history_and_figures():
     assert list(df["risk_index"]) == [8, 44]
     fig = sh.history_figure(df, 80)
     assert fig.data[0].line.color == sh.BAND_COLORS["amber"]
-    g = sh.gauge_figure(91, 80)
-    assert g.data[0].value == 91
-    assert g.data[0].gauge.bar.color == sh.BAND_COLORS["critical"]
-    assert g.data[0].gauge.threshold.value == 80
-    assert sh.gauge_figure(None).data[0].value == 0
+
+
+def test_parse_peers():
+    assert sh.parse_peers("Office PC=http://10.0.0.5:8000, https://web:8000 ,bad, =ftp://x,") == [
+        ("Office PC", "http://10.0.0.5:8000"), ("https://web:8000", "https://web:8000")]
+    assert sh.parse_peers(None) == []
+
+
+def test_machine_rows():
+    here = sh.machine("This computer", "Local", {"risk_index": 31, "band": "amber", "threshold": 80})
+    off = sh.machine("Office <PC>", "Remote", None, "Core unreachable")
+    quiet = sh.machine("Web", "Remote", {"risk_index": 5, "threshold": 70, "monitor_only": True})
+    assert here["online"] and here["band"] == "amber" and not off["online"] and quiet["band"] == "green"
+    rows = sh.machine_rows_html([here, off, quiet])
+    assert rows.count('<li class="machine">') == 3
+    assert ">31<" in rows and "Elevated" in rows and "width:31%" in rows and "threshold 80" in rows
+    assert "Office &lt;PC&gt;" in rows and ">Offline<" in rows  # names are escaped
+    assert "remove_moderator" in rows and "Protection off" in rows and "threshold 70" in rows
 
 
 def test_demote_headings():
