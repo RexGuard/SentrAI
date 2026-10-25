@@ -8,8 +8,11 @@ Free of Streamlit imports, so it can be unit tested; app.py applies the result.
 """
 from __future__ import annotations
 
+import base64
 import re
 from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path
 
 DEFAULT_THEME = "dark"
 DEFAULT_ACCENT = "mono"
@@ -40,6 +43,28 @@ THEMES = {
     }, {"green": "#15803d", "amber": "#96590a", "red": "#c2410c", "critical": "#dc2626"},
         "#6b6b6b", "rgba(0,0,0,0.08)", .07),
 }
+
+# Type: IBM Plex Sans for everything people read, JetBrains Mono for ids, hashes and times.
+# Bundled in cactai_ui/fonts (see its README), so the console needs no internet.
+FONT = "'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif"
+MONO = "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
+_FONT_FILES = [("IBM Plex Sans", w, f"ibm-plex-sans-latin-{w}-normal.woff2") for w in (400, 500, 600, 700)] + \
+    [("JetBrains Mono", w, f"jetbrains-mono-latin-{w}-normal.woff2") for w in (400, 500)]
+
+
+@lru_cache(maxsize=1)
+def font_css() -> str:
+    """@font-face rules with the bundled fonts inlined; empty when the font folder is missing."""
+    folder = Path(__file__).parent / "fonts"
+    rules = []
+    for family, weight, name in _FONT_FILES:
+        f = folder / name
+        if f.exists():
+            data = base64.b64encode(f.read_bytes()).decode("ascii")
+            rules.append(f"@font-face{{font-family:'{family}';font-style:normal;font-weight:{weight};"
+                         f"font-display:swap;src:url(data:font/woff2;base64,{data}) format('woff2');}}")
+    return "".join(rules)
+
 
 # Preset accents. Mono uses the theme's own ink (white on Black, black on White).
 # Violet is the logo's colour. No greens, ambers or reds: those mean risk.
@@ -138,7 +163,7 @@ def css(theme: str = DEFAULT_THEME, accent: str = DEFAULT_ACCENT) -> str:
     """A :root block of CSS variables for console.css."""
     t = THEMES.get(theme, THEMES[DEFAULT_THEME])
     body = "".join(f"--{k}:{v};" for k, v in palette(theme, accent).items())
-    return f":root{{{body}color-scheme:{t.base};}}"
+    return f":root{{{body}--font:{FONT};--mono:{MONO};color-scheme:{t.base};}}"
 
 
 def streamlit_options(theme: str = DEFAULT_THEME, accent: str = DEFAULT_ACCENT) -> dict[str, str]:
@@ -161,6 +186,10 @@ def streamlit_options(theme: str = DEFAULT_THEME, accent: str = DEFAULT_ACCENT) 
         "theme.yellowColor": t.risk["amber"],
         "theme.sidebar.backgroundColor": p["sidebar"],
         "theme.sidebar.secondaryBackgroundColor": p["surface"],
+        "theme.font": FONT,
+        "theme.headingFont": FONT,
+        "theme.codeFont": MONO,
+        "theme.baseRadius": "8px",
     }
 
 

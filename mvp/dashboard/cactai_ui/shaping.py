@@ -34,13 +34,20 @@ BAND_LABELS: dict[str, str] = {
     "red": "RED · escalated",
     "critical": "CRITICAL · autonomous containment",
 }
+# What SentrAI does in each band, in plain words, for the risk level and the band chips.
+BAND_MEANING: dict[str, str] = {
+    "green": "logged only",
+    "amber": "operator notified",
+    "red": "escalated to you",
+    "critical": "SentrAI contains on its own",
+}
 UNKNOWN_COLOR = "#8b96a8"
 
 SURFACE = "#121a29"
 TEXT_PRIMARY = "#e7edf6"
 TEXT_SECONDARY = "#a5b2c6"
 TEXT_MUTED = "#6f7d93"
-FONT = "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif"
+FONT = "IBM Plex Sans, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif"
 GRID = "rgba(255,255,255,0.07)"
 
 
@@ -444,47 +451,50 @@ def verify_chain_links(records: list[dict]) -> bool:
 
 # ---------------------------------------------------------------- charts
 
-def gauge_figure(risk_index: float | None, threshold: float = 80, band: str | None = None) -> go.Figure:
-    value = 0 if risk_index is None else max(0, min(100, float(risk_index)))
+def risk_level_html(risk_index: float | None, threshold: float = 80, band: str | None = None,
+                    peak: float | None = None) -> str:
+    """The risk level: a straight bar over the four bands, with the threshold and today's peak marked.
+
+    Reads like a fuel gauge: the number, what SentrAI is doing at this level, and how far it is to the
+    threshold. Styled by .level in console.css; only the data-driven widths and colours are inline."""
+    value = None if risk_index is None else max(0.0, min(100.0, float(risk_index)))
     band = band or band_for(value)
     color = band_color(band)
-    steps = [
-        {"range": [lo, hi + (1 if hi < 100 else 0)], "color": _fade(BAND_COLORS[name], 0.16)}
+    threshold = max(0.0, min(100.0, float(threshold)))
+    segments = "".join(
+        f'<i style="left:{lo}%;width:{(hi + 1 if hi < 100 else 100) - lo}%;--c:{BAND_COLORS[name]}"></i>'
         for name, lo, hi in BANDS
-    ]
-    fig = go.Figure(
-        go.Indicator(
-            mode="gauge+number",
-            value=value,
-            number={"font": {"size": 72, "color": color}, "valueformat": ".0f"},
-            gauge={
-                "shape": "angular",
-                "axis": {
-                    "range": [0, 100],
-                    "tickvals": [0, 30, 60, 80, 100],
-                    "tickcolor": TEXT_MUTED,
-                    "tickfont": {"color": TEXT_SECONDARY, "size": 12},
-                },
-                "bar": {"color": color, "thickness": 0.32},
-                "bgcolor": "rgba(0,0,0,0)",
-                "borderwidth": 0,
-                "steps": steps,
-                "threshold": {
-                    "line": {"color": TEXT_PRIMARY, "width": 4},
-                    "thickness": 0.9,
-                    "value": float(threshold),
-                },
-            },
-            domain={"x": [0, 1], "y": [0, 1]},
-        )
     )
-    fig.update_layout(
-        height=290,
-        margin={"l": 28, "r": 28, "t": 18, "b": 0},
-        paper_bgcolor="rgba(0,0,0,0)",
-        font={"color": TEXT_PRIMARY, "family": FONT},
+    fill = f'<span class="level-fill" style="width:{value:.1f}%;background:{color}"></span>' if value is not None else ""
+    peak_mark = ""
+    if peak is not None:
+        p = max(0.0, min(100.0, float(peak)))
+        peak_mark = f'<span class="level-peak" style="left:{p:.1f}%"></span>'
+    scale = "".join(
+        f'<span style="left:{v}%"{" class=thr" if v == round(threshold) else ""}>{v}</span>'
+        for v in sorted({0, 30, 60, round(threshold), 100})
     )
-    return fig
+    if value is None:
+        gap = "no reading yet"
+    elif value < threshold:
+        gap = f"<b>{threshold - value:.0f}</b> points to the threshold"
+    else:
+        gap = f"<b>{value - threshold:.0f}</b> points over the threshold"
+    peak_text = f"peak {float(peak):.0f}" if peak is not None else ""
+    label = BAND_LABELS.get(band, band).split(" · ")[0].title() if band in BAND_COLORS else "Unknown"
+    meaning = BAND_MEANING.get(band, "")
+    num = f"{value:.0f}" if value is not None else "-"
+    return (
+        f'<div class="level">'
+        f'<div class="level-top"><span class="level-num" style="color:{color}">{num}</span>'
+        f'<span class="level-of">/ 100</span>'
+        f'<span class="level-state"><b style="color:{color}">{label}</b>{meaning}</span></div>'
+        f'<div class="level-track" aria-hidden="true">{segments}{fill}{peak_mark}'
+        f'<span class="level-thr" style="left:{threshold:.1f}%"></span></div>'
+        f'<div class="level-scale" aria-hidden="true">{scale}</div>'
+        f'<div class="level-foot"><span>{gap} ({threshold:.0f})</span><span>{peak_text}</span></div>'
+        f'</div>'
+    )
 
 
 def history_frame(history: Iterable[dict] | None) -> pd.DataFrame:
@@ -531,7 +541,7 @@ def history_figure(df: pd.DataFrame, threshold: float = 80) -> go.Figure:
         annotation_font={"color": TEXT_SECONDARY, "size": 12},
     )
     fig.update_layout(
-        height=290,
+        height=230,
         margin={"l": 8, "r": 8, "t": 10, "b": 8},
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",

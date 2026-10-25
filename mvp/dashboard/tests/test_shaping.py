@@ -103,11 +103,20 @@ def test_history_and_figures():
     assert list(df["risk_index"]) == [8, 44]
     fig = sh.history_figure(df, 80)
     assert fig.data[0].line.color == sh.BAND_COLORS["amber"]
-    g = sh.gauge_figure(91, 80)
-    assert g.data[0].value == 91
-    assert g.data[0].gauge.bar.color == sh.BAND_COLORS["critical"]
-    assert g.data[0].gauge.threshold.value == 80
-    assert sh.gauge_figure(None).data[0].value == 0
+    level = sh.risk_level_html(91, 80, peak=95)
+    assert ">91<" in level and "width:91.0%" in level
+    assert sh.BAND_COLORS["critical"] in level
+    assert "left:80.0%" in level and "left:95.0%" in level  # threshold and peak marks
+    assert "<b>11</b> points over the threshold" in level
+    assert "SentrAI contains on its own" in level
+
+
+def test_risk_level_below_threshold_and_empty():
+    level = sh.risk_level_html(31, 80, "amber")
+    assert "<b>49</b> points to the threshold" in level and "operator notified" in level
+    assert "level-peak" not in level
+    empty = sh.risk_level_html(None)
+    assert ">-<" in empty and "level-fill" not in empty and "no reading yet" in empty
 
 
 def test_demote_headings():

@@ -59,7 +59,7 @@ PAGE_ICON = str(_FAVICON) if _FAVICON.exists() else "🛡️"
 st.set_page_config(page_title="SentrAI · Risk Console", page_icon=PAGE_ICON, layout="wide",
                    initial_sidebar_state="auto")  # collapsed on a phone, so the page shows first
 CSS = (Path(__file__).parent / "cactai_ui" / "console.css").read_text(encoding="utf-8")
-st.markdown(f"<style>{th.css(THEME, ACCENT)}{CSS}</style>", unsafe_allow_html=True)
+st.markdown(f"<style>{th.font_css()}{th.css(THEME, ACCENT)}{CSS}</style>", unsafe_allow_html=True)
 
 
 def _apply_streamlit_theme() -> bool:
@@ -144,18 +144,28 @@ def icon(name: str) -> str:
 
 
 def pill(text: str, color: str, pulse: bool = False) -> str:
-    return (f'<span class="chip" style="color:{color};border-color:{color}55;background:{color}14">'
+    # Text leans a fifth toward the ink, so a tinted chip still reads at AA on both themes.
+    return (f'<span class="chip" style="color:color-mix(in srgb, {color} 78%, var(--ink));'
+            f'border-color:{color}55;background:{color}14">'
             f'<span class="dot{" pulse" if pulse else ""}" style="background:{color}"></span>{html.escape(text)}</span>')
 
 
-def kpi(label: str, value: str, sub: str = "", color: str | None = None, ico: str = "") -> None:
-    accent = f"--accent:{color};" if color else ""
-    st.markdown(
-        f'<div class="kpi" style="{accent}"><div class="kpi-label">{icon(ico) if ico else ""}{html.escape(label)}</div>'
-        f'<div class="kpi-value" style="color:{color or "var(--ink)"}">{html.escape(value)}</div>'
-        f'<div class="kpi-sub">{html.escape(sub) or "&nbsp;"}</div></div>',
-        unsafe_allow_html=True,
-    )
+def stats(*items: tuple) -> None:
+    """One strip of headline numbers: (label, value, note[, colour]). A colour only when the number needs attention."""
+    cells = []
+    for label, value, sub, *rest in items:
+        color = rest[0] if rest else None
+        style = f' style="color:{color}"' if color else ""
+        cells.append(f'<div class="stat"><div class="stat-label">{html.escape(label)}</div>'
+                     f'<div class="stat-value"{style}>{html.escape(value)}</div>'
+                     f'<div class="stat-sub">{html.escape(sub) or "&nbsp;"}</div></div>')
+    st.markdown(f'<div class="stats" style="--n:{len(cells)}">{"".join(cells)}</div>', unsafe_allow_html=True)
+
+
+def status(text: str, color: str, pulse: bool = False) -> str:
+    """A quiet status line for the page header: a coloured dot and plain text."""
+    return (f'<span class="status"><span class="dot{" pulse" if pulse else ""}" style="background:{color}"></span>'
+            f'{html.escape(text)}</span>')
 
 
 def section(title: str, note: str = "", ico: str = "") -> None:
@@ -281,7 +291,7 @@ def side_risk() -> None:
     band, idx = sh.resolve_band(risk), risk.get("risk_index")
     color, threshold = sh.band_color(band), float(risk.get("threshold") or 80)
     _, valid, _ = audit_records()
-    chain = ("chain valid", sh.BAND_COLORS["green"]) if valid else ("chain broken", sh.BAND_COLORS["critical"]) \
+    chain = ("chain intact", sh.BAND_COLORS["green"]) if valid else ("chain broken", sh.BAND_COLORS["critical"]) \
         if valid is False else ("chain unknown", sh.UNKNOWN_COLOR)
     pct = max(0.0, min(100.0, float(idx or 0)))
     st.markdown(
@@ -345,20 +355,20 @@ def header(title: str, note: str = "") -> dict | None:
     now_s = datetime.now().strftime("%H:%M:%S")
     ico, _, group = PAGES[st.session_state.page]
     if err or not isinstance(risk, dict):
-        chips = pill("Core offline", sh.BAND_COLORS["critical"])
+        chips = status("Core offline", sh.BAND_COLORS["critical"])
     else:
         _, valid, _ = audit_records()
-        chips = ((pill("Chain valid", sh.BAND_COLORS["green"]) if valid
-                    else pill("Chain broken", sh.BAND_COLORS["critical"]) if valid is False
-                    else pill("Chain unknown", sh.UNKNOWN_COLOR)))
+        chips = ((status("Log chain intact", sh.BAND_COLORS["green"]) if valid
+                    else status("Log chain broken", sh.BAND_COLORS["critical"]) if valid is False
+                    else status("Log chain unknown", sh.UNKNOWN_COLOR)))
         if risk.get("monitor_only"):
-            chips = pill("Protection off", sh.BAND_COLORS["amber"]) + chips
-    chips += pill(f"Live · {now_s}" if AUTO else f"Paused · {now_s}", sh.BAND_COLORS["green"] if AUTO else sh.UNKNOWN_COLOR,
-                  pulse=bool(AUTO))
+            chips = status("Protection off", sh.BAND_COLORS["amber"]) + chips
+    chips += status(f"Live {now_s}" if AUTO else f"Paused {now_s}", sh.BAND_COLORS["green"] if AUTO else sh.UNKNOWN_COLOR,
+                    pulse=bool(AUTO))
     st.markdown(
-        f'<div class="page-head"><div class="page-title"><div class="page-icon">{icon(ico)}</div><div>'
-        f'<div class="eyebrow">{html.escape(group)}</div><h1>{html.escape(title)}</h1>'
-        f'<div class="page-note">{html.escape(note)}</div></div></div>'
+        f'<div class="page-head"><div class="page-title">'
+        f'<div class="eyebrow">{icon(ico)} {html.escape(group)}</div><h1>{html.escape(title)}</h1>'
+        f'<div class="page-note">{html.escape(note)}</div></div>'
         f'<div class="chips">{chips}</div></div>',
         unsafe_allow_html=True,
     )
@@ -1090,7 +1100,7 @@ def quarantine_suggestion(mid: Any, n: int, s: dict) -> None:
 @st.fragment(run_every=AUTO)
 def page_collector() -> None:
     show_flash()
-    if header("Collector", "part 1 · turns raw logs into events and ships them to the core") is None:
+    if header("Collector", "Step 1 of 3 · reads your logs and turns each line into an event") is None:
         return
     records, _, _ = audit_records()
     agents, _ = fetch("agents", [])
@@ -1101,18 +1111,12 @@ def page_collector() -> None:
     malicious = sh.records_of(records, "event_classified")
     silent = sh.records_of(records, "collector_silent")
 
-    k1, k2, k3, k4 = st.columns(4)
-    with k1:
-        kpi("Events analysed", str(sum(int(a.get("analyzed") or 0) for a in layer)), "by the layer agents")
-    with k2:
-        kpi("Malicious events", str(len(malicious)), "attached to incidents",
-            sh.BAND_COLORS["critical"] if malicious else None)
-    with k3:
-        kpi("Collectors", str(len(collectors)), "sending heartbeats")
-    with k4:
-        kpi("Silent alerts", str(len(silent)), "collector stopped reporting",
-            sh.BAND_COLORS["amber"] if silent else None)
-    st.write("")
+    stats(("Events analysed", str(sum(int(a.get("analyzed") or 0) for a in layer)), "by the layer agents"),
+          ("Malicious events", str(len(malicious)), "attached to incidents",
+           sh.BAND_COLORS["critical"] if malicious else None),
+          ("Collectors", str(len(collectors)), "sending heartbeats"),
+          ("Silent alerts", str(len(silent)), "a collector stopped reporting",
+           sh.BAND_COLORS["amber"] if silent else None))
 
     left, right = st.columns(2)
     with left, st.container(border=True):
@@ -1287,7 +1291,7 @@ def scan_suggestion(s: dict) -> None:
 
 @st.fragment(run_every=AUTO)
 def page_classifier() -> None:
-    if header("Classifier", "part 2 · rules, then Jev (AI), then fallback keywords; first answer wins") is None:
+    if header("Classifier", "Step 2 of 3 · decides which events are attacks: rules first, then AI, then keywords") is None:
         return
     records, _, _ = audit_records()
     agents, _ = fetch("agents", [])
@@ -1295,18 +1299,12 @@ def page_classifier() -> None:
     rows = sh.classification_rows(records)
     opened = sh.records_of(records, "incident_opened")
 
-    k1, k2, k3, k4 = st.columns(4)
-    with k1:
-        kpi("Attacks identified", str(len(opened)), "incidents opened", sh.BAND_COLORS["critical"] if opened else None)
-    with k2:
-        kpi("Malicious events", str(len(rows)), "classified as an attack")
-    with k3:
-        by_rules = int((rows["Classified by"] == "Rules").sum()) if not rows.empty else 0
-        kpi("Settled by rules", str(by_rules), "confidence 1.0")
-    with k4:
-        status = str(jev.get("status") or "unknown")
-        kpi("Jev (AI)", "off" if status.startswith("disabled") else "on", status.split("(")[0][:48])
-    st.write("")
+    by_rules = int((rows["Classified by"] == "Rules").sum()) if not rows.empty else 0
+    jev_status = str(jev.get("status") or "unknown")
+    stats(("Attacks identified", str(len(opened)), "incidents opened", sh.BAND_COLORS["critical"] if opened else None),
+          ("Malicious events", str(len(rows)), "classified as an attack"),
+          ("Settled by rules", str(by_rules), "certain, no AI needed"),
+          ("AI classifier", "off" if jev_status.startswith("disabled") else "on", jev_status.split("(")[0][:48]))
 
     with st.container(border=True):
         section("Rules in use", "change them on the Configuration page", "rule")
@@ -1318,7 +1316,7 @@ def page_classifier() -> None:
             f"- Bulk exfiltration: **{os.environ.get('EXPORT_ROWS_THRESHOLD', '100')}** rows or more in one export\n"
             "- Signatures: SQL injection, XSS, privilege escalation, port scans, misconfiguration, log tampering")
     with st.container(border=True):
-        section("Classifications", "newest first · 0.4-0.6 malicious means needs review, never auto-contained", "label")
+        section("Classifications", "newest first · 40-60% sure goes to a person and is never blocked on its own", "label")
         table(rows, "No malicious classifications yet.", column_config={
             "Confidence": st.column_config.ProgressColumn("Confidence", min_value=0, max_value=1, format="%.2f"),
             "Malicious": st.column_config.ProgressColumn("Malicious", min_value=0, max_value=1, format="%.2f")})
@@ -1327,7 +1325,7 @@ def page_classifier() -> None:
 @st.fragment(run_every=AUTO)
 def page_responder() -> None:
     show_flash()
-    if header("Action taker", "part 3 · temporary, reversible fixes enforced by the app blocklist") is None:
+    if header("Action taker", "Step 3 of 3 · temporary blocks that undo themselves unless a person keeps them") is None:
         return
     records, _, _ = audit_records()
     incidents, _ = fetch("incidents", [])
@@ -1335,16 +1333,10 @@ def page_responder() -> None:
     containment = sh.build_containment_rows(blocklist, incidents or [])
     history = sh.all_action_rows(incidents or [])
 
-    k1, k2, k3, k4 = st.columns(4)
-    with k1:
-        kpi("Active containment", str(len(containment)), "in force now", sh.BAND_COLORS["amber"] if len(containment) else None)
-    with k2:
-        kpi("Blocked IPs", str(len((blocklist or {}).get("ips") or [])), "blocked right now")
-    with k3:
-        kpi("Locked accounts", str(len((blocklist or {}).get("users") or [])), "locked right now")
-    with k4:
-        kpi("Actions taken", str(len(history)), f"expire after {os.environ.get('HOTPATCH_TTL_HOURS', '2')} h")
-    st.write("")
+    stats(("Active containment", str(len(containment)), "in force now", sh.BAND_COLORS["amber"] if len(containment) else None),
+          ("Blocked IPs", str(len((blocklist or {}).get("ips") or [])), "blocked right now"),
+          ("Locked accounts", str(len((blocklist or {}).get("users") or [])), "locked right now"),
+          ("Actions taken", str(len(history)), f"each expires after {os.environ.get('HOTPATCH_TTL_HOURS', '2')} h"))
 
     with st.container(border=True):
         section("Active containment", "blocked or locked right now", "block")
@@ -1363,54 +1355,41 @@ def page_responder() -> None:
 
 @st.fragment(run_every=AUTO)
 def page_review() -> None:
-    risk = header("Review", "threshold level and the risk accumulated so far")
+    risk = header("Review", "how close SentrAI is to acting on its own, and why")
     if risk is None:
         return
     incidents, inc_err = fetch("incidents", [])
     incidents = incidents or []
     idx, band = risk.get("risk_index"), sh.resolve_band(risk)
-    color, threshold = sh.band_color(band), float(risk.get("threshold") or 80)
+    threshold = float(risk.get("threshold") or 80)
     active = [i for i in incidents if i.get("status") in sh.ACTIVE_STATUSES]
     waiting = sh.pending_approvals(incidents)
     penalty = sum(float(i.get("inaction_penalty") or 0) for i in active)
     hist = sh.history_frame(risk.get("history"))
     peak = max(float(hist["risk_index"].max()), float(idx or 0)) if not hist.empty else idx
 
-    # The risk index itself is in the sidebar card and the gauge; these cards each add something new.
-    k1, k2, k3, k4, k5 = st.columns(5)
-    with k1:
-        kpi("Peak so far", f"{peak:.0f}" if peak is not None else "-", f"raw score now {risk.get('raw_score', '-')}",
-            sh.band_color(sh.band_for(peak)) if peak is not None else None)
-    with k2:
-        kpi("Threshold", f"{threshold:.0f}", "autonomous containment above this")
-    with k3:
-        gap = threshold - float(idx or 0)
-        kpi("Headroom", f"{gap:.0f}" if gap > 0 else "over", "points until the threshold",
-            sh.BAND_COLORS["critical"] if gap <= 0 else None)
-    with k4:
-        kpi("Waiting on you", str(len(waiting)), f"{len(waiting) - len(active)} contained · {len(active)} open",
-            sh.BAND_COLORS["amber"] if waiting else None)
-    with k5:
-        kpi("Inaction penalty", f"+{penalty:.0f}", "+5 per hour unacknowledged",
-            sh.BAND_COLORS["amber"] if penalty else None)
-    st.write("")
+    # The risk level card says the number, the band and the headroom; these say what is new.
+    stats(("Waiting on you", str(len(waiting)), f"{len(waiting) - len(active)} contained · {len(active)} open",
+           sh.BAND_COLORS["amber"] if waiting else None),
+          ("Inaction penalty", f"+{penalty:.0f}", "+5 per hour nobody responds",
+           sh.BAND_COLORS["amber"] if penalty else None),
+          ("Raw score", f"{float(risk.get('raw_score') or 0):.1f}", "points before scaling to 0-100"))
 
     g, h = st.columns([5, 7])
     with g, st.container(border=True):
-        section("Risk gauge", f"threshold {threshold:.0f} · the bold tick", "speed")
-        st.plotly_chart(sh.gauge_figure(idx, threshold, band), width="stretch", config={"displayModeBar": False}, key="gauge")
-        st.markdown(f'<div style="text-align:center;margin-top:-.4rem">{pill(sh.BAND_LABELS.get(band, band), color)}</div>',
-                    unsafe_allow_html=True)
+        section("Risk level", "SentrAI acts on its own above the threshold", "speed")
+        st.markdown(sh.risk_level_html(idx, threshold, band, peak), unsafe_allow_html=True)
     with h, st.container(border=True):
-        section("Risk over time", "step line · bands green / amber / red / critical", "show_chart")
+        section("Risk over time", "dashed line is the threshold", "show_chart")
         if hist.empty:
             empty("No history yet. The core adds a point on every risk change.", "show_chart")
         else:
             st.plotly_chart(sh.history_figure(hist, threshold), width="stretch", config={"displayModeBar": False}, key="history")
 
     with st.container(border=True):
-        section("Risk accumulated", "points = base × confidence × criticality, plus the inaction penalty; "
-                "index = 100·(1−e^(−raw/60))", "calculate")
+        section("What adds to the score", "one row per incident", "calculate")
+        st.caption("Each incident adds base points × AI confidence × how critical the target is, plus 5 for every "
+                   "hour nobody responds. The 0-100 index is 100 × (1 − e^(−raw ÷ 60)), so it slows down near the top.")
         if inc_err:
             st.warning(f"Could not load incidents: {inc_err}")
         table(sh.risk_breakdown(incidents), "All quiet at the gate. No incidents.", column_config={
@@ -1420,7 +1399,7 @@ def page_review() -> None:
 
 @st.fragment(run_every=AUTO)
 def page_reports() -> None:
-    header("Reports", "one evidence report per contained incident · GET /reports/{id}")
+    header("Reports", "one evidence report for every contained incident")
     incidents, err = fetch("incidents", [])
     records, _, _ = audit_records()
     with_report = {str((r.get("data") or {}).get("incident")) for r in sh.records_of(records, "report_generated")}
@@ -1449,10 +1428,8 @@ def page_audit() -> None:
     agents, _ = fetch("agents", [])
     left, right = st.columns([7, 5])
     with left, st.container(border=True):
-        badge = (pill("Chain valid", sh.BAND_COLORS["green"]) if valid
-                 else pill("Chain broken", sh.BAND_COLORS["critical"]) if valid is False
-                 else pill("Chain unknown", sh.UNKNOWN_COLOR))
-        section(f"Agent activity &nbsp;{badge}", f"latest {len(records)} hash-chained records", "timeline")
+        state = "intact" if valid else "broken" if valid is False else "not checked"
+        section("Agent activity", f"latest {len(records)} records · chain {state}", "timeline")
         if err:
             st.warning(f"Could not load audit log: {err}")
         render_feed(sh.build_activity_feed(records, limit=60))
@@ -1484,7 +1461,7 @@ def render_feed(feed: list[dict]) -> None:
 
 
 def report_viewer(inc_id: str) -> None:
-    section("Evidence report", f"GET /reports/{inc_id}.md", "verified")
+    section("Evidence report", inc_id, "verified")
     md, err = safe(lambda: client.report_md(inc_id))
     if err or not md:
         empty("No report for this incident yet. Scribe writes one when autonomous containment fires.", "hourglass_empty")
