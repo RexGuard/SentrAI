@@ -134,7 +134,7 @@ def test_without_email_telegram_errors_pass_through():
 # ------------------------------------------------------------------ against the fake core
 
 def test_console_mode_also_emails_and_records_the_channel(fake_core):
-    requests.post(f"{fake_core}/demo/reset", timeout=3)
+    requests.post(f"{fake_core}/dev/reset", timeout=3)
     requests.post(f"{fake_core}/dev/trigger/brute_force", timeout=3)
     core = Core(fake_core)
     buf = io.StringIO()

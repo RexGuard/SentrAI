@@ -201,7 +201,7 @@ def test_approval_ttl_and_rollback_drive_the_firewall(fw_client):
         assert act["enforcement"] == "blocklist + firewall (iptables)" and act["verified"]
         assert runner.verbs("iptables") == ["-C", "-I", "-C"]
         assert IP in c.get("/blocklist").json()["ips"]
-        c.post("/demo/advance", json={"demo_hours": 2.1})  # TTL expiry
+        c.app.state.core.advance(2.1)  # TTL expiry
         assert runner.verbs("iptables") == ["-C", "-I", "-C", "-D"]
         assert c.get("/blocklist").json()["ips"] == []
         audit = c.get("/audit").json()["records"]

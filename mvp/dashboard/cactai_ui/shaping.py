@@ -572,7 +572,7 @@ def head_seq(records: list[dict]) -> int:
 def unseen_counts(records: list[dict], seen: dict[str, int]) -> dict[str, int]:
     """Alert records newer than the last audit seq each page was viewed at.
 
-    A demo reset restarts the chain, so a remembered seq beyond the head counts as 0.
+    A fresh audit chain starts again at 1, so a remembered seq beyond the head counts as 0.
     """
     head = head_seq(records)
     counts = {}
@@ -621,13 +621,13 @@ def risk_breakdown(incidents: Iterable[dict]) -> pd.DataFrame:
             "Criticality": "-" if inc.get("asset_criticality") is None else str(inc["asset_criticality"]),
             "Points": round(float(inc.get("points") or 0), 1),
             "Inaction penalty": round(float(inc.get("inaction_penalty") or 0), 1),
-            "Unaddressed (demo h)": round(float(inc.get("time_unaddressed_hours") or 0), 1),
+            "Unaddressed (h)": round(float(inc.get("time_unaddressed_hours") or 0), 1),
             "Counts now": incident_contribution(inc) if inc.get("status") in ACTIVE_STATUSES else 0.0,
         }
         for inc in incidents or []
     ]
     df = pd.DataFrame(rows, columns=["Incident", "Category", "Status", "Base", "Confidence", "Criticality",
-                                     "Points", "Inaction penalty", "Unaddressed (demo h)", "Counts now"])
+                                     "Points", "Inaction penalty", "Unaddressed (h)", "Counts now"])
     return df.sort_values("Counts now", ascending=False).reset_index(drop=True) if not df.empty else df
 
 

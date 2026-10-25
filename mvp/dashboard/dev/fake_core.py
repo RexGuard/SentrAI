@@ -9,7 +9,7 @@ Run:  .venv\\Scripts\\python dev\\fake_core.py   (serves http://127.0.0.1:8900)
 Env:  FAKE_CORE_PORT (8900, so it never collides with the real core on 8000), FAKE_DEMO_SPEED (120 = 30 real s per demo hour),
       FAKE_TTL_SECONDS (300 real s before containment expires),
       FAKE_AUTOPLAY (1), FAKE_THRESHOLD (80)
-Extra dev-only endpoint: POST /dev/trigger/{category}?src_ip=..&user=..
+Extra dev-only endpoints: POST /dev/trigger/{category}?src_ip=..&user=.., POST /dev/reset
 """
 from __future__ import annotations
 
@@ -637,12 +637,13 @@ def clear_chat():
     return {"ok": True}
 
 
-@app.post("/demo/reset")
+@app.post("/dev/reset")
 def reset():
+    """Test helper: start the fake scenario again from an empty state."""
     global S
     with lock:
         S = State()
-        audit("demo_reset", "Warden", summary="Demo state cleared")
+        audit("dev_reset", "Warden", summary="Fake core state cleared")
     return {"ok": True}
 
 

@@ -65,10 +65,6 @@ class ProtectionIn(BaseModel):
     reason: Optional[str] = None
 
 
-class AdvanceIn(BaseModel):
-    demo_hours: float = 1.0
-
-
 class ChatIn(BaseModel):
     operator: str
     message: str
@@ -480,15 +476,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def post_heartbeat(body: HeartbeatIn) -> dict[str, Any]:
         core.ingest([{"source": "heartbeat", "host": body.collector, "layer": "os", "raw": "heartbeat"}])
         return {"ok": True}
-
-    @app.post("/demo/reset")
-    def demo_reset() -> dict[str, Any]:
-        chat.clear()
-        return core.reset()
-
-    @app.post("/demo/advance")
-    def demo_advance(body: AdvanceIn) -> dict[str, Any]:
-        return core.advance(body.demo_hours)
 
     return app
 

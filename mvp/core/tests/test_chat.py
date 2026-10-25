@@ -77,9 +77,9 @@ def test_empty_message_is_rejected(client):
     assert client.post("/chat", json={"operator": "erick", "message": "   "}).status_code == 400
 
 
-def test_reset_clears_the_chat(client):
+def test_clear_empties_the_chat(client):
     client.post("/chat", json={"operator": "erick", "message": "status?"})
-    client.post("/demo/reset")
+    client.post("/chat/clear")
     assert client.get("/chat").json()["messages"] == []
 
 

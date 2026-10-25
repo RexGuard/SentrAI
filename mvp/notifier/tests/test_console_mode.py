@@ -7,7 +7,7 @@ from notifier import console_sender, main, process_pending
 
 
 def test_console_mode_delivers_and_marks(fake_core):
-    requests.post(f"{fake_core}/demo/reset", timeout=3)
+    requests.post(f"{fake_core}/dev/reset", timeout=3)
     requests.post(f"{fake_core}/dev/trigger/brute_force", timeout=3)
     core = Core(fake_core)
     assert len(core.pending()) == 1

@@ -96,7 +96,7 @@ low 5-10, medium 15-25, high 30-45, critical 50-70. Default mapping:
 brute_force=high(30), sql_injection=high(40), xss=medium(20), port_scan=medium(15), privilege_escalation=critical(60), data_exfiltration=critical(70), misconfiguration=medium(20), log_tampering=critical(55), malware=critical(65), prompt_injection=critical(60), benign=0.
 
 ### Risk index
-`risk_index = round(100 * (1 - exp(-raw/60)))`, raw = sum of open incident points (base × ai_confidence × asset_criticality) + inaction penalty (+5 per demo-hour unacknowledged, capped +30 per incident) − resolved incidents.
+`risk_index = round(100 * (1 - exp(-raw/60)))`, raw = sum of open incident points (base × ai_confidence × asset_criticality) + inaction penalty (+5 per hour unacknowledged, capped +30 per incident) − resolved incidents.
 Bands: green 0-29, amber 30-59, red 60-79, critical 80-100. Autonomous threshold default 80.
 
 ### Demo clock
@@ -129,13 +129,13 @@ that signature (HMAC of the path with the token), which fits that one report onl
 | GET | `/reports/{incident_id}` | evidence report JSON |
 | GET | `/reports/{incident_id}.md` | same report as Markdown |
 | GET | `/protection` | `{"protection": "on" \| "off", "monitor_only", "changed_at", "changed_by", "reason", "active_actions": [...ids]}` |
-| POST | `/protection` | `{"operator", "on": bool, "reason"}` (reason required to turn it off). Off = monitor-only: events are still collected, classified and scored, but no containment is applied, autonomous or approved (approve returns 409). Actions already in force stay until they expire or are rolled back. Kept across restarts and `/demo/reset` in `core/data/protection.json`; `CACTAI_MONITOR_ONLY=1/0` overrides it at start. Every switch is audited as `protection_changed`; each skipped containment as `containment_skipped`. `/risk` also carries `monitor_only`. |
+| POST | `/protection` | `{"operator", "on": bool, "reason"}` (reason required to turn it off). Off = monitor-only: events are still collected, classified and scored, but no containment is applied, autonomous or approved (approve returns 409). Actions already in force stay until they expire or are rolled back. Kept across restarts in `core/data/protection.json`; `CACTAI_MONITOR_ONLY=1/0` overrides it at start. Every switch is audited as `protection_changed`; each skipped containment as `containment_skipped`. `/risk` also carries `monitor_only`. |
 | GET | `/blocklist` | `{"ips": [...], "users": [...]}` active (non-expired) containment, polled by target app |
 | GET | `/notifications/pending` | alerts not yet delivered (polled by notifier) |
 | POST | `/notifications/{id}/delivered` | `{"channel","message_id"}` |
 | GET | `/chat` | `{"assistant", "model", "messages": [{"id","role": "operator" \| "assistant","text","ts","incident", ...}]}` |
 | POST | `/chat` | `{"operator", "message", "incident": id or null}` → the assistant message, with `"looked_at": [...]` and `"suggestions": [{"incident","decision","label","reason","status"}]`. Read-only: a suggestion changes nothing until the operator confirms it through the decision/rollback/permanent/ack endpoints above. Logged to the audit trail as `operator_chat`. |
-| POST | `/chat/clear` | empties the chat history (also cleared by `/demo/reset`) |
+| POST | `/chat/clear` | empties the chat history |
 | POST | `/chat/setup/interpret` | guided setup in the Chat page. `{"question", "options": [{"value","label"}], "answer"}` → `{"ai": bool, "choice": an option value or "", "reply"}`. The model maps an answer the scripted setup could not match to an option, or answers the user's question. Without an AI model `{"ai": false, "choice": "", "reply": ""}`. Never sent secrets; saves nothing, not audited. |
 | GET | `/ai` | the AI model Cyanide and the chat use now: `{"engine","planner","chat","online","provider","model","key_source","off_reason"}`; `off_reason` says why it is off (no key, missing model, package not installed...) |
 | POST | `/ai/reload` | reads the saved AI settings again and switches Cyanide and the chat to them (no restart); returns the same shape as `GET /ai` |
@@ -148,7 +148,6 @@ that signature (HMAC of the path with the token), which fits that one report onl
 | GET | `/log-sources` | extra log files the collector watches (approved from a process scan, or from Scout) |
 | GET | `/log-sources/pending` | Scout proposals waiting for an operator: `[{"id","name","path","layer","format","why","goal","proposed_at"}]` |
 | POST | `/log-sources/pending/{id}` | `{"operator", "approve": bool, "layer": optional, "reason": optional}`: approve adds the file to the collector list, reject drops it; audited as `log_source_added` / `log_source_rejected` |
-| POST | `/demo/reset` | clears state for a fresh take |
 
 ### Incident
 ```json

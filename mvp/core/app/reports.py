@@ -134,7 +134,8 @@ def build_report(core: "Saguaro", iid: str) -> dict[str, Any]:
             },
             "demo_clock": {
                 "demo_speed": s.demo_speed,
-                "note": f"Durations are in demo hours (DEMO_SPEED={s.demo_speed:g}: 1 real minute = {s.demo_speed / 60:g} demo hour(s)).",
+                "note": "Durations are in real hours." if s.demo_speed == 1 else
+                        f"Timers ran {s.demo_speed:g} times faster than real time, for testing (DEMO_SPEED={s.demo_speed:g}).",
             },
         }
         reported: set[str] = core.__dict__.setdefault("_reported", set())
@@ -185,7 +186,7 @@ def render_markdown(r: dict[str, Any]) -> str:
         "",
         "## Incident timeline",
         "",
-        "| Time | Demo time | Event | Points |",
+        "| Time | Elapsed | Event | Points |",
         "| --- | --- | --- | --- |",
     ]
     for t in r["timeline_of_inaction"]:
@@ -296,7 +297,7 @@ def render_pdf(r: dict[str, Any]) -> bytes:
     for t in r["timeline_of_inaction"]:
         pts = "" if t["points"] is None else (f"+{t['points']:g}" if t["points"] >= 0 else f"{t['points']:g}")
         rows.append([_ts(t["ts"]), t["demo_time"], t["event"], pts])
-    doc.table([Column("Time", 1.2), Column("Demo time", 0.7), Column("Event", 3.75), Column("Points", 0.5)], rows)
+    doc.table([Column("Time", 1.2), Column("Elapsed", 0.7), Column("Event", 3.75), Column("Points", 0.5)], rows)
 
     doc.heading("Alerts and acknowledgement")
     if r["non_repudiation"]["deliveries"]:

@@ -327,10 +327,6 @@ with st.sidebar:
     menu()
     st.markdown('<div class="side-sep"></div>', unsafe_allow_html=True)
     st.toggle(f"Auto-refresh every {REFRESH_SECONDS} s", key="auto_refresh")
-    if st.button("Reset demo", icon=":material/restart_alt:", width="stretch",
-                 help="POST /demo/reset: clears state for a fresh take"):
-        run_action("Demo reset", lambda: client.reset_demo(), rerun=False)
-        st.session_state.seen = {}
     if st.session_state.get("signed_in") and st.button("Sign out", icon=":material/logout:", width="stretch",
                                                        help=f"Signed in as {st.session_state.signed_in}"):
         st.session_state.signed_in = False
@@ -794,7 +790,7 @@ def ai_connection(ai: dict[str, str]) -> None:
     now, err = safe(client.ai_status)
     t1, t2 = st.columns([3, 1], vertical_alignment="center")
     if err:
-        t1.caption("Cyanide: core not running, so this can't show what it uses. Start the demo to test through it.")
+        t1.caption("Cyanide: core not running, so this can't show what it uses. Start SentrAI (run.sh or run.ps1) to test through it.")
     elif now.get("online"):
         t1.caption(f"Cyanide now: :green[:material/radio_button_checked: online] · {now.get('provider')} · {now.get('model')}"
                    f" · key from {now.get('key_source') or 'unknown'}")
@@ -939,7 +935,8 @@ def setup_conversation() -> None:
     answer = None
     options = sc.options()
     if options:
-        cols = st.columns(min(len(options), 4))
+        per_row = 2 if any(len(label) > 26 for _, label in options) else 4  # long labels are never cut off
+        cols = st.columns(min(len(options), per_row))
         for n, (value, label) in enumerate(options):
             if cols[n % len(cols)].button(label, key=f"setup_{len(sc.messages)}_{value}", width="stretch",
                                           type="primary" if n == 0 and sc.state == "review" else "secondary"):
@@ -977,11 +974,19 @@ def save_setup(sc: "setup_chat.SetupChat") -> None:
         return
     path = cfg.save(values)
     cfg.mark_setup_done("chat")
+    try:
+        watched = setup_chat.save_log_sources(sc, f"guided setup ({values.get('CACTAI_OPERATOR') or 'operator'})")
+    except OSError as e:
+        watched = []
+        sc.messages.append({"role": "assistant", "text": f"I couldn't add the log files to the collector's list ({e}). "
+                            "Add them on the Collector page instead."})
     for key in [k for k in st.session_state if str(k).startswith("cfg_")]:  # Configuration shows the new values
         del st.session_state[key]
     st.session_state.operator = values.get("CACTAI_OPERATOR") or st.session_state.operator
     ai, err = safe(client.ai_reload)
     note = f"Saved to {path}. "
+    if watched:
+        note += f"The collector now watches {', '.join(watched)}. "
     note += ("The core isn't running, so start SentrAI (run.ps1 or run.sh) and every part will use these settings."
              if err else f"I've switched to the new AI settings ({ai.get('chat')}). Restart SentrAI "
                          "(stop, then run) so the other parts pick up the rest.")
@@ -1338,7 +1343,7 @@ def page_responder() -> None:
     with k3:
         kpi("Locked accounts", str(len((blocklist or {}).get("users") or [])), "locked right now")
     with k4:
-        kpi("Actions taken", str(len(history)), f"expire after {os.environ.get('HOTPATCH_TTL_HOURS', '2')} demo h")
+        kpi("Actions taken", str(len(history)), f"expire after {os.environ.get('HOTPATCH_TTL_HOURS', '2')} h")
     st.write("")
 
     with st.container(border=True):
@@ -1386,7 +1391,7 @@ def page_review() -> None:
         kpi("Waiting on you", str(len(waiting)), f"{len(waiting) - len(active)} contained · {len(active)} open",
             sh.BAND_COLORS["amber"] if waiting else None)
     with k5:
-        kpi("Inaction penalty", f"+{penalty:.0f}", "+5 per demo-hour unacknowledged",
+        kpi("Inaction penalty", f"+{penalty:.0f}", "+5 per hour unacknowledged",
             sh.BAND_COLORS["amber"] if penalty else None)
     st.write("")
 
