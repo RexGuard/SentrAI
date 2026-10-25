@@ -51,6 +51,7 @@ Tests:
 | `BRUTE_FORCE_COUNT` / `BRUTE_FORCE_WINDOW_S` | `5` / `60` | Brute-force rule: this many failed logins from the same IP within this many seconds. |
 | `EXPORT_ROWS_THRESHOLD` | `100` | `/export` with at least this many rows counts as data exfiltration. |
 | `SSH_BRUTE_FORCE_COUNT` / `SSH_BRUTE_FORCE_WINDOW_S` | `5` / `600` | SSH brute force: this many failed guesses (not log lines) from one IP within this many seconds. |
+| `SLOW_BRUTE_FORCE_COUNT` / `SSH_SLOW_BRUTE_FORCE_COUNT` / `SLOW_BRUTE_FORCE_WINDOW_S` | `20` / `10` / `86400` | Slow brute force: failed logins from one IP across web, Windows and SSH within this many seconds (SSH uses the lower count). `0` turns it off. |
 | `WEB_SCAN_4XX_COUNT` / `WEB_SCAN_WINDOW_S` | `10` / `120` | Web path scanning: this many 4xx replies to one IP within this many seconds (crawlers such as Googlebot, `favicon.ico`, `robots.txt` and ACME challenges do not count). |
 | `AUTO_CLOSE_QUIET_MIN` | `60` | Resolve an open scan or brute-force incident after this many real minutes with no new event and no containment in force. `0` turns it off. |
 | `AUTO_CLOSE_CATEGORIES` | `port_scan,brute_force` | Which categories auto-close. Other incidents always wait for an operator. |

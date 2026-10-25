@@ -32,7 +32,16 @@ SQLI = [
     re.compile(r";\s*(drop|delete|insert|update)\s+\w+", re.I),
     re.compile(r"\b(sleep|benchmark|pg_sleep)\s*\(\s*\d+", re.I),
     re.compile(r"\binformation_schema\b", re.I),
+    re.compile(r"\b(and|or)\s+(\d+)\s*=\s*\2\b", re.I),  # 1 AND 1=1 (numeric tautology, no quote)
+    re.compile(r"\w['\"]\s*#\s*(['\"]|$)"),  # admin' #  (quote closed, rest commented out with MySQL #)
+    re.compile(r"\b(extractvalue|updatexml)\s*\(|\bconcat\s*\(\s*0x[0-9a-f]+|@@version\b", re.I),  # error-based
 ]
+SQL_COMMENT = re.compile(r"/\*.*?\*/")
+
+
+def sql_normal(text: str) -> str:
+    """Text as the database would read it: inline /**/ comments become spaces, runs of spaces one space."""
+    return re.sub(r"\s+", " ", SQL_COMMENT.sub(" ", text))
 XSS = [
     re.compile(r"<\s*script", re.I),
     re.compile(r"javascript\s*:", re.I),
@@ -57,16 +66,27 @@ PRIV_ESC = [
     re.compile(r"spawn(ed|s)?\s+(a\s+)?(shell|/bin/(ba)?sh|cmd\.exe|powershell)", re.I),
     re.compile(r"\b(www-data|apache|nginx|w3wp)\b.*\b(/bin/(ba)?sh|cmd\.exe)", re.I),
     re.compile(r"\bnew\s+suid\b", re.I),
+    # A service account trying sudo, or anyone trying sudo straight into a shell, without the right.
+    re.compile(r"sudo:\s+(www-data|apache|nginx|nobody|w3wp|tomcat|postgres|mysql|daemon)\s*:.*\bNOT\s+in\s+sudoers\b"
+               r"|\bNOT\s+in\s+sudoers\b.*COMMAND=\S*/(ba|z|da)?sh\b", re.I),
 ]
 PORT_SCAN = [
     re.compile(r"\bport\s*scan", re.I),
     re.compile(r"\b(nmap|masscan)\b", re.I),
 ]
+DISTINCT_PORTS = re.compile(r"\b(\d+)\s+distinct\s+ports\b", re.I)
+PORT_LIST = re.compile(r"\b(?:closed|blocked|refused|filtered)\s+ports?\s+((?:\d{1,5}\s*,\s*){4,}\d{1,5})\b", re.I)
 MISCONFIG = [
     re.compile(r"\bpublic-read(-write)?\b", re.I),
     re.compile(r"0\.0\.0\.0/0.*\b(22|3389|3306|5432)\b", re.I),
     re.compile(r"\bdefault\s+password\b", re.I),
+    re.compile(r"\baccess\s+level\s+changed\s+to\s+public\b|\banonymous\s+(read|write|access)\b"
+               r"|\bpublic\s+access\s+(enabled|allowed|granted)\b", re.I),
 ]
+# The same words, but the change closes access instead of opening it: a fix, not a misconfiguration.
+NARROWED = re.compile(
+    r"\b(ingress|allow)\s+rule\s+(removed|deleted|revoked)\b|\brule\s+(removed|deleted|revoked):?\s+(ingress|allow)\b|\bRevoke\w*Ingress\b|\bacl\s*=\s*private\b"
+    r"|\baccess\s+level\s+changed\s+to\s+private\b|\bblock\s*public\s*access\s+(enabled|turned\s+on)\b", re.I)
 FAILED_LOGIN = [
     re.compile(r"/login\S*\s+401\b", re.I),
     re.compile(r"\b(failed\s+login|login\s+failed|authentication\s+failure|failed\s+password)\b", re.I),
@@ -87,8 +107,14 @@ SPINE_KINDS: dict[str, tuple[str, str]] = {
 EXPORT = re.compile(r"/export\b", re.I)
 REFUSED = re.compile(r"/export\S*\s+403\b", re.I)
 ROWS = re.compile(r"\brows?\s*[=:]\s*(\d+)", re.I)
+# A whole sensitive table read in one go (no WHERE, no LIMIT): a dump whatever the row count, since a
+# small school's members table can be smaller than the bulk-export threshold.
+FULL_TABLE = re.compile(r"\bselect\s+\*\s+from\s+[`\"]?(?:\w+\.)?(?P<table>\w+)[`\"]?(?P<rest>[^'\"]*)", re.I)
+SENSITIVE_TABLES = {"members", "users", "students", "customers", "accounts", "staff", "employees", "payments",
+                    "orders", "patients", "parents", "credentials", "passwords", "cards", "invoices"}
+CLOUD_BULK = re.compile(r"\bGetObject\s*x\s*(?P<n>\d+)\b|\b(GetObject|download\w*|egress)\b.*\((?P<gb>\d+(?:\.\d+)?)\s*GB\)", re.I)
 BULK_DB = re.compile(r"\b(copy\s+\w+\s+to|select\s+\*\s+from\s+members)\b", re.I)
-BENIGN_FAST = re.compile(r"^(GET|HEAD)\s+/\S*\s+[23]\d\d\b|^POST\s+/login\S*\s+(200|302)\b", re.I)
+BENIGN_FAST = re.compile(r"^(GET|HEAD)\s+/[^\n]*?\s[23]\d\d(\s|$)|^POST\s+/login\S*\s+(200|302)\b", re.I)
 BLOCKED = re.compile(r"\s403\b.*\bblocked\b|\bblocked\b.*\s403\b", re.I)
 
 # --- real public-server traffic (nginx access lines, sshd) --------------------------------
@@ -188,6 +214,11 @@ def log_wipe(text: str) -> str | None:
     return None
 
 
+# The lab portal writes each failed sign-in twice: "POST /login 401" (access log) and "login fail" (auth log).
+# The access line is counted; the auth line joins the same burst without counting again.
+AUTH_COMPANION = re.compile(r"^login\s+fail\b", re.I)
+COMPANION_SOURCES = ("flask_auth",)
+
 LOGIN_PATH = re.compile(r"^/(login|signin|sign-in|user/login|users/sign_in|admin/login|auth/login|wp-login\.php|xmlrpc\.php)\b", re.I)
 
 
@@ -214,7 +245,8 @@ def _window_add(dq: deque[tuple[float, str]], ts: float, eid: str, window_s: flo
 class RulesEngine:
     def __init__(self, brute_force_count: int = 5, window_s: float = 60.0, export_rows_threshold: int = 100,
                  ssh_count: int = 5, ssh_window_s: float = 600.0,
-                 scan_4xx_count: int = 10, scan_window_s: float = 120.0, ssh_probe_count: int = 3) -> None:
+                 scan_4xx_count: int = 10, scan_window_s: float = 120.0, ssh_probe_count: int = 3,
+                 slow_count: int = 20, slow_window_s: float = 86400.0, ssh_slow_count: int = 10) -> None:
         self.brute_force_count = brute_force_count
         self.window_s = window_s
         self.export_rows_threshold = export_rows_threshold
@@ -223,18 +255,25 @@ class RulesEngine:
         self.scan_4xx_count = scan_4xx_count
         self.scan_window_s = scan_window_s
         self.ssh_probe_count = ssh_probe_count
+        self.slow_count = slow_count
+        self.slow_window_s = slow_window_s
+        self.ssh_slow_count = ssh_slow_count  # a public SSH port: nobody legitimate fails this often in a day
         self._failed: dict[str, deque[tuple[float, str]]] = defaultdict(deque)
         self._ssh_failed: dict[str, deque[tuple[float, str]]] = defaultdict(deque)
         self._ssh_attempts: dict[str, dict[str, str]] = defaultdict(dict)  # ip -> {"pid/user": state}
         self._ssh_probes: dict[str, deque[tuple[float, str]]] = defaultdict(deque)
         self._http_4xx: dict[str, deque[tuple[float, str]]] = defaultdict(deque)
+        self._companions: dict[str, deque[tuple[float, str]]] = defaultdict(deque)
+        # Every counted guess from one IP, any source; capped so a day-long flood cannot grow without limit.
+        self._slow: dict[str, deque[tuple[float, str]]] = defaultdict(lambda: deque(maxlen=1000))
         self._lock = threading.Lock()
         self._checks = 0
 
     def _prune(self, ts: float) -> None:
         """Forget sources that have been quiet for longer than their window (a server runs for months)."""
         for store, window in ((self._failed, self.window_s), (self._ssh_failed, self.ssh_window_s),
-                              (self._ssh_probes, self.ssh_window_s), (self._http_4xx, self.scan_window_s)):
+                              (self._ssh_probes, self.ssh_window_s), (self._http_4xx, self.scan_window_s),
+                              (self._companions, self.window_s), (self._slow, self.slow_window_s)):
             for key in [k for k, dq in store.items() if not dq or ts - dq[-1][0] > window]:
                 del store[key]
                 if store is self._ssh_failed:
@@ -242,7 +281,8 @@ class RulesEngine:
 
     def reset(self) -> None:
         with self._lock:
-            for d in (self._failed, self._ssh_failed, self._ssh_attempts, self._ssh_probes, self._http_4xx):
+            for d in (self._failed, self._ssh_failed, self._ssh_attempts, self._ssh_probes, self._http_4xx,
+                      self._companions, self._slow):
                 d.clear()
 
     def check(self, event: dict[str, Any], now: float) -> RuleHit | None:
@@ -279,8 +319,9 @@ class RulesEngine:
             for rx in PROMPT_INJECTION:
                 if rx.search(text):
                     return RuleHit("prompt_injection", f"Prompt injection aimed at the AI classifier: /{rx.pattern[:80]}/")
+        sql = sql_normal(text)
         for rx in SQLI:
-            if rx.search(text):
+            if rx.search(text) or rx.search(sql):
                 return RuleHit("sql_injection", f"SQL injection signature matched: /{rx.pattern}/")
         for rx in XSS:
             if rx.search(text):
@@ -292,6 +333,13 @@ class RulesEngine:
             hit = self._http(event, http, text, now)
             if hit is not None:
                 return hit
+        if http is None and (m := FULL_TABLE.search(sql)) and m.group("table").lower() in SENSITIVE_TABLES \
+                and not re.search(r"\b(where|limit|top|fetch\s+first)\b", m.group("rest"), re.I):
+            rows = ROWS.search(text)
+            detail = f", {rows.group(1)} rows" if rows else ""
+            return RuleHit("data_exfiltration", f"whole sensitive table read in one query: {m.group('table')}{detail}")
+        if (m := CLOUD_BULK.search(text)) and (int(m.group("n") or 0) >= 500 or float(m.group("gb") or 0) >= 1.0):
+            return RuleHit("data_exfiltration", f"mass cloud download ({m.group(0).strip()})")
         if EXPORT.search(text) or BULK_DB.search(text):
             m = ROWS.search(text)
             rows = int(m.group(1)) if m else None
@@ -302,9 +350,17 @@ class RulesEngine:
         for rx in PORT_SCAN:
             if rx.search(text):
                 return RuleHit("port_scan", "port-scan signature matched")
+        if (m := DISTINCT_PORTS.search(text)) and int(m.group(1)) >= 20:
+            return RuleHit("port_scan", f"one source tried {m.group(1)} different ports")
+        if (m := PORT_LIST.search(text)) and (n := len(set(re.findall(r"\d+", m.group(1))))) >= 5:
+            return RuleHit("port_scan", f"connections to {n} different ports")
+        if NARROWED.search(text):
+            return RuleHit("benign", "configuration change that closes access (a fix, not an exposure)")
         for rx in MISCONFIG:
             if rx.search(text):
                 return RuleHit("misconfiguration", "insecure configuration signature matched")
+        if source in COMPANION_SOURCES and AUTH_COMPANION.search(text.strip()):
+            return self._failed_login(event, now, companion=True)
         if any(rx.search(text) for rx in FAILED_LOGIN):
             return self._failed_login(event, now)
         if http is not None:
@@ -315,20 +371,51 @@ class RulesEngine:
             return RuleHit("benign", "routine database query (no injection signature, below bulk-export threshold)")
         return None
 
-    def _failed_login(self, event: dict[str, Any], now: float, src_ip: str | None = None) -> RuleHit:
+    def _failed_login(self, event: dict[str, Any], now: float, src_ip: str | None = None,
+                      companion: bool = False) -> RuleHit:
         key = src_ip or event.get("src_ip") or event.get("user") or event.get("host") or "unknown"
         ts = _event_ts(event, now)
         eid = str(event.get("event_id"))
         with self._lock:
-            ids = _window_add(self._failed[key], ts, eid, self.window_s)
+            if companion:
+                _window_add(self._companions[key], ts, eid, self.window_s)
+                dq = self._failed[key]
+                while dq and ts - dq[0][0] > self.window_s:
+                    dq.popleft()
+                ids = [e for _, e in dq]
+            else:
+                ids = _window_add(self._failed[key], ts, eid, self.window_s)
             count = len(ids)
+            extra = [e for t, e in self._companions[key] if ts - t <= self.window_s]
+            slow = self._slow_add(key, ts, eid, count=not companion)
         if count >= self.brute_force_count:
             return RuleHit(
                 "brute_force",
                 f"{count} failed logins from {key} within {int(self.window_s)} s (threshold {self.brute_force_count})",
-                related_event_ids=ids,
+                related_event_ids=list(dict.fromkeys([*ids, *extra, eid])),
             )
-        return RuleHit("benign", f"failed login {count}/{self.brute_force_count} from {key}; below brute-force threshold")
+        if slow is not None:
+            return slow
+        what = "second log line of" if companion else ""
+        return RuleHit("benign", f"{what} failed login {count}/{self.brute_force_count} from {key}; "
+                                 f"below brute-force threshold".strip())
+
+    def _slow_add(self, key: str, ts: float, eid: str, count: bool = True, threshold: int | None = None) -> RuleHit | None:
+        """Adds a guess to the long window (caller holds the lock). A hit once one IP passes slow_count."""
+        dq = self._slow[key]
+        if count:
+            ids = _window_add(dq, ts, eid, self.slow_window_s)
+        else:
+            while dq and ts - dq[0][0] > self.slow_window_s:
+                dq.popleft()
+            ids = [e for _, e in dq]
+        threshold = self.slow_count if threshold is None else threshold
+        if threshold and len(ids) >= threshold:
+            hours = self.slow_window_s / 3600
+            return RuleHit("brute_force", f"slow brute force: {len(ids)} failed logins from {key} within "
+                                          f"{hours:g} h (threshold {threshold})",
+                           related_event_ids=list(dict.fromkeys([*ids[-50:], eid])))
+        return None
 
     # ------------------------------------------------------------------ web access lines
     def _http(self, event: dict[str, Any], http: HttpLine, text: str, now: float) -> RuleHit | None:
@@ -408,6 +495,7 @@ class RulesEngine:
                     seen.setdefault(key, "counted")
                 else:  # pam lines always accompany a Failed password line
                     count_it = False
+                slow = self._slow_add(ip, ts, eid, count=count_it, threshold=self.ssh_slow_count)
                 if count_it:
                     ids = _window_add(dq, ts, eid, self.ssh_window_s)
                 else:
@@ -423,6 +511,8 @@ class RulesEngine:
                 return RuleHit("brute_force", f"{count} failed SSH login attempts from {ip} within "
                                               f"{int(self.ssh_window_s)} s (threshold {self.ssh_count}); last user "
                                               f"'{ssh.user or '?'}'", related_event_ids=ids)
+            if slow is not None:
+                return slow
             return RuleHit("benign", f"failed SSH login {count}/{self.ssh_count} from {ip}; below brute-force threshold")
         if ssh.event == "accepted" and ip:
             with self._lock:

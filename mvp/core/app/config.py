@@ -73,6 +73,10 @@ class Settings:
     # Real public-server traffic: SSH guesses are slower than the demo's web brute force.
     ssh_brute_force_count: int = field(default_factory=lambda: _i("SSH_BRUTE_FORCE_COUNT", 5))
     ssh_brute_force_window_s: float = field(default_factory=lambda: _f("SSH_BRUTE_FORCE_WINDOW_S", 600.0))
+    # Slow brute force: failed logins from one IP (web, Windows and SSH together) over a long window.
+    slow_brute_force_count: int = field(default_factory=lambda: _i("SLOW_BRUTE_FORCE_COUNT", 20))
+    slow_brute_force_window_s: float = field(default_factory=lambda: _f("SLOW_BRUTE_FORCE_WINDOW_S", 86400.0))
+    ssh_slow_brute_force_count: int = field(default_factory=lambda: _i("SSH_SLOW_BRUTE_FORCE_COUNT", 10))
     web_scan_4xx_count: int = field(default_factory=lambda: _i("WEB_SCAN_4XX_COUNT", 10))
     web_scan_window_s: float = field(default_factory=lambda: _f("WEB_SCAN_WINDOW_S", 120.0))
     # Close scan / brute-force incidents that have had no new event for this many real minutes (0 = never).
