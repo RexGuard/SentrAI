@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from .audit import AuditLog, canonical
 from .classifier import Classification, ClassifierChain
@@ -24,9 +24,6 @@ from . import protect
 from .responders import Responders
 from .risk import severity_rank
 from .rules import TRIPWIRE_REASONS
-
-if TYPE_CHECKING:
-    from .config import Settings
 
 # category -> ordered playbook steps: (action type, incident field or literal target)
 PLAYBOOKS: dict[str, list[tuple[str, str]]] = {

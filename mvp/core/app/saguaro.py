@@ -43,7 +43,7 @@ from .config import Settings, sign
 from .integrity import IntegrityGuard
 from .jev_client import JevClient
 from .netlogs import enrich
-from .responders import BlocklistResponder, Responders, SimulatedResponder, WebhookResponder
+from .responders import Responders, SimulatedResponder, WebhookResponder
 from .risk import SEVERITY, band, band_rank, inaction_penalty, risk_index
 from .rules import TRIPWIRE_REASONS, RulesEngine
 from .state import StateStore

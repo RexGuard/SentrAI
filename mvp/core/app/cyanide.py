@@ -28,7 +28,6 @@ import dataclasses
 import json
 import logging
 import os
-import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path

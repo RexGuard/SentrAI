@@ -151,7 +151,7 @@ def _email_html(f: dict, rows: list[tuple[str, str]], act: str, note: str, dashb
             f"letter-spacing:.8px;padding:3px 9px;border-radius:10px'>{e(f['band'].upper())}</span>"
             "<table role='presentation' width='100%' cellpadding='0' cellspacing='0' style='margin-top:8px'><tr>"
             + (f"<td width='{filled}%' style='background:{band};height:8px;border-radius:4px 0 0 4px'></td>" if filled else "")
-            + (f"<td style='background:#e4e9f1;height:8px'></td>" if filled < 100 else "")
+            + ("<td style='background:#e4e9f1;height:8px'></td>" if filled < 100 else "")
             + "</tr></table></td></tr></table>")
     body_rows = "".join(
         f"<tr><td style='{font};padding:9px 14px 9px 0;color:#626f86;font-size:13px;white-space:nowrap;"
