@@ -145,6 +145,10 @@ that signature (HMAC of the path with the token), which fits that one report onl
 | POST | `/threats/{id}/quarantine` | `{"operator", "reason": optional}`: moves that file (by finding id, only if unchanged since the scan) into quarantine; audited as `file_quarantined` |
 | GET | `/quarantine` | files in quarantine: `[{"id","name","original","sha256","finding","operator","at"}]` |
 | POST | `/quarantine/{id}/restore` | `{"operator"}`: puts the file back; audited as `file_restored` |
+| GET | `/backups` | backup settings and every backup kept: `{"enabled","every_hours","keep","folders","include_sentrai","copy_to","stored_in","next_due","overdue","last_error","backups":[{"id","created","by","reason","folders","files","bytes","sha256","verified","copy"}]}` |
+| POST | `/backups` | `{"operator"}`: back up now; returns the backup (`ok` false with `error` when it failed, which also queues a `backup_failed` notice). Audited as `backup_made` / `backup_failed` |
+| POST | `/backups/{id}/verify` | `{"operator"}`: checks the archive against its note, the `backup_made` audit record and every file's SHA-256; returns `{"ok","files_checked","problems"}`; audited as `backup_verified` |
+| POST | `/backups/{id}/restore` | `{"operator", "in_place": false, "confirm": "", "target": optional}`: checks the backup, then unpacks it into a new folder (default) or, with `in_place` and `confirm` set to the id, over the original folders after a safety backup. 409 if the check fails or confirmation is missing. Returns `{"ok","files_restored","failed","restored_to","safety_backup","note"}`; audited as `backup_restored` and sent as a `backup_restored` notice |
 | GET | `/log-sources` | extra log files the collector watches (approved from a process scan, or from Scout) |
 | GET | `/log-sources/pending` | Scout proposals waiting for an operator: `[{"id","name","path","layer","format","why","goal","proposed_at"}]` |
 | POST | `/log-sources/pending/{id}` | `{"operator", "approve": bool, "layer": optional, "reason": optional}`: approve adds the file to the collector list, reject drops it; audited as `log_source_added` / `log_source_rejected` |

@@ -195,6 +195,20 @@ The process scan finds logs; the threat scan (`app/threatscan.py`, `app/threats.
 
 Audit records: `threat_scan`, `file_quarantined`, `file_restored`.
 
+## Backups (putting a system back)
+
+`app/backups.py` copies chosen folders, plus SentrAI's own data, on a schedule, so a defaced site or a wiped game server can be put back.
+
+- **What.** The folders in `"backup": {"paths": ["/var/www"], "every_hours": 24, "keep": 7}` in the system profile, or `CACTAI_BACKUP_PATHS`. SentrAI's own settings file, data folder (protection switch, signing key, threat state) and a consistent snapshot of the audit database are always included (`"include_sentrai": false` turns that off). `"exclude": ["*.log", "cache/*"]` skips files; `max_total_mb` (default 5120) refuses a backup that would fill the disk.
+- **Where.** One `.tar.gz` per backup in `backups/` next to the database (`CACTAI_BACKUP_DIR`), readable by SentrAI's account only, with a note beside it. `"copy_to": "/mnt/usb/sentrai"` (or `CACTAI_BACKUP_COPY_TO`) puts a second copy on another drive or share. The newest `keep` are kept.
+- **Proof.** Inside each archive, `manifest.json` lists every file with its SHA-256. The archive's own SHA-256 goes into the audit trail (`backup_made`), so **Check** (`POST /backups/{id}/verify`) catches a backup that was edited or swapped later.
+- **Alerts.** A failed backup (or a failed second copy) sends a `backup_failed` notice to the on-duty contact; a failed scheduled one is retried after an hour, not every minute.
+- **Restore needs a person**, and checks the backup first. By default files go into `restores/<id>-<time>/` next to the database and nothing live changes. Putting them back in place needs `in_place` and the backup id typed as `confirm`, and first takes a `before_restore` safety backup of the folders it will overwrite, so the restore can itself be undone. SentrAI's own data is never written over while the core runs; it is unpacked with a note on how to swap it in. The chat can show backups and offer a **Back up now** button, but cannot restore.
+- **On a hardened server** (`deploy/install.sh`), the core runs as its own account and may only write under `/var/lib/cactai/core`. Files it cannot read are skipped and listed on the backup. To restore in place there, add the folders to `ReadWritePaths=` in `cactai-core.service`, or restore into a new folder and copy back by hand.
+- **With the central panel** (planned agents on each machine), each agent runs this same code on its own machine and reports its backups to the panel.
+
+Audit records: `backup_made`, `backup_failed`, `backup_verified`, `backup_restored`, `backup_pruned`.
+
 ## Endpoints
 
 These follow the contract:
@@ -218,6 +232,7 @@ Additions that do not change the contract:
 - `POST /heartbeat {"collector": "web-01"}`: collector heartbeat for Watchdog. An event with `"source": "heartbeat"` does the same.
 - `POST /system/scan {"operator": "erick"}` and `GET /system/scan` (latest): read-only process scan with suggested log files.
 - `POST /threats/scan {"operator": "erick"}`, `GET /threats`, `POST /threats/{id}/quarantine`, `GET /quarantine`, `POST /quarantine/{id}/restore`: threat scan and quarantine.
+- `GET /backups`, `POST /backups`, `POST /backups/{id}/verify`, `POST /backups/{id}/restore`: backups and restore.
 - `GET /log-sources` and `POST /log-sources {"operator", "file_id", "layer"?}`: extra log files the collector watches; a file is added only by its id from the latest scan.
 
 ### Response shapes the contract leaves open

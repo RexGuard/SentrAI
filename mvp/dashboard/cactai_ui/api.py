@@ -8,7 +8,8 @@ import requests
 DEFAULT_TIMEOUT = 2.5
 CHAT_TIMEOUT = 90.0  # the orchestrator may call its AI model several times per answer
 AI_TEST_TIMEOUT = 45.0  # one real request to the AI provider
-SCAN_TIMEOUT = 40.0  # PowerShell/CIM process listing can take a few seconds on Windows
+SCAN_TIMEOUT = 40.0
+BACKUP_TIMEOUT = 600.0  # a backup or restore copies whole folders  # PowerShell/CIM process listing can take a few seconds on Windows
 
 
 class CoreError(Exception):
@@ -173,6 +174,30 @@ class CoreClient:
 
     def restore(self, quarantine_id: str, operator: str) -> dict:
         return self.post_json(f"/quarantine/{quarantine_id}/restore", {"operator": operator})
+
+    def backups(self) -> dict:
+        """Backup settings, the next one due and every backup kept (newest first)."""
+        return self.get_json("/backups")
+
+    def backup_now(self, operator: str) -> dict:
+        out = self.post_json("/backups", {"operator": operator}, timeout=BACKUP_TIMEOUT)
+        if not out.get("ok"):
+            raise CoreError(out.get("error") or out.get("note") or "backup failed")
+        return out
+
+    def verify_backup(self, backup_id: str, operator: str) -> dict:
+        out = self.post_json(f"/backups/{backup_id}/verify", {"operator": operator}, timeout=BACKUP_TIMEOUT)
+        if not out.get("ok"):
+            raise CoreError("; ".join(out.get("problems") or ["check failed"]))
+        return out
+
+    def restore_backup(self, backup_id: str, operator: str, in_place: bool = False, confirm: str = "") -> dict:
+        out = self.post_json(f"/backups/{backup_id}/restore",
+                             {"operator": operator, "in_place": in_place, "confirm": confirm}, timeout=BACKUP_TIMEOUT)
+        if not out.get("ok"):
+            raise CoreError(f"{out.get('files_restored', 0)} files restored, {len(out.get('failed') or [])} failed: "
+                            + "; ".join((out.get("failed") or [])[:3]))
+        return out
 
     def log_sources(self) -> list[dict]:
         """Extra log files the collector watches (approved from a scan, or by Scout)."""
