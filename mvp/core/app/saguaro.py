@@ -14,6 +14,7 @@ import threading
 import time
 import uuid
 from collections import deque
+from collections.abc import Callable
 from typing import Any
 
 from .agents import (
@@ -72,6 +73,99 @@ BUTTONS_AFTER_ACTION = [
     {"label": "Make Permanent", "action": "permanent"},
     {"label": "Acknowledge", "action": "ack"},
 ]
+
+
+def _http_probe(url: str, timeout_s: float = 3.0) -> dict[str, Any]:
+    """GET the health URL: ok when it answers below 500."""
+    import httpx
+
+    started = time.monotonic()
+    try:
+        status = httpx.get(url, timeout=timeout_s, follow_redirects=True).status_code
+    except Exception as exc:
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"[:200]}
+    return {"ok": status < 500, "status": status, "ms": round((time.monotonic() - started) * 1000)}
+
+
+def _succeeded(ev: dict[str, Any]) -> bool | None:
+    """Did this request or login get through? None when the line does not say."""
+    p = ev.get("parsed") or {}
+    status = p.get("status")
+    if isinstance(status, int):
+        return status < 400
+    if p.get("ssh_event") == "accepted" or p.get("outcome") == "success":
+        return True
+    if p.get("outcome") == "failure" or p.get("ssh_event") in ("failed_auth", "invalid_user", "max_auth_exceeded"):
+        return False
+    return None
+
+
+def _between(events: Any, start: float, end: float) -> list[dict[str, Any]]:
+    return [e for e in events if start < e.get("_rx", 0.0) <= end and e.get("source") != "heartbeat"]
+
+
+def _matches(a: dict[str, Any], ev: dict[str, Any]) -> bool:
+    if a["type"] == "block_ip":
+        return str(ev.get("src_ip") or "") == str(a["target"])
+    if a["type"] == "lock_user":
+        return str(ev.get("user") or "").lower() == str(a["target"]).lower()
+    return False
+
+
+def _did_it_work(a: dict[str, Any], events: Any, start: float, end: float) -> dict[str, Any]:
+    """Blocks and locks: after the action, did the target still get anything through?"""
+    if a["type"] not in ("block_ip", "lock_user"):
+        return {"worked": None, "worked_note": f"SentrAI cannot see a {a['type'].replace('_', ' ')} take effect "
+                                               f"itself; check it in the system that carries it out."}
+    after = [e for e in _between(events, start, end) if _matches(a, e)]
+    got_in = [e for e in after if _succeeded(e)]
+    who = "requests from" if a["type"] == "block_ip" else "logins by"
+    if got_in:
+        return {"worked": False, "seen_after": len(after), "got_through": len(got_in),
+                "worked_note": f"{len(got_in)} of {len(after)} {who} {a['target']} still got through after it started."}
+    if after:
+        return {"worked": True, "seen_after": len(after), "got_through": 0,
+                "worked_note": f"{len(after)} later attempt(s) from {a['target']}, none got through."}
+    return {"worked": True, "seen_after": 0, "got_through": 0,
+            "worked_note": f"Nothing from {a['target']} has reached the logs since it started."}
+
+
+def _disruption(a: dict[str, Any], events: Any, start: float, end: float, health: dict[str, Any] | None) -> dict[str, Any]:
+    """Compare everyone else's traffic in the same length of time before and after the action, and
+    probe the health page: fewer successful requests or more server errors may mean collateral damage."""
+    span = max(end - start, 1.0)
+    others_before = [e for e in _between(events, start - span, start) if not _matches(a, e)]
+    others_after = [e for e in _between(events, start, end) if not _matches(a, e)]
+    ok_before = sum(1 for e in others_before if _succeeded(e))
+    ok_after = sum(1 for e in others_after if _succeeded(e))
+
+    def errors(evs: list[dict[str, Any]]) -> tuple[int, int]:
+        statuses = [(e.get("parsed") or {}).get("status") for e in evs]
+        statuses = [x for x in statuses if isinstance(x, int)]
+        return sum(1 for x in statuses if x >= 500), len(statuses)
+
+    (err_b, web_b), (err_a, web_a) = errors(others_before), errors(others_after)
+    problems: list[str] = []
+    if ok_before >= 20 and ok_after < ok_before * 0.3:
+        problems.append(f"successful requests from everyone else fell from {ok_before} to {ok_after}")
+    if web_a >= 5 and err_a / web_a - (err_b / web_b if web_b else 0.0) >= 0.2:
+        problems.append(f"server errors rose to {err_a} of {web_a} requests (from {err_b} of {web_b})")
+    before = a.get("health_before")
+    if health is not None and not health.get("ok"):
+        if before is None or before.get("ok"):
+            problems.append(f"the health page stopped answering ({health.get('status') or health.get('error')})")
+    out: dict[str, Any] = {"others_ok_before": ok_before, "others_ok_after": ok_after,
+                           "server_errors_before": err_b, "server_errors_after": err_a}
+    if health is not None:
+        out["health_after"] = health
+    if problems:
+        return {**out, "disruption": True, "disruption_note": "Possible disruption: " + "; ".join(problems) + "."}
+    if not others_before and not others_after and health is None:
+        return {**out, "disruption": None, "disruption_note": "No other traffic to compare and no health page set."}
+    note = "Other users' traffic and server errors look the same as before."
+    if health is not None:
+        note += " Health page " + ("answers." if health.get("ok") else "was already failing before the action.")
+    return {**out, "disruption": False, "disruption_note": note}
 
 
 class ConflictError(Exception):
@@ -169,7 +263,8 @@ class Saguaro(Agent):
         self.areole_linux = AreoleLinux(self.classifier, self.responders)
         self.areole_win = AreoleWin(self.classifier, self.responders)
         self.needle = Needle(s.needle_min_confidence, self.responders.allowlist, s.protected_ips, s.protected_users,
-                             s.protected_nets, s.contain_min_severity, s.contain_min_points)
+                             s.protected_nets, s.contain_min_severity, s.contain_min_points,
+                             auto_actions=s.auto_actions, max_auto_per_hour=s.max_auto_actions_per_hour)
         self.watchdog = Watchdog(s.watchdog_silence_s)
         self.scribe = Scribe(self.audit, self.clock)
         self.integrity = IntegrityGuard(self.audit, s.integrity_check_s, s.clock_jump_s)
@@ -228,6 +323,7 @@ class Saguaro(Agent):
             "risk_scope": s.risk_scope,
             "sla_hours": s.sla_hours,
             "ttl_hours": s.ttl_hours,
+            "limits": self.limits(),
             "on_duty": s.on_duty,
             "jev": self.jev.status,
             "block_ip_enforcement": self.blocklist_responder.enforcement,
@@ -281,7 +377,7 @@ class Saguaro(Agent):
                     tampering.append(broken)
                 if self.remote is not None:
                     self.remote.add_line(raw_ev)  # off the box as it arrives
-                self.events[ev["event_id"]] = {**ev, "category": None}
+                self.events[ev["event_id"]] = {**ev, "category": None, "_rx": now}
                 self._host_seen[str(ev["host"])] = now
                 recovered = self.watchdog.observe(str(ev["host"]), now, heartbeat)
                 if recovered:
@@ -555,6 +651,7 @@ class Saguaro(Agent):
 
     def _evaluate(self, now: float) -> None:
         self._expire_actions(now)
+        self._check_actions(now)
         self._auto_close_quiet(now)
         r = self._compute(now)
         self._sla_reminders(now, r)
@@ -834,10 +931,46 @@ class Saguaro(Agent):
         return _host(self.incidents.get(a["incident"]) or {})  # actions saved before they named a host
 
     def _end_action(self, a: dict[str, Any], status: str) -> None:
-        """Every way an action stops (expired, rolled back) goes through here, so the responder undoes it."""
-        if a["status"] in ("active", "permanent"):  # still in force: undo it
-            self.responders.revert(a)
+        """Every way an action stops (expired, rolled back) goes through here, so the responder undoes it
+        and whether the undo worked is recorded (a failed undo is retried by _check_actions)."""
+        in_force = a["status"] in ("active", "permanent")
         a["status"] = status
+        if in_force:
+            a["ended_at"] = self.clock.iso(self.clock.now())
+            a["_ended_ts"] = self.clock.now()
+            self._undo(a, attempt=1)
+
+    def _undo(self, a: dict[str, Any], attempt: int) -> None:
+        try:
+            ok = self.responders.revert(a)
+            error = None if ok is not False else (a.get("webhook_revert") or a.get("firewall_revert") or {}).get(
+                "error", "the responder could not confirm the action was removed")
+        except Exception as exc:  # a broken responder must not stop the rest of the rollback
+            ok, error = False, f"{type(exc).__name__}: {exc}"[:200]
+        now = self.clock.now()
+        a["undo"] = {"ok": ok, "at": self.clock.iso(now), "attempts": attempt, **({"error": error} if error else {})}
+        a["_undo_next"] = time.monotonic() + self.settings.undo_retry_s if ok is False else None
+        self.scribe.record(self.name, "action_undone" if ok is not False else "action_undo_failed", {
+            "incident": a["incident"], "action_id": a["action_id"], "type": a["type"], "target": a["target"],
+            "ended_as": a["status"], "ok": ok, "attempt": attempt, **({"error": error} if error else {})})
+        inc = self.incidents.get(a["incident"])
+        if inc is None:
+            return
+        what = f"{a['type']} {a['target']} ({a['action_id']})"
+        if ok is False:
+            last = attempt > self.settings.undo_retries
+            self._timeline(inc, now, "undo_failed", f"Undo of {what} failed (attempt {attempt}): {error}"
+                                                    + ("; a person must remove it by hand" if last else "; retrying"))
+            if attempt == 1 or last:
+                self._notify(now, "undo_failed", inc["id"], [self.settings.on_duty, self.settings.team_lead],
+                             f"{inc['id']}: undo of {a['type']} {a['target']} failed",
+                             f"SentrAI tried to remove {what} but could not confirm it is gone: {error}.\n"
+                             + ("It gave up after several tries. Please remove it by hand and check the target "
+                                "can connect again." if last else
+                                f"It will retry {self.settings.undo_retries} more time(s). Check the target can connect."),
+                             [])
+        elif attempt > 1:
+            self._timeline(inc, now, "undo_ok", f"Undo of {what} succeeded on attempt {attempt}")
 
     def _state_for_snapshot(self, now: float) -> dict[str, Any]:
         bl = self.blocklist()
@@ -855,7 +988,7 @@ class Saguaro(Agent):
         self.scribe.record(executor.name, "snapshot", {"incident": inc["id"], "snapshot_hash": snap, "state": pre})
         # 2. Review (two-key rule)
         if mode == "autonomous":
-            review = self.needle.review(inc, proposals, risk_idx, s.threshold)
+            review = self.needle.review(inc, proposals, risk_idx, s.threshold, self._auto_last_hour(now))
             self.scribe.record(self.needle.name, "needle_review", {
                 "incident": inc["id"], "approved": review.approved, "reasoning": review.reasoning,
                 "proposals": [p.__dict__ for p in proposals], "denied": review.denied})
@@ -883,7 +1016,8 @@ class Saguaro(Agent):
         for p in approved:
             aid = f"act-{self._next_action:04d}"
             self._next_action += 1
-            a = executor.apply(p, inc["id"], aid, mode, approver, now, self.clock, s.ttl_hours, snap)
+            a = executor.apply(p, inc["id"], aid, mode, approver, now, self.clock, s.ttl_for(p.type), snap,
+                               s.check_after_min / 60.0)
             a["host"] = inc.get("host")  # the machine whose agent puts this block in place
             self.actions.append(a)
             inc["actions"].append(a)
@@ -898,22 +1032,27 @@ class Saguaro(Agent):
                 self._end_action(a, "rolled_back")
                 self.scribe.record(executor.name, "auto_rollback", {"incident": inc["id"], "action_id": a["action_id"],
                                                                     "snapshot_hash": snap, "why": "verification failed"})
+        if s.health_url:
+            before = self._probe_health()
+            for a in new_actions:
+                a["health_before"] = before
         inc["status"] = "contained"
         inc["contained_at"] = self.clock.iso(now)
         summary = "; ".join(f"{a['type']} {a['target']}" for a in new_actions)
+        ttl = "/".join(f"{t:g}" for t in sorted({a["ttl_hours"] for a in new_actions}))
         self._timeline(inc, now, "action", f"{'Autonomous override' if mode == 'autonomous' else 'Operator-approved hotpatch'}"
-                                           f" ({approver}): {summary}; TTL {s.ttl_hours:g} h; snapshot {snap[:12]}", -inc["points"])
+                                           f" ({approver}): {summary}; TTL {ttl} h; snapshot {snap[:12]}", -inc["points"])
         # 5. Notify
         if mode == "autonomous":
             self._notify(now, "autonomous_action", inc["id"], [s.on_duty, s.it_manager, s.cxo],
                          f"{inc['id']}: autonomous containment engaged",
                          f"\U0001f335 SentrAI autonomous override on {inc['id']} (risk {risk_idx}/100 >= {s.threshold}, "
-                         f"no acknowledgement). Approved by Countersign. Applied for {s.ttl_hours:g} h: {summary}.\n"
+                         f"no acknowledgement). Approved by Countersign. Applied for {ttl} h: {summary}.\n"
                          f"Evidence report: {s.public_url}/reports/{inc['id']}.md", BUTTONS_AFTER_ACTION)
         else:
             self._notify(now, "operator_action", inc["id"], [s.on_duty],
                          f"{inc['id']}: hotpatch applied by {approver}",
-                         f"{approver} approved the hotpatch for {inc['id']}. Applied for {s.ttl_hours:g} h: {summary}.",
+                         f"{approver} approved the hotpatch for {inc['id']}. Applied for {ttl} h: {summary}.",
                          BUTTONS_AFTER_ACTION)
         return True
 
@@ -934,6 +1073,87 @@ class Saguaro(Agent):
                                      f"{inc['id']}: temporary hotpatch expired",
                                      f"The temporary hotpatch for {inc['id']} expired after {a['ttl_hours']:g} h. "
                                      f"Make it permanent or leave it expired.", BUTTONS_AFTER_ACTION)
+
+    # ------------------------------------------------- business limits / checks
+    def limits(self) -> dict[str, Any]:
+        """The business limits on protective actions, as in force now."""
+        s = self.settings
+        return {
+            "auto_actions": sorted(s.auto_actions & self.responders.allowlist),
+            "needs_a_person": sorted(self.responders.allowlist - s.auto_actions),
+            "ttl_hours": {t: s.ttl_for(t) for t in sorted(self.responders.allowlist)},
+            "max_ttl_hours": s.max_ttl_hours,
+            "max_auto_actions_per_hour": s.max_auto_actions_per_hour,
+            "auto_actions_last_hour": self._auto_last_hour(self.clock.now()),
+            "permanent_needs_a_person": True,
+            "check_after_min": s.check_after_min,
+            "health_url_set": bool(s.health_url),
+        }
+
+    def _auto_last_hour(self, now: float) -> int:
+        """Automatic actions started in the last timer hour (the MAX_AUTO_ACTIONS_PER_HOUR budget)."""
+        since = now - self.clock.real_seconds(1.0)
+        return sum(1 for a in self.actions if a["mode"] == "autonomous" and a.get("_applied_ts", 0.0) > since)
+
+    health_probe: Callable[[str], dict[str, Any]] = staticmethod(lambda url: _http_probe(url))
+
+    def _probe_health(self) -> dict[str, Any] | None:
+        if not self.settings.health_url:
+            return None
+        try:
+            return self.health_probe(self.settings.health_url)
+        except Exception as exc:
+            return {"ok": False, "error": f"{type(exc).__name__}: {exc}"[:200]}
+
+    def _check_actions(self, now: float) -> None:
+        """Retries failed undos, and runs the after-action check on each action once it is due:
+        did it work, and did it disrupt anything."""
+        for a in self.actions:
+            u = a.get("undo")
+            if u and u.get("ok") is False and u["attempts"] <= self.settings.undo_retries \
+                    and time.monotonic() >= (a.get("_undo_next") or 0.0):
+                self._undo(a, u["attempts"] + 1)
+            if a.get("check") is not None or a.get("_check_ts") is None:
+                continue
+            ended = a["status"] not in ("active", "permanent")
+            if a["_check_ts"] > now and not ended:
+                continue
+            self._after_action_check(a, now)
+
+    def _after_action_check(self, a: dict[str, Any], now: float) -> None:
+        start = a.get("_applied_ts", a["_check_ts"])
+        end = min(now, a.get("_ended_ts", now), max(a["_check_ts"], start))
+        if a.get("verified") is False:
+            check = {"worked": False, "worked_note": "never went in force: the responder could not verify it, "
+                                                     "so it was rolled back at once", "disruption": None}
+        else:
+            check = {**_did_it_work(a, self.events.values(), start, end),
+                     **_disruption(a, self.events.values(), start, end, self._probe_health())}
+        check["at"] = self.clock.iso(now)
+        check["window_min"] = round(self.clock.demo_hours(start, max(end, start)) * 60, 1)
+        if end < a["_check_ts"] and check.get("worked") is True:
+            check["worked_note"] += f" (it ended after {check['window_min']:g} min, before the full check window)"
+        a["check"] = check
+        self.scribe.record(self.name, "action_checked", {"incident": a["incident"], "action_id": a["action_id"],
+                                                         "type": a["type"], "target": a["target"], **check})
+        inc = self.incidents.get(a["incident"])
+        if inc is None:
+            return
+        verdict = {True: "worked", False: "did NOT work", None: "could not be checked"}[check["worked"]]
+        harm = {True: "possible disruption", False: "no disruption seen", None: "disruption not measurable"}[check["disruption"]]
+        self._timeline(inc, now, "action_checked", f"After-action check of {a['type']} {a['target']} "
+                                                   f"({a['action_id']}): {verdict}; {harm}. {check['worked_note']}"
+                                                   + (f" {check['disruption_note']}" if check.get("disruption_note") else ""))
+        if check["worked"] is False or check["disruption"] is True:
+            buttons = BUTTONS_AFTER_ACTION if a["status"] in ("active", "permanent") else []
+            self._notify(now, "action_check", inc["id"], [self.settings.on_duty],
+                         f"{inc['id']}: {a['type']} {a['target']} {verdict}" + (", possible disruption"
+                                                                                if check["disruption"] else ""),
+                         f"After-action check of {a['action_id']} ({a['type']} {a['target']}):\n"
+                         f"Did it work? {check['worked_note']}\n"
+                         f"Side effects? {check.get('disruption_note') or harm}\n"
+                         "Roll it back if it is hurting real users, or check the enforcement path if it did not work.",
+                         buttons)
 
     def _auto_close_quiet(self, now: float) -> None:
         """Resolve scan / brute-force incidents that went quiet, so a public server's background noise
@@ -1013,6 +1233,11 @@ class Saguaro(Agent):
             in_force = [a for a in self.actions if a["status"] in ("active", "permanent")]
             for a in in_force:
                 self.responders.apply(a)
+            # Undos that had failed: track them again, so the retry in _check_actions can take them out.
+            for a in self.actions:
+                if (a.get("undo") or {}).get("ok") is False:
+                    self.responders.apply(dict(a))
+                    a["_undo_next"] = 0.0
             now = self.clock.now()
             expiring = [a["action_id"] for a in in_force if a["status"] == "active" and a["_expires_ts"] <= now]
             self.scribe.record(self.name, "state_restored", {

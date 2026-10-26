@@ -227,6 +227,27 @@ def suggestion_state(inc: dict | None, decision: str) -> tuple[bool, str]:
     return True, ""
 
 
+def check_text(a: dict) -> str:
+    """The after-action check in a few words: did it work, did it hurt anything."""
+    chk = a.get("check")
+    if not isinstance(chk, dict):
+        return "pending" if a.get("status") in ("active", "permanent") else "-"
+    worked = {True: "worked", False: "did not work", None: "can't see"}.get(chk.get("worked"), "-")
+    if chk.get("disruption") is True:
+        return f"{worked}, possible disruption"
+    return worked + (", no harm seen" if chk.get("disruption") is False else "")
+
+
+def undo_text(a: dict) -> str:
+    """Whether taking the action out worked."""
+    undo = a.get("undo")
+    if not isinstance(undo, dict):
+        return "-"
+    if undo.get("ok") is False:
+        return f"FAILED ({undo.get('attempts', 1)} tries)"
+    return "done" if undo.get("ok") else "unconfirmed"
+
+
 def action_rows(inc: dict) -> pd.DataFrame:
     rows = [
         {
@@ -237,13 +258,16 @@ def action_rows(inc: dict) -> pd.DataFrame:
             "Approved by": agent_label(a.get("approved_by", "-")),
             "Status": a.get("status", "-"),
             "Expires": short_time(a.get("expires_at")),
+            "Checked": check_text(a),
+            "Undo": undo_text(a),
             "Snapshot": short_hash(a.get("snapshot_hash")),
         }
         for a in (inc.get("actions") or [])
         if isinstance(a, dict)
     ]
     return pd.DataFrame(
-        rows, columns=["Action", "Type", "Target", "Mode", "Approved by", "Status", "Expires", "Snapshot"]
+        rows, columns=["Action", "Type", "Target", "Mode", "Approved by", "Status", "Expires", "Checked", "Undo",
+                       "Snapshot"]
     )
 
 
@@ -558,12 +582,12 @@ def agent_rows(agents: Iterable[dict]) -> pd.DataFrame:
 
 
 def join_commands(panel_url: str, code: str, name: str | None = None) -> dict[str, str]:
-    """What to paste on the new machine, for Linux (installer) and for Windows or a laptop (from a checkout)."""
+    """What to paste on the new machine, from a SentrAI checkout: both install the agent as a service."""
     url = panel_url.rstrip("/")
-    named = f" --name {name}" if name else ""
     return {
-        "linux": f"sudo ./mvp/deploy/install-agent.sh --panel {url} --code {code}{named}",
-        "windows": f"cd mvp\\lab\npython -m agent join --panel {url} --code {code}{named}\npython -m agent run",
+        "linux": f"sudo ./mvp/deploy/install-agent.sh --panel {url} --code {code}" + (f" --name {name}" if name else ""),
+        "windows": (f"powershell -ExecutionPolicy Bypass -File .\\mvp\\deploy\\install-agent.ps1 -Panel {url} -Code {code}"
+                    + (f" -Name {name}" if name else "")),
     }
 
 

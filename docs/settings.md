@@ -93,6 +93,23 @@ go step by step:
 
 On a server these go in `/etc/cactai/cactai.env`; restart `cactai.target` afterwards.
 
+## Backups
+
+SentrAI backs up its own settings and records every 24 hours from the start. To back up your own
+folders too (a website, a game server), list them in `CACTAI_BACKUP_PATHS`, for example
+`CACTAI_BACKUP_PATHS=/var/www:/srv/minecraft` (on Windows use `;` between folders).
+
+| Setting | Default | What it does |
+|---|---|---|
+| `CACTAI_BACKUP_EVERY_HOURS` | `24` | hours between backups; `0` turns the schedule off |
+| `CACTAI_BACKUP_KEEP` | `7` | how many backups to keep |
+| `CACTAI_BACKUP_COPY_TO` | none | a second place for each backup, like a USB drive or network share |
+
+The dashboard's **Backups** page shows the last and next backup, has **Back up now** and **Check**,
+and restores a backup. A restore goes into a new folder unless you choose "back where they came
+from" and type the backup's name to confirm; SentrAI then saves the current files first, so you can
+undo it.
+
 ## All variables
 
 The full list, with every default, is in the

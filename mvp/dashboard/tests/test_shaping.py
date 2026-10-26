@@ -66,6 +66,16 @@ def test_default_incident_and_actions():
     assert len(sh.action_rows(INCIDENTS[0])) == 2
 
 
+def test_check_and_undo_text():
+    assert sh.check_text({"status": "active"}) == "pending"
+    assert sh.check_text({"check": {"worked": True, "disruption": False}}) == "worked, no harm seen"
+    assert sh.check_text({"check": {"worked": False, "disruption": True}}) == "did not work, possible disruption"
+    assert sh.check_text({"check": {"worked": None, "disruption": None}}) == "can't see"
+    assert sh.undo_text({}) == "-"
+    assert sh.undo_text({"undo": {"ok": True}}) == "done"
+    assert sh.undo_text({"undo": {"ok": False, "attempts": 3}}) == "FAILED (3 tries)"
+
+
 def test_containment_rows():
     df = sh.build_containment_rows({"ips": ["203.0.113.45"], "users": ["admin"]}, INCIDENTS)
     kinds = list(df["Kind"])
@@ -159,9 +169,9 @@ def test_agent_rows_and_join_commands():
     cmds = sh.join_commands("https://panel.example.com:8000/", "K7QM-2XPA-9RTD", "web-01")
     assert cmds["linux"] == ("sudo ./mvp/deploy/install-agent.sh --panel https://panel.example.com:8000 "
                              "--code K7QM-2XPA-9RTD --name web-01")
-    assert cmds["windows"].splitlines() == ["cd mvp\\lab",
-                                            "python -m agent join --panel https://panel.example.com:8000 --code K7QM-2XPA-9RTD --name web-01",
-                                            "python -m agent run"]
+    assert cmds["windows"] == ("powershell -ExecutionPolicy Bypass -File .\\mvp\\deploy\\install-agent.ps1 "
+                               "-Panel https://panel.example.com:8000 -Code K7QM-2XPA-9RTD -Name web-01")
+    assert "-Name" not in sh.join_commands("https://p.example.com", "K7QM-2XPA-9RTD")["windows"]
 
 
 def test_services_on_a_machine():

@@ -32,19 +32,20 @@ sudo ./deploy/install.sh --protect 203.0.113.10 --admin-email you@example.com
 it. Add it once for every address you manage the server from. Never skip your own address: it is
 what keeps SentrAI from locking you out.
 
-From a terminal, the installer then asks four questions. Press **Enter** to keep the answer in
+From a terminal, the installer then asks a few questions. Press **Enter** to keep the answer in
 brackets:
 
 ```text
   Dashboard port [8501]:
   Allowed IPs [203.0.113.10]:
-  Dashboard sign-in email [you@example.com]:
-  Dashboard password (Enter to make one for you):
+  Owner email:
+  Owner password, at least 12 characters:
 ```
 
-A password you type needs at least 8 characters and is asked twice. When it finishes, the
-installer prints the dashboard address and your sign-in. If it made the password for you, this
-is the only time you will see it, so save it in a password manager.
+The Owner questions come only on a new machine. The password is asked twice. Press Enter at
+*Owner email* to skip them: the installer then prints a one-time setup code, and you create the
+Owner in the browser instead. When it finishes, it prints the dashboard address and either the
+Owner's email or the setup code.
 
 ## Open the dashboard to your computer
 
@@ -55,8 +56,8 @@ https://<your server's address>:8501
 ```
 
 The dashboard uses a certificate the installer made itself, so the browser warns once. Accept it,
-then sign in with the email and password from the install. See [Signing in](sign-in.html) for
-everything after that.
+then create the Owner with the setup code, or sign in with the Owner email and password from the
+install, and add an authenticator app. See [Signing in](sign-in.html) for inviting your team.
 
 Only the addresses in **Allowed IPs** can reach the port. When your own IP changes, run the
 installer again with the new one; `--dashboard-allow` replaces the list:
@@ -106,8 +107,8 @@ Its suggestions appear under **Collector**, then **Scout proposals**, where you 
 | `--protect IP` | never block this IP, and open the dashboard to it. Repeat for more addresses |
 | `--dashboard-allow IP` | open the dashboard to this IP or network only. Repeat for more; replaces the list |
 | `--dashboard-local` | keep the dashboard on the server, for an SSH tunnel only |
-| `--admin-email EMAIL` | the dashboard sign-in email |
-| `--reset-password` | make a new dashboard password and print it at the end |
+| `--admin-email EMAIL` | the dashboard Owner's email, on a first install |
+| `--reset-password` | make a new password for that account and print it at the end |
 | `--dashboard-port N` / `--core-port N` | when 8501 or 8000 is already taken |
 | `--no-questions` (or `-y`) | never ask; use the options given and the defaults. Scripts get this anyway |
 | `--no-notifier` | leave Telegram and email alerts off |
@@ -141,8 +142,8 @@ The services run as the `cactai` account, each locked down to what its job needs
 systemctl status 'cactai-*'                # are they running?
 journalctl -u cactai-core -f               # follow one service's output
 sudo systemctl restart cactai.target       # restart all four
-sudo cactai-admin                          # show the dashboard sign-in email
-sudo cactai-admin --reset                  # new dashboard password, printed once
+sudo cactai-admin                          # who may sign in; a setup code on a new machine
+sudo cactai-admin --reset                  # the first Owner: new password, printed once
 ```
 
 ## Upgrade

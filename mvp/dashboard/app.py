@@ -24,9 +24,10 @@ import streamlit as st
 from cactai_ui import shaping as sh
 from cactai_ui import signin
 from cactai_ui import theme as th
-from cactai_ui.api import CoreClient, CoreError
+from cactai_ui.api import READ_ONLY_MESSAGE, CoreClient, CoreError
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
+import cactai_accounts as acc  # noqa: E402
 import cactai_config as cfg  # noqa: E402
 import setup_chat  # noqa: E402
 
@@ -82,7 +83,7 @@ if _apply_streamlit_theme():
     st.rerun()
 
 
-# ------------------------------------------------------------------ login
+# ------------------------------------------------------------------ sign-in
 
 def _client_ip() -> str:
     try:
@@ -163,24 +164,251 @@ if "report" in st.query_params:
     st.stop()
 
 
-def check_login(email: str, password: str, account: dict[str, str]) -> bool:
-    if not hmac.compare_digest(email.strip().lower().encode(), account["email"].strip().lower().encode()):
-        cfg.check_password(password, cfg.hash_password("x"))  # same work either way, so timing tells nothing
-        return False
-    if account["plain"]:
-        return hmac.compare_digest(password.encode(), account["plain"].encode())
-    return cfg.check_password(password, account["hash"])
+def _base_url() -> str:
+    """This console's address as the browser sees it, for invite links."""
+    try:
+        url = st.context.url
+    except Exception:  # noqa: BLE001 - no browser behind this run
+        url = None
+    return (url or "http://127.0.0.1:8501").split("?")[0].rstrip("/")
 
 
-def login() -> None:
-    """Ask for the dashboard email and password (setup wizard section 6) once per browser session.
+def _when(ts: float | None) -> str:
+    return datetime.fromtimestamp(ts).strftime("%d %b %Y, %H:%M") if ts else "never"
 
-    run.sh / run.ps1 and deploy/install.sh make the sign-in on first run (python cactai_config.py admin).
-    CACTAI_DASHBOARD_LOGIN=off skips it, for local testing only. The core API needs its token either way.
+
+def _qr_svg(text: str) -> str:
+    """The authenticator's QR code as inline SVG ("" when segno is not installed: the key is shown anyway)."""
+    try:
+        import segno
+    except ImportError:
+        return ""
+    return segno.make(text, error="m").svg_inline(scale=5, border=2, dark="#000000", light="#ffffff")
+
+
+def _wait_too_long(ip: str) -> bool:
+    """Wrong passwords, codes and setup codes all count: 5 from one address, then a wait."""
+    wait = signin.wait_seconds(ip)
+    if wait:
+        st.error(f"Too many wrong tries. Wait {int(wait) // 60 + 1} min and try again.")
+    return bool(wait)
+
+
+def _signed_in(email: str, note: str = "") -> None:
+    ip = _client_ip()
+    before, where = acc.record_sign_in(email, ip)
+    signin.succeeded(ip)
+    for key in ("pending", "totp_secret", "recovery_codes"):
+        st.session_state.pop(key, None)
+    st.session_state.signed_in = email
+    st.session_state.flash = (note or f"Last sign-in: {_when(before)}" + (f" from {where}" if where else ""), "🔐")
+    st.query_params.clear()
+    st.rerun()
+
+
+def _new_password_fields() -> tuple[str, str]:
+    p1 = st.text_input(f"Password (at least {acc.MIN_PASSWORD} characters)", type="password",
+                       autocomplete="new-password")
+    p2 = st.text_input("Type it again", type="password", autocomplete="new-password")
+    return p1, p2
+
+
+def _register_owner(box) -> None:
+    """A new machine's first screen: the setup code makes this person the Owner."""
+    with box.form("register"):
+        st.markdown(BRAND, unsafe_allow_html=True)
+        st.markdown("#### Create your Owner account")
+        st.caption("This machine has no accounts yet. Type the setup code that `python cactai_config.py admin` "
+                   "(on a server: `sudo cactai-admin`) printed. It works once.")
+        code = st.text_input("Setup code", placeholder="ABCD-EFGH-JKLM")
+        name = st.text_input("Your name", autocomplete="name")
+        email = st.text_input("Email", autocomplete="username")
+        p1, p2 = _new_password_fields()
+        if st.form_submit_button("Create account", type="primary", width="stretch"):
+            ip = _client_ip()
+            if _wait_too_long(ip):
+                return
+            if p1 != p2:
+                st.error("The two passwords differ.")
+                return
+            try:
+                owner = acc.register_owner(code, name, email, p1)
+            except acc.AccountError as e:
+                signin.failed(ip)
+                st.error(str(e))
+                return
+            st.session_state.pending = owner["email"]
+            st.rerun()
+
+
+def _accept_invite(box, code: str, invite: dict) -> None:
+    with box.form("invite"):
+        st.markdown(BRAND, unsafe_allow_html=True)
+        verb = "Set a new password" if invite["reset"] else "Join SentrAI"
+        st.markdown(f"#### {verb}")
+        st.caption(f"For **{invite['email']}** as **{acc.ROLE_LABEL[invite['role']]}**. "
+                   "You'll add an authenticator app next.")
+        name = st.text_input("Your name", autocomplete="name") if not invite["reset"] else ""
+        p1, p2 = _new_password_fields()
+        if st.form_submit_button("Continue", type="primary", width="stretch"):
+            if p1 != p2:
+                st.error("The two passwords differ.")
+                return
+            try:
+                person = acc.accept_invite(code, name, p1)
+            except acc.AccountError as e:
+                st.error(str(e))
+                return
+            st.query_params.clear()
+            st.session_state.pending = person["email"]
+            st.rerun()
+
+
+def _password_step(box) -> None:
+    with box.form("login"):
+        st.markdown(BRAND, unsafe_allow_html=True)
+        email = st.text_input("Email", autocomplete="username")
+        typed = st.text_input("Password", type="password", autocomplete="current-password")
+        if st.form_submit_button("Sign in", type="primary", width="stretch"):
+            ip = _client_ip()
+            if _wait_too_long(ip):
+                return
+            person = acc.check_password(email, typed)
+            if not person:
+                signin.failed(ip)
+                st.error("Wrong email or password.")
+                return
+            st.session_state.pending = person["email"]
+            st.rerun()
+
+
+def _add_authenticator(box, email: str) -> None:
+    """Right after the password, for an account without one: scan, then type a code to prove it works."""
+    if "totp_secret" not in st.session_state:
+        st.session_state.totp_secret = acc.start_authenticator(email)
+    secret = st.session_state.totp_secret
+    with box.form("enrol"):
+        st.markdown(BRAND, unsafe_allow_html=True)
+        st.markdown("#### Add an authenticator app")
+        st.caption("Every sign-in asks for a 6-digit code from your phone. Scan this with Google Authenticator, "
+                   "Microsoft Authenticator, 1Password or any app that takes TOTP codes.")
+        qr = _qr_svg(acc.totp_uri(email, secret))
+        if qr:
+            st.markdown(f'<div style="text-align:center;margin:.4rem 0">{qr}</div>', unsafe_allow_html=True)
+        st.caption("Can't scan? Type this key into the app:")
+        st.code(" ".join(secret[i:i + 4] for i in range(0, len(secret), 4)), language=None)
+        code = st.text_input("6-digit code from the app", max_chars=8, autocomplete="one-time-code")
+        if st.form_submit_button("Confirm", type="primary", width="stretch"):
+            ip = _client_ip()
+            if _wait_too_long(ip):
+                return
+            try:
+                st.session_state.recovery_codes = acc.confirm_authenticator(email, code)
+            except acc.AccountError as e:
+                signin.failed(ip)
+                st.error(str(e))
+                return
+            st.session_state.pop("totp_secret", None)
+            st.rerun()
+
+
+def _show_recovery_codes(box, email: str) -> None:
+    with box.container(border=True):
+        st.markdown(BRAND, unsafe_allow_html=True)
+        st.markdown("#### Save your recovery codes")
+        st.caption("If you lose your phone, each of these signs you in once instead of an app code. "
+                   "They are shown only now.")
+        codes = st.session_state.recovery_codes
+        st.code("\n".join(codes), language=None)
+        st.download_button("Download", "\n".join(codes) + "\n", file_name="sentrai-recovery-codes.txt",
+                           icon=":material/download:", width="stretch")
+        if st.button("I saved them", type="primary", width="stretch"):
+            _signed_in(email)
+
+
+def _code_step(box, email: str) -> None:
+    with box.form("code"):
+        st.markdown(BRAND, unsafe_allow_html=True)
+        st.caption(f"Signing in as {email}")
+        code = st.text_input("6-digit code from your authenticator app, or a recovery code",
+                             autocomplete="one-time-code")
+        ok = st.form_submit_button("Verify", type="primary", width="stretch")
+        back = st.form_submit_button("Use another account", width="stretch")
+    if back:
+        st.session_state.pop("pending", None)
+        st.rerun()
+    if ok:
+        ip = _client_ip()
+        if _wait_too_long(ip):
+            return
+        used = acc.check_second_factor(email, code)
+        if not used:
+            signin.failed(ip)
+            st.error("That code doesn't match. Type the newest code from the app.")
+            return
+        note = ""
+        if used == "recovery":
+            note = (f"Recovery code used; {acc.recovery_left(email)} left. To move to a new phone, "
+                    "ask an Owner or Admin to reset your sign-in on the Team page.")
+        _signed_in(email, note)
+
+
+def login() -> dict | None:
+    """Who is using the console: their account ({email, name, role, ...}), or None with the sign-in off.
+
+    A new machine opens on the register screen (setup code from `cactai_config.py admin`); an invite
+    link (?invite=...) opens the join screen; everyone else signs in with email, password and an
+    authenticator code. CACTAI_DASHBOARD_LOGIN=off skips all of it, for local testing and recordings.
     """
-    if not cfg.login_required() or st.session_state.get("signed_in"):
-        return
-    account = cfg.dashboard_login()
+    if not cfg.login_required():
+        return None
+    if st.session_state.get("signed_in"):
+        me = acc.get(st.session_state.signed_in)
+        if me and me["authenticator"]:
+            return me
+        st.session_state.signed_in = False  # removed, or reset by an Admin, since this browser signed in
+    _, box, _ = st.columns([1, 1.2, 1])
+    pending = st.session_state.get("pending")
+    invite_code = st.query_params.get("invite", "")
+    if pending and acc.get(pending):
+        if "recovery_codes" in st.session_state:
+            _show_recovery_codes(box, pending)
+        elif not acc.get(pending)["authenticator"]:
+            _add_authenticator(box, pending)
+        else:
+            _code_step(box, pending)
+    elif invite_code and (invite := acc.invite_for(invite_code)):
+        _accept_invite(box, invite_code, invite)
+    elif not acc.has_accounts():
+        if acc.setup_code_waiting():
+            _register_owner(box)
+        else:
+            with box.container(border=True):
+                st.markdown(BRAND, unsafe_allow_html=True)
+                st.warning("No one can sign in yet. On this machine, run `python cactai_config.py admin` "
+                           "(on a server: `sudo cactai-admin`) for a one-time setup code, then reload this page.")
+    else:
+        if invite_code:
+            box.error("This invite link is wrong or has expired. Ask whoever invited you for a new one.")
+        _password_step(box)
+    st.stop()
+
+
+ME = login()
+ROLE = ME["role"] if ME else "owner"  # sign-in off: a local demo console, so everything is allowed
+
+
+def can(permission: str) -> bool:
+    return acc.can(ROLE, permission)
+
+
+def locked(permission: str = "act") -> bool:
+    """True when the signed-in role may not do this: the button shows greyed out with the reason."""
+    return not can(permission)
+
+
+def why_locked(permission: str = "act", otherwise: str | None = None) -> str | None:
+    return READ_ONLY_MESSAGE if locked(permission) else otherwise
     _, mid, _ = st.columns([1, 1.2, 1])
     brand = BRAND
     if not account["hash"] and not account["plain"]:
@@ -297,10 +525,12 @@ def show_flash() -> None:
 
 st.session_state.setdefault("core_url", DEFAULT_CORE)
 st.session_state.setdefault("operator", DEFAULT_OPERATOR)
+if ME:  # approvals and scans are recorded under the account that made them
+    st.session_state.operator = ME["name"]
 st.session_state.setdefault("auto_refresh", True)
 st.session_state.setdefault("seen", {})
 TOKEN = cfg.api_token()
-client = CoreClient(st.session_state.core_url, token=TOKEN)
+client = CoreClient(st.session_state.core_url, token=TOKEN, read_only=not can("act"))
 AUTO = REFRESH_SECONDS if st.session_state.auto_refresh else None
 AUDIT_WINDOW = 500  # latest records the dashboard reads; the core still verifies the whole chain
 
@@ -368,8 +598,14 @@ PAGES = {  # key: (Material icon, label, menu group)
     "review": ("speed", "Review", "Oversight"),
     "reports": ("description", "Reports", "Oversight"),
     "audit": ("link", "Audit trail", "Oversight"),
+    "backups": ("backup", "Backups", "Oversight"),
+    "team": ("group", "Team", "Oversight"),  # Owners and Admins, when people sign in
     "config": ("tune", "Configuration", "Settings"),
 }
+
+
+def page_allowed(key: str) -> bool:
+    return key != "team" or bool(ME and can("people"))
 
 
 def go(page: str) -> None:
@@ -419,6 +655,8 @@ def menu() -> None:
     side_risk()
     group = None
     for key, (ico, label, grp) in PAGES.items():
+        if not page_allowed(key):
+            continue
         if grp != group:
             group = grp
             if grp:
@@ -437,10 +675,11 @@ with st.sidebar:
     menu()
     st.markdown('<div class="side-sep"></div>', unsafe_allow_html=True)
     st.toggle(f"Auto-refresh every {REFRESH_SECONDS} s", key="auto_refresh")
-    if st.session_state.get("signed_in") and st.button("Sign out", icon=":material/logout:", width="stretch",
-                                                       help=f"Signed in as {st.session_state.signed_in}"):
-        st.session_state.signed_in = False
-        st.rerun()
+    if ME:
+        st.caption(f"{ME['name']} · {acc.ROLE_LABEL[ME['role']]}")
+        if st.button("Sign out", icon=":material/logout:", width="stretch", help=f"Signed in as {ME['email']}"):
+            st.session_state.signed_in = False
+            st.rerun()
     st.markdown('<div class="side-foot">A sentry doesn\'t chase you. It just guards the gate.</div>',
                 unsafe_allow_html=True)
 
@@ -550,6 +789,9 @@ def incident_summary(inc: dict) -> None:
 
 def decision_controls(inc: dict) -> None:
     """Approve / reject an open incident, or keep / roll back a contained one."""
+    if locked():
+        st.caption(f":material/visibility: {READ_ONLY_MESSAGE}")
+        return
     inc_id = str(inc.get("id"))
     op = st.session_state.operator
     can = sh.available_actions(inc)
@@ -643,7 +885,7 @@ def page_config() -> None:
     # Unsaved edits survive a search hiding their field (Streamlit forgets a widget it does not draw).
     draft = st.session_state.setdefault("cfg_draft", {})
     current = {f.env: f.default for f in cfg.FIELDS.values()} | cfg.read() | draft
-    values, new_password, shown = dict(current), "", 0
+    values, shown = dict(current), 0
 
     if not query or matches(query, APPEARANCE_WORDS):
         shown += 1
@@ -668,8 +910,12 @@ def page_config() -> None:
             c1, c2 = st.columns(2)
             # Own widget keys: Streamlit drops a widget's state when you leave the page.
             st.session_state.core_url = c1.text_input("Core API URL", value=st.session_state.core_url).strip()
-            st.session_state.operator = c2.text_input("Operator name (recorded on your approvals)",
-                                                      value=st.session_state.operator).strip() or "operator"
+            if ME:
+                c2.text_input("Operator name (recorded on your approvals)", value=ME["name"], disabled=True,
+                              help="Your account's name. Everything you approve is recorded under it.")
+            else:
+                st.session_state.operator = c2.text_input("Operator name (recorded on your approvals)",
+                                                          value=st.session_state.operator).strip() or "operator"
     for s in cfg.SECTIONS[1:]:
         fields = [f for f in s.fields if f.env not in cfg.PRESET_FIELDS]  # those live under the preset
         whole = not query or matches(query, s.title, s.about)
@@ -695,16 +941,6 @@ def page_config() -> None:
                                            disabled=True, help=f"Environment variable {f.env}. Generated by setup; "
                                            "python cactai_config.py token prints it.")
                     continue
-                if f.hashed:  # never shown: a new one replaces it, blank keeps it
-                    typed = cols[n % 2].text_input("New dashboard password (blank keeps the current one)",
-                                                   key=f"cfg_{f.env}", type="password",
-                                                   help=f"At least {cfg.MIN_PASSWORD} characters. Saved only as a "
-                                                        "hash; applies at the next sign-in.")
-                    if typed and len(typed) < cfg.MIN_PASSWORD:
-                        cols[n % 2].error(f"Use at least {cfg.MIN_PASSWORD} characters; the old password stays.")
-                        typed = ""
-                    new_password = typed
-                    continue
                 values[f.env] = cols[n % 2].text_input(
                     f.prompt, value=current[f.env], key=f"cfg_{f.env}", help=f"Environment variable {f.env}",
                     type="password" if f.secret else "default").strip()
@@ -715,13 +951,12 @@ def page_config() -> None:
     draft.update({env: v for env, v in values.items() if env in cfg.FIELDS and v != saved.get(env, cfg.FIELDS[env].default)})
     for env in [e for e in draft if values.get(e) == saved.get(e, cfg.FIELDS[e].default)]:
         draft.pop(env)  # changed back by hand
-    if st.button("Save settings", icon=":material/save:", type="primary"):
+    if st.button("Save settings", icon=":material/save:", type="primary", disabled=not can("configure"),
+                 help=None if can("configure") else "Auditors can read the settings but not change them."):
         bad = [f.prompt for f in cfg.FIELDS.values() if not cfg.valid(f, values[f.env])]
         if bad:
             st.error("Please enter a number for: " + "; ".join(bad))
         else:
-            if new_password:  # hashed only on Save: hashing is slow on purpose
-                values[cfg.HASH_ENV] = cfg.hash_password(new_password)
             path = cfg.save(values)
             draft.clear()
             cfg.mark_setup_done("dashboard")
@@ -734,6 +969,8 @@ def page_config() -> None:
 
 
 def _save_look() -> None:
+    if not can("configure"):
+        return
     accent = st.session_state.look_accent
     if accent == th.CUSTOM:
         accent = th.parse_hex(st.session_state.get("look_custom", "")) or th.ACCENTS["violet"][1]
@@ -790,8 +1027,8 @@ def protection_switch() -> None:
         c1, c2 = st.columns([3, 1], vertical_alignment="center")
         c1.markdown(f'{pill("Protection off", sh.BAND_COLORS["amber"])} Monitor only: incidents are scored '
                     f'and alerted, nothing is blocked.', unsafe_allow_html=True)
-        if c2.button("Turn protection on", icon=":material/shield:", type="primary", width="stretch",
-                     help="Incidents already over the threshold are contained right away."):
+        if c2.button("Turn protection on", icon=":material/shield:", type="primary", width="stretch", disabled=locked(),
+                     help=why_locked(otherwise="Incidents already over the threshold are contained right away.")):
             switch(True)
         return
     c1, c2 = st.columns([3, 1], vertical_alignment="bottom")
@@ -799,7 +1036,7 @@ def protection_switch() -> None:
                            key="protect_reason", placeholder="Reason, recorded in the audit trail (required)",
                            help="POST /protection. SentrAI keeps collecting, classifying and scoring, but applies "
                                 "no containment, autonomous or approved, until it is turned back on.")
-    if c2.button("Turn protection off", icon=":material/remove_moderator:", width="stretch"):
+    if c2.button("Turn protection off", icon=":material/remove_moderator:", width="stretch", disabled=locked(), help=why_locked()):
         if not reason.strip():
             st.error("Write why protection is being turned off; it goes into the audit trail.")
         else:
@@ -1055,9 +1292,12 @@ def staff_report_detail(r: dict) -> None:
         who = a.text_input("Handled by", value=r.get("assignee") or st.session_state.operator, key=f"sa_{rid}")
         note = b.text_input("Note", key=f"sn_{rid}", placeholder="What you found or did (needed to close)")
         c1, c2, c3 = st.columns(3)
-        save = c1.form_submit_button("Save", icon=":material/save:", width="stretch")
-        resolve = c2.form_submit_button("Resolved", icon=":material/task_alt:", type="primary", width="stretch")
-        harmless = c3.form_submit_button("Not a threat", icon=":material/do_not_disturb_on:", width="stretch")
+        save = c1.form_submit_button("Save", icon=":material/save:", width="stretch",
+                                     disabled=locked(), help=why_locked())
+        resolve = c2.form_submit_button("Resolved", icon=":material/task_alt:", type="primary", width="stretch",
+                                        disabled=locked(), help=why_locked())
+        harmless = c3.form_submit_button("Not a threat", icon=":material/do_not_disturb_on:", width="stretch",
+                                         disabled=locked(), help=why_locked())
     status = "resolved" if resolve else "not_a_threat" if harmless else None
     if save or status:
         if status and not note.strip():
@@ -1196,6 +1436,11 @@ def setup_interpreter(question: str, options: list[tuple[str, str]], answer: str
 
 def save_setup(sc: "setup_chat.SetupChat") -> None:
     values = sc.values()
+    if not can("configure"):
+        sc.state = "review"
+        sc.messages.append({"role": "assistant", "text": "Auditors can't change the settings. "
+                            "Ask an Owner or Admin to save this setup."})
+        return
     bad = [f.prompt for f in cfg.FIELDS.values() if not cfg.valid(f, values.get(f.env, f.default))]
     if bad:
         sc.state = "review"
@@ -1254,6 +1499,9 @@ def chat_suggestion(mid: Any, n: int, s: dict, inc: dict | None) -> None:
     if s.get("kind") == "quarantine_file":
         quarantine_suggestion(mid, n, s)
         return
+    if s.get("kind") == "backup_now":
+        backup_suggestion(mid, n, s)
+        return
     inc_id, decision = str(s.get("incident")), str(s.get("decision"))
     ok, why_not = sh.suggestion_state(inc, decision)
     label = str(s.get("label") or f"{decision} {inc_id}")
@@ -1265,7 +1513,8 @@ def chat_suggestion(mid: Any, n: int, s: dict, inc: dict | None) -> None:
         st.markdown(f":material/lightbulb: **Suggested: {html.escape(label)}**")
         just = st.text_input("Justification (written to the audit log)", value=str(s.get("reason") or ""),
                              key=f"sugg_just_{mid}_{n}")
-        go_ = st.form_submit_button(f"Confirm: {label}", type="primary" if decision != "reject" else "secondary")
+        go_ = st.form_submit_button(f"Confirm: {label}", type="primary" if decision != "reject" else "secondary",
+                                    disabled=locked(), help=why_locked())
     if not go_:
         return
     just = just.strip()
@@ -1299,7 +1548,7 @@ def watch_suggestion(mid: Any, n: int, s: dict) -> None:
         st.markdown(f":material/lightbulb: **Suggested: {html.escape(label)}**")
         if s.get("reason"):
             st.caption(str(s["reason"]))
-        if st.button(f"Confirm: {label}", key=f"sugg_{mid}_{n}", type="primary"):
+        if st.button(f"Confirm: {label}", key=f"sugg_{mid}_{n}", type="primary", disabled=locked(), help=why_locked()):
             run_action(label, lambda: client.watch_log(str(s.get("file_id")), st.session_state.operator), rerun=False)
             st.rerun()
 
@@ -1311,9 +1560,21 @@ def quarantine_suggestion(mid: Any, n: int, s: dict) -> None:
         st.markdown(f":material/lightbulb: **Suggested: {html.escape(label)}**")
         if s.get("reason"):
             st.caption(str(s["reason"]))
-        if st.button(f"Confirm: {label}", key=f"sugg_{mid}_{n}", type="primary"):
+        if st.button(f"Confirm: {label}", key=f"sugg_{mid}_{n}", type="primary", disabled=locked(), help=why_locked()):
             run_action(label, lambda: client.quarantine(str(s.get("finding_id")), st.session_state.operator,
                                                         str(s.get("reason") or "")), rerun=False)
+            st.rerun()
+
+
+def backup_suggestion(mid: Any, n: int, s: dict) -> None:
+    """Cyanide thinks a fresh backup is a good idea. Pressing it takes one now."""
+    with st.container(border=True):
+        st.markdown(":material/lightbulb: **Suggested: Back up now**")
+        if s.get("reason"):
+            st.caption(str(s["reason"]))
+        if st.button("Confirm: Back up now", key=f"sugg_{mid}_{n}", type="primary", disabled=locked(), help=why_locked()):
+            with st.spinner("Backing up…"):
+                run_action("Backup made", lambda: client.backup_now(st.session_state.operator), rerun=False)
             st.rerun()
 
 
@@ -1387,7 +1648,7 @@ def scout_proposals() -> None:
             pid = p.get("id")
             for col, approve, label in ((c2, True, "Watch"), (c3, False, "Dismiss")):
                 if col.button(label, key=f"scout_{'yes' if approve else 'no'}_{pid}",
-                              icon=":material/visibility:" if approve else ":material/close:"):
+                              icon=":material/visibility:" if approve else ":material/close:", disabled=locked(), help=why_locked()):
                     run_action(f"Collector now watches {p.get('name')}" if approve else f"Dismissed {p.get('name')}",
                                lambda a=approve: client.decide_log_source(pid, st.session_state.operator, a),
                                rerun=False)
@@ -1399,7 +1660,8 @@ def log_discovery() -> None:
     with st.container(border=True):
         section("Find logs on this computer", "read-only scan of running programs · nothing is watched until you "
                                               "press Watch", "travel_explore")
-        if st.button("Scan running programs", icon=":material/radar:", key="scan_system"):
+        if st.button("Scan running programs", icon=":material/radar:", key="scan_system",
+                     disabled=locked(), help=why_locked()):
             with st.spinner("Scanning running programs…"):
                 run_action("Scan finished", lambda: client.scan_system(st.session_state.operator), rerun=False)
         latest, err = safe(client.latest_scan, None)
@@ -1439,7 +1701,8 @@ def threat_panel() -> None:
     with st.container(border=True):
         section("Check for threats", "read-only look inside your chosen folders · files move to quarantine only "
                                      "when you press it", "bug_report")
-        if st.button("Scan for threats", icon=":material/policy:", key="scan_threats"):
+        if st.button("Scan for threats", icon=":material/policy:", key="scan_threats",
+                     disabled=locked(), help=why_locked()):
             with st.spinner("Checking files…"):
                 run_action("Threat scan finished", lambda: client.scan_threats(st.session_state.operator), rerun=False)
         latest, err = safe(client.latest_threats, None)
@@ -1470,7 +1733,7 @@ def threat_panel() -> None:
                     c1, c2 = st.columns([5, 1])
                     c1.caption(f"{q.get('name')} · from `{q.get('original')}` · {(q.get('finding') or {}).get('label')} · "
                                f"by {q.get('operator')} {sh.short_time(q.get('at'))}")
-                    if c2.button("Restore", key=f"restore_{q.get('id')}", icon=":material/undo:"):
+                    if c2.button("Restore", key=f"restore_{q.get('id')}", icon=":material/undo:", disabled=locked(), help=why_locked()):
                         run_action(f"Restored {q.get('name')}",
                                    lambda qid=q.get("id"): client.restore(qid, st.session_state.operator), rerun=False)
                         st.rerun()
@@ -1484,7 +1747,7 @@ def threat_row(f: dict) -> None:
                 f"{html.escape(str(f.get('kind', '')).replace('_', ' '))} · {where}", unsafe_allow_html=True)
     if f.get("snippet"):
         c1.code(str(f["snippet"]), language=None)
-    if c2.button("Quarantine", key=f"quar_{f.get('id')}", icon=":material/block:"):
+    if c2.button("Quarantine", key=f"quar_{f.get('id')}", icon=":material/block:", disabled=locked(), help=why_locked()):
         run_action(f"Quarantined {f.get('path')}",
                    lambda fid=f.get("id"): client.quarantine(fid, st.session_state.operator), rerun=False)
         st.rerun()
@@ -1503,7 +1766,7 @@ def scan_suggestion(s: dict) -> None:
                    f"{sh.short_time(f.get('modified'))}")
         if f.get("watched"):
             c2.caption("watched")
-        elif c2.button("Watch", key=f"watch_{f.get('id')}", icon=":material/visibility:"):
+        elif c2.button("Watch", key=f"watch_{f.get('id')}", icon=":material/visibility:", disabled=locked(), help=why_locked()):
             run_action(f"Collector now watches {f.get('name')}",
                        lambda fid=f.get("id"): client.watch_log(fid, st.session_state.operator), rerun=False)
             st.rerun()
@@ -1667,7 +1930,8 @@ def page_machines() -> None:
             url = st.text_input("Panel address the machine will use", key="join_url",
                                 value=os.environ.get("CACTAI_PUBLIC_URL") or st.session_state.core_url,
                                 help="Must be https:// from another machine")
-            if st.button("Make join code", icon=":material/key:", type="primary", key="join_make"):
+            if st.button("Make join code", icon=":material/key:", type="primary", key="join_make",
+                         disabled=locked("configure"), help=why_locked("configure")):
                 try:
                     st.session_state["join_made"] = client.join_code(st.session_state.operator, name.strip() or None)
                 except CoreError as exc:
@@ -1680,7 +1944,7 @@ def page_machines() -> None:
                 cmds = sh.join_commands(url, made["code"], made.get("name"))
                 st.caption("On a Linux server, from a SentrAI checkout:")
                 st.code(cmds["linux"], language="bash")
-                st.caption("On Windows or a laptop, from a SentrAI checkout:")
+                st.caption("On Windows, from a SentrAI checkout in an Administrator PowerShell:")
                 st.code(cmds["windows"], language="powershell")
                 if not url.startswith("https://"):
                     st.warning("Other machines refuse a plain http:// panel. Put HTTPS in front of the core first.",
@@ -1699,7 +1963,8 @@ def page_machines() -> None:
                 c1, c2, c3 = st.columns([4, 3, 2])
                 which = c1.selectbox("Revoke a machine", list(active), key="revoke_pick", label_visibility="collapsed")
                 sure = c2.checkbox("Yes, stop accepting its key", key="revoke_sure")
-                if c3.button("Revoke", icon=":material/block:", disabled=not sure, key="revoke_go", width="stretch"):
+                if c3.button("Revoke", icon=":material/block:", disabled=not sure or locked("configure"),
+                             help=why_locked("configure"), key="revoke_go", width="stretch"):
                     run_action(f"Revoked {which}", lambda: client.revoke_agent(active[which], st.session_state.operator))
 
 
@@ -1746,6 +2011,101 @@ def page_audit() -> None:
               "Agent list unavailable.")
 
 
+def when(value: Any) -> str:
+    """Day and time: backups are days apart, so the clock time alone is not enough."""
+    ts = sh.parse_ts(value)
+    return ts.strftime("%d %b %H:%M") if ts else (str(value) if value else "-")
+
+
+BACKUP_REASON = {"schedule": "on schedule", "manual": "by hand", "before_restore": "safety copy before a restore"}
+
+
+def page_backups() -> None:
+    show_flash()
+    if header("Backups", "copies of your folders and SentrAI's own records, ready to put back") is None:
+        return
+    data, err = safe(client.backups, None)
+    if err or not data:
+        st.warning(f"Backups are not available on this core. {err or ''}")
+        return
+    kept = data.get("backups") or []
+    last = next((b for b in kept if b.get("reason") != "before_restore"), None)
+    check = (last or {}).get("verified") or {}
+    stats(("Last backup", when(last.get("created")) if last else "Never",
+           f"{last.get('files', 0)} files · {last.get('bytes', 0) / 1048576:.1f} MB" if last else "take one below",
+           sh.BAND_COLORS["amber"] if not last or data.get("overdue") else None),
+          ("Next due", "Off" if not data.get("every_hours") else
+           ("Now" if data.get("next_due") == "now" else when(data.get("next_due"))),
+           f"every {data['every_hours']:g} h" if data.get("every_hours") else "no schedule"),
+          ("Kept", f"{len(kept)} of {data.get('keep')}", "oldest removed first"),
+          ("Last check", "Intact" if check.get("ok") else "Problem" if check.get("ok") is False else "Not checked",
+           when(check.get("at")) if check.get("at") else "press Check on a backup",
+           sh.BAND_COLORS["red"] if check.get("ok") is False else None))
+    if data.get("last_error"):
+        st.error(f"The last backup failed ({when(data['last_error'].get('at'))}): "
+                 f"{data['last_error'].get('error')}")
+    elif data.get("overdue"):
+        st.warning("The last backup is more than two schedule periods old. Is SentrAI's core running?")
+
+    with st.container(border=True):
+        section("What is backed up", "change it under backup in the system profile, or CACTAI_BACKUP_PATHS", "folder_copy")
+        folders = data.get("folders") or []
+        st.markdown(("Folders: " + ", ".join(code(f) for f in folders) if folders else
+                     "No folders chosen yet, so only SentrAI's own data is copied.")
+                    + ("  \nSentrAI's own settings, signing key and audit records: always included."
+                       if data.get("include_sentrai") else "")
+                    + f"  \nStored in {code(data.get('stored_in'))}"
+                    + (f", with a second copy in {code(data['copy_to'])}" if data.get("copy_to") else ""),
+                    unsafe_allow_html=True)
+        if st.button("Back up now", icon=":material/backup:", type="primary", key="backup_now",
+                     disabled=locked(), help=why_locked()):
+            with st.spinner("Backing up…"):
+                run_action("Backup made", lambda: client.backup_now(st.session_state.operator), rerun=False)
+            st.rerun()
+
+    with st.container(border=True):
+        section("Backups kept", "newest first · a restore always checks the backup first", "inventory_2")
+        if not kept:
+            empty("No backups yet.", "backup")
+        for b in kept:
+            backup_row(b)
+
+
+def backup_row(b: dict) -> None:
+    bid = str(b.get("id"))
+    v = b.get("verified") or {}
+    state = (":green[:material/verified:] intact" if v.get("ok") else
+             ":red[:material/error:] problem" if v.get("ok") is False else ":gray[:material/help:] not checked")
+    c1, c2 = st.columns([5, 1])
+    c1.markdown(f"**{html.escape(bid)}** · {when(b.get('created'))} · "
+                f"{html.escape(BACKUP_REASON.get(str(b.get('reason')), str(b.get('reason'))))} by "
+                f"{html.escape(str(b.get('by')))} · {b.get('files', 0)} files, {b.get('bytes', 0) / 1048576:.1f} MB · "
+                f"{state}", unsafe_allow_html=True)
+    if v.get("ok") is False:
+        c1.caption("; ".join(v.get("problems") or []))
+    if c2.button("Check", key=f"bk_check_{bid}", icon=":material/fact_check:"):
+        run_action(f"Backup {bid} is intact", lambda: client.verify_backup(bid, st.session_state.operator),
+                   rerun=False)
+        st.rerun()
+    with st.expander(f"Restore from {bid}"):
+        with st.form(key=f"bk_restore_{bid}", border=False):
+            where = st.radio("Where to put the files", ["new", "in_place"], horizontal=True, key=f"bk_where_{bid}",
+                             format_func=lambda w: "Into a new folder (nothing live changes)" if w == "new"
+                             else "Back where they came from (overwrites live files)")
+            confirm = st.text_input(f"For 'back where they came from', type {bid} to confirm", key=f"bk_conf_{bid}")
+            st.caption("Back in place first takes a safety backup of the current files, so it can be undone. "
+                       "SentrAI's own data is only ever restored into a new folder.")
+            go_ = st.form_submit_button("Restore", icon=":material/settings_backup_restore:",
+                                        disabled=locked("configure"), help=why_locked("configure"))
+        if go_:
+            in_place = where == "in_place"
+            with st.spinner("Restoring…"):
+                run_action(f"Restored {bid}" + (" in place" if in_place else " into a new folder"),
+                           lambda: client.restore_backup(bid, st.session_state.operator, in_place, confirm.strip()),
+                           rerun=False)
+            st.rerun()
+
+
 def render_feed(feed: list[dict]) -> None:
     if not feed:
         empty("No audit records yet.", "receipt_long")
@@ -1787,7 +2147,98 @@ def report_viewer(inc_id: str) -> None:
         st.markdown(sh.demote_headings(md))
 
 
+# ------------------------------------------------------------------ team
+
+def _invite_link(code: str) -> None:
+    link = f"{_base_url()}/?invite={code}"
+    st.code(link, language=None)
+    st.caption(f"Send this link to them yourself. It works once, for {acc.INVITE_HOURS} hours, and only "
+               "opens from a computer allowed to reach this console.")
+
+
+def page_team() -> None:
+    """Owners and Admins: who may sign in, with which role. No open sign-up; people join by invite."""
+    header("Team", "Who may sign in to this console, and what each role may do")
+    if made := st.session_state.pop("team_link", None):
+        with st.container(border=True):
+            st.markdown(f"**{made[0]}**")
+            _invite_link(made[1])
+    people = acc.people()
+    with st.container(border=True):
+        section("People", f"{len(people)} with access", "group")
+        table(sh.pd.DataFrame([{
+            "Name": p["name"], "Email": p["email"], "Role": acc.ROLE_LABEL[p["role"]],
+            "Authenticator": "Yes" if p["authenticator"] else "Not yet",
+            "Last sign-in": _when(p["last_sign_in"]) + (f" from {p['last_ip']}" if p["last_ip"] else ""),
+        } for p in people]), "No one yet.")
+        st.caption("Owner and Admin run SentrAI. An Auditor sees every page and can export reports, "
+                   "but changes nothing.")
+
+    others = [p for p in people if p["email"] != ME["email"]]
+    if others:
+        with st.container(border=True):
+            section("Change someone's access", "", "manage_accounts")
+            c1, c2 = st.columns([2, 1])
+            who = c1.selectbox("Person", [p["email"] for p in others], key="team_who")
+            person = next(p for p in others if p["email"] == who)
+            roles = [r for r in acc.ROLES if r != "owner" or ROLE == "owner"]
+            role = c2.selectbox("Role", roles, format_func=acc.ROLE_LABEL.get, key="team_role",
+                                index=roles.index(person["role"]) if person["role"] in roles else 0)
+            b1, b2, b3 = st.columns(3)
+            try:
+                if b1.button("Change role", width="stretch", disabled=role == person["role"]):
+                    acc.set_role(ME["email"], who, role)
+                    st.session_state.flash = (f"{who} is now {acc.ROLE_LABEL[role]}", "✅")
+                    st.rerun()
+                if b2.button("Reset sign-in", width="stretch",
+                             help="Forgot the password or lost the phone: their old password stops working "
+                                  "and a link lets them set both again."):
+                    code = acc.reset(ME["email"], who)
+                    st.session_state.team_link = (f"Reset link for {who}", code)
+                    st.rerun()
+                sure = b3.checkbox("I'm sure", key="team_sure")
+                if b3.button("Remove", width="stretch", disabled=not sure):
+                    acc.remove(ME["email"], who)
+                    st.session_state.flash = (f"{who} can no longer sign in", "✅")
+                    st.rerun()
+            except acc.AccountError as e:
+                st.error(str(e))
+
+    with st.container(border=True):
+        section("Invite someone", "They set their own password and authenticator", "person_add")
+        with st.form("team_invite", clear_on_submit=True):
+            c1, c2 = st.columns([2, 1])
+            email = c1.text_input("Their email")
+            roles = [r for r in acc.ROLES if r != "owner" or ROLE == "owner"]
+            role = c2.selectbox("Role", roles, index=roles.index("admin"), format_func=acc.ROLE_LABEL.get)
+            if st.form_submit_button("Make invite link", type="primary"):
+                try:
+                    code = acc.invite(ME["email"], email, role)
+                except acc.AccountError as e:
+                    st.error(str(e))
+                else:
+                    st.session_state.team_link = (f"Invite for {email.strip().lower()} as {acc.ROLE_LABEL[role]}", code)
+                    st.rerun()
+        waiting = acc.pending_invites()
+        if waiting:
+            st.markdown("**Waiting to be used**")
+            for i in waiting:
+                c1, c2 = st.columns([4, 1], vertical_alignment="center")
+                kind = "reset" if i["reset"] else acc.ROLE_LABEL[i["role"]]
+                c1.caption(f"{i['email']} · {kind} · by {i['by']} · until {_when(i['expires'])}")
+                if c2.button("Withdraw", key=f"withdraw_{i['email']}", width="stretch"):
+                    try:
+                        acc.withdraw_invite(ME["email"], i["email"])
+                    except acc.AccountError as e:
+                        st.error(str(e))
+                    else:
+                        st.rerun()
+
+
+if not page_allowed(st.session_state.page):
+    st.session_state.page = "config"
 {
     "config": page_config, "approvals": page_approvals, "staff": page_staff, "chat": page_chat, "collector": page_collector, "classifier": page_classifier,
     "responder": page_responder, "machines": page_machines, "review": page_review, "reports": page_reports, "audit": page_audit,
+    "backups": page_backups, "team": page_team,
 }[st.session_state.page]()

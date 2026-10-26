@@ -6,3 +6,4 @@ pytest>=8.0
 # dev-only: fake core for developing without the real core API
 fastapi>=0.110
 uvicorn>=0.29
+segno>=1.6  # the authenticator QR code on the sign-in screen

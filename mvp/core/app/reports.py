@@ -211,6 +211,8 @@ def render_markdown(r: dict[str, Any]) -> str:
         for a in r["forced_action"]["actions"]:
             lines.append(f"| {a['action_id']} | {a['type']} | {a['target']} | {a['mode']} | {a['approved_by']} | "
                          f"{a['status']} | {a['expires_at'] or 'never'} | `{a['snapshot_hash'][:12]}` |")
+        lines += ["", "### Did each action work, and could it be undone?", ""]
+        lines += [f"- {line}" for line in action_outcomes(r["forced_action"]["actions"])]
     else:
         lines.append("None.")
     lines += ["", "## Hash-chain proof", "", "| Seq | Time | Type | Agent | Hash |", "| --- | --- | --- | --- | --- |"]
@@ -322,6 +324,9 @@ def render_pdf(r: dict[str, Any]) -> bytes:
                    Column("Approved by", 0.8), Column("Status", 0.65), Column("Expires", 1.25), Column("Snapshot", 0.85, MONO)],
                   [[a["action_id"], a["type"], a["target"], a["mode"], a["approved_by"], a["status"],
                     _ts(a["expires_at"]) if a["expires_at"] else "never", a["snapshot_hash"][:10]] for a in acts], size=8)
+        doc.paragraph("Did each action work, and could it be undone?", size=9)
+        for line in action_outcomes(acts):
+            doc.bullet(line)
     else:
         doc.paragraph("None.")
 
@@ -336,3 +341,23 @@ def render_pdf(r: dict[str, Any]) -> bytes:
                   GREEN if chain_ok else RED)
     doc.paragraph(r["demo_clock"]["note"], size=8, color=MUTED)
     return doc.to_bytes()
+
+
+def action_outcomes(actions: list[dict[str, Any]]) -> list[str]:
+    """One plain sentence per action: the after-action check and the undo, from the action records."""
+    out = []
+    for a in actions:
+        chk, undo = a.get("check"), a.get("undo")
+        if isinstance(chk, dict):
+            worked = {True: "Worked.", False: "Did NOT work.", None: "SentrAI cannot see its effect."}[chk.get("worked")]
+            text = f"{worked} {chk.get('worked_note', '')} {chk.get('disruption_note') or ''}".strip()
+        elif a.get("status") in ("active", "permanent"):
+            text = f"Check due at {a.get('check_at') or 'the next check'}."
+        else:
+            text = "Not checked."
+        if isinstance(undo, dict):
+            text += (" Undo FAILED after " + str(undo.get("attempts", 1)) + " tries: " + str(undo.get("error", ""))
+                     if undo.get("ok") is False else f" Undone at {undo.get('at')}"
+                     + (" (confirmed)." if undo.get("ok") else " (not confirmed by the responder)."))
+        out.append(f"{a['action_id']} {a['type']} {a['target']}: {text}")
+    return out

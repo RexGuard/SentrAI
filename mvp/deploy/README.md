@@ -15,14 +15,15 @@ Run from a terminal, the installer then asks about the web dashboard, with the a
   Dashboard port [8501]:
   Allowed IPs [203.0.113.10]:            the IPs that may open it (defaults to --protect, or the
                                           address your SSH session comes from); "local" = tunnel only
-  Dashboard sign-in email [admin@sentrai.local]:
-  Dashboard password (Enter to make one for you):   typed twice, at least 8 characters
+  Owner email:                            only on a new machine; Enter skips it, and you create the
+  Owner password, at least 12 characters:  Owner in the browser with a setup code instead
 ```
 
 It skips any question the command line already answers (`--dashboard-port`, `--dashboard-allow`,
 `--dashboard-local`, `--admin-email`), and all of them with `--no-questions` or without a terminal.
 On an upgrade the brackets hold the current values. At the end it prints the dashboard address and
-the sign-in; a password it made is shown only then. `sudo cactai-admin --reset` makes a new one.
+either the Owner's email or a one-time setup code for creating the Owner on the dashboard. Everyone
+else joins by invite from the dashboard's Team page.
 
 Needs systemd and Python 3.10+ with the `venv` module (Debian/Ubuntu: `sudo apt install python3-venv`).
 Run the same command again from a newer checkout to upgrade: settings and state are kept, and
@@ -58,8 +59,8 @@ The demo portal and attack scripts are not installed as services.
 --protect IP                           add to PROTECTED_IPS (repeatable); the dashboard opens to it too
 --dashboard-allow IP                   open the dashboard to this IP or network only (repeatable)
 --dashboard-local                      keep the dashboard on the server (SSH tunnel only)
---admin-email EMAIL                    dashboard sign-in email (asked on a first install)
---reset-password                       new dashboard password, printed at the end
+--admin-email EMAIL                    the dashboard Owner's email (asked on a first install)
+--reset-password                       new password for that account, printed at the end
 --no-questions (-y)                    never ask (what a script or CI run gets anyway)
 --no-notifier                          leave the Telegram notifier off
 --no-start                             install and enable without starting
@@ -153,7 +154,7 @@ With `--protect` or `--dashboard-allow`, the installer sets up access by itself:
   installer also allows the port there for those addresses.
 - It serves HTTPS with a self-signed certificate made in `/etc/cactai/tls/`. The browser warns
   about it once.
-- It asks for the email and password on every new browser session.
+- It asks for the email, password and authenticator code on every new browser session.
 
 Open `https://<server address>:8501` from the allowed IP and sign in. When your IP changes, run
 the installer again with the new one (`--dashboard-allow` replaces the list).
@@ -166,9 +167,9 @@ ssh -L 8501:127.0.0.1:8501 you@your-server     # then open http://127.0.0.1:8501
 ```
 
 ```bash
-sudo cactai-admin                                  # show the sign-in email
-sudo cactai-admin --reset                          # new password, printed once
-sudo cactai-admin --email you@example.com --reset  # new email and password
+sudo cactai-admin                                  # who may sign in; a setup code on a new machine
+sudo cactai-admin --reset                          # the first Owner: new password, authenticator again
+sudo cactai-admin --reset --email you@example.com  # the same for another account
 ```
 
 ## Finding the logs to watch
@@ -222,7 +223,39 @@ sudo ./deploy/install-agent.sh --panel https://panel.example.com:8000 --code ABC
 sudo ./deploy/install-agent.sh --enforce          # later: really change the firewall (default is a dry run)
 ```
 
-Without systemd (Windows, a laptop) the same agent runs from a checkout:
+### Windows machines (`install-agent.ps1`)
+
+On Windows 10, 11 or Server 2016 and newer, `install-agent.ps1` does the same as a Windows
+service. It needs Python 3.10+ installed for all users (the python.org installer; the Microsoft
+Store Python cannot run as a service). From a SentrAI checkout, in an Administrator PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\mvp\deploy\install-agent.ps1 -Panel https://panel.example.com:8000 -Code ABCD-EFGH-JKLM -Name web-01
+powershell -ExecutionPolicy Bypass -File .\mvp\deploy\install-agent.ps1 -Enforce   # later: really block in Windows Firewall
+powershell -ExecutionPolicy Bypass -File .\mvp\deploy\uninstall-agent.ps1          # remove it (-Purge also deletes the key)
+```
+
+- The service is **SentrAI agent** (`SentrAIAgent`): starts with Windows, restarts itself after a
+  crash, runs as LocalSystem because Windows Firewall rules need it. `Get-Service SentrAIAgent`,
+  `Restart-Service SentrAIAgent`.
+- Code and venv: `C:\Program Files\SentrAI` (`-Prefix` moves it). The service wrapper is
+  [WinSW](https://github.com/winsw/winsw) 2.12.0, downloaded from its GitHub release and checked
+  by SHA-256 (`-WinSW <file>` uses a copy you downloaded yourself).
+- Settings: the `<env>` lines in `C:\Program Files\SentrAI\SentrAIAgent.xml`. Run the installer
+  again with `-Enforce`, `-DryRun` or `-Protect IP` to change them; other options are kept.
+- Machine key, read positions and service output: `C:\ProgramData\SentrAI\agent` (SYSTEM and
+  Administrators only); the output is in `service\SentrAIAgent.out.log`.
+- Blocks are one inbound Windows Firewall rule per address, named `SentrAI-block-<ip>`. They are a
+  dry run (only logged) until `-Enforce`. Uninstalling takes them all out (`-KeepBlocks` leaves them).
+- Options: `-Panel`, `-Code`, `-Name`, `-Ca FILE` (self-signed panel), `-AllowHttp` (test networks
+  only), `-Enforce` / `-DryRun`, `-Protect IP,IP`, `-Prefix DIR`, `-WinSW FILE`, `-NoStart`.
+  `Get-Help .\mvp\deploy\install-agent.ps1 -Full` explains each.
+
+The CI job "Windows agent installer" runs all of this on a real Windows machine for every pull
+request: install, join, report in, upgrade to `-Enforce`, one real Windows Firewall block,
+uninstall.
+
+On a laptop, without installing a service, the agent can also run from a checkout:
 
 ```bash
 cd mvp/lab
