@@ -90,7 +90,9 @@ grep -q "$ADMIN_IP" /etc/cactai/agent.env || fail "--protect was not kept"
 [ "$(systemctl show -p User --value cactai-agent)" = cactai ] || fail "agent does not run as cactai"
 
 # --- upgrade in place with --enforce (no code: the machine stays joined) ----------------------
-./deploy/install-agent.sh --enforce
+# --pin without a code sets the pin on the joined machine (as after a panel certificate change).
+./deploy/install-agent.sh --enforce --pin "$PIN"
+grep -q "\"pin\": \"$PIN\"" /var/lib/cactai/agent/agent.json || fail "--pin on a joined machine was not saved"
 grep -q '^CACTAI_FIREWALL_ENFORCE=1' /etc/cactai/agent.env || fail "--enforce was not saved"
 grep -q "$ADMIN_IP" /etc/cactai/agent.env || fail "--protect was lost on upgrade"
 wait_for "cactai-agent is running after the upgrade" 30 systemctl is-active --quiet cactai-agent

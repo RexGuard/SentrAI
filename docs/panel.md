@@ -190,9 +190,18 @@ machine, and backups stay on the machine.
 
 ## Renewing the panel's certificate
 
-The panel's certificate lasts five years. If you replace it, every machine needs the new pin. On
-each machine, `python -m agent pin` shows the kept pin and the panel's current one, and
-`python -m agent pin sha256:...` sets the new one. Then restart the agent.
+The panel's certificate lasts five years. If you replace it, every machine needs the new pin. The
+dashboard shows the new pin with every join code. On each machine, from the `SentrAI` folder:
+
+```bash
+sudo ./mvp/deploy/install-agent.sh --pin sha256:...
+```
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\mvp\deploy\install-agent.ps1 -Pin sha256:...
+```
+
+The installer keeps every other setting and restarts the agent.
 
 A panel behind a publicly trusted certificate, for example nginx with Let's Encrypt, can leave the
 pin out.

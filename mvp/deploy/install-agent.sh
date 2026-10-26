@@ -13,7 +13,8 @@
 #   --panel URL       the panel's core address (https://; required on a first install)
 #   --code CODE       the one-time join code (required on a first install)
 #   --name NAME       this machine's name on the panel (default: its host name)
-#   --pin PIN         the panel's certificate pin (sha256:...), shown with the join code
+#   --pin PIN         the panel's certificate pin (sha256:...), shown with the join code. On a
+#                     machine that already joined, sets the new pin after the panel's certificate changed
 #   --ca FILE         the panel's certificate file, instead of a pin
 #   --allow-http      accept a plain http:// panel (private test networks only)
 #   --enforce         really change the firewall (default: dry run, the commands are only logged)
@@ -166,6 +167,9 @@ if [ -n "$CODE" ]; then
     [ -n "$CA" ] && args+=(--ca "$CA")
     [ "$ALLOW_HTTP" = 1 ] && args+=(--allow-http)
     as_agent "${args[@]}" || die "could not join the panel (see the message above)"
+elif [ -n "$PIN" ]; then
+    # Already joined: take the panel's new certificate pin (after the panel's certificate changed).
+    as_agent -m agent pin "$PIN" || die "could not set the new pin (see the message above)"
 fi
 as_agent -m collector.collector --add-system-logs || echo "No web, SSH, Suricata or database logs found yet; approve logs later with Scout."
 

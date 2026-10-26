@@ -36,6 +36,7 @@
 .PARAMETER Pin
   The panel's certificate pin (sha256:...), shown with the join code: the agent then talks to that
   certificate and nothing else.
+  On a machine that already joined, sets the new pin after the panel's certificate changed.
 .PARAMETER Ca
   The panel's certificate file, instead of a pin.
 .PARAMETER AllowHttp
@@ -305,6 +306,10 @@ try {
         if ($AllowHttp) { $joinArgs += "--allow-http" }
         Native $VenvPy @joinArgs
         if ($LASTEXITCODE -ne 0) { Die "could not join the panel (see the message above)" }
+    } elseif ($Pin) {
+        # Already joined: take the panel's new certificate pin (after the panel's certificate changed).
+        Native $VenvPy -m agent pin $Pin
+        if ($LASTEXITCODE -ne 0) { Die "could not set the new pin (see the message above)" }
     }
     Native $VenvPy -m collector.collector --add-system-logs
     if ($LASTEXITCODE -ne 0) { Write-Host "No known logs found yet; approve logs later with Scout." }
