@@ -175,8 +175,16 @@ div[data-testid="stExpander"] summary { font-weight: 600; }
 
 /* ------------------------------------------------------------ forms */
 div[data-testid="stForm"] { background: var(--surface); }
-.stButton button[kind="primary"], .stFormSubmitButton button[kind="primaryFormSubmit"] { color: var(--on-brand); font-weight: 600; }
-.stButton button, .stDownloadButton button, .stFormSubmitButton button { transition: background-color .15s ease-out, border-color .15s ease-out, transform .1s ease-out; }
+/* Primary buttons of every kind (download and link ones too): text in --on-brand, which reads on the accent
+   in every theme. Streamlit's own text is always white, unreadable on a light accent (Mono on Black).
+   Hover uses our shade so the text stays readable there too. Disabled ones keep Streamlit's faded look. */
+.stButton button[kind="primary"]:not(:disabled), .stFormSubmitButton button[kind="primaryFormSubmit"]:not(:disabled),
+.stDownloadButton button[kind="primary"]:not(:disabled), .stLinkButton a[kind="primary"] { color: var(--on-brand); font-weight: 600; }
+.stButton button[kind="primary"]:not(:disabled):is(:hover, :active),
+.stFormSubmitButton button[kind="primaryFormSubmit"]:not(:disabled):is(:hover, :active),
+.stDownloadButton button[kind="primary"]:not(:disabled):is(:hover, :active), .stLinkButton a[kind="primary"]:is(:hover, :active) {
+  background-color: var(--brand-fill-hover); border-color: var(--brand-fill-hover); color: var(--on-brand); }
+.stButton button, .stDownloadButton button, .stFormSubmitButton button, .stLinkButton a { transition: background-color .15s ease-out, border-color .15s ease-out, transform .1s ease-out; }
 .stButton button:active, .stDownloadButton button:active, .stFormSubmitButton button:active { transform: scale(.98); }
 @media (prefers-reduced-motion: reduce) { .stButton button:active, .stDownloadButton button:active, .stFormSubmitButton button:active { transform: none; } }
 .field-hint { color: var(--ink-muted); font-size: .8rem; margin: -.3rem 0 .4rem 0; }

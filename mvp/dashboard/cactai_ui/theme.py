@@ -154,9 +154,18 @@ def palette(theme: str = DEFAULT_THEME, accent: str = DEFAULT_ACCENT) -> dict[st
         c |= {"brand": readable(fill, bg), "brand-2": readable(fill, bg, 3), "brand-fill": fill, "on-brand": on,
               "brand-soft": mix(fill, c["surface"], .14), "brand-line": mix(fill, c["surface"], .42),
               "glow": rgba(fill, t.glow_alpha)}
+    c["brand-fill-hover"] = fill_hover(c["brand-fill"], c["on-brand"])
     c |= {k: v for k, v in t.risk.items()} | {"green-line": mix(t.risk["green"], c["surface"], .4),
                                               "unknown": t.unknown}
     return c
+
+
+def fill_hover(fill: str, on: str) -> str:
+    """A button's hover shade: a little darker, or lighter when darker would hide its text (or show no change)."""
+    darker, lighter = mix("#000000", fill, .15), mix("#ffffff", fill, .15)
+    if luminance(fill) < .03 or contrast(on, darker) < 4.5:
+        return lighter
+    return darker
 
 
 def css(theme: str = DEFAULT_THEME, accent: str = DEFAULT_ACCENT) -> str:
