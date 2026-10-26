@@ -162,3 +162,14 @@ def test_agent_rows_and_join_commands():
     assert cmds["windows"].splitlines() == ["cd mvp\\lab",
                                             "python -m agent join --panel https://panel.example.com:8000 --code K7QM-2XPA-9RTD --name web-01",
                                             "python -m agent run"]
+
+
+def test_services_on_a_machine():
+    svcs = [{"name": "sshd", "port": 22, "proto": "tcp", "process": "sshd", "open_incidents": 0},
+            {"name": "nginx", "port": 443, "proto": "tcp", "process": "nginx", "open_incidents": 2},
+            {"name": "a", "port": 1}, {"name": "b", "port": 2}, {"name": "c", "port": 3}]
+    assert sh.services_text(svcs) == "nginx :443 (2 open), a :1, b :2, c :3, +1 more"
+    df = sh.service_rows(svcs)
+    assert list(df["Service"])[:2] == ["nginx", "a"] and df.iloc[0]["Protocol"] == "TCP"
+    row = sh.panel_machines([{"host": "web-01", "risk_index": 10, "services": svcs}], [], {})[0]
+    assert "nginx :443 (2 open)" in sh.machine_rows_html([row])

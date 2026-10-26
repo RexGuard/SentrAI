@@ -509,7 +509,8 @@ def panel_machines(found: Iterable[dict], agents: Iterable[dict], risk: dict | N
                      "monitor_only": bool(risk.get("monitor_only")),
                      "open": int(m.get("open_incidents") or 0), "contained": int(m.get("contained_incidents") or 0),
                      "blocked": int(m.get("blocked") or 0), "last_seen": last,
-                     "agent_id": (agent or {}).get("agent_id")})
+                     "agent_id": (agent or {}).get("agent_id"),
+                     "services": [x for x in m.get("services") or [] if isinstance(x, dict)]})
     for host, agent in live.items():
         if host not in seen:
             rows.append({"name": host, "place": "Agent", "host": host, "online": False, "waiting": True,
@@ -517,6 +518,29 @@ def panel_machines(found: Iterable[dict], agents: Iterable[dict], risk: dict | N
                          "open": 0, "contained": 0, "blocked": 0, "last_seen": None, "agent_id": agent.get("agent_id")})
     rows.sort(key=lambda r: (-(r["index"] or 0), r["name"]))
     return rows
+
+
+def services_text(services: Iterable[dict], limit: int = 4) -> str:
+    """'nginx :443, sshd :22 (1 open), +2 more' for a machine row; a service under attack goes first."""
+    svcs = sorted((x for x in services or [] if isinstance(x, dict) and x.get("name")),
+                  key=lambda x: (-int(x.get("open_incidents") or 0), x.get("port") or 0))
+    parts = []
+    for x in svcs[:limit]:
+        port = f" :{x['port']}" if x.get("port") else ""
+        hit = f" ({x['open_incidents']} open)" if x.get("open_incidents") else ""
+        parts.append(f"{x['name']}{port}{hit}")
+    if len(svcs) > limit:
+        parts.append(f"+{len(svcs) - limit} more")
+    return ", ".join(parts)
+
+
+def service_rows(services: Iterable[dict]) -> pd.DataFrame:
+    """One machine's services for the Machines page (like the servers on a node)."""
+    rows = [{"Service": x.get("name"), "Port": x.get("port"), "Protocol": (x.get("proto") or "").upper() or "-",
+             "Process": x.get("process") or "-", "Open incidents": int(x.get("open_incidents") or 0)}
+            for x in services or [] if isinstance(x, dict) and x.get("name")]
+    rows.sort(key=lambda r: (-r["Open incidents"], r["Port"] if r["Port"] is not None else 1 << 17))
+    return pd.DataFrame(rows, columns=["Service", "Port", "Protocol", "Process", "Open incidents"])
 
 
 def agent_rows(agents: Iterable[dict]) -> pd.DataFrame:
@@ -567,6 +591,8 @@ def machine_rows_html(machines: list[dict]) -> str:
             num = "-" if m["index"] is None else f"{m['index']:.0f}"
             word, width = BAND_WORD.get(m["band"], "Unknown"), m["index"] or 0.0
             place = f"{place} · threshold {m['threshold']:.0f}"
+            if m.get("services"):
+                place = f"{place} · {services_text(m['services'])}"
         rows.append(
             f'<li class="machine">'
             f'<span class="m-icon mi" style="color:{tone}" aria-hidden="true">{icon}</span>'

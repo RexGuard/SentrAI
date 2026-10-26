@@ -140,3 +140,41 @@ def test_fetch_blocklist_uses_the_machine_key():
 def test_cli_without_a_join(capsys):
     assert agent.main(["status"]) == 1
     assert "has not joined" in capsys.readouterr().out
+
+
+class Conn:
+    def __init__(self, laddr, status="LISTEN", kind="tcp", pid=1, raddr=()):
+        import socket as so
+        self.laddr, self.status, self.pid, self.raddr = laddr, status, pid, raddr
+        self.type = so.SOCK_STREAM if kind == "tcp" else so.SOCK_DGRAM
+
+
+def test_listening_services_are_named_and_kept_private():
+    from agent import services
+
+    conns = [Conn(("0.0.0.0", 443), pid=10), Conn(("::", 443), pid=10), Conn(("0.0.0.0", 22), pid=11),
+             Conn(("127.0.0.1", 6379), pid=12),                       # loopback only: not reported
+             Conn(("0.0.0.0", 25565), pid=13), Conn(("0.0.0.0", 5000), pid=None),
+             Conn(("10.0.0.5", 51000), status="ESTABLISHED", pid=14),  # a client connection
+             Conn(("0.0.0.0", 53), kind="udp", status="NONE", pid=15), Conn(("0.0.0.0", 41234), kind="udp", status="NONE")]
+    names = {10: "nginx", 11: "sshd", 12: "redis-server", 13: "java", 15: "systemd-resolved"}
+    found = services.listening(lambda: conns, names.get)
+    assert [(s["name"], s["port"], s["proto"]) for s in found] == [
+        ("sshd", 22, "tcp"), ("systemd-resolved", 53, "udp"), ("nginx", 443, "tcp"),
+        ("port-5000", 5000, "tcp"), ("minecraft", 25565, "tcp")]
+    assert found[-1]["process"] == "java"  # the port named it; the process is still shown
+    assert services.listening(lambda: conns, names.get, include_local=True)[4]["name"] == "redis"
+
+
+def test_report_services_posts_names_only():
+    sent = {}
+
+    class S:
+        def post(self, url, json, headers, timeout, verify):
+            sent.update(url=url, body=json, headers=headers)
+            return FakeResponse(200, {"ok": True})
+
+    data = {"panel": "https://panel.example.com", "key": "sa_x.y"}
+    assert agent.report_services(data, S(), lambda: [{"name": "nginx", "port": 443, "proto": "tcp", "process": "nginx"}])
+    assert sent["url"] == "https://panel.example.com/fleet/services"
+    assert sent["body"]["services"][0]["name"] == "nginx" and sent["headers"]["Authorization"] == "Bearer sa_x.y"
