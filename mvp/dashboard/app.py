@@ -2321,10 +2321,8 @@ def page_audit() -> None:
             st.warning(f"Could not load audit log: {err}")
         render_feed(sh.build_activity_feed(records, limit=60))
     with right, st.container(border=True):
-        section("Agents", "who does what", "groups")
-        table(sh.pd.DataFrame([{"Agent": a.get("name"), "Role": a.get("role"),
-                                "Can act": "yes" if a.get("can_execute") else "no"} for a in agents or []]),
-              "Agent list unavailable.")
+        section("Agents", f"who does what · records in the latest {len(records)}", "groups")
+        table(sh.agent_table(agents, records), "No agents yet.")
 
 
 def when(value: Any) -> str:
