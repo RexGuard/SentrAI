@@ -232,3 +232,7 @@ div[data-testid="stButtonGroup"] button[aria-checked="true"] * { color: var(--on
 .stCheckbox label:has(input[role="switch"])[data-selected="true"] > div:first-of-type > div { background: var(--on-brand); }
 /* Inline code in captions (setting names): Streamlit's green code ink at 0.75em failed AA contrast and the 12 px floor. */
 [data-testid="stCaptionContainer"] code { color: inherit; opacity: 1; font-size: 1em; }
+/* Multiselect chips: Streamlit fills them with the accent and writes white on it, unreadable on Mono's white. */
+[data-testid="stMultiSelect"] [data-tag] { background-color: var(--brand-soft) !important;
+  border: 1px solid var(--brand-line); }
+[data-testid="stMultiSelect"] [data-tag] * { color: var(--ink) !important; }

@@ -173,6 +173,58 @@ def test_routing_tables_use_names():
     assert list(sh.contact_rows(routing)["Alerts in Telegram"]) == ["Own chat", "Team group"]
 
 
+ROUTING_MAP = {"contacts": [{"id": "a", "name": "Amir", "role": "on_duty", "backup": "b"},
+                            {"id": "b", "name": "Lee", "role": "team_lead", "backup": "c"},
+                            {"id": "c", "name": "Ika", "telegram_linked": True}],
+               "rules": [{"name": "Inside", "match": {"category": ["malware"], "host": ["db-*"]}, "owner": "a",
+                          "notify": ["b", "c"]},
+                         {"name": "Everything else", "match": {}, "owner": "b", "notify": []}],
+               "follow_up": {"escalate_after_reminders": 2}}
+
+
+def test_routing_map_draws_rules_owners_told_and_backups():
+    dot = sh.routing_dot(ROUTING_MAP)
+    assert dot.startswith("digraph") and dot.rstrip().endswith("}")
+    assert 'rule1 [label="1. Inside\\nMalware found; machine\\ndb-*"' in dot  # wrapped
+    assert 'rule2 [label="2. Everything else"' in dot  # no "anything else" under it
+    assert 'rule1 -> "p_a" [label="owns"' in dot and 'rule1 -> "p_c" [color' in dot
+    assert '"p_a" -> "p_b" [label="backup"' in dot and '"p_c" ->' not in dot
+    assert 'own Telegram chat' in dot
+    odd = {"contacts": [{"id": "x", "name": 'Say "hi" \\ bye'}], "rules": []}
+    assert '"p_x" [label="Say \\"hi\\" \\\\ bye\\nin no rule yet", style="rounded,dashed"]' in sh.routing_dot(odd)
+
+
+def test_routing_doc_round_trips_to_the_file_shape():
+    doc = sh.routing_doc(ROUTING_MAP)
+    assert doc["contacts"]["a"] == {"name": "Amir", "role": "on_duty", "email": "", "telegram": "", "backup": "b"}
+    assert doc["rules"][0]["notify"] == ["b", "c"] and doc["follow_up"] == {"escalate_after_reminders": 2}
+    doc["rules"][0]["notify"].append("z")
+    assert ROUTING_MAP["rules"][0]["notify"] == ["b", "c"]  # a copy, not the fetched data
+    assert sh.new_contact_id(doc, "Amir Q.") == "amir-q"
+    doc["contacts"]["amir-q"] = {}
+    assert sh.new_contact_id(doc, "Amir Q.") == "amir-q-2" and sh.new_contact_id(doc, "!!") == "person"
+
+
+def test_removing_someone_who_owns_a_rule_is_refused():
+    doc = sh.routing_doc(ROUTING_MAP)
+    try:
+        sh.remove_contact(doc, "b")
+    except ValueError as exc:
+        assert "Lee owns Everything else" in str(exc)
+    else:
+        raise AssertionError("expected a refusal")
+    assert "b" in doc["contacts"]
+
+
+def test_removing_someone_passes_their_backup_on_and_drops_them_from_told():
+    doc = sh.routing_doc(ROUTING_MAP)
+    doc["rules"][1]["owner"] = "a"
+    notes = sh.remove_contact(doc, "b")
+    assert "b" not in doc["contacts"] and doc["contacts"]["a"]["backup"] == "c"
+    assert doc["rules"][0]["notify"] == ["c"]
+    assert notes == ["Amir's backup is now Ika", "Inside no longer tells Lee"]
+
+
 def test_panel_machines_merge_scores_and_joined_agents():
     from datetime import datetime, timezone
 

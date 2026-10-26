@@ -951,6 +951,139 @@ def contact_rows(routing: dict | None) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=["Contact", "Role", "Email", "Telegram", "Alerts in Telegram", "Backup"])
 
 
+# ------------------------------------------------- "Who gets what" map and editing
+
+SEVERITY_CHOICES = ["low", "medium", "high", "critical"]
+ROLE_CHOICES = ["", "on_duty", "team_lead", "it_manager", "cxo"]
+
+
+def rule_when(match: dict | None) -> str:
+    """A rule's match in plain words: "Malware found or Log tampering; critical"."""
+    parts = []
+    for key, values in (match or {}).items():
+        if key == "category":
+            parts.append(" or ".join(category_label(v) for v in values))
+        elif key == "host":
+            parts.append("machine " + " or ".join(values))
+        elif key == "layer":
+            parts.append("layer " + " or ".join(values))
+        else:
+            parts.append(" or ".join(values))
+    return "; ".join(parts) or "anything else"
+
+
+def routing_doc(routing: dict | None) -> dict:
+    """GET /routing turned into the file shape POST /routing takes, to edit and send back."""
+    routing = routing or {}
+    contacts = {str(c.get("id")): {k: str(c.get(k) or "") for k in ("name", "role", "email", "telegram", "backup")}
+                for c in routing.get("contacts") or [] if c.get("id")}
+    rules = [{"name": str(r.get("name") or ""), "match": {k: list(v) for k, v in (r.get("match") or {}).items()},
+              "owner": str(r.get("owner") or ""), "notify": list(r.get("notify") or [])}
+             for r in routing.get("rules") or []]
+    return {"contacts": contacts, "rules": rules, "follow_up": dict(routing.get("follow_up") or {})}
+
+
+def new_contact_id(doc: dict, name: str) -> str:
+    """A short id from the name (lee, lee-2, ...) that no one in the routing has yet."""
+    base = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:30] or "person"
+    cid, n = base, 1
+    while cid in doc["contacts"]:
+        n += 1
+        cid = f"{base}-{n}"
+    return cid
+
+
+def remove_contact(doc: dict, cid: str) -> list[str]:
+    """Take someone out of the routing. Whoever they backed up gets their backup instead, and they
+    drop off every "also told" list. Refuses (ValueError) while they own a rule. Returns what changed."""
+    gone = doc["contacts"].get(cid)
+    if gone is None:
+        raise ValueError("that person is not in the routing")
+    if len(doc["contacts"]) == 1:
+        raise ValueError("keep at least one person")
+    owns = [r["name"] for r in doc["rules"] if r.get("owner") == cid]
+    if owns:
+        raise ValueError(f"{gone['name']} owns {', '.join(owns)}. Give "
+                         f"{'that rule' if len(owns) == 1 else 'those rules'} to someone else first.")
+    del doc["contacts"][cid]
+    notes = []
+    nxt = gone.get("backup") if gone.get("backup") in doc["contacts"] else ""
+    for other, c in doc["contacts"].items():
+        if c.get("backup") == cid:
+            c["backup"] = nxt if nxt != other else ""
+            notes.append(f"{c['name']}'s backup is now {doc['contacts'][c['backup']]['name'] if c['backup'] else 'nobody'}")
+    for r in doc["rules"]:
+        if cid in (r.get("notify") or []):
+            r["notify"] = [x for x in r["notify"] if x != cid]
+            notes.append(f"{r['name']} no longer tells {gone['name']}")
+    return notes
+
+
+def _dot(text: Any) -> str:
+    return str(text).replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _wrap(text: str, width: int = 26) -> str:
+    """Break a long label into lines at commas and spaces (DOT has no automatic wrapping)."""
+    out, line = [], ""
+    for word in text.split(" "):
+        if line and len(line) + len(word) + 1 > width:
+            out.append(line)
+            line = word
+        else:
+            line = f"{line} {word}".strip()
+    out.append(line)
+    return "\\n".join(_dot(x) for x in out)
+
+
+def routing_dot(routing: dict | None, colors: dict[str, str] | None = None) -> str:
+    """The routing as a left-to-right mind map in Graphviz DOT: incident -> rules -> owner / told -> backup."""
+    c = {"ink": "#f5f5f5", "ink-muted": "#8c8c8c", "surface": "#141414", "surface-3": "#262626",
+         "line": "#2e2e2e", "brand": "#f5f5f5", "amber": "#e8b34a"} | (colors or {})
+    font = "IBM Plex Sans, Segoe UI, Arial, sans-serif"
+    routing = routing or {}
+    contacts = {str(x.get("id")): x for x in routing.get("contacts") or []}
+    out = ["digraph routing {",
+           f'  graph [rankdir=LR, bgcolor="transparent", nodesep=0.3, ranksep=0.9, fontname="{font}"];',
+           f'  node [fontname="{font}", fontsize=15, fontcolor="{c["ink"]}", color="{c["line"]}", '
+           f'style="rounded,filled", fillcolor="{c["surface"]}", shape=box, margin="0.14,0.07"];',
+           f'  edge [fontname="{font}", fontsize=11, fontcolor="{c["ink-muted"]}", arrowsize=0.6];',
+           f'  incident [label="New incident", shape=ellipse, style=filled, fillcolor="{c["brand"]}", '
+           f'fontcolor="{c["surface"]}", color="{c["brand"]}", fontsize=14, ordering=out];']
+    for n, r in enumerate(routing.get("rules") or [], 1):
+        rid = f"rule{n}"
+        when = rule_when(r.get("match"))
+        label = f"{n}. {_dot(r.get('name') or '')}" + \
+            ("" if when.lower() == str(r.get("name") or "").lower() or not r.get("match") else f"\\n{_wrap(when)}")
+        out.append(f'  {rid} [label="{label}", fillcolor="{c["surface-3"]}"];')
+        out.append(f'  incident -> {rid} [color="{c["line"]}", arrowhead=none];')
+        if r.get("owner") in contacts:
+            out.append(f'  {rid} -> "p_{_dot(r["owner"])}" [label="owns", color="{c["brand"]}", penwidth=2];')
+        for x in r.get("notify") or []:
+            if x in contacts:
+                out.append(f'  {rid} -> "p_{_dot(x)}" [color="{c["ink-muted"]}", style=dashed];')
+    used = {r.get("owner") for r in routing.get("rules") or []} | \
+        {x for r in routing.get("rules") or [] for x in r.get("notify") or []} | \
+        {p.get("backup") for p in contacts.values()}
+    for cid, p in contacts.items():
+        role = str(p.get("role") or "").replace("_", " ")
+        bits = [role if role.lower() != str(p.get("name") or "").lower() else ""]
+        if cid not in used and not p.get("backup"):
+            bits.append("in no rule yet")
+        if p.get("telegram_linked"):
+            bits.append("own Telegram chat")
+        sub = " · ".join(b for b in bits if b)
+        label = _dot(p.get("name") or cid) + (f"\\n{_dot(sub)}" if sub else "")
+        loose = ', style="rounded,dashed"' if "in no rule yet" in bits else ""
+        out.append(f'  "p_{_dot(cid)}" [label="{label}"{loose}];')
+        b = p.get("backup")
+        if b and b in contacts and b != cid:
+            out.append(f'  "p_{_dot(cid)}" -> "p_{_dot(b)}" [label="backup", color="{c["amber"]}", '
+                       f'fontcolor="{c["amber"]}", style=dotted, penwidth=1.5];')
+    out.append("}")
+    return "\n".join(out)
+
+
 def pending_approvals(incidents: Iterable[dict]) -> list[dict]:
     """Incidents waiting on a person: open ones to approve or reject, contained ones to keep or roll back."""
     waiting = [i for i in incidents or [] if (a := available_actions(i))["decide"] or a["contain_controls"]]
