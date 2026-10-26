@@ -155,8 +155,14 @@ Stop-LeftoverAgents
 # --- folders (the machine key lives in $State: SYSTEM and Administrators only; what is
 #     created inside later inherits that) ---
 New-Item -ItemType Directory -Force -Path $Prefix, $Mvp, $State, (Join-Path $State "logs"), (Join-Path $State "service") | Out-Null
-Native icacls.exe $State /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" /T /Q | Out-Null
+# Only the folder gets its own list; everything in it inherits it. (Granting the same (OI)(CI) entries
+# file by file with /T left existing files with no usable entry: even SYSTEM was denied its logs.)
+Native icacls.exe $State /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" /Q | Out-Null
 if ($LASTEXITCODE -ne 0) { Die "could not limit access to $State" }
+if (Get-ChildItem $State -Force) {
+    Native icacls.exe (Join-Path $State "*") /reset /T /C /Q | Out-Null
+    if ($LASTEXITCODE -ne 0) { Die "could not reset access inside $State" }
+}
 
 # --- code and venv (the agent uses the lab venv, plus the core's firewall module) ---
 Write-Host "Copying code to $Mvp ..."
