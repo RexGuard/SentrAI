@@ -13,12 +13,14 @@
 .EXAMPLE
   .\run.ps1                     # real time: one real hour is one hour on the timers
   .\run.ps1 -Speed 60           # faster timers for testing (1 real minute = 1 hour)
+  .\run.ps1 -CoreBind 0.0.0.0   # let machines on the network reach the core (agents joining this panel); private networks only
   .\run.ps1 -CorePort 8100      # when 8000 is taken (or set CACTAI_CORE_PORT / CACTAI_DASHBOARD_PORT)
 #>
 param(
     [Alias("DemoSpeed")] [double]$Speed = $(if ($env:DEMO_SPEED) { [double]$env:DEMO_SPEED } else { 1 }),
     [switch]$NoDashboard,
     [switch]$NoBrowser,
+    [string]$CoreBind = $(if ($env:CACTAI_CORE_HOST) { $env:CACTAI_CORE_HOST } else { "127.0.0.1" }),
     [int]$CorePort = $(if ($env:CACTAI_CORE_PORT) { [int]$env:CACTAI_CORE_PORT } else { 8000 }),
     [int]$DashboardPort = $(if ($env:CACTAI_DASHBOARD_PORT) { [int]$env:CACTAI_DASHBOARD_PORT } else { 8501 })
 )
@@ -123,7 +125,7 @@ Write-Host ""
 if ($Speed -eq 1) { Write-Host "SentrAI  (real time)" -ForegroundColor Green }
 else { Write-Host "SentrAI  (DEMO_SPEED=$Speed -> 1 real minute = $([math]::Round($Speed/60,2)) hours on the timers)" -ForegroundColor Green }
 
-$started += Start-Component "core" (Join-Path $Root "core") "& '$pyCore' -m uvicorn app.main:app --host 127.0.0.1 --port $CorePort"
+$started += Start-Component "core" (Join-Path $Root "core") "& '$pyCore' -m uvicorn app.main:app --host $CoreBind --port $CorePort"
 if (-not (Wait-Http "$Core/health")) {
     Write-Host "Core did not come up on :$CorePort. Check the 'SentrAI - core' window." -ForegroundColor Red
 }

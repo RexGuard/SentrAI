@@ -13,6 +13,9 @@
 #   ./run.sh                            real time: one real hour is one hour on the timers
 #   ./run.sh --speed 60                 faster timers for testing (1 real minute = 1 hour)
 #   ./run.sh --no-dashboard --no-browser
+#   ./run.sh --core-bind 0.0.0.0        let machines on the network reach the core (agents joining this panel).
+#                                       Default 127.0.0.1 (this computer only). The API needs its token, but runs
+#                                       over plain http here: private test networks only
 #   ./run.sh --core-port 8100           when 8000 is taken (or set CACTAI_CORE_PORT; the dashboard
 #                                       port can come from CACTAI_DASHBOARD_PORT the same way)
 #
@@ -25,6 +28,7 @@ DEMO_SPEED="${DEMO_SPEED:-1}"
 NO_DASHBOARD=0
 NO_BROWSER=0
 CORE_PORT="${CACTAI_CORE_PORT:-8000}"
+CORE_BIND="${CACTAI_CORE_HOST:-127.0.0.1}"
 DASH_PORT="${CACTAI_DASHBOARD_PORT:-8501}"
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -32,8 +36,9 @@ while [ $# -gt 0 ]; do
         --no-dashboard) NO_DASHBOARD=1; shift ;;
         --no-browser) NO_BROWSER=1; shift ;;
         --core-port) CORE_PORT="$2"; shift 2 ;;
+        --core-bind) CORE_BIND="$2"; shift 2 ;;
         --dashboard-port) DASH_PORT="$2"; shift 2 ;;
-        -h|--help) sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "Unknown option: $1 (see --help)" >&2; exit 2 ;;
     esac
 done
@@ -152,7 +157,7 @@ echo
 if [ "$DEMO_SPEED" = 1 ]; then echo "SentrAI  (real time)"
 else echo "SentrAI  (DEMO_SPEED=$DEMO_SPEED -> 1 real minute = $(awk "BEGIN{printf \"%.2f\", $DEMO_SPEED/60}") hours on the timers)"; fi
 
-start_component core "$ROOT/core" "$PY_CORE" -m uvicorn app.main:app --host 127.0.0.1 --port "$CORE_PORT"
+start_component core "$ROOT/core" "$PY_CORE" -m uvicorn app.main:app --host "$CORE_BIND" --port "$CORE_PORT"
 wait_http "$CORE/health" || echo "Core did not come up on :$CORE_PORT. Check .run_logs/core.log" >&2
 start_component collector "$ROOT/lab" "$PY_LAB" -m collector.collector
 start_component notifier "$ROOT/notifier" "$PY_NOTIF" notifier.py
