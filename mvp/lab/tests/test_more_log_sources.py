@@ -5,6 +5,7 @@ made-up hosts and users); no real machine's data.
 """
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -60,39 +61,53 @@ def test_windows_source_reads_new_records_and_resumes():
     xml = (SAMPLES / "winevent_security.xml").read_text(encoding="utf-8")
     calls = []
 
-    def run(cmd):
-        calls.append(cmd)
+    def read(channel, xpath, reverse, limit):
+        calls.append((channel, xpath, reverse, limit))
         return xml if len(calls) == 1 else "<Events></Events>"
 
-    src = WindowsEventSource("Security", run=run)
+    src = WindowsEventSource("Security", read=read)
     events = src.poll()
     assert [e["parsed"]["event_id"] for e in events] == [4625, 4732, 1102]
     assert events[0]["host"] == "vps-real" and events[0]["source"] == "winevent:Security"
     assert events[0]["src_ip"] == "203.0.113.60" and events[0]["layer"] == "os"
     assert src.checkpoint() == {"record_id": 1004}
-    assert "/rd:true" in calls[0] and "/c:200" in calls[0]  # first look: the newest 200
+    assert calls[0][0] == "Security" and calls[0][2:] == (True, 200)  # first look: the newest 200
     src._next = 0
     assert src.poll() == []
-    assert "EventRecordID>1004" in calls[1][3] and "EventID=4625" in calls[1][3]
-    again = WindowsEventSource("Security", saved=src.checkpoint(), run=run)
-    assert "EventRecordID>1004" in again.query()[3]
+    assert "EventRecordID>1004" in calls[1][1] and "EventID=4625" in calls[1][1] and calls[1][2:] == (False, 500)
+    again = WindowsEventSource("Security", saved=src.checkpoint(), read=read)
+    assert "EventRecordID>1004" in again.query()[0]
 
 
 def test_windows_source_approved_while_running_starts_at_the_end():
     xml = (SAMPLES / "winevent_security.xml").read_text(encoding="utf-8")
-    src = WindowsEventSource("Security", from_end=True, run=lambda cmd: xml)
+    src = WindowsEventSource("Security", from_end=True, read=lambda *a: xml)
     assert src.poll() == [] and src.record_id == 1004
 
 
 def test_windows_source_without_rights_warns_once(capsys):
-    def denied(cmd):
-        raise OSError("Access is denied.")
+    def denied(*a):
+        raise OSError(5, "Access is denied.")
 
-    src = WindowsEventSource("Security", run=denied)
+    src = WindowsEventSource("Security", read=denied)
     assert src.poll() == []
     src._next = 0
     assert src.poll() == []
     assert capsys.readouterr().out.count("Event Log Readers") == 1
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="the Windows Event Log API is only on Windows")
+def test_real_windows_event_log_api():
+    from collector import wevtapi
+
+    recs = parsers.winevent_from_xml(wevtapi.query("System", "*", reverse=True, limit=5))
+    assert 0 < len(recs) <= 5 and all(r.get("record_id") and r.get("event_id") for r in recs)
+    assert recs[0]["record_id"] > recs[-1]["record_id"]  # newest first
+    with pytest.raises(OSError):
+        wevtapi.query("No-Such-Channel/Operational", "*")
+    src = WindowsEventSource("System", event_ids=[7036, 7040, 7045])  # service state changes: always some
+    src.poll()
+    assert src.record_id is not None
 
 
 def test_winevent_entry_in_sources_json():

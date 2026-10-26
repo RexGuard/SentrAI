@@ -73,7 +73,7 @@ python -m collector.collector
   (`CACTAI_COLLECTOR_BACKFILL_KB`).
 - Lines with no time zone (auth.log, nginx error.log) use this computer's zone, or `CACTAI_LOG_TZ`
   (`Asia/Singapore`, `+08:00`, `UTC`). `CACTAI_HOST` overrides the host name.
-- Windows: `winevent:<channel>` entries are read with the built-in `wevtutil` every 5 s and resume
+- Windows: `winevent:<channel>` entries are read through the built-in Windows Event Log API every 5 s and resume
   from the last record number. Suricata keeps only `alert` records. Database logs get the client
   address of an earlier line of the same connection. What each source catches, and the settings
   some of them need: `docs/log-sources.md`.

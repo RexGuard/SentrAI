@@ -640,46 +640,37 @@ WINDOWS_EVERY_S = 5.0
 
 
 class WindowsEventSource(Source):
-    """Reads one Windows event log channel with ``wevtutil`` (built into Windows; no extra package).
-    sources.json entry: ``{"path": "winevent:Security", "format": "winevent", "layer": "os"}``;
-    ``"event_ids"`` picks other events. Every 5 s it asks for records newer than the last one read
-    and resumes from that record number after a restart; with none, it starts with the last 200.
+    """Reads one Windows event log channel through the Event Log API (``collector/wevtapi.py``;
+    built into Windows, no extra package). sources.json entry:
+    ``{"path": "winevent:Security", "format": "winevent", "layer": "os"}``; ``"event_ids"`` picks
+    other events. Every 5 s it asks for records newer than the last one read and resumes from that
+    record number after a restart; with none, it starts with the last 200.
 
     The Security channel needs an administrator (the agent's service account) or a member of the
     "Event Log Readers" group; without that it says so once and keeps trying."""
 
     def __init__(self, channel: str = "Security", layer: str = "os", event_ids: list[int] | None = None,
                  saved: dict | None = None, from_end: bool = False,
-                 run: Callable[[list[str]], str] | None = None) -> None:
+                 read: Callable[[str, str, bool, int], str] | None = None) -> None:
         self.channel = channel
         self.name = self.key = self.source = f"winevent:{channel}"
         self.layer = layer
         self.event_ids = [int(i) for i in (event_ids or WINDOWS_CHANNELS.get(channel) or [])]
         self.record_id: int | None = (saved or {}).get("record_id")
         self._from_end = from_end and self.record_id is None
-        self._run = run or self._wevtutil
+        self._read = read
         self._next = 0.0
         self._warned = False
 
-    @staticmethod
-    def _wevtutil(cmd: list[str]) -> str:
-        out = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
-        if out.returncode != 0:
-            raise OSError((out.stderr or out.stdout or f"exit {out.returncode}").strip()[:200])
-        return out.stdout
-
-    def query(self) -> list[str]:
+    def query(self) -> tuple[str, bool, int]:
+        """(XPath, newest first?, how many) for the next read."""
         ids = " or ".join(f"EventID={i}" for i in self.event_ids)
         where = f"({ids})" if ids else ""
         if self.record_id is not None:
             where = f"EventRecordID>{self.record_id}" + (f" and {where}" if where else "")
-        xpath = f"*[System[{where}]]" if where else "*"
-        cmd = ["wevtutil", "qe", self.channel, f"/q:{xpath}", "/f:RenderedXml", "/e:Events"]
-        if self.record_id is None:
-            cmd += ["/rd:true", f"/c:{1 if self._from_end else 200}"]  # newest first; put back in order below
-        else:
-            cmd += ["/c:500"]
-        return cmd
+            return (f"*[System[{where}]]", False, 500)
+        # First look: the newest 200 (or just the newest one, to learn where "now" is); put back in order below.
+        return (f"*[System[{where}]]" if where else "*", True, 1 if self._from_end else 200)
 
     def poll(self) -> list[dict[str, Any]]:
         if time.time() < self._next:
@@ -687,8 +678,11 @@ class WindowsEventSource(Source):
         self._next = time.time() + WINDOWS_EVERY_S
         first = self.record_id is None
         try:
-            records = parsers.winevent_from_xml(self._run(self.query()))
-        except (OSError, subprocess.SubprocessError) as exc:
+            if self._read is None:
+                from collector import wevtapi
+                self._read = wevtapi.query
+            records = parsers.winevent_from_xml(self._read(self.channel, *self.query()))
+        except OSError as exc:
             if not self._warned:
                 self._warned = True
                 print(f"[collector] cannot read the Windows {self.channel} log ({exc}); run SentrAI as an "
