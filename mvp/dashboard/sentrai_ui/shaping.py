@@ -625,12 +625,13 @@ def join_commands(panel_url: str, code: str, name: str | None = None, pin: str |
     }
 
 
-def machine_rows_html(machines: list[dict]) -> str:
+def machine_rows_html(machines: list[dict], opened: bool | None = None) -> str:
     """The machine list: one row per SentrAI program, like a game's server-status screen.
 
     Status shield on the left (protecting, protection off, or offline), the machine's name with a small
     risk bar under it, and the risk number with its band word on the right. Styled by .machines in
-    console.css; only the data-driven widths and colours are inline."""
+    console.css; only the data-driven widths and colours are inline. With opened set (True or False) the
+    rows open their details on click, so they end with an arrow pointing down (closed) or up (open)."""
     rows = []
     for m in machines:
         name, place = html.escape(str(m["name"])), html.escape(str(m["place"]))
@@ -652,15 +653,16 @@ def machine_rows_html(machines: list[dict]) -> str:
             place = f"{place} · threshold {m['threshold']:.0f}"
             if m.get("services"):
                 place = f"{place} · {services_text(m['services'])}"
+        more = "" if opened is None else f'<span class="m-more mi" aria-hidden="true">{"expand_less" if opened else "expand_more"}</span>'
         rows.append(
-            f'<li class="machine">'
+            f'<li class="machine{"" if opened is None else " clickable"}">'
             f'<span class="m-icon mi" style="color:{tone}" aria-hidden="true">{icon}</span>'
             f'<span class="m-main"><span class="m-name">{name}</span>'
             f'<span class="m-sub"><span class="m-bar" aria-hidden="true"><i style="width:{width:.0f}%;background:{color}"></i></span>'
             f'<span class="sr">{state}. </span>{place}</span></span>'
             f'<span class="m-risk"><span class="m-num"{" style=color:var(--ink-muted)" if not m["online"] else ""}>{num}</span>'
             f'<span class="m-word" style="color:{color}">{word}</span></span>'
-            f'</li>'
+            f'{more}</li>'
         )
     return f'<ul class="machines" aria-label="SentrAI machines">{"".join(rows)}</ul>'
 

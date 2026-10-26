@@ -17,6 +17,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import streamlit as st
 
@@ -1887,6 +1888,110 @@ def page_review() -> None:
             "Inaction penalty": st.column_config.NumberColumn("Inaction penalty", format="+%.0f pts")})
 
 
+def machine_list(found: list[dict], panel: bool) -> None:
+    """One card per machine. On a central panel a joined machine's card opens its services, incidents,
+    scans and backups right under it; clicking it again (or another one) closes it."""
+    if not panel:
+        st.markdown(sh.machine_rows_html(found), unsafe_allow_html=True)
+        return
+    opened = st.session_state.get("machine_open")
+    for i, m in enumerate(found):
+        host = m.get("host")
+        if not host or m.get("waiting"):
+            st.markdown(sh.machine_rows_html([m]), unsafe_allow_html=True)
+            continue
+        with st.container(key=f"mrow-{i}"):
+            st.markdown(sh.machine_rows_html([m], opened=host == opened), unsafe_allow_html=True)
+            if st.button(f"{'Hide' if host == opened else 'Show'} details for {m['name']}", key=f"mopen-{i}", width="stretch"):
+                st.session_state["machine_open"] = None if host == opened else host
+                st.rerun(scope="fragment")
+        if host == opened:
+            with st.container(border=True):
+                machine_details(m)
+
+
+def machine_details(chosen: dict) -> None:
+    pick = chosen["host"]
+    st.caption("Services running on it (its agent reports them every minute)")
+    table(sh.service_rows(chosen.get("services")), "No services reported yet.")
+    incs, ierr = safe(lambda: client.machine_incidents(pick), [])
+    if ierr:
+        st.warning(f"Could not load incidents: {ierr}")
+    st.caption("Its incidents")
+    table(sh.risk_breakdown(incs or []), f"All quiet on {pick}. No incidents.")
+    st.caption("Scans and backups on it (its agent picks them up within about 15 seconds and runs "
+               "them on the folders set on that machine)")
+    b1, b2, _ = st.columns([3, 3, 4])
+    if b1.button("Scan for threats", icon=":material/policy:", key="job_scan", width="stretch"):
+        run_action(f"Asked {pick} to scan for threats",
+                   lambda: client.queue_job(pick, "threat_scan", st.session_state.operator))
+    if b2.button("Back up now", icon=":material/backup:", key="job_backup", width="stretch"):
+        run_action(f"Asked {pick} to back up",
+                   lambda: client.queue_job(pick, "backup", st.session_state.operator))
+    jobs, jerr = safe(lambda: client.machine_jobs(pick), [])
+    if jerr:
+        st.warning(f"Could not load jobs: {jerr}")
+    table(sh.job_rows(jobs or []), f"Nothing asked of {pick} yet.")
+    found_now = sh.job_findings(jobs or [])
+    if not found_now.empty:
+        st.caption("What its latest threat scan found (critical and high ones also open an incident)")
+        table(found_now, "")
+
+
+def panel_address() -> str:
+    """Where a new machine should reach this panel: SENTRAI_PANEL_URL (here or on the core), else the
+    address this page was opened on, unless that is this computer itself."""
+    url = os.environ.get("SENTRAI_PANEL_URL", "").strip()
+    if not url:
+        info, _ = safe(client.fleet_panel, {})
+        url = str((info or {}).get("panel_url") or "")
+    if not url:
+        page = urlsplit(str(getattr(st.context, "url", "") or ""))
+        if page.scheme == "https" and page.hostname not in (None, "localhost", "127.0.0.1", "::1"):
+            url = f"https://{page.netloc}"
+    return url.rstrip("/") or os.environ.get("SENTRAI_PUBLIC_URL") or st.session_state.core_url
+
+
+def add_machine(panel: bool) -> None:
+    """The join-code form behind the + on the machine list."""
+    with st.container(border=True):
+        section("Add machine", "a one-time join code, valid for 24 hours", "add_circle")
+        if not panel:
+            empty("Turn on central panel mode first (see the note above).", "info")
+            return
+        name = st.text_input("Machine name (optional)", key="join_name", placeholder="web-01",
+                             help="Leave empty to use the new machine's own host name")
+        url = st.text_input("Panel address the machine will use", key="join_url", value=panel_address(),
+                            help="Must be https:// from another machine (install.sh --panel opens port 8443)")
+        if st.button("Make join code", icon=":material/key:", type="primary", key="join_make",
+                     disabled=locked("configure"), help=why_locked("configure")):
+            try:
+                st.session_state["join_made"] = client.join_code(st.session_state.operator, name.strip() or None)
+            except CoreError as exc:
+                st.session_state["flash"] = (f"Could not make a join code: {exc}", WARN_ICON)
+                st.rerun(scope="fragment")
+        made = st.session_state.get("join_made")
+        if made:
+            st.markdown(f'Join code <b>{html.escape(str(made["code"]))}</b> · works once, until '
+                        f'{html.escape(f"{ts:%d %b %H:%M}" if (ts := sh.parse_ts(made.get("expires_at"))) else "-")}', unsafe_allow_html=True)
+            pin = made.get("pin") if url.startswith("https://") else None
+            cmds = sh.join_commands(url, made["code"], made.get("name"), pin)
+            st.caption("On a Linux server, from a SentrAI checkout:")
+            st.code(cmds["linux"], language="bash")
+            st.caption("On Windows, from a SentrAI checkout in an Administrator PowerShell:")
+            st.code(cmds["windows"], language="powershell")
+            if pin:
+                st.caption("The --pin is this panel's certificate fingerprint: the machine will talk to this "
+                           "panel and nothing pretending to be it.")
+            if not url.startswith("https://"):
+                st.warning("Other machines refuse a plain http:// panel. Install the panel with "
+                           "sudo ./deploy/install.sh --panel to open its HTTPS port for agents.",
+                           icon=":material/lock_open:")
+            elif not pin:
+                st.info("No certificate pin is known (SENTRAI_PANEL_CERT is not set), so the machine checks the "
+                        "panel's certificate against the usual authorities.", icon=":material/lock:")
+
+
 @st.fragment(run_every=AUTO)
 def page_machines() -> None:
     show_flash()
@@ -1908,76 +2013,18 @@ def page_machines() -> None:
                 "SENTRAI_RISK_SCOPE=host (and SENTRAI_FIREWALL=off) on it and restart the core: each machine is then "
                 "scored and blocked on its own.", icon=":material/info:")
 
-    left, right = st.columns([7, 5])
-    with left, st.container(border=True):
-        section("Machine list", "worst first · SentrAI acts on a machine when its own score passes the threshold", "dns")
-        st.markdown(sh.machine_rows_html(found), unsafe_allow_html=True)
-        hosts = [m["host"] for m in found if m.get("host") and not m.get("waiting")]
-        if panel and hosts:
-            pick = st.selectbox("Look at one machine", hosts, key="machine_pick")
-            chosen = next((m for m in found if m.get("host") == pick), {})
-            st.caption("Services running on it (its agent reports them every minute)")
-            table(sh.service_rows(chosen.get("services")), "No services reported yet.")
-            incs, ierr = safe(lambda: client.machine_incidents(pick), [])
-            if ierr:
-                st.warning(f"Could not load incidents: {ierr}")
-            st.caption("Its incidents")
-            table(sh.risk_breakdown(incs or []), f"All quiet on {pick}. No incidents.")
-            st.caption("Scans and backups on it (its agent picks them up within about 15 seconds and runs "
-                       "them on the folders set on that machine)")
-            b1, b2, _ = st.columns([3, 3, 4])
-            if b1.button("Scan for threats", icon=":material/policy:", key="job_scan", width="stretch"):
-                run_action(f"Asked {pick} to scan for threats",
-                           lambda: client.queue_job(pick, "threat_scan", st.session_state.operator))
-            if b2.button("Back up now", icon=":material/backup:", key="job_backup", width="stretch"):
-                run_action(f"Asked {pick} to back up",
-                           lambda: client.queue_job(pick, "backup", st.session_state.operator))
-            jobs, jerr = safe(lambda: client.machine_jobs(pick), [])
-            if jerr:
-                st.warning(f"Could not load jobs: {jerr}")
-            table(sh.job_rows(jobs or []), f"Nothing asked of {pick} yet.")
-            found_now = sh.job_findings(jobs or [])
-            if not found_now.empty:
-                st.caption("What its latest threat scan found (critical and high ones also open an incident)")
-                table(found_now, "")
-    with right, st.container(border=True):
-        section("Add machine", "a one-time join code, valid for 24 hours", "add_circle")
-        if not panel:
-            empty("Turn on central panel mode first (see the note above).", "info")
-        else:
-            name = st.text_input("Machine name (optional)", key="join_name", placeholder="web-01",
-                                 help="Leave empty to use the new machine's own host name")
-            url = st.text_input("Panel address the machine will use", key="join_url",
-                                value=os.environ.get("SENTRAI_PANEL_URL") or os.environ.get("SENTRAI_PUBLIC_URL")
-                                or st.session_state.core_url,
-                                help="Must be https:// from another machine (install.sh --panel opens port 8443)")
-            if st.button("Make join code", icon=":material/key:", type="primary", key="join_make",
-                         disabled=locked("configure"), help=why_locked("configure")):
-                try:
-                    st.session_state["join_made"] = client.join_code(st.session_state.operator, name.strip() or None)
-                except CoreError as exc:
-                    st.session_state["flash"] = (f"Could not make a join code: {exc}", WARN_ICON)
-                    st.rerun(scope="fragment")
-            made = st.session_state.get("join_made")
-            if made:
-                st.markdown(f'Join code <b>{html.escape(str(made["code"]))}</b> · works once, until '
-                            f'{html.escape(f"{ts:%d %b %H:%M}" if (ts := sh.parse_ts(made.get("expires_at"))) else "-")}', unsafe_allow_html=True)
-                pin = made.get("pin") if url.startswith("https://") else None
-                cmds = sh.join_commands(url, made["code"], made.get("name"), pin)
-                st.caption("On a Linux server, from a SentrAI checkout:")
-                st.code(cmds["linux"], language="bash")
-                st.caption("On Windows, from a SentrAI checkout in an Administrator PowerShell:")
-                st.code(cmds["windows"], language="powershell")
-                if pin:
-                    st.caption("The --pin is this panel's certificate fingerprint: the machine will talk to this "
-                               "panel and nothing pretending to be it.")
-                if not url.startswith("https://"):
-                    st.warning("Other machines refuse a plain http:// panel. Install the panel with "
-                               "sudo ./deploy/install.sh --panel to open its HTTPS port for agents.",
-                               icon=":material/lock_open:")
-                elif not pin:
-                    st.info("No certificate pin is known (SENTRAI_PANEL_CERT is not set), so the machine checks the "
-                            "panel's certificate against the usual authorities.", icon=":material/lock:")
+    with st.container(border=True):
+        title, plus = st.columns([12, 1], vertical_alignment="center")
+        with title:
+            section("Machine list", "worst first · click a machine for its details · SentrAI acts on a machine "
+                    "when its own score passes the threshold", "dns")
+        if plus.button(":material/add:", key="add_toggle", help="Add a machine", width="stretch",
+                       type="primary" if st.session_state.get("add_open") else "secondary"):
+            st.session_state["add_open"] = not st.session_state.get("add_open")
+            st.rerun(scope="fragment")
+        if st.session_state.get("add_open"):
+            add_machine(panel)
+        machine_list(found, panel)
 
     if panel:
         agents, aerr = fetch("fleet", [])

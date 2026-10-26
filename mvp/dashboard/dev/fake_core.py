@@ -337,6 +337,11 @@ def fleet_agents():
         return list(S.agents.values())
 
 
+@app.get("/fleet/panel")
+def fleet_panel():
+    return {"panel_url": os.environ.get("SENTRAI_PANEL_URL", "").rstrip("/"), "pin": ""}
+
+
 @app.post("/fleet/join-codes")
 def fleet_join_code(body: dict = Body(...)):
     with lock:
