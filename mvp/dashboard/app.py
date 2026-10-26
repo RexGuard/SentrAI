@@ -238,7 +238,7 @@ AUDIT_WINDOW = 500  # latest records the dashboard reads; the core still verifie
 def _get(base_url: str, what: str) -> Any:
     c = CoreClient(base_url, token=TOKEN)
     return {"risk": c.risk, "incidents": c.incidents, "blocklist": c.blocklist, "agents": c.agents,
-            "audit": lambda: c.audit(AUDIT_WINDOW)}[what]()
+            "machines": c.machines, "fleet": c.fleet_agents, "audit": lambda: c.audit(AUDIT_WINDOW)}[what]()
 
 
 def fetch(what: str, default: Any = None) -> tuple[Any, str | None]:
@@ -259,9 +259,19 @@ def audit_records() -> tuple[list[dict], bool | None, str | None]:
     return records, valid, err
 
 
+def panel_mode(risk: Any) -> bool:
+    """This core is a central panel: it scores each joined machine on its own (CACTAI_RISK_SCOPE=host)."""
+    return isinstance(risk, dict) and risk.get("risk_scope") == "host"
+
+
 def machines() -> list[dict]:
-    """Every SentrAI machine this console watches, this computer first."""
+    """Every SentrAI machine this console watches: on a central panel, the machines that joined it;
+    otherwise this computer first, then the cores listed in CACTAI_PEERS."""
     risk, err = fetch("risk")
+    if panel_mode(risk):
+        found, _ = fetch("machines", [])
+        agents, _ = fetch("fleet", [])
+        return sh.panel_machines(found or [], agents or [], risk)
     found = [sh.machine(NODE_NAME, "Local", risk, err)]
     for name, url in PEERS:
         peer, perr = safe(lambda url=url: _get(url, "risk"))
@@ -281,6 +291,7 @@ PAGES = {  # key: (Material icon, label, menu group)
     "collector": ("input", "Collector", "Pipeline"),
     "classifier": ("category", "Classifier", "Pipeline"),
     "responder": ("shield", "Action taker", "Pipeline"),
+    "machines": ("dns", "Machines", "Oversight"),
     "review": ("speed", "Review", "Oversight"),
     "reports": ("description", "Reports", "Oversight"),
     "audit": ("link", "Audit trail", "Oversight"),
@@ -1416,6 +1427,84 @@ def page_review() -> None:
 
 
 @st.fragment(run_every=AUTO)
+def page_machines() -> None:
+    show_flash()
+    risk = header("Machines", "every computer that reports to this panel, and adding a new one")
+    if risk is None:
+        return
+    found = machines()
+    panel = panel_mode(risk)
+    online = sum(1 for m in found if m["online"])
+    attacked = [m for m in found if m.get("open") or m["band"] in ("red", "critical")]
+    stats(("Machines", str(len(found)), "joined this panel" if panel else "this computer and CACTAI_PEERS"),
+          ("Online", str(online), f"{len(found) - online} offline or waiting",
+           sh.BAND_COLORS["amber"] if online < len(found) else None),
+          ("Need a look", str(len(attacked)), "open incidents or red and above",
+           sh.BAND_COLORS["red"] if attacked else None),
+          ("Blocks in force", str(sum(m.get("blocked", 0) for m in found)), "each on its own machine"))
+    if not panel:
+        st.info("This core adds every machine into one score. To run it as a central panel, set "
+                "CACTAI_RISK_SCOPE=host (and CACTAI_FIREWALL=off) on it and restart the core: each machine is then "
+                "scored and blocked on its own.", icon=":material/info:")
+
+    left, right = st.columns([7, 5])
+    with left, st.container(border=True):
+        section("Machine list", "worst first · SentrAI acts on a machine when its own score passes the threshold", "dns")
+        st.markdown(sh.machine_rows_html(found), unsafe_allow_html=True)
+        hosts = [m["host"] for m in found if m.get("host") and not m.get("waiting")]
+        if panel and hosts:
+            pick = st.selectbox("Look at one machine", hosts, key="machine_pick")
+            incs, ierr = safe(lambda: client.machine_incidents(pick), [])
+            if ierr:
+                st.warning(f"Could not load incidents: {ierr}")
+            table(sh.risk_breakdown(incs or []), f"All quiet on {pick}. No incidents.")
+    with right, st.container(border=True):
+        section("Add machine", "a one-time join code, valid for 24 hours", "add_circle")
+        if not panel:
+            empty("Turn on central panel mode first (see the note above).", "info")
+        else:
+            name = st.text_input("Machine name (optional)", key="join_name", placeholder="web-01",
+                                 help="Leave empty to use the new machine's own host name")
+            url = st.text_input("Panel address the machine will use", key="join_url",
+                                value=os.environ.get("CACTAI_PUBLIC_URL") or st.session_state.core_url,
+                                help="Must be https:// from another machine")
+            if st.button("Make join code", icon=":material/key:", type="primary", key="join_make"):
+                try:
+                    st.session_state["join_made"] = client.join_code(st.session_state.operator, name.strip() or None)
+                except CoreError as exc:
+                    st.session_state["flash"] = (f"Could not make a join code: {exc}", WARN_ICON)
+                    st.rerun(scope="fragment")
+            made = st.session_state.get("join_made")
+            if made:
+                st.markdown(f'Join code <b>{html.escape(str(made["code"]))}</b> · works once, until '
+                            f'{html.escape(f"{ts:%d %b %H:%M}" if (ts := sh.parse_ts(made.get("expires_at"))) else "-")}', unsafe_allow_html=True)
+                cmds = sh.join_commands(url, made["code"], made.get("name"))
+                st.caption("On a Linux server, from a SentrAI checkout:")
+                st.code(cmds["linux"], language="bash")
+                st.caption("On Windows or a laptop, from a SentrAI checkout:")
+                st.code(cmds["windows"], language="powershell")
+                if not url.startswith("https://"):
+                    st.warning("Other machines refuse a plain http:// panel. Put HTTPS in front of the core first.",
+                               icon=":material/lock_open:")
+
+    if panel:
+        agents, aerr = fetch("fleet", [])
+        with st.container(border=True):
+            section("Joined machines", "each has its own key; revoking one never touches the others", "key")
+            if aerr:
+                st.warning(f"Could not load joined machines: {aerr}")
+            table(sh.agent_rows(agents or []), "No machine has joined yet. Make a join code above.")
+            active = {f"{a['host']} ({a['agent_id']})": a["agent_id"] for a in agents or []
+                      if isinstance(a, dict) and not a.get("revoked_at")}
+            if active:
+                c1, c2, c3 = st.columns([4, 3, 2])
+                which = c1.selectbox("Revoke a machine", list(active), key="revoke_pick", label_visibility="collapsed")
+                sure = c2.checkbox("Yes, stop accepting its key", key="revoke_sure")
+                if c3.button("Revoke", icon=":material/block:", disabled=not sure, key="revoke_go", width="stretch"):
+                    run_action(f"Revoked {which}", lambda: client.revoke_agent(active[which], st.session_state.operator))
+
+
+@st.fragment(run_every=AUTO)
 def page_reports() -> None:
     header("Reports", "one evidence report for every contained incident")
     incidents, err = fetch("incidents", [])
@@ -1501,5 +1590,5 @@ def report_viewer(inc_id: str) -> None:
 
 {
     "config": page_config, "approvals": page_approvals, "chat": page_chat, "collector": page_collector, "classifier": page_classifier,
-    "responder": page_responder, "review": page_review, "reports": page_reports, "audit": page_audit,
+    "responder": page_responder, "machines": page_machines, "review": page_review, "reports": page_reports, "audit": page_audit,
 }[st.session_state.page]()

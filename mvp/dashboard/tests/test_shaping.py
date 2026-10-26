@@ -126,3 +126,39 @@ def test_machine_rows():
 def test_demote_headings():
     out = sh.demote_headings("# Title\n## Sub\nnot # a heading\n")
     assert out.splitlines() == ["### Title", "#### Sub", "not # a heading"]
+
+
+def test_panel_machines_merge_scores_and_joined_agents():
+    from datetime import datetime, timezone
+
+    now = datetime(2026, 10, 26, 6, 0, 30, tzinfo=timezone.utc)
+    found = [{"host": "web-01", "risk_index": 83, "band": "critical", "open_incidents": 1, "contained_incidents": 2,
+              "blocked": 1, "last_seen": "2026-10-26T06:00:20+00:00", "silent": False},
+             {"host": "nginx-seen", "risk_index": 0, "band": "green", "last_seen": None, "silent": False}]
+    agents = [{"agent_id": "a1", "host": "web-01", "last_seen": "2026-10-26T06:00:25+00:00"},
+              {"agent_id": "a2", "host": "laptop", "last_seen": None},
+              {"agent_id": "a3", "host": "old", "revoked_at": "2026-10-25T00:00:00+00:00"},
+              {"agent_id": "a4", "host": "stale", "last_seen": "2026-10-26T05:50:00+00:00"}]
+    found.append({"host": "stale", "risk_index": 10, "band": "green", "silent": False})
+    rows = sh.panel_machines(found, agents, {"threshold": 80}, now=now)
+    by = {r["name"]: r for r in rows}
+    assert rows[0]["name"] == "web-01" and by["web-01"]["online"] and by["web-01"]["place"] == "Agent"
+    assert by["web-01"]["blocked"] == 1 and by["web-01"]["agent_id"] == "a1"
+    assert by["laptop"]["waiting"] and not by["laptop"]["online"]
+    assert "old" not in by  # revoked machines leave the list
+    assert not by["stale"]["online"]  # agent quiet for 10 minutes
+    assert by["nginx-seen"]["place"] == "Seen in logs" and by["nginx-seen"]["online"]
+    html_rows = sh.machine_rows_html(rows)
+    assert "Waiting" in html_rows and "waiting for its first data" in html_rows
+
+
+def test_agent_rows_and_join_commands():
+    df = sh.agent_rows([{"agent_id": "b", "host": "z", "revoked_at": "x", "revoked_by": "erick"},
+                        {"agent_id": "a", "host": "web-01", "joined_at": "2026-10-26T06:00:00+00:00"}])
+    assert list(df["Machine"]) == ["web-01", "z"] and list(df["Status"]) == ["Active", "Revoked by erick"]
+    cmds = sh.join_commands("https://panel.example.com:8000/", "K7QM-2XPA-9RTD", "web-01")
+    assert cmds["linux"] == ("sudo ./mvp/deploy/install-agent.sh --panel https://panel.example.com:8000 "
+                             "--code K7QM-2XPA-9RTD --name web-01")
+    assert cmds["windows"].splitlines() == ["cd mvp\\lab",
+                                            "python -m agent join --panel https://panel.example.com:8000 --code K7QM-2XPA-9RTD --name web-01",
+                                            "python -m agent run"]
