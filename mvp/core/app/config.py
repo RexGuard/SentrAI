@@ -84,7 +84,7 @@ class Settings:
     penalty_per_hour: float = 5.0
     penalty_cap: float = 30.0
     max_reminders: int = 6
-    on_duty: str = field(default_factory=lambda: os.getenv("ON_DUTY", "John Doe (SEC-409) / Shift Bravo"))
+    on_duty: str = field(default_factory=lambda: os.getenv("ON_DUTY", "On-duty responder"))
     team_lead: str = field(default_factory=lambda: os.getenv("TEAM_LEAD", "Team lead"))
     it_manager: str = field(default_factory=lambda: os.getenv("IT_MANAGER", "IT manager"))
     cxo: str = field(default_factory=lambda: os.getenv("CXO", "CXO"))

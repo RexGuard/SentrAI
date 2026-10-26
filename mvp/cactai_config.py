@@ -142,7 +142,7 @@ SECTIONS = (
         Field("CACTAI_HEALTH_URL", "A page that must keep working while SentrAI blocks (checked after each action)"),
         Field("PROTECTED_IPS", "IPs or networks never to block (comma-separated)", "127.0.0.1,::1,localhost"),
         Field("PROTECTED_USERS", "More accounts never to lock (admin and service accounts always are)"),
-        Field("ON_DUTY", "On-duty responder shown in alerts", "John Doe (SEC-409) / Shift Bravo"),
+        Field("ON_DUTY", "On-duty responder shown in alerts (name, ID, shift)", "On-duty responder"),
     )),
     Section("notifications", "4. Notifications", "Telegram alerts, with email as the backup. "
             "Leave both blank to print alerts to the console.", (

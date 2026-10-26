@@ -42,7 +42,7 @@ Tests:
 | `CHECK_AFTER_MIN` | `10` | After-action check, this many minutes after an action starts: did the target still get through, and did everyone else's traffic, server errors or the health page get worse? Problems are alerted to the on-duty person. |
 | `CACTAI_HEALTH_URL` | unset | A page that should keep answering while SentrAI blocks things (probed when an action starts and at its check). |
 | `UNDO_RETRY_S`, `UNDO_RETRIES` | `60`, `3` | A failed undo (the firewall rule or webhook did not confirm removal) is retried this often, this many times, then left to a person. Every undo is recorded as `action_undone` or `action_undo_failed`. |
-| `ON_DUTY` | `John Doe (SEC-409) / Shift Bravo` | The responsible entity named in reports and notifications. |
+| `ON_DUTY` | `On-duty responder` | The responsible entity named in reports and notifications, e.g. `Amir Tan (SEC-409) / Night shift`. |
 | `TEAM_LEAD`, `IT_MANAGER`, `CXO` | role names | Escalation recipients. |
 | `CACTAI_ROUTING` | `routing.json` next to the database | Contacts, routing rules and follow-up policy (see "Owners, routing and escalation"). Without the file, the four names above form the chain. |
 | `CACTAI_SUMMARY` | `daily` | How often the one-page client summary goes out on the alert channels: `daily`, `weekly` or `off`. A choice saved on the dashboard (Reports page, kept in `summary.json` next to the database) wins over this. |
