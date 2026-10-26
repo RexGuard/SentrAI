@@ -232,12 +232,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {**core.ingest(events), "events": [e["event_id"] for e in events]}
 
     @app.get("/risk")
-    def get_risk(history: int = Query(600, ge=0, le=3600)) -> dict[str, Any]:
-        return core.risk(history=history)
+    def get_risk(history: int = Query(600, ge=0, le=3600), host: Optional[str] = Query(None)) -> dict[str, Any]:
+        """The headline index, or one machine's own with ?host= (see CACTAI_RISK_SCOPE)."""
+        return core.risk(history=history, host=host)
+
+    @app.get("/machines")
+    def get_machines() -> list[dict[str, Any]]:
+        return core.machines()
 
     @app.get("/incidents")
-    def get_incidents() -> list[dict[str, Any]]:
-        return core.list_incidents()
+    def get_incidents(host: Optional[str] = Query(None)) -> list[dict[str, Any]]:
+        return core.list_incidents(host=host)
 
     @app.get("/incidents/{iid}")
     def get_incident(iid: str) -> dict[str, Any]:
@@ -343,8 +348,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc))
 
     @app.get("/blocklist")
-    def get_blocklist() -> dict[str, list[str]]:
-        return core.blocklist()
+    def get_blocklist(host: Optional[str] = Query(None)) -> dict[str, list[str]]:
+        """With ?host= in host scope, only the blocks that machine must put in place."""
+        return core.blocklist(host)
 
     @app.get("/notifications/pending")
     def get_pending() -> list[dict[str, Any]]:

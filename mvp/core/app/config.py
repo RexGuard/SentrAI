@@ -58,6 +58,11 @@ class Settings:
     demo_speed: float = field(default_factory=lambda: _f("DEMO_SPEED", 1.0))  # real time; above 1 speeds the timers up for testing
     threshold: int = field(default_factory=lambda: _i("RISK_THRESHOLD", 80))
     sla_hours: float = field(default_factory=lambda: _f("SLA_HOURS", 2.0))
+    # How the risk index is kept: "fleet" (default) adds every machine's incidents into one score, as on a
+    # single server; "host" scores each machine on its own, so a central panel never blocks a quiet machine
+    # because another one is under attack. The headline index is then the worst machine's.
+    risk_scope: str = field(default_factory=lambda: "host" if os.getenv("CACTAI_RISK_SCOPE", "fleet").strip().lower()
+                            in ("host", "machine", "per-host") else "fleet")
     ttl_hours: float = field(default_factory=lambda: _f("HOTPATCH_TTL_HOURS", 2.0))
     penalty_per_hour: float = 5.0
     penalty_cap: float = 30.0
