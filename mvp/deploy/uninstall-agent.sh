@@ -52,7 +52,8 @@ for line in e.log:
 if blocked:
     print("Removed the agent's firewall blocks: " + ", ".join(blocked))
 data["blocked"] = []
-data.pop("local_blocks", None)
+data["panel_blocked"] = []
+data.pop("local", None)  # the local rules' blocks went with the rest
 json.dump(data, open(sys.argv[1], "w", encoding="utf-8"), indent=2)
 EOF
     ) || echo "WARNING: could not remove the agent's firewall blocks; check: nft list table inet cactai" >&2

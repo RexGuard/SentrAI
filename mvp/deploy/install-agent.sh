@@ -130,14 +130,16 @@ CACTAI_LAB_LOGS=$STATE/logs
 CACTAI_FIREWALL=$FIREWALL
 CACTAI_FIREWALL_ENFORCE=$ENFORCE
 PROTECTED_IPS=$protected
-# While the panel cannot be reached: block clear attacks here for this long, at most this many an hour.
-CACTAI_AGENT_LOCAL_RULES=on
-CACTAI_AGENT_LOCAL_TTL_MIN=60
-CACTAI_AGENT_LOCAL_MAX_PER_HOUR=10
 EOF
-    # settings added by hand stay
+    # settings changed or added by hand stay
     if [ -f "$ENV_FILE" ]; then
         grep -v -E '^(#|$|CACTAI_AGENT_FILE=|CACTAI_CONFIG=|CACTAI_COLLECTOR_STATE=|CACTAI_SCOUT_SOURCES=|CACTAI_LAB_LOGS=|CACTAI_FIREWALL=|CACTAI_FIREWALL_ENFORCE=|PROTECTED_IPS=)' "$ENV_FILE" || true
+    fi
+    if [ -z "$(saved CACTAI_AGENT_LOCAL_RULES)" ]; then
+        echo "# While the panel cannot be reached: block clear attacks here for this long, at most this many an hour."
+        echo "CACTAI_AGENT_LOCAL_RULES=on"
+        echo "CACTAI_AGENT_LOCAL_TTL_MIN=60"
+        echo "CACTAI_AGENT_LOCAL_MAX_PER_HOUR=10"
     fi
 } > "$ENV_FILE.new"
 mv "$ENV_FILE.new" "$ENV_FILE"

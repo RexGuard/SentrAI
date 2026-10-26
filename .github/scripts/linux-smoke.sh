@@ -5,7 +5,8 @@
 # agent to iptables and block again, then uninstall both and check everything is gone.
 set -euo pipefail
 
-PANEL=http://127.0.0.1:8000
+PANEL=http://127.0.0.1:8000           # the operator API, on the panel only
+AGENT_URL=https://127.0.0.1:8443      # the agents' port (a VPS uses its public name or address)
 ADMIN_IP=198.51.100.5        # stands in for the admin's own address (documentation range)
 ATTACKER=45.155.205.233      # any public address works; the runner never talks to it
 ATTACKER2=45.155.205.234
@@ -39,7 +40,9 @@ chown www-data:adm "$LOG" 2>/dev/null || chown root:adm "$LOG"
 chmod 0640 "$LOG"
 
 # --- panel --------------------------------------------------------------------------------
-./deploy/install.sh --no-questions --admin-email ci@example.com --protect "$ADMIN_IP"
+# As on a VPS: agents reach the panel over the internet on its agents-only HTTPS port (--panel).
+./deploy/install.sh --no-questions --admin-email ci@example.com --protect "$ADMIN_IP" \
+    --panel 8443 --panel-url "$AGENT_URL"
 for u in cactai-core cactai-collector cactai-dashboard; do
     wait_for "$u is running" 30 systemctl is-active --quiet "$u"
 done
@@ -53,17 +56,28 @@ TOKEN="$(cd /opt/cactai/mvp && set -a && . /etc/cactai/cactai.env && set +a && \
 [ -n "$TOKEN" ] || fail "no API token"
 api() { curl -sf -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' "$@"; }
 
-# A central panel scores each machine on its own.
-grep -q '^CACTAI_RISK_SCOPE=host' /etc/cactai/cactai.env || echo CACTAI_RISK_SCOPE=host >> /etc/cactai/cactai.env
-systemctl restart cactai.target
-wait_for "core is back" 60 curl -sf "$PANEL/health"
+grep -q '^CACTAI_RISK_SCOPE=host' /etc/cactai/cactai.env || fail "--panel did not turn on per-machine scoring"
+wait_for "the agents' HTTPS port answers" 30 curl -skf "$AGENT_URL/health"
+# That port answers machine keys only: the operator API stays on 127.0.0.1, even with the token.
+code="$(curl -sk -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $TOKEN" "$AGENT_URL/incidents")"
+case "$code" in 2*) fail "the agents' port serves the operator API ($code)" ;; esac
+echo "ok: the agents' port refuses the operator API ($code)"
 
-CODE="$(api -X POST "$PANEL/fleet/join-codes" -d "{\"operator\": \"ci\", \"name\": \"$NAME\"}" \
-    | python3 -c 'import json, sys; print(json.load(sys.stdin)["code"])')"
-echo "join code $CODE"
+JOIN="$(api -X POST "$PANEL/fleet/join-codes" -d "{\"operator\": \"ci\", \"name\": \"$NAME\"}")"
+CODE="$(echo "$JOIN" | python3 -c 'import json, sys; print(json.load(sys.stdin)["code"])')"
+PIN="$(echo "$JOIN" | python3 -c 'import json, sys; print(json.load(sys.stdin)["pin"])')"
+[ "$(echo "$JOIN" | python3 -c 'import json, sys; print(json.load(sys.stdin)["panel_url"])')" = "$AGENT_URL" ] \
+    || fail "the join code does not carry the panel address"
+echo "join code $CODE, pin $PIN"
+
+# A wrong pin is refused before anything is sent.
+if ./deploy/install-agent.sh --panel "$AGENT_URL" --code "$CODE" --name "$NAME" --no-start \
+    --pin "sha256:$(printf '0%.0s' $(seq 1 64))"; then fail "a wrong pin was accepted"; fi
+echo "ok: a wrong pin is refused"
+rm -rf /var/lib/cactai/agent /etc/cactai/agent.env
 
 # --- agent: first install is a dry run ------------------------------------------------------
-./deploy/install-agent.sh --panel "$PANEL" --code "$CODE" --name "$NAME" --allow-http --protect "$ADMIN_IP"
+./deploy/install-agent.sh --panel "$AGENT_URL" --code "$CODE" --pin "$PIN" --name "$NAME" --protect "$ADMIN_IP"
 wait_for "cactai-agent is running" 30 systemctl is-active --quiet cactai-agent
 machine_reported() {
     api "$PANEL/machines" | python3 -c "import json, sys; m = [x for x in json.load(sys.stdin) if x['host'] == '$NAME']; sys.exit(not (m and m[0].get('services_at')))"
