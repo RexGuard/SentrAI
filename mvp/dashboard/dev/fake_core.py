@@ -97,6 +97,7 @@ class State:
         self.threats: dict | None = None
         self.quarantine: list[dict] = []
         self.backups: list[dict] = []
+        self.jobs: list[dict] = []  # scans/backups asked of a machine; "done" a few seconds later
         self.pending: list[dict] = []  # Scout proposals; seed one with POST /_fake/scout-proposal
         # Machines joined to this (pretend) central panel: web-01 has the scripted incidents, office-pc is quiet.
         self.agents: dict[str, dict] = {
@@ -337,6 +338,50 @@ def fleet_join_code(body: dict = Body(...)):
     with lock:
         audit("join_code_created", "Warden", operator=body.get("operator"), name=body.get("name"))
     return {"code": "K7QM-2XPA-9RTD", "expires_at": iso(now() + timedelta(hours=24)), "name": body.get("name") or None}
+
+
+FAKE_JOB_SCAN = {"files_checked": 214, "counts": {"critical": 1, "high": 0, "medium": 1}, "findings": [
+    {"path": "/var/www/html/uploads/img.php", "line": 1, "kind": "web_shell", "severity": "critical",
+     "label": "PHP web shell (eval of request data)"},
+    {"path": "/var/www/html/js/stats.js", "line": 40, "kind": "miner", "severity": "medium",
+     "label": "Browser crypto-miner pool address"}]}
+
+
+def _job_summary(j: dict) -> str:
+    if j["status"] != "done":
+        return "waiting for the machine to pick it up"
+    r = j["result"]
+    if j["kind"] == "threat_scan":
+        return f"{r['files_checked']} files checked, {len(r['findings'])} findings" + (
+            " (1 critical or high)" if r["findings"] else "")
+    return f"{r['id']}: {r['files']} files, {r['bytes'] / 1048576:.1f} MB"
+
+
+@app.get("/fleet/jobs")
+def fleet_jobs(host: str | None = None):
+    with lock:
+        for j in S.jobs:
+            if j["status"] == "queued" and (now() - datetime.fromisoformat(j["created_at"])).total_seconds() > 3:
+                clean = j["host"] != "web-01"
+                j.update(status="done", finished_at=iso(now()), result=(
+                    {"files_checked": 96, "counts": {}, "findings": []} if clean else FAKE_JOB_SCAN)
+                    if j["kind"] == "threat_scan" else
+                    {"id": f"b-{now():%Y%m%d-%H%M%S}", "files": 1342, "bytes": 48 * 1048576})
+        return [{**j, "summary": _job_summary(j)} for j in reversed(S.jobs) if host in (None, j["host"])]
+
+
+@app.post("/fleet/jobs")
+def fleet_queue_job(body: dict = Body(...)):
+    with lock:
+        if body.get("kind") not in ("threat_scan", "backup"):
+            raise HTTPException(400, "unknown job")
+        if any(j["host"] == body.get("host") and j["kind"] == body["kind"] and j["status"] == "queued" for j in S.jobs):
+            raise HTTPException(409, f"a {body['kind'].replace('_', ' ')} is already queued on {body.get('host')}")
+        j = {"id": f"j-{len(S.jobs) + 1:04x}", "host": body.get("host"), "kind": body["kind"], "status": "queued",
+             "requested_by": body.get("operator"), "created_at": iso(now()), "finished_at": None, "result": None}
+        S.jobs.append(j)
+        audit("machine_job_queued", "Warden", host=j["host"], kind=j["kind"], operator=j["requested_by"])
+        return {**j, "summary": _job_summary(j)}
 
 
 @app.post("/fleet/agents/{agent_id}/revoke")

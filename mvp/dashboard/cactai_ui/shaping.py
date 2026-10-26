@@ -580,6 +580,34 @@ def agent_rows(agents: Iterable[dict]) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=["Machine", "Id", "Joined", "Invited by", "Last seen", "Status"])
 
 
+JOB_LABELS = {"threat_scan": "Threat scan", "backup": "Backup"}
+JOB_STATUS = {"queued": "Waiting", "running": "Running", "done": "Done", "failed": "Failed",
+              "expired": "Expired", "cancelled": "Cancelled"}
+
+
+def job_rows(jobs: Iterable[dict]) -> pd.DataFrame:
+    """Scans and backups the panel asked one machine to run, newest first."""
+    rows = []
+    for j in jobs or []:
+        if not isinstance(j, dict):
+            continue
+        rows.append({"Job": JOB_LABELS.get(str(j.get("kind")), str(j.get("kind"))),
+                     "Status": JOB_STATUS.get(str(j.get("status")), str(j.get("status"))),
+                     "Asked by": j.get("requested_by") or "", "Asked": short_time(j.get("created_at")),
+                     "Finished": short_time(j.get("finished_at")) or "", "Result": j.get("summary") or ""})
+    return pd.DataFrame(rows, columns=["Job", "Status", "Asked by", "Asked", "Finished", "Result"])
+
+
+def job_findings(jobs: Iterable[dict]) -> pd.DataFrame:
+    """Findings from the newest finished threat scan on one machine."""
+    scan = next((j for j in jobs or [] if isinstance(j, dict) and j.get("kind") == "threat_scan"
+                 and j.get("status") == "done"), None)
+    rows = [{"Severity": f.get("severity"), "What": f.get("label"), "Kind": f.get("kind"),
+             "File": f.get("path") + (f" ({f['entry']})" if f.get("entry") else ""), "Line": f.get("line")}
+            for f in ((scan or {}).get("result") or {}).get("findings") or [] if isinstance(f, dict)]
+    return pd.DataFrame(rows, columns=["Severity", "What", "Kind", "File", "Line"])
+
+
 def join_commands(panel_url: str, code: str, name: str | None = None) -> dict[str, str]:
     """What to paste on the new machine, for Linux (installer) and for Windows or a laptop (from a checkout)."""
     url = panel_url.rstrip("/")

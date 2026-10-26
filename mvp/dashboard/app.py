@@ -1478,6 +1478,23 @@ def page_machines() -> None:
                 st.warning(f"Could not load incidents: {ierr}")
             st.caption("Its incidents")
             table(sh.risk_breakdown(incs or []), f"All quiet on {pick}. No incidents.")
+            st.caption("Scans and backups on it (its agent picks them up within about 15 seconds and runs "
+                       "them on the folders set on that machine)")
+            b1, b2, _ = st.columns([3, 3, 4])
+            if b1.button("Scan for threats", icon=":material/policy:", key="job_scan", width="stretch"):
+                run_action(f"Asked {pick} to scan for threats",
+                           lambda: client.queue_job(pick, "threat_scan", st.session_state.operator))
+            if b2.button("Back up now", icon=":material/backup:", key="job_backup", width="stretch"):
+                run_action(f"Asked {pick} to back up",
+                           lambda: client.queue_job(pick, "backup", st.session_state.operator))
+            jobs, jerr = safe(lambda: client.machine_jobs(pick), [])
+            if jerr:
+                st.warning(f"Could not load jobs: {jerr}")
+            table(sh.job_rows(jobs or []), f"Nothing asked of {pick} yet.")
+            found_now = sh.job_findings(jobs or [])
+            if not found_now.empty:
+                st.caption("What its latest threat scan found (critical and high ones also open an incident)")
+                table(found_now, "")
     with right, st.container(border=True):
         section("Add machine", "a one-time join code, valid for 24 hours", "add_circle")
         if not panel:
