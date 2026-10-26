@@ -45,6 +45,9 @@ Tests:
 | `ON_DUTY` | `John Doe (SEC-409) / Shift Bravo` | The responsible entity named in reports and notifications. |
 | `TEAM_LEAD`, `IT_MANAGER`, `CXO` | role names | Escalation recipients. |
 | `CACTAI_ROUTING` | `routing.json` next to the database | Contacts, routing rules and follow-up policy (see "Owners, routing and escalation"). Without the file, the four names above form the chain. |
+| `CACTAI_SUMMARY` | `daily` | How often the one-page client summary goes out on the alert channels: `daily`, `weekly` or `off`. A choice saved on the dashboard (Reports page, kept in `summary.json` next to the database) wins over this. |
+| `CACTAI_SUMMARY_AT` / `CACTAI_SUMMARY_DAY` | `08:00` / `mon` | Local time it goes out, and the weekday for `weekly`. |
+| `CACTAI_SUMMARY_TO` | `Client` | Who the summary is addressed to (shown on the page). |
 | `TYPESAFE_API_KEY` | unset | Turns on Jev (TypeSafe System One). Without it the fallback classifier is used. |
 | `JEV_TIMEOUT_S` | `3` | Timeout for each Jev call. After 3 failures in a row a 60 s circuit breaker opens. |
 | `JEV_CACHE_SIZE` / `JEV_CACHE_TTL_S` | `2048` / `3600` | Jev answers kept per log template (the line with IPs, times, ids, pids and ports replaced), so the same request from many addresses is asked about once. Size `0` turns the cache off. |
@@ -93,8 +96,31 @@ unanswered reminders, the incident is handed to the owner's backup (`escalated` 
 that is still not resolved after `resolve_within_hours` gets a `resolve_reminder` to its owner (up to 3).
 
 Each notification carries `deliver_to` (the recipients' email and Telegram from the contacts): the notifier
-emails those addresses instead of `ALERT_EMAIL_TO` and names the Telegram handles in the alert. The Telegram
-**Take it** button makes whoever pressed it the owner.
+emails those addresses instead of `ALERT_EMAIL_TO`. The Telegram **Take it** button makes whoever pressed it the owner.
+
+### Alerts in each person's own Telegram chat
+
+A Telegram bot can only message someone who has opened a private chat with it, so each contact links their
+chat once (`app/telegram_links.py`):
+
+1. On the dashboard's Incidents page (Who gets what), pick the person and press **Make link code**
+   (or `POST /telegram/link-codes {"operator", "contact"}`). The code works once, for 30 minutes.
+2. The person sends `/link CODE` to the bot in a private chat (`/start CODE` from a `t.me/<bot>?start=CODE` link works too).
+3. The notifier passes the code and the chat on to `POST /telegram/link`. Links are kept in `telegram_links.json`
+   next to the database (`CACTAI_TELEGRAM_LINKS` to move it). A contact whose `telegram` in the routing file is a
+   numeric chat id counts as linked already. `/unlink` in that chat, or the dashboard's Unlink button, stops it.
+
+From then on `deliver_to` carries each person's `telegram_chat`, and the notifier sends the alert, with its buttons,
+to each of them directly. A button pressed there is recorded under the contact's name. The team group
+(`TELEGRAM_CHAT_ID`) still gets notices that are for nobody in particular, and alerts for anyone who has not
+linked a chat yet (they are @mentioned there); `TELEGRAM_GROUP_COPY=always` gives the group a copy of everything,
+`off` keeps it quiet unless nobody could be reached. A direct message that fails (the person blocked the bot) goes
+to the group instead. Each delivery is recorded per person (`deliveries[].to`), and linking, codes and unlinking
+are audited (`telegram_link_code`, `telegram_linked`, `telegram_unlinked`).
+
+The evidence report has a **Who handled it** section: the owner and backup, the routing rule, every hand-over,
+escalation and the resolution from the audit records (each step with its record number), and who was reached in
+their own chat. The plain-words summary tells the same story in a few sentences.
 
 ### Off-box copy
 
@@ -262,6 +288,9 @@ These follow the contract:
 
 Additions that do not change the contract:
 - `GET /incidents/{id}/why`: HelpDesk explanation.
+- `GET /summary/{daily|weekly}` (JSON), `.md` and `.pdf`: the one-page client summary for the last 24 hours or 7 days, in plain words, with counts, what needs attention and what to do next, a per-machine table and the audit fingerprint to check it by. `?until=<unix time>` ends the period earlier. The link sent to the client is signed (`?until=...&sig=...`) so it opens without the API token, for that period only.
+- `GET /summary/schedule`, `POST /summary/schedule` (`{"operator", "every", "at", "day", "to"}`): the client's preference. `POST /summary/send` (`{"operator"}`) sends one now. Each send is audited as `summary_sent`, each change as `summary_schedule_changed`.
+- Each incident carries `next_steps`: what a person should do next, in everyday words. The evidence report adds `in_plain_words`, `outcome`, `next_steps` and `how_to_check`, and its Markdown and PDF name each internal part by its job ("safety check", "record keeper") instead of its code name.
 - `GET /helpdesk/why?target=<ip|user>`: "why was my IP blocked?"
 - `GET /agents`: status of each agent and of Jev.
 - `GET /limits`: the business limits on protective actions (what may run on its own, expiry per type, hourly cap and how much of it is used, after-action check delay).
@@ -271,7 +300,10 @@ Additions that do not change the contract:
 - `POST /threats/scan {"operator": "erick"}`, `GET /threats`, `POST /threats/{id}/quarantine`, `GET /quarantine`, `POST /quarantine/{id}/restore`: threat scan and quarantine.
 - `POST /incidents/{id}/assign {"operator", "assignee", "note"?}`: give the incident to a contact (id, name, role or Telegram handle) or anyone by name.
 - `POST /incidents/{id}/resolve {"operator", "note"}`: close it with a note on what was done (400 without one). Blocks in force stay until they expire or are rolled back.
-- `GET /routing`: the contacts, rules and follow-up policy in use.
+- `GET /routing`: the contacts, rules and follow-up policy in use; each contact has `telegram_linked`.
+- `POST /telegram/link-codes {"operator", "contact"}`, `POST /telegram/link {"code", "chat_id", "username"}`,
+  `POST /telegram/unlink {"operator", "contact" | "chat_id"}`, `GET /telegram/links`: personal Telegram chats (see above).
+- `POST /notifications/{id}/delivered` takes an optional `"to"`: the one person a direct message reached.
 - `GET /backups`, `POST /backups`, `POST /backups/{id}/verify`, `POST /backups/{id}/restore`: backups and restore.
 - `GET /log-sources` and `POST /log-sources {"operator", "file_id", "layer"?}`: extra log files the collector watches; a file is added only by its id from the latest scan.
 

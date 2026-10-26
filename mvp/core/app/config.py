@@ -199,3 +199,9 @@ class Settings:
         """Hours a temporary action of this type lasts, within the business limit."""
         hours = self.action_ttl_hours.get(action_type, self.ttl_hours)
         return max(0.0, min(hours, self.max_ttl_hours)) if self.max_ttl_hours > 0 else max(0.0, hours)
+    # One-page client summary (summary.py): daily | weekly | off, local time HH:MM, weekday for weekly,
+    # and the name it is addressed to. A choice saved from the dashboard (summary.json) wins over these.
+    summary_every: str = field(default_factory=lambda: os.getenv("CACTAI_SUMMARY", "daily"))
+    summary_at: str = field(default_factory=lambda: os.getenv("CACTAI_SUMMARY_AT", "08:00"))
+    summary_day: str = field(default_factory=lambda: os.getenv("CACTAI_SUMMARY_DAY", "mon"))
+    summary_to: str = field(default_factory=lambda: os.getenv("CACTAI_SUMMARY_TO", "Client"))

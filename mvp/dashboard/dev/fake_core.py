@@ -17,6 +17,7 @@ import hashlib
 import json
 import math
 import os
+import secrets
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -457,7 +458,32 @@ ROUTING = {"source": "defaults", "contacts": [
 
 @app.get("/routing")
 def routing():
-    return ROUTING
+    return {**ROUTING, "contacts": [{**c, "telegram_linked": c["id"] in TG_LINKS} for c in ROUTING["contacts"]]}
+
+
+TG_LINKS: dict = {}  # contact id -> chat id
+
+
+@app.post("/telegram/link-codes")
+def telegram_link_code(body: dict = Body(...)):
+    contact = next((c for c in ROUTING["contacts"] if body.get("contact") in (c["id"], c["name"])), None)
+    if contact is None:
+        raise HTTPException(404, "no such contact")
+    code = "".join(secrets.choice("ABCDEFGHJKMNPQRSTUVWXYZ23456789") for _ in range(8))
+    return {"contact": contact["id"], "name": contact["name"], "code": code, "expires_at": iso(now() + timedelta(minutes=30)),
+            "valid_minutes": 30, "send": f"/link {code}"}
+
+
+@app.post("/telegram/unlink")
+def telegram_unlink(body: dict = Body(...)):
+    if TG_LINKS.pop(str(body.get("contact")), None) is None:
+        raise HTTPException(404, "not linked")
+    return {"contact": body.get("contact"), "unlinked": True}
+
+
+@app.get("/telegram/links")
+def telegram_links():
+    return [{"contact_id": k, "chat_id": v} for k, v in TG_LINKS.items()]
 
 
 @app.post("/incidents/{iid}/assign")

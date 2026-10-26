@@ -92,10 +92,12 @@ def with_slack(primary: Callable, slack: Callable | None) -> Callable:
     def send(n: dict, incident: dict | None, risk: dict | None):
         result = primary(n, incident, risk)
         try:
-            slack(n, incident, risk)
+            copy = slack(n, incident, risk)
         except Exception as exc:
             log.warning("Slack copy of %s failed: %s", n.get("id"), exc)
             return result
+        if isinstance(result, list):  # one receipt per person (direct Telegram messages): Slack is one more
+            return [*result, ("slack", str(copy), None)]
         used, message_id = result if isinstance(result, tuple) else (None, result)
         return (f"{used}+slack", message_id) if used else result
 

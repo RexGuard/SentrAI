@@ -142,6 +142,21 @@ class CoreClient:
     def report_pdf(self, incident_id: str) -> bytes:
         return self._request("GET", f"/reports/{incident_id}.pdf").content
 
+    def summary_md(self, period: str) -> str:
+        return self.get_text(f"/summary/{period}.md")
+
+    def summary_pdf(self, period: str) -> bytes:
+        return self._request("GET", f"/summary/{period}.pdf").content
+
+    def summary_schedule(self) -> dict:
+        return self.get_json("/summary/schedule")
+
+    def set_summary_schedule(self, operator: str, every: str, at: str, day: str, to: str) -> dict:
+        return self.post_json("/summary/schedule", {"operator": operator, "every": every, "at": at, "day": day, "to": to})
+
+    def send_summary(self, operator: str) -> dict:
+        return self.post_json("/summary/send", {"operator": operator})
+
     def decision(self, incident_id: str, operator: str, decision: str, justification: str = "") -> Any:
         return self.post_json(
             f"/incidents/{incident_id}/decision",
@@ -160,6 +175,12 @@ class CoreClient:
 
     def routing(self) -> dict:
         return self.get_json("/routing")
+
+    def telegram_link_code(self, contact: str, operator: str) -> dict:
+        return self.post_json("/telegram/link-codes", {"contact": contact, "operator": operator})
+
+    def telegram_unlink(self, contact: str, operator: str) -> Any:
+        return self.post_json("/telegram/unlink", {"contact": contact, "operator": operator})
 
     def rollback(self, incident_id: str, operator: str, justification: str) -> Any:
         return self.post_json(
