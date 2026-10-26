@@ -57,7 +57,7 @@ def test_each_service_sees_only_its_own_state():
     core, collector, dashboard, notifier = (unit(n) for n in SERVICES)
     assert paths(core, "ReadWritePaths") == {"/var/lib/cactai/core", "/var/lib/cactai/scout", "/run/xtables.lock"}
     assert paths(collector, "ReadWritePaths") == {"/var/lib/cactai/collector"}
-    assert "ReadWritePaths" not in notifier
+    assert paths(notifier, "ReadWritePaths") == {"/var/lib/cactai/notifier"}  # its last delivered fingerprint
     assert "/var/lib/cactai/core" in paths(collector, "InaccessiblePaths")
     for u in (dashboard, notifier):
         assert {"/var/lib/cactai/core", "/var/lib/cactai/collector"} <= paths(u, "InaccessiblePaths")
