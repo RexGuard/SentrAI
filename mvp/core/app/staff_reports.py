@@ -1,7 +1,8 @@
 """Staff reports: anyone at the business can say "this looks wrong" and a person or the AI reviews it.
 
 Staff send a few sentences from the dashboard's open report page (``/?report``, no sign-in), Telegram
-(``/report ...``) or anything else that can POST to ``/staff-reports`` with the API token. Each report:
+(``/report ...``) or anything else that can POST to ``/staff-reports`` with the API token. A report may
+name the machine it is about (``host``, a name from ``GET /machines`` on a central panel). Each report:
 
 * is sorted at once: what kind of problem it sounds like, how urgent, a one-line summary, what the
   reporter should do right now, and what technical staff should check. The AI model does this when
@@ -251,11 +252,12 @@ class StaffReports:
 
     # ------------------------------------------------------------- submit
     def submit(self, text: Any, reporter: Any = "", contact: Any = "", where: Any = "", channel: Any = "api",
-               sender: Any = "") -> dict[str, Any]:
+               sender: Any = "", host: Any = "") -> dict[str, Any]:
         body = clean(text, MAX_TEXT, keep_lines=True)
         if len(body) < MIN_TEXT:
             raise ReportError("Please describe what you saw in a sentence or two.")
         reporter, contact, where = clean(reporter, MAX_FIELD), clean(contact, MAX_FIELD), clean(where, MAX_FIELD)
+        host = clean(host, MAX_FIELD)
         channel = clean(channel, 30).lower() or "api"
         with self.lock:
             self._allow(clean(sender, MAX_FIELD) or reporter or channel, time.monotonic())
@@ -265,6 +267,7 @@ class StaffReports:
             report = {
                 "id": rid, "received_at": self.core.clock.now_iso(), "channel": channel,
                 "reporter": reporter or "anonymous", "contact": contact or None, "where": where or None,
+                "host": host or None,
                 "text": body, "triage": tri, "status": "new", "assignee": None, "incident": None,
                 "notes": [], "history": [{"at": self.core.clock.now_iso(), "by": reporter or "anonymous",
                                           "what": f"reported via {channel}"}],
@@ -288,7 +291,9 @@ class StaffReports:
         return {
             "event_id": f"evt-staff-{r['id']}",
             "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "host": r["where"] or socket.gethostname() or "sentrai-core",
+            # The machine it is about (a name from GET /machines on a central panel), so it shows under that
+            # machine; else whatever place the reporter typed.
+            "host": r.get("host") or r["where"] or socket.gethostname() or "sentrai-core",
             "layer": "os",
             "source": SOURCE,
             "src_ip": None,  # never a block target: the reporter is not the attacker

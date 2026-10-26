@@ -191,11 +191,19 @@ class CoreClient:
 
     # ---- staff reports: anyone at the business reports something suspicious ----
     def report_suspicious(self, text: str, reporter: str = "", contact: str = "", where: str = "",
-                          sender: str = "") -> dict:
+                          sender: str = "", host: str = "") -> dict:
         """Send one staff report; the answer holds the advice for the reporter. Sorting may use the AI model."""
         return self.post_json("/staff-reports", {"text": text, "reporter": reporter, "contact": contact,
-                                                 "where": where, "channel": "dashboard", "sender": sender},
-                              timeout=CHAT_TIMEOUT)
+                                                 "where": where, "channel": "dashboard", "sender": sender,
+                                                 "host": host}, timeout=CHAT_TIMEOUT)
+
+    def machine_names(self) -> list[str]:
+        """Machines a central panel knows (GET /machines); empty when this core has no such list."""
+        try:
+            rows = self.get_json("/machines")
+        except CoreError:
+            return []
+        return [str(m["host"]) for m in rows or [] if isinstance(m, dict) and m.get("host")]
 
     def staff_reports(self, status: str | None = None) -> dict:
         return self.get_json(f"/staff-reports?status={status}" if status else "/staff-reports")

@@ -124,6 +124,7 @@ class StaffReportIn(BaseModel):
     where: str = ""
     channel: str = "api"
     sender: str = ""  # who sent it, for the rate limit: the reporter's address or chat id, set by the channel
+    host: str = ""  # the machine it is about, if known: its incident then belongs to that machine
 
 
 class StaffReportUpdateIn(BaseModel):
@@ -485,7 +486,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/staff-reports")
     def post_staff_report(body: StaffReportIn) -> dict[str, Any]:
         try:
-            return staff.submit(body.text, body.reporter, body.contact, body.where, body.channel, body.sender)
+            return staff.submit(body.text, body.reporter, body.contact, body.where, body.channel, body.sender,
+                                body.host)
         except RateLimited as e:
             raise HTTPException(429, str(e))
         except ReportError as e:

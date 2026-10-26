@@ -123,6 +123,10 @@ def report_page() -> None:
         st.caption("Seen a strange email, a pop-up, a login you didn't make, or a stranger near the computers? "
                    "Tell us in your own words. You don't need to be sure; it is always fine to report.")
         code_needed = os.environ.get("CACTAI_REPORT_CODE", "").strip()
+        core = CoreClient(st.session_state.get("core_url") or DEFAULT_CORE, token=cfg.api_token())
+        if "report_machines" not in st.session_state:  # a central panel lists its machines; once per visit
+            st.session_state.report_machines = core.machine_names()
+        machines = st.session_state.report_machines
         with st.form("staff_report", clear_on_submit=False):
             text = st.text_area("What did you notice?", height=150, max_chars=4000,
                                 placeholder="e.g. I got an email from 'IT support' asking me to confirm my password. "
@@ -133,6 +137,7 @@ def report_page() -> None:
                                  placeholder="e.g. front desk PC")
             contact = st.text_input("How can we reach you? (optional)", max_chars=120,
                                     placeholder="phone, email or extension")
+            host = st.selectbox("Which computer is it about?", ["Not sure", *machines]) if machines else "Not sure"
             code = st.text_input("Report code (on the staff noticeboard)", type="password") if code_needed else ""
             if st.form_submit_button("Send report", type="primary", icon=":material/send:", width="stretch"):
                 if code_needed and not hmac.compare_digest(code.strip().encode(), code_needed.encode()):
@@ -142,8 +147,8 @@ def report_page() -> None:
                 else:
                     try:
                         with st.spinner("Sending..."):
-                            sent = CoreClient(st.session_state.get("core_url") or DEFAULT_CORE, token=cfg.api_token()) \
-                                .report_suspicious(text, reporter, contact, where, sender=_client_ip())
+                            sent = core.report_suspicious(text, reporter, contact, where, sender=_client_ip(),
+                                                          host="" if host == "Not sure" else host)
                         st.session_state.report_sent = sent
                         st.rerun()
                     except CoreError as exc:
@@ -1008,7 +1013,8 @@ def staff_report_detail(r: dict) -> None:
         '<div class="detail-grid">'
         f'<div><span>Reported by</span><b>{html.escape(str(r.get("reporter") or "anonymous"))}</b></div>'
         f'<div><span>Contact</span><b>{html.escape(str(r.get("contact") or "-"))}</b></div>'
-        f'<div><span>Where</span><b>{html.escape(str(r.get("where") or "-"))}</b></div>'
+        f'<div><span>Where</span><b>{html.escape(str(r.get("where") or "-"))}'
+        + (f' · {html.escape(str(r["host"]))}' if r.get("host") else "") + '</b></div>'
         f'<div><span>Received</span><b>{html.escape(sh.short_time(r.get("received_at")))} · '
         f'{html.escape(str(r.get("channel") or "-"))}</b></div>'
         f'<div><span>Sorted by</span><b>{"AI model" if tri.get("by") == "ai" else "Keyword rules"}</b></div>'

@@ -62,3 +62,8 @@ def test_protection_switch(fake_core):
     assert c.protection()["protection"] == "on"
     assert any(r["type"] == "protection_changed" for r in c.audit()["records"])
     requests.post(f"{fake_core}/dev/reset", timeout=3)
+
+
+def test_machine_names_is_empty_without_a_central_panel(fake_core):
+    from cactai_ui.api import CoreClient
+    assert CoreClient(fake_core).machine_names() == []  # no GET /machines here: the report form shows no picker

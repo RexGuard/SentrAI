@@ -108,3 +108,10 @@ def test_ai_failure_falls_back_to_keywords(client):
     s = StaffReports(client.core, lambda: FakeAI(fail=True))
     t = s.triage(PHISH)
     assert t["by"] == "keywords" and t["ai_error"] == "RuntimeError"
+
+
+def test_report_names_the_machine_it_is_about(client):
+    rid = report(client, where="front desk", host="office-pc-3").json()["id"]
+    full = client.get(f"/staff-reports/{rid}").json()
+    assert full["host"] == "office-pc-3" and full["where"] == "front desk"
+    assert client.get(f"/incidents/{full['incident']}").json()["host"] == "office-pc-3"
