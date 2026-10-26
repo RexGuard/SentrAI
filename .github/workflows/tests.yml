@@ -139,5 +139,5 @@ jobs:
           OLD: /tmp/sentrai-before-rename
         run: |
           git fetch -q --depth 1 origin "$OLD_SHA"
-          mkdir -p "$OLD" && git archive "$OLD_SHA" mvp | tar -C "$OLD" -xf -
+          mkdir -p "$OLD" && git -C .. archive "$OLD_SHA" mvp | tar -C "$OLD" -xf -
           sudo PYTHON=/usr/bin/python3 OLD="$OLD" ../.github/scripts/linux-upgrade-smoke.sh
