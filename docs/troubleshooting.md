@@ -86,6 +86,20 @@ Without a bot token, alerts go to the notifier's window (Windows) or `.run_logs/
   macOS, or to its own window on Windows.
 - The timers run in real time. Use `--speed 60` (`-Speed 60`) to see escalations within minutes.
 
+## A machine will not join the panel
+
+The agent installer prints why. The usual causes:
+
+- **"the panel must be reached over https://"**: use the HTTPS address in front of the core, not
+  `http://…:8000`. See [Let the agents reach the panel](panel.html#2-let-the-agents-reach-the-panel-over-https).
+- **"could not reach the panel"**: from the new machine, try `curl https://panel.example.com:8443/health`.
+  If it fails, open the port to that machine in the panel's firewall and your cloud provider's.
+  A certificate error means the panel uses its own certificate: pass it with `--ca`.
+- **"the panel refused to join this machine"**: the join code was already used or is more than 24
+  hours old. Make a new one under **Machines**, **Add machine**.
+- **"the panel no longer accepts this machine's key"**: the machine was revoked. Join it again with
+  a new code.
+
 ## Still stuck?
 
 Open an [issue on GitHub](https://github.com/RexGuard/SentrAI/issues) with what you ran and what it
