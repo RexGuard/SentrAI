@@ -270,7 +270,12 @@ port_owner() {  # prints the process listening on a TCP port, if any
     ss -Hltnp "sport = :$1" 2>/dev/null | sed -n 's/.*users:((\("[^"]*"\).*/\1/p' | head -1
 }
 if [ "$START" = 1 ] && command -v ss >/dev/null 2>&1; then
-    systemctl stop sentrai.target 2>/dev/null || true  # an upgrade frees its own ports first
+    # An upgrade frees its own ports first (naming the services too: stopping the target alone can return
+    # before they are down), then gives the old processes a few seconds to let go of them.
+    systemctl stop sentrai.target sentrai-core sentrai-collector sentrai-dashboard sentrai-notifier 2>/dev/null || true
+    for p in "$CORE_PORT" "$DASH_PORT"; do
+        for _ in 1 2 3 4 5 6 7 8 9 10; do [ -n "$(ss -Hltn "sport = :$p" 2>/dev/null)" ] || break; sleep 1; done
+    done
     for p in "$CORE_PORT" "$DASH_PORT"; do
         who="$(port_owner "$p")"
         if [ -n "$who" ] || ss -Hltn "sport = :$p" 2>/dev/null | grep -q .; then

@@ -25,7 +25,11 @@ wait_for() {  # WHAT SECONDS COMMAND...
 dump() {
     echo "--- journal ---"
     journalctl --no-pager -n 80 -u 'cactai-*' -u 'sentrai-*' || true
-    nft list ruleset 2>/dev/null | head -60 || true
+    echo "--- agent journal ---"
+    journalctl --no-pager -n 40 -u cactai-agent -u sentrai-agent || true
+    echo "--- agent state ---"
+    cat /var/lib/sentrai/agent/agent.json 2>/dev/null | python3 -c 'import json, sys; d = json.load(sys.stdin); print({k: d.get(k) for k in ("blocked", "panel_blocked", "last_ok")})' || true
+    for t in cactai sentrai; do nft list table inet "$t" 2>/dev/null || true; done
 }
 trap 'rc=$?; [ "$rc" = 0 ] || dump; exit "$rc"' EXIT
 
@@ -54,6 +58,7 @@ nft add table inet cactai
 nft add set inet cactai blocked4 '{ type ipv4_addr ; }'
 nft add element inet cactai blocked4 "{ $BLOCKED }"
 iptables -w -I INPUT -s "$BLOCKED" -m comment --comment cactai -j DROP
+nft list table inet cactai
 echo "ok: old version installed (panel and agent)"
 
 # --- today's install.sh, run once ---------------------------------------------------------------
@@ -92,11 +97,14 @@ echo "ok: same API token, audit record and agent"
 
 # The block came along; the old firewall names are gone.
 ! nft list table inet cactai >/dev/null 2>&1 || fail "nft table inet cactai is still there"
-nft list set inet sentrai blocked4 | grep -q "$BLOCKED" || fail "the nftables block was not carried over"
+# (read whole: grep -q in a pipe can stop nft mid-write, and pipefail then counts that as a failure)
+SET="$(nft list set inet sentrai blocked4 2>&1 || true)"
+[[ "$SET" == *"$BLOCKED"* ]] || fail "the nftables block was not carried over: $SET"
 iptables -w -C INPUT -s "$BLOCKED" -m comment --comment sentrai -j DROP || fail "the iptables block was not renamed"
 ! iptables -w -C INPUT -s "$BLOCKED" -m comment --comment cactai -j DROP 2>/dev/null || fail "old iptables rule left"
 ! nft list table inet cactai_dashboard >/dev/null 2>&1 || fail "the old dashboard rule is still there"
-nft list table inet sentrai_dashboard | grep -q "$ADMIN_IP" || fail "the dashboard rule does not allow $ADMIN_IP"
+DASH="$(nft list table inet sentrai_dashboard 2>&1 || true)"
+[[ "$DASH" == *"$ADMIN_IP"* ]] || fail "the dashboard rule does not allow $ADMIN_IP: $DASH"
 echo "ok: firewall blocks carried over to the sentrai names"
 
 ./deploy/install.sh --no-questions >/dev/null  # a second run has nothing left to move

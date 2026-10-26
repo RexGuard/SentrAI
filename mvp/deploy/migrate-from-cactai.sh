@@ -31,7 +31,8 @@ _mig_rewrite() {  # FILE...: old names and paths inside settings files
     for f in "$@"; do
         [ -f "$f" ] || continue
         sed -i -e 's/CACTAI_/SENTRAI_/g' -e 's#/etc/cactai#/etc/sentrai#g' -e 's#/var/lib/cactai#/var/lib/sentrai#g' \
-            -e 's#/opt/cactai#/opt/sentrai#g' -e 's#cactai\.db#sentrai.db#g' -e 's#/\.cactai/#/.sentrai/#g' "$f"
+            -e 's#/opt/cactai#/opt/sentrai#g' -e 's#cactai\.db#sentrai.db#g' -e 's#/\.cactai/#/.sentrai/#g' \
+            -e '/^[[:space:]]*#/s/cactai/sentrai/g' "$f"  # comments name the old units (cactai-agent, cactai.target)
     done
     return 0
 }
@@ -45,18 +46,47 @@ _mig_user() {  # OLD NEW: rename the system account and its group, keeping the u
     _mig_say "renamed the $1 account to $2"
 }
 
+_mig_nft_merge() {  # the addresses in the old table's sets, added to the same sets in table inet sentrai
+    local set type elems
+    for set in blocked4 blocked6; do
+        nft list set inet cactai "$set" >/dev/null 2>&1 || continue
+        type=ipv4_addr; [ "$set" = blocked6 ] && type=ipv6_addr
+        nft add set inet sentrai "$set" "{ type $type ; }" || return 1
+        elems="$(nft -j list set inet cactai "$set" | python3 -c '
+import json, sys
+out = []
+for item in json.load(sys.stdin)["nftables"]:
+    for e in item.get("set", {}).get("elem", []):
+        e = e.get("elem", {}).get("val", e) if isinstance(e, dict) else e
+        if isinstance(e, str):
+            out.append(e)
+print(", ".join(out))')" || return 1
+        if [ -n "$elems" ]; then nft add element inet sentrai "$set" "{ $elems }" || return 1; fi
+    done
+    return 0
+}
+
 _mig_firewall() {  # the host firewall blocks: same addresses, new table name / rule comment
     local tmp
     if command -v nft >/dev/null 2>&1; then
         if nft list table inet cactai >/dev/null 2>&1; then
-            tmp="$(mktemp)"
-            nft list table inet cactai | sed '1s/^table inet cactai /table inet sentrai /' > "$tmp"
-            if nft list table inet sentrai >/dev/null 2>&1 || nft -f "$tmp"; then
-                nft delete table inet cactai && _mig_say "moved the firewall blocks to table inet sentrai"
+            if nft list table inet sentrai >/dev/null 2>&1; then
+                # A sentrai table is already there (an earlier install): add the old blocks to its sets.
+                if _mig_nft_merge; then
+                    nft delete table inet cactai && _mig_say "added the old firewall blocks to table inet sentrai"
+                else
+                    echo "WARNING: could not copy the blocks in nft table inet cactai; left it in place" >&2
+                fi
             else
-                echo "WARNING: could not copy nft table inet cactai; left it in place" >&2
+                tmp="$(mktemp)"
+                nft list table inet cactai | sed '1s/^table inet cactai /table inet sentrai /' > "$tmp"
+                if nft -f "$tmp"; then
+                    nft delete table inet cactai && _mig_say "moved the firewall blocks to table inet sentrai"
+                else
+                    echo "WARNING: could not copy nft table inet cactai; left it in place" >&2
+                fi
+                rm -f "$tmp"
             fi
-            rm -f "$tmp"
         fi
         nft delete table inet cactai_witness 2>/dev/null || true  # install-witness.sh makes the new one
     fi
