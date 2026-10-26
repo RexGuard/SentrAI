@@ -96,6 +96,8 @@ function Die([string]$Message) {
     exit 1
 }
 
+$PipHelp = "could not download the Python packages (pip's message is above). This machine must reach pypi.org over HTTPS (behind a proxy, set `$env:HTTPS_PROXY first); then run the installer again."
+
 # --- checks -----------------------------------------------------------------
 $me = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $me.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -188,6 +190,7 @@ if (-not (Test-Path $VenvPy)) {
     Native $python -m venv $Venv
     if ($LASTEXITCODE -ne 0) { Die "could not create the venv" }
     Native $VenvPy -m pip install -q --upgrade pip
+    if ($LASTEXITCODE -ne 0) { Remove-Item -Recurse -Force $Venv -ErrorAction SilentlyContinue; Die $PipHelp }
 }
 # The service runs the venv's base interpreter with the venv's packages on PYTHONPATH. The venv's
 # own python.exe on Windows is only a launcher that starts the base one as a child, and that child
@@ -202,7 +205,7 @@ $have = if (Test-Path $stamp) { (Get-Content $stamp -Raw).Trim() } else { "" }
 if ($want -ne $have) {
     Write-Host "Installing packages ..."
     Native $VenvPy -m pip install -q -r $req
-    if ($LASTEXITCODE -ne 0) { Die "pip could not install the agent's packages (see above)" }
+    if ($LASTEXITCODE -ne 0) { Die $PipHelp }
     Set-Content -Path $stamp -Value $want -Encoding ASCII
 }
 
