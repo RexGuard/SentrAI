@@ -333,3 +333,14 @@ def test_approvals_headline_answers_first():
     opened = [{"id": "c", "status": "open", "actions": []}]
     assert sh.approvals_headline(opened, now=now) == "1 waiting on you: 1 to approve or reject."
     assert sh.approvals_headline([], now=now) == ""
+
+
+def test_incident_age_reads_like_speech():
+    assert sh.span_label(20) == "under 1 min"
+    assert sh.span_label(7 * 60) == "7 min"
+    assert sh.span_label(125 * 60) == "2 h 5 min"
+    assert sh.span_label((3 * 24 + 4) * 3600) == "3 d 4 h"
+    from datetime import datetime, timedelta
+    opened = (datetime.now().astimezone() - timedelta(minutes=7, seconds=5)).isoformat()
+    df = sh.board_rows([{"id": "A", "status": "open", "opened_at": opened}])
+    assert df.iloc[0]["Open for"] == "7 min"

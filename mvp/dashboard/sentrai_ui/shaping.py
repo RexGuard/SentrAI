@@ -137,9 +137,19 @@ def expires_label(value: Any, now: datetime | None = None) -> str:
     left = (ts - now).total_seconds()
     if left <= 0:
         return f"{ts.strftime('%H:%M:%S')} (expired)"
-    mins = int(left // 60)
-    span = "under 1 min" if mins < 1 else f"{mins} min" if mins < 60 else f"{mins // 60} h {mins % 60} min"
-    return f"{ts.strftime('%H:%M:%S')} (in {span})"
+    return f"{ts.strftime('%H:%M:%S')} (in {span_label(left)})"
+
+
+def span_label(seconds: float) -> str:
+    """A length of time the way people say it: "under 1 min", "7 min", "2 h 5 min", "3 d 4 h"."""
+    mins = int(max(0.0, seconds) // 60)
+    if mins < 1:
+        return "under 1 min"
+    if mins < 60:
+        return f"{mins} min"
+    if mins < 24 * 60:
+        return f"{mins // 60} h {mins % 60} min"
+    return f"{mins // 1440} d {mins % 1440 // 60} h"
 
 
 def short_hash(value: str | None, n: int = 10) -> str:
@@ -906,7 +916,7 @@ def board_counts(incidents: Iterable[dict], me: str = "") -> dict[str, int]:
     }
 
 
-BOARD_COLUMNS = ["Incident", "What", "Host", "Severity", "Status", "Owner", "Backup", "Age (h)", "Needs"]
+BOARD_COLUMNS = ["Incident", "What", "Host", "Severity", "Status", "Owner", "Backup", "Open for", "Needs"]
 
 
 def board_rows(incidents: Iterable[dict], include_closed: bool = False) -> pd.DataFrame:
@@ -925,7 +935,7 @@ def board_rows(incidents: Iterable[dict], include_closed: bool = False) -> pd.Da
             "Status": status_label(inc.get("status")),
             "Owner": inc.get("owner") or "Nobody",
             "Backup": inc.get("backup") or "-",
-            "Age (h)": round(_age_hours(inc), 1),
+            "Open for": span_label(_age_hours(inc) * 3600) if not closed else "-",
             "Needs": ("Closed by " + str(inc.get("resolved_by") or inc.get("acked_by") or "-")) if closed
             else ("; ".join(needs) if needs else "In hand"),
             "_rank": (closed, not needs, SEVERITY_RANK.get(str(inc.get("severity")), 9)),
