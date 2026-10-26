@@ -631,7 +631,7 @@ def protection_banner() -> None:
     who = f" by {p['changed_by']}" if p.get("changed_by") else ""
     why = f": {p['reason']}" if p.get("reason") else ""
     left = len(p.get("active_actions") or [])
-    kept = f" {left} action(s) already in force stay until they expire or are rolled back." if left else ""
+    kept = f" {sh.plural(left, 'action')} already in force stay until they expire or are rolled back." if left else ""
     st.markdown(
         f'<div class="protect-off">{icon("remove_moderator")}<div><b>Protection is off: monitor-only mode</b><br>'
         f'<small>Turned off{html.escape(who)}{html.escape(why)}</small><br>'
@@ -686,7 +686,7 @@ def incident_summary(inc: dict) -> None:
         st.markdown(f'<p class="explain">{html.escape(str(inc["explanation"]))}</p>', unsafe_allow_html=True)
     rep = inc.get("reputation") or {}
     if rep and not rep.get("error"):  # AbuseIPDB: context for the person deciding, not evidence
-        seen = f"reported {rep.get('reports', 0)} time(s) by others, {rep.get('score', 0)}% abuse confidence"
+        seen = f"reported {sh.plural(rep.get('reports', 0), 'time')} by others, {rep.get('score', 0)}% abuse confidence"
         where = " · ".join(re.sub(r"[\[\]()*_`<>#|~\\$]", "", str(x)) for x in (rep.get("isp"), rep.get("country")) if x)
         st.caption(f":material/travel_explore: AbuseIPDB: {seen}" + (f" · {where}" if where else "")
                    + (" · Tor exit node" if rep.get("tor") else ""))
@@ -1999,7 +1999,7 @@ def threat_row(f: dict) -> None:
 def scan_suggestion(s: dict) -> None:
     """One place the scan found logs, with a Watch button per file not yet watched."""
     files = s.get("files") or []
-    state = ":material/check: already watched" if s.get("already_watched") else f"{len(files)} log file(s)"
+    state = ":material/check: already watched" if s.get("already_watched") else sh.plural(len(files), "log file")
     st.markdown(f"**{html.escape(str(s.get('program')))}** · {code(s.get('path'))} · {html.escape(str(s.get('layer')))} · {state}  \n"
                 f"<span style='opacity:.7'>{html.escape(', '.join(s.get('reasons') or []))}</span>",
                 unsafe_allow_html=True)
