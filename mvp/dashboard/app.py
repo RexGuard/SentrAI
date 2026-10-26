@@ -1226,6 +1226,8 @@ def page_approvals() -> None:
     if not waiting:
         empty("Nothing waiting for a decision. All quiet at the gate.", "check_circle", good=True)
         return
+    st.markdown(f'<div class="lead">{icon("pending_actions")}<span>{html.escape(sh.approvals_headline(waiting))}</span></div>',
+                unsafe_allow_html=True)
     for inc in waiting:
         verb = "Approve or reject" if sh.available_actions(inc)["decide"] else "Keep or roll back"
 

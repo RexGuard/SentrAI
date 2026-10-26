@@ -143,6 +143,11 @@ div[class*="st-key-mrow-"]:has(button:focus-visible) li.machine.clickable { outl
 .offline .mi { font-size: 1.6rem; color: var(--critical); }
 .offline b { color: var(--ink); }
 .offline small { color: var(--ink-muted); }
+/* One sentence that answers the page's question before the details (Approvals). */
+.lead { display: flex; gap: .7rem; align-items: center; padding: .75rem 1rem; margin-bottom: 1rem;
+        border: 1px solid var(--line); border-left: 3px solid var(--amber); border-radius: var(--radius);
+        color: var(--ink); font-size: .95rem; line-height: 1.45; }
+.lead .mi { color: var(--amber); font-size: 1.3rem; }
 .protect-off { border: 1px solid color-mix(in srgb, var(--amber) 50%, transparent); background: color-mix(in srgb, var(--amber) 9%, transparent);
                border-radius: var(--radius); padding: .9rem 1.2rem; margin-bottom: 1rem; color: var(--ink-soft); display: flex; gap: .9rem; }
 .protect-off .mi { font-size: 1.6rem; color: var(--amber); }
