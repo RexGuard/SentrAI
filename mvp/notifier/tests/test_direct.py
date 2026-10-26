@@ -86,3 +86,10 @@ def test_a_direct_message_does_not_mention_people():
     group = format_telegram(ALERT, {"id": "RSK-1", "status": "open"})
     mine = format_telegram(ALERT, {"id": "RSK-1", "status": "open"}, personal=True)
     assert "For: @amir @lee" in group and "For:" not in mine
+
+
+def test_a_slack_copy_adds_one_receipt_to_the_direct_ones():
+    from slack import with_slack
+    send = with_slack(lambda n, i, r: deliver(plan(n, GROUP), lambda t: f"msg-{t.chat_id}", GROUP),
+                      lambda n, i, r: f"slack-{n['id']}")
+    assert send(ALERT, None, None)[-1] == ("slack", "slack-ntf-0001", None)

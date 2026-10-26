@@ -5,7 +5,7 @@ A working prototype of SentrAI that runs natively on one Windows laptop or Linux
 | Component | Folder | What it does | URL |
 | --- | --- | --- | --- |
 | Core | `core/` | FastAPI risk engine, rules + Jev classifier, agents (Warden, Gatehouse, Vault, Garrison, Countersign, Watchdog, Scribe, HelpDesk), TTL hotpatches, hash-chained audit log, evidence reports (Markdown/JSON/PDF) | http://127.0.0.1:8000 |
-| Collector | `lab/collector/` | Tails the logs you approve (nginx, sshd, journald, or JSON-lines app logs) and sends normalized events to core | |
+| Collector | `lab/collector/` | Tails the logs you approve (nginx, sshd, journald, Windows Event Log, Suricata, MySQL/MariaDB, PostgreSQL, MongoDB, or JSON-lines app logs) and sends normalized events to core | |
 | Scout | `lab/scout/` | Finds the security logs on a new system | |
 | Dashboard | `dashboard/` | Streamlit console with a sidebar menu: Configuration (home), Approvals, Collector, Classifier, Action taker, Review (gauge, threshold, risk accumulated), Reports, Audit trail. Menu bubbles flag new malicious activity per part | http://127.0.0.1:8501 |
 | Notifier | `notifier/` | Telegram bot with Approve / Reject buttons, or console mode without a token | |

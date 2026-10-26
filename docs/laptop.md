@@ -43,8 +43,9 @@ window. Watch a part as it works with `tail -f .run_logs/core.log`, and stop eve
 ## Give it logs to watch
 
 SentrAI only reads the logs you approve. On the dashboard, open **Collector** and run a process
-scan, or ask Scout to find them. On a Linux machine with nginx or SSH you can also approve those
-logs in one step:
+scan, or ask Scout to find them. You can also approve the usual logs in one step: nginx, SSH,
+Suricata and database logs on Linux, or the Windows Event Log on Windows (run it as an
+administrator there; see [Log sources](log-sources.html)):
 
 ```bash
 cd lab && .venv/bin/python -m collector.collector --add-system-logs

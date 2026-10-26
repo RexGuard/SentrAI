@@ -5,9 +5,13 @@
   url: /docs/laptop.html
 - title: Install on a server
   url: /docs/server.html
+- title: Log sources
+  url: /docs/log-sources.html
 - title: Signing in
   url: /docs/sign-in.html
 - title: Settings
   url: /docs/settings.html
+- title: Integrations
+  url: /docs/integrations.html
 - title: Troubleshooting
   url: /docs/troubleshooting.html

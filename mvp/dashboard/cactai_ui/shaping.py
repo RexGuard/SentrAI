@@ -573,20 +573,55 @@ def agent_rows(agents: Iterable[dict]) -> pd.DataFrame:
     for a in agents or []:
         if not isinstance(a, dict):
             continue
+        off = a.get("offline") if isinstance(a.get("offline"), dict) else {}
+        alone = (f"{off.get('local_blocks', 0)} local blocks, {short_time(off.get('from'))} to "
+                 f"{short_time(off.get('to'))}" if off else "")
         rows.append({"Machine": a.get("host"), "Id": a.get("agent_id"), "Joined": short_time(a.get("joined_at")),
                      "Invited by": a.get("invited_by") or "", "Last seen": short_time(a.get("last_seen")) or "never",
+                     "Last time offline": alone,
                      "Status": f"Revoked by {a.get('revoked_by') or '?'}" if a.get("revoked_at") else "Active"})
     rows.sort(key=lambda r: (r["Status"] != "Active", str(r["Machine"])))
-    return pd.DataFrame(rows, columns=["Machine", "Id", "Joined", "Invited by", "Last seen", "Status"])
+    return pd.DataFrame(rows, columns=["Machine", "Id", "Joined", "Invited by", "Last seen", "Last time offline",
+                                       "Status"])
 
 
-def join_commands(panel_url: str, code: str, name: str | None = None) -> dict[str, str]:
-    """What to paste on the new machine, from a SentrAI checkout: both install the agent as a service."""
+JOB_LABELS = {"threat_scan": "Threat scan", "backup": "Backup"}
+JOB_STATUS = {"queued": "Waiting", "running": "Running", "done": "Done", "failed": "Failed",
+              "expired": "Expired", "cancelled": "Cancelled"}
+
+
+def job_rows(jobs: Iterable[dict]) -> pd.DataFrame:
+    """Scans and backups the panel asked one machine to run, newest first."""
+    rows = []
+    for j in jobs or []:
+        if not isinstance(j, dict):
+            continue
+        rows.append({"Job": JOB_LABELS.get(str(j.get("kind")), str(j.get("kind"))),
+                     "Status": JOB_STATUS.get(str(j.get("status")), str(j.get("status"))),
+                     "Asked by": j.get("requested_by") or "", "Asked": short_time(j.get("created_at")),
+                     "Finished": short_time(j.get("finished_at")) or "", "Result": j.get("summary") or ""})
+    return pd.DataFrame(rows, columns=["Job", "Status", "Asked by", "Asked", "Finished", "Result"])
+
+
+def job_findings(jobs: Iterable[dict]) -> pd.DataFrame:
+    """Findings from the newest finished threat scan on one machine."""
+    scan = next((j for j in jobs or [] if isinstance(j, dict) and j.get("kind") == "threat_scan"
+                 and j.get("status") == "done"), None)
+    rows = [{"Severity": f.get("severity"), "What": f.get("label"), "Kind": f.get("kind"),
+             "File": f.get("path") + (f" ({f['entry']})" if f.get("entry") else ""), "Line": f.get("line")}
+            for f in ((scan or {}).get("result") or {}).get("findings") or [] if isinstance(f, dict)]
+    return pd.DataFrame(rows, columns=["Severity", "What", "Kind", "File", "Line"])
+
+
+def join_commands(panel_url: str, code: str, name: str | None = None, pin: str | None = None) -> dict[str, str]:
+    """What to paste on the new machine, from a SentrAI checkout: both install the agent as a service.
+    ``pin`` is the panel certificate's fingerprint: the agent then trusts that certificate and no other."""
     url = panel_url.rstrip("/")
     return {
-        "linux": f"sudo ./mvp/deploy/install-agent.sh --panel {url} --code {code}" + (f" --name {name}" if name else ""),
+        "linux": f"sudo ./mvp/deploy/install-agent.sh --panel {url} --code {code}" + (f" --name {name}" if name else "")
+                 + (f" --pin {pin}" if pin else ""),
         "windows": (f"powershell -ExecutionPolicy Bypass -File .\\mvp\\deploy\\install-agent.ps1 -Panel {url} -Code {code}"
-                    + (f" -Name {name}" if name else "")),
+                    + (f" -Name {name}" if name else "") + (f" -Pin {pin}" if pin else "")),
     }
 
 

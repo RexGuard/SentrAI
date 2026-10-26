@@ -527,6 +527,7 @@ PAGES = {  # key: (Material icon, label, menu group)
     "audit": ("link", "Audit trail", "Oversight"),
     "backups": ("backup", "Backups", "Oversight"),
     "team": ("group", "Team", "Oversight"),  # Owners and Admins, when people sign in
+    "integrations": ("hub", "Integrations", "Settings"),
     "config": ("tune", "Configuration", "Settings"),
 }
 
@@ -707,6 +708,12 @@ def incident_summary(inc: dict) -> None:
     )
     if inc.get("explanation"):
         st.markdown(f'<p class="explain">{html.escape(str(inc["explanation"]))}</p>', unsafe_allow_html=True)
+    rep = inc.get("reputation") or {}
+    if rep and not rep.get("error"):  # AbuseIPDB: context for the person deciding, not evidence
+        seen = f"reported {rep.get('reports', 0)} time(s) by others, {rep.get('score', 0)}% abuse confidence"
+        where = " · ".join(re.sub(r"[\[\]()*_`<>#|~\\$]", "", str(x)) for x in (rep.get("isp"), rep.get("country")) if x)
+        st.caption(f":material/travel_explore: AbuseIPDB: {seen}" + (f" · {where}" if where else "")
+                   + (" · Tor exit node" if rep.get("tor") else ""))
     st.markdown(f'<div class="reco">{icon("tips_and_updates")}<div><b>Recommended action</b>'
                 f'{html.escape(str(inc.get("recommended_action") or "-"))}</div></div>',
                 unsafe_allow_html=True)
@@ -1091,6 +1098,82 @@ def ai_connection(ai: dict[str, str]) -> None:
             st.caption(result["hint"])
 
 
+INTEGRATION_KINDS = (("Blocking", "block", "stop attackers outside this machine too"),
+                     ("Lookups", "travel_explore", "what the internet already knows about an address"),
+                     ("Alerts", "notifications", "where people hear about incidents"))
+NOT_SET = sh.UNKNOWN_COLOR
+
+
+def page_integrations() -> None:
+    show_flash()
+    if header("Integrations", "Outside services SentrAI works with · each stays off until its key is saved") is None:
+        return
+    rows, err = safe(client.integrations, [])
+    if err:
+        st.warning(f"Could not ask the core which services are connected: {err}")
+        return
+    on = [r for r in rows if r.get("configured")]
+    problems = [r for r in rows if r.get("last_error") or r.get("error")]
+    by_name = {r["name"]: r for r in rows}
+    stats(("Connected", f"{len(on)} of {len(rows)}", "services set up"),
+          ("Edge blocking", "On" if by_name.get("cloudflare", {}).get("configured") else "Off",
+           "Cloudflare blocks what SentrAI blocks"),
+          ("Problems", str(len(problems)), "last call failed" if problems else "none",
+           sh.BAND_COLORS["amber"] if problems else None))
+    results = st.session_state.setdefault("integration_tests", {})
+    for kind, ico, note in INTEGRATION_KINDS:
+        group = [r for r in rows if r.get("kind") == kind]
+        if not group:
+            continue
+        section(kind, note, ico)
+        cols = st.columns(2)
+        for n, r in enumerate(group):
+            with cols[n % 2], st.container(border=True):
+                integration_card(r, results)
+    st.caption("Keys and tokens are saved in the settings file on this machine (never in the code), "
+               "and the core reads them when it starts. After saving a key, restart SentrAI (stop, then run).")
+
+
+def integration_card(r: dict, results: dict) -> None:
+    trouble = r.get("error") or r.get("last_error")
+    if r.get("configured") and trouble:
+        chip = pill("Problem", sh.BAND_COLORS["amber"])
+    elif r.get("configured"):
+        chip = pill("Connected", sh.BAND_COLORS["green"])
+    else:
+        chip = pill("Not set up", NOT_SET)
+    st.markdown(f'<div class="sec-title">{html.escape(r.get("title") or r["name"])} {chip}</div>',
+                unsafe_allow_html=True)
+    st.write(r.get("what") or "")
+    st.caption(r.get("detail") or "")
+    if trouble:
+        st.caption(f":orange[:material/warning:] {trouble}")
+    in_config = any(f in cfg.FIELDS for f in r.get("settings") or [])
+    slots = iter(st.columns(3))  # buttons fill from the left, so a card without a test has no gap
+    b1 = next(slots) if r.get("testable") else None
+    b2 = next(slots) if in_config else None
+    b3 = next(slots) if r.get("docs") else None
+    if b1 is not None and b1.button("Test", key=f"test_{r['name']}", icon=":material/power:", width="stretch",
+                                       disabled=not can("configure"),
+                                       help="One harmless call to the service with the saved key"):
+        with st.spinner(f"Testing {r.get('title')}..."):
+            out, test_err = safe(lambda: client.test_integration(r["name"]))
+        results[r["name"]] = out if not test_err else {"ok": False, "error": test_err}
+    if b2 is not None and b2.button(
+            "Settings", key=f"set_{r['name']}", icon=":material/tune:", width="stretch"):
+        st.session_state.cfg_search = str(r.get("title") or r["name"]).split()[0].lower()
+        go("config")
+    if b3 is not None:
+        b3.link_button("How to set up", r["docs"], icon=":material/open_in_new:", width="stretch")
+    if not in_config:
+        st.caption("Set with environment variables: " + ", ".join(f"`{f}`" for f in r.get("settings") or []))
+    result = results.get(r["name"])
+    if result and result.get("ok"):
+        st.success(result.get("detail") or "Connected.")
+    elif result:
+        st.error(f"Test failed: {result.get('error')}")
+
+
 @st.fragment(run_every=AUTO)
 def page_approvals() -> None:
     show_flash()
@@ -1139,11 +1222,13 @@ def owner_controls(inc: dict, contacts: list[dict]) -> None:
         choice = st.selectbox("Give it to", [me, *[n for n in names if n != owner], other], key=f"to_{inc_id}")
         typed = st.text_input("Name, if someone else", key=f"toname_{inc_id}")
         note = st.text_input("Note (optional)", key=f"tonote_{inc_id}", placeholder="e.g. You know this server best")
-        go_assign = st.form_submit_button("Assign", icon=":material/person_add:", width="stretch")
+        go_assign = st.form_submit_button("Assign", icon=":material/person_add:", width="stretch",
+                                          disabled=locked(), help=why_locked())
     with b, st.form(key=f"resolve_{inc_id}", clear_on_submit=True, border=True):
         done = st.text_area("What was done (required, written to the audit log)", key=f"done_{inc_id}", height=108,
                             placeholder="e.g. Password reset for admin, attacker IP blocked at the router")
-        go_resolve = st.form_submit_button("Mark resolved", icon=":material/task_alt:", type="primary", width="stretch")
+        go_resolve = st.form_submit_button("Mark resolved", icon=":material/task_alt:", type="primary", width="stretch",
+                                           disabled=locked(), help=why_locked())
     if go_assign:
         who = op if choice == me else typed.strip() if choice == other else choice
         if not who:
@@ -1866,6 +1951,23 @@ def page_machines() -> None:
                 st.warning(f"Could not load incidents: {ierr}")
             st.caption("Its incidents")
             table(sh.risk_breakdown(incs or []), f"All quiet on {pick}. No incidents.")
+            st.caption("Scans and backups on it (its agent picks them up within about 15 seconds and runs "
+                       "them on the folders set on that machine)")
+            b1, b2, _ = st.columns([3, 3, 4])
+            if b1.button("Scan for threats", icon=":material/policy:", key="job_scan", width="stretch"):
+                run_action(f"Asked {pick} to scan for threats",
+                           lambda: client.queue_job(pick, "threat_scan", st.session_state.operator))
+            if b2.button("Back up now", icon=":material/backup:", key="job_backup", width="stretch"):
+                run_action(f"Asked {pick} to back up",
+                           lambda: client.queue_job(pick, "backup", st.session_state.operator))
+            jobs, jerr = safe(lambda: client.machine_jobs(pick), [])
+            if jerr:
+                st.warning(f"Could not load jobs: {jerr}")
+            table(sh.job_rows(jobs or []), f"Nothing asked of {pick} yet.")
+            found_now = sh.job_findings(jobs or [])
+            if not found_now.empty:
+                st.caption("What its latest threat scan found (critical and high ones also open an incident)")
+                table(found_now, "")
     with right, st.container(border=True):
         section("Add machine", "a one-time join code, valid for 24 hours", "add_circle")
         if not panel:
@@ -1874,8 +1976,9 @@ def page_machines() -> None:
             name = st.text_input("Machine name (optional)", key="join_name", placeholder="web-01",
                                  help="Leave empty to use the new machine's own host name")
             url = st.text_input("Panel address the machine will use", key="join_url",
-                                value=os.environ.get("CACTAI_PUBLIC_URL") or st.session_state.core_url,
-                                help="Must be https:// from another machine")
+                                value=os.environ.get("CACTAI_PANEL_URL") or os.environ.get("CACTAI_PUBLIC_URL")
+                                or st.session_state.core_url,
+                                help="Must be https:// from another machine (install.sh --panel opens port 8443)")
             if st.button("Make join code", icon=":material/key:", type="primary", key="join_make",
                          disabled=locked("configure"), help=why_locked("configure")):
                 try:
@@ -1887,14 +1990,22 @@ def page_machines() -> None:
             if made:
                 st.markdown(f'Join code <b>{html.escape(str(made["code"]))}</b> · works once, until '
                             f'{html.escape(f"{ts:%d %b %H:%M}" if (ts := sh.parse_ts(made.get("expires_at"))) else "-")}', unsafe_allow_html=True)
-                cmds = sh.join_commands(url, made["code"], made.get("name"))
+                pin = made.get("pin") if url.startswith("https://") else None
+                cmds = sh.join_commands(url, made["code"], made.get("name"), pin)
                 st.caption("On a Linux server, from a SentrAI checkout:")
                 st.code(cmds["linux"], language="bash")
                 st.caption("On Windows, from a SentrAI checkout in an Administrator PowerShell:")
                 st.code(cmds["windows"], language="powershell")
+                if pin:
+                    st.caption("The --pin is this panel's certificate fingerprint: the machine will talk to this "
+                               "panel and nothing pretending to be it.")
                 if not url.startswith("https://"):
-                    st.warning("Other machines refuse a plain http:// panel. Put HTTPS in front of the core first.",
+                    st.warning("Other machines refuse a plain http:// panel. Install the panel with "
+                               "sudo ./deploy/install.sh --panel to open its HTTPS port for agents.",
                                icon=":material/lock_open:")
+                elif not pin:
+                    st.info("No certificate pin is known (CACTAI_PANEL_CERT is not set), so the machine checks the "
+                            "panel's certificate against the usual authorities.", icon=":material/lock:")
 
     if panel:
         agents, aerr = fetch("fleet", [])
@@ -2239,5 +2350,5 @@ if not page_allowed(st.session_state.page):
     "config": page_config, "approvals": page_approvals, "incidents": page_incidents, "chat": page_chat,
     "collector": page_collector, "classifier": page_classifier, "responder": page_responder, "machines": page_machines,
     "review": page_review, "reports": page_reports, "audit": page_audit,
-    "backups": page_backups, "team": page_team,
+    "backups": page_backups, "team": page_team, "integrations": page_integrations,
 }[st.session_state.page]()

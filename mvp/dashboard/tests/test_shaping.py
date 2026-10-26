@@ -203,6 +203,13 @@ def test_agent_rows_and_join_commands():
     assert cmds["windows"] == ("powershell -ExecutionPolicy Bypass -File .\\mvp\\deploy\\install-agent.ps1 "
                                "-Panel https://panel.example.com:8000 -Code K7QM-2XPA-9RTD -Name web-01")
     assert "-Name" not in sh.join_commands("https://p.example.com", "K7QM-2XPA-9RTD")["windows"]
+    pin = "sha256:" + "ab" * 32
+    pinned = sh.join_commands("https://panel.example.com:8443", "K7QM-2XPA-9RTD", None, pin)
+    assert pinned["linux"].endswith(f"--code K7QM-2XPA-9RTD --pin {pin}") and pinned["windows"].endswith(f"-Pin {pin}")
+    off = sh.agent_rows([{"agent_id": "a", "host": "web-01", "offline": {"from": "2026-10-26T10:00:00+00:00",
+                                                                         "to": "2026-10-26T10:40:00+00:00",
+                                                                         "local_blocks": 2}}])
+    assert off["Last time offline"][0].startswith("2 local blocks")
 
 
 def test_services_on_a_machine():
@@ -214,3 +221,16 @@ def test_services_on_a_machine():
     assert list(df["Service"])[:2] == ["nginx", "a"] and df.iloc[0]["Protocol"] == "TCP"
     row = sh.panel_machines([{"host": "web-01", "risk_index": 10, "services": svcs}], [], {})[0]
     assert "nginx :443 (2 open)" in sh.machine_rows_html([row])
+
+
+def test_job_rows_and_latest_findings():
+    jobs = [{"kind": "threat_scan", "status": "done", "requested_by": "erick", "created_at": "2026-10-26T10:00:00+00:00",
+             "finished_at": "2026-10-26T10:00:20+00:00", "summary": "3 files checked, 1 findings",
+             "result": {"findings": [{"severity": "critical", "label": "PHP web shell", "kind": "web_shell",
+                                      "path": "/var/www/x.php", "line": 2}]}},
+            {"kind": "backup", "status": "queued", "requested_by": "erick", "created_at": "2026-10-26T10:01:00+00:00"}]
+    rows = sh.job_rows(jobs)
+    assert list(rows["Job"]) == ["Threat scan", "Backup"] and list(rows["Status"]) == ["Done", "Waiting"]
+    found = sh.job_findings(jobs)
+    assert list(found["File"]) == ["/var/www/x.php"] and found["Severity"][0] == "critical"
+    assert sh.job_findings([]).empty and sh.job_rows(None).empty

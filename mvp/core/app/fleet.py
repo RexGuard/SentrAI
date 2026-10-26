@@ -4,10 +4,15 @@ The panel's owner makes a one-time join code; the agent on the new machine swaps
 key (POST /fleet/enrol). That key only lets the agent send its own machine's events and read its
 own block list, and the owner can revoke it without touching any other machine. Only SHA-256
 hashes of codes and keys are kept, in fleet.json next to the database (mode 0600).
+
+Agents reach the panel over HTTPS (app/serve.py, CACTAI_PANEL_PORT) and pin its certificate: the join
+code comes with the certificate's SHA-256 fingerprint (``pin``), and an agent that sees any other
+certificate refuses to talk, so a self-signed panel needs no certificate file copied around.
 """
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import json
@@ -45,6 +50,39 @@ def _iso(ts: float) -> str:
 
 def normalise_code(code: str) -> str:
     return re.sub(r"[^A-Z0-9]", "", (code or "").upper())
+
+
+PIN_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+def normalise_pin(pin: str) -> str:
+    """"sha256:AB:CD:..." in any case, with or without colons -> "sha256:abcd..."; "" if it is not one."""
+    p = re.sub(r"[\s:]", "", (pin or "").strip().lower().removeprefix("sha256:"))
+    return f"sha256:{p}" if PIN_RE.match(p) else ""
+
+
+def cert_pin(cert_file: str | os.PathLike | None) -> str:
+    """The pin agents check: SHA-256 of the panel certificate (the first one in the PEM file)."""
+    if not cert_file:
+        return ""
+    try:
+        text = Path(cert_file).read_text(encoding="ascii", errors="replace")
+    except OSError:
+        return ""
+    m = re.search(r"-----BEGIN CERTIFICATE-----(.+?)-----END CERTIFICATE-----", text, re.S)
+    if not m:
+        return ""
+    try:
+        der = base64.b64decode("".join(m.group(1).split()), validate=True)
+    except ValueError:
+        return ""
+    return "sha256:" + hashlib.sha256(der).hexdigest()
+
+
+def panel_info() -> dict[str, str]:
+    """What a new machine needs to reach this panel: its HTTPS address (CACTAI_PANEL_URL) and pin."""
+    return {"panel_url": os.environ.get("CACTAI_PANEL_URL", "").strip().rstrip("/"),
+            "pin": cert_pin(os.environ.get("CACTAI_PANEL_CERT", "").strip())}
 
 
 class Fleet:
@@ -137,6 +175,18 @@ class Fleet:
                 a["revoked_at"], a["revoked_by"] = _iso(self.clock()), by
                 self._save()
             return self.public(a)
+
+    def offline_report(self, agent: dict[str, Any], report: dict[str, Any]) -> dict[str, Any]:
+        """An agent is back after the panel was out of reach: keep a short summary of what it did alone."""
+        summary = {"from": report.get("from"), "to": report.get("to"), "scored": int(report.get("scored") or 0),
+                   "local_blocks": len(report.get("actions") or []), "reported_at": _iso(self.clock())}
+        with self.lock:
+            a = self._data["agents"].get(agent["agent_id"])
+            if a is not None:
+                a["offline"] = summary
+                a["offline_total"] = int(a.get("offline_total") or 0) + summary["local_blocks"]
+                self._save()
+        return summary
 
     @staticmethod
     def public(a: dict[str, Any]) -> dict[str, Any]:

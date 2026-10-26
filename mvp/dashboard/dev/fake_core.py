@@ -98,6 +98,7 @@ class State:
         self.threats: dict | None = None
         self.quarantine: list[dict] = []
         self.backups: list[dict] = []
+        self.jobs: list[dict] = []  # scans/backups asked of a machine; "done" a few seconds later
         self.pending: list[dict] = []  # Scout proposals; seed one with POST /_fake/scout-proposal
         # Machines joined to this (pretend) central panel: web-01 has the scripted incidents, office-pc is quiet.
         self.agents: dict[str, dict] = {
@@ -343,6 +344,50 @@ def fleet_join_code(body: dict = Body(...)):
     return {"code": "K7QM-2XPA-9RTD", "expires_at": iso(now() + timedelta(hours=24)), "name": body.get("name") or None}
 
 
+FAKE_JOB_SCAN = {"files_checked": 214, "counts": {"critical": 1, "high": 0, "medium": 1}, "findings": [
+    {"path": "/var/www/html/uploads/img.php", "line": 1, "kind": "web_shell", "severity": "critical",
+     "label": "PHP web shell (eval of request data)"},
+    {"path": "/var/www/html/js/stats.js", "line": 40, "kind": "miner", "severity": "medium",
+     "label": "Browser crypto-miner pool address"}]}
+
+
+def _job_summary(j: dict) -> str:
+    if j["status"] != "done":
+        return "waiting for the machine to pick it up"
+    r = j["result"]
+    if j["kind"] == "threat_scan":
+        return f"{r['files_checked']} files checked, {len(r['findings'])} findings" + (
+            " (1 critical or high)" if r["findings"] else "")
+    return f"{r['id']}: {r['files']} files, {r['bytes'] / 1048576:.1f} MB"
+
+
+@app.get("/fleet/jobs")
+def fleet_jobs(host: str | None = None):
+    with lock:
+        for j in S.jobs:
+            if j["status"] == "queued" and (now() - datetime.fromisoformat(j["created_at"])).total_seconds() > 3:
+                clean = j["host"] != "web-01"
+                j.update(status="done", finished_at=iso(now()), result=(
+                    {"files_checked": 96, "counts": {}, "findings": []} if clean else FAKE_JOB_SCAN)
+                    if j["kind"] == "threat_scan" else
+                    {"id": f"b-{now():%Y%m%d-%H%M%S}", "files": 1342, "bytes": 48 * 1048576})
+        return [{**j, "summary": _job_summary(j)} for j in reversed(S.jobs) if host in (None, j["host"])]
+
+
+@app.post("/fleet/jobs")
+def fleet_queue_job(body: dict = Body(...)):
+    with lock:
+        if body.get("kind") not in ("threat_scan", "backup"):
+            raise HTTPException(400, "unknown job")
+        if any(j["host"] == body.get("host") and j["kind"] == body["kind"] and j["status"] == "queued" for j in S.jobs):
+            raise HTTPException(409, f"a {body['kind'].replace('_', ' ')} is already queued on {body.get('host')}")
+        j = {"id": f"j-{len(S.jobs) + 1:04x}", "host": body.get("host"), "kind": body["kind"], "status": "queued",
+             "requested_by": body.get("operator"), "created_at": iso(now()), "finished_at": None, "result": None}
+        S.jobs.append(j)
+        audit("machine_job_queued", "Warden", host=j["host"], kind=j["kind"], operator=j["requested_by"])
+        return {**j, "summary": _job_summary(j)}
+
+
 @app.post("/fleet/agents/{agent_id}/revoke")
 def fleet_revoke(agent_id: str, body: dict = Body(...)):
     with lock:
@@ -568,6 +613,43 @@ def ai_status():
 @app.post("/ai/reload")
 def ai_reload():
     return FAKE_AI
+
+
+FAKE_INTEGRATIONS = [
+    {"name": "cloudflare", "title": "Cloudflare", "kind": "Blocking", "configured": True, "testable": True,
+     "what": "Blocks attacking addresses at Cloudflare's edge, so they never reach your site. "
+             "Removed again when SentrAI's block ends.",
+     "detail": "IP Access rules, block on zone 0123abcd · 2 address(es) blocked now", "last_ok": "2026-10-26 10:02:11",
+     "settings": ["CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ZONE_ID"],
+     "docs": "https://developers.cloudflare.com/fundamentals/api/get-started/create-token/"},
+    {"name": "webhook", "title": "Any other system (webhook)", "kind": "Blocking", "configured": False, "testable": False,
+     "what": "Sends each block and its removal to a URL you choose: n8n, Zapier, a router, a SOAR.",
+     "detail": "Set a URL to hand blocks to another system.", "settings": ["CACTAI_RESPONDER_WEBHOOK_URL"], "docs": ""},
+    {"name": "abuseipdb", "title": "AbuseIPDB", "kind": "Lookups", "configured": True, "testable": True,
+     "what": "Shows how often other people have reported an attacking address, on each incident.",
+     "detail": "14 lookup(s) since start, answers kept 24 h", "settings": ["ABUSEIPDB_API_KEY"],
+     "docs": "https://www.abuseipdb.com/account/api"},
+    {"name": "slack", "title": "Slack", "kind": "Alerts", "configured": False, "testable": False,
+     "what": "Posts a copy of every alert to a Slack channel, next to Telegram and email.",
+     "detail": "Create an incoming webhook in Slack and paste its URL.", "settings": ["SLACK_WEBHOOK_URL"],
+     "docs": "https://api.slack.com/messaging/webhooks"},
+    {"name": "telegram", "title": "Telegram", "kind": "Alerts", "configured": True, "testable": False,
+     "what": "Sends alerts with Approve / Reject buttons to a Telegram chat.", "detail": "Handled by the notifier.",
+     "settings": ["TELEGRAM_BOT_TOKEN"], "docs": "https://core.telegram.org/bots/tutorial"},
+    {"name": "email", "title": "Email", "kind": "Alerts", "configured": False, "testable": False,
+     "what": "Emails alerts, as a backup to Telegram or always.", "detail": "Handled by the notifier.",
+     "settings": ["SMTP_HOST", "ALERT_EMAIL_TO"], "docs": ""},
+]
+
+
+@app.get("/integrations")
+def integrations():
+    return FAKE_INTEGRATIONS
+
+
+@app.post("/integrations/{name}/test")
+def test_integration(name: str):
+    return {"ok": False, "error": "the fake core does not call outside services; start the real core to test"}
 
 
 @app.post("/ai/test")

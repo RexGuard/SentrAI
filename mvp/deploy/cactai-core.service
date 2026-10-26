@@ -9,7 +9,9 @@ Type=simple
 WorkingDirectory=@PREFIX@/mvp/core
 # iptables takes this lock file before every change; /run is read-only to the service otherwise.
 ExecStartPre=-+/bin/sh -c 'touch /run/xtables.lock'
-ExecStart=@PREFIX@/mvp/core/.venv/bin/python -m uvicorn app.main:app --host ${CACTAI_CORE_HOST} --port ${CACTAI_CORE_PORT}
+# app.serve: the local API on CACTAI_CORE_HOST:CACTAI_CORE_PORT, plus the agents' HTTPS port when
+# CACTAI_PANEL_PORT is set (install.sh --panel).
+ExecStart=@PREFIX@/mvp/core/.venv/bin/python -m app.serve
 User=@USER@
 Group=@USER@
 EnvironmentFile=/etc/cactai/cactai.env

@@ -1,9 +1,12 @@
-"""Parsers for real server log lines: nginx access/error logs, syslog (sshd and friends), journald JSON.
+"""Parsers for real server log lines: nginx access/error logs, syslog (sshd and friends), journald JSON,
+Windows Event Log records, Suricata eve.json alerts, and MySQL/MariaDB, PostgreSQL and MongoDB logs.
 
 ``parse_line(line, fmt)`` returns a ``Parsed`` (the log's own timestamp, host, source IP and user,
 plus a ``fields`` dict that becomes the Event's ``parsed`` object), or None when the line is not in
 a format we know. ``fmt`` is the format recorded in ``scout/sources.json``: "nginx", "syslog",
-"journald", "jsonl", or "text"/"auto" (try each parser in turn). The field names are listed in
+"journald", "winevent", "suricata", "mysql", "postgres", "mongodb", "jsonl", or "text"/"auto"
+(try nginx and syslog in turn). A ``Parsed`` with ``extra["drop"]`` is a line the format writes but
+SentrAI has no use for (Suricata flow records, MongoDB storage notes): the collector skips it. The field names are listed in
 ``mvp/CONTRACT.md`` under "Parsed fields".
 
 Stdlib only. Lines without a time zone (classic syslog, nginx error log) are read in the log
@@ -292,6 +295,499 @@ def parse_journald(line: str, tz: tzinfo | None = None, now: datetime | None = N
                   extra={"cursor": rec.get("__CURSOR")})
 
 
+# ---------------------------------------------------------------- shared helpers for the formats below
+
+_FRACTION = re.compile(r"(\.\d{6})\d+")
+_BASIC_OFFSET = re.compile(r"([+-]\d{2})(\d{2})$")
+
+
+def _parse_iso(text: str, tz: tzinfo | None = None) -> str | None:
+    """'2026-10-26T10:00:00.1234567Z', '...+0800', '2026-10-26 10:00:00' -> ISO 8601 with offset.
+    Trims to microseconds and adds the colon to "+0800" so Python 3.11 reads it."""
+    text = _BASIC_OFFSET.sub(r"\1:\2", _FRACTION.sub(r"\1", text.strip().replace("Z", "+00:00")))
+    try:
+        dt = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        return _iso(_local(dt, tz))
+    return _iso(dt.astimezone(tz or log_tz()))
+
+
+def _ip(value: Any) -> str | None:
+    """A client address as logs write it ('::ffff:203.0.113.9', '203.0.113.9:51234', '-') -> IP or None."""
+    if value is None:
+        return None
+    text = str(value).strip().strip("[]")
+    if text.lower().startswith("::ffff:"):
+        text = text[7:]
+    if text.count(":") == 1 and "." in text:  # IPv4 with a port
+        text = text.split(":", 1)[0]
+    if text in ("", "-", "::", "0.0.0.0", "unknown", "UNKNOWN", "localhost") or not re.fullmatch(r"[0-9a-fA-F:.]+", text):
+        return None
+    return text
+
+
+def _dropped(fields: dict[str, Any], ts: str | None = None) -> Parsed:
+    return Parsed(fields, ts=ts, extra={"drop": True})
+
+
+# ---------------------------------------------------------------- Windows Event Log
+
+# Event ID -> (win_event, outcome, kind). "auth" events count toward brute force in core; the others
+# are "windows_event" facts the rules turn into incidents (log cleared, admin group change, malware).
+WINDOWS_EVENTS: dict[int, tuple[str, str, str]] = {
+    4624: ("logon", "success", "auth"),
+    4625: ("logon_failed", "failure", "auth"),
+    4771: ("kerberos_preauth_failed", "failure", "auth"),
+    4776: ("ntlm_validation", "success", "auth"),       # outcome from Status: 0x0 success, else failure
+    4740: ("account_locked", "info", "auth"),
+    18456: ("sql_login_failed", "failure", "auth"),      # SQL Server, Application log
+    1102: ("log_cleared", "info", "windows_event"),      # Security log cleared
+    104: ("log_cleared", "info", "windows_event"),       # System or another log cleared
+    4720: ("account_created", "info", "windows_event"),
+    4728: ("group_member_added", "info", "windows_event"),  # global group (Domain Admins)
+    4732: ("group_member_added", "info", "windows_event"),  # local group (Administrators)
+    4756: ("group_member_added", "info", "windows_event"),  # universal group (Enterprise Admins)
+    4688: ("process_created", "info", "windows_event"),
+    4697: ("service_installed", "info", "windows_event"),
+    7045: ("service_installed", "info", "windows_event"),
+    1116: ("malware_detected", "info", "windows_event"),  # Microsoft Defender
+    1117: ("malware_action", "info", "windows_event"),
+}
+# IDs that more than one program uses: only these providers mean what the table says.
+WINDOWS_PROVIDERS = {104: "eventlog", 1102: "eventlog", 1116: "defender", 1117: "defender", 18456: "mssql",
+                     7045: "service control manager"}
+LOGON_TYPES = {2: "interactive", 3: "network", 4: "batch", 5: "service", 7: "unlock", 8: "network_cleartext",
+               9: "new_credentials", 10: "remote_desktop", 11: "cached"}
+SQL_CLIENT = re.compile(r"\[CLIENT: ?(?P<ip>[^\]]+)\]")
+SQL_USER = re.compile(r"Login failed for user '(?P<user>[^']*)'")
+
+
+def _windows_user(data: dict[str, Any], *keys: str) -> str | None:
+    for k in keys:
+        v = data.get(k)
+        if v not in (None, "", "-"):
+            return str(v)
+    return None
+
+
+def winevent_parsed(rec: dict[str, Any], tz: tzinfo | None = None) -> Parsed | None:
+    """One Windows event as a plain record -> Parsed. ``rec`` keys: event_id, channel, provider,
+    computer, time (ISO), record_id, data (EventData by name; unnamed values as "0", "1", ...),
+    message. Events SentrAI has no rule for return None."""
+    try:
+        eid = int(rec.get("event_id"))
+    except (TypeError, ValueError):
+        return None
+    if eid not in WINDOWS_EVENTS:
+        return None
+    provider = str(rec.get("provider") or "")
+    if (want := WINDOWS_PROVIDERS.get(eid)) and provider and not (
+            provider.upper().startswith("MSSQL") if want == "mssql" else want in provider.lower()):
+        return None
+    win_event, outcome, kind = WINDOWS_EVENTS[eid]
+    data = {str(k): v for k, v in (rec.get("data") or {}).items()}
+    message = str(rec.get("message") or "").strip()
+    channel = str(rec.get("channel") or "")
+    f: dict[str, Any] = {"format": "winevent", "kind": kind, "event_id": eid, "win_event": win_event,
+                         "channel": channel, "provider": provider, "record_id": rec.get("record_id"),
+                         "program": "windows", "message": message.splitlines()[0][:300] if message else None}
+    ip = _ip(data.get("IpAddress"))
+    user = _windows_user(data, "TargetUserName")
+    domain = _windows_user(data, "TargetDomainName")
+    if eid in (4624, 4625):
+        try:
+            logon_type = int(data.get("LogonType") or 0)
+        except ValueError:
+            logon_type = 0
+        f.update(logon_type=LOGON_TYPES.get(logon_type, str(logon_type or "")) or None,
+                 status=data.get("SubStatus") if str(data.get("SubStatus") or "0x0").lower() != "0x0" else data.get("Status"),
+                 workstation=_windows_user(data, "WorkstationName"),
+                 service="rdp" if logon_type == 10 else "windows_logon")
+        if eid == 4624 and (logon_type not in (3, 8, 10) or ip is None or ip in ("127.0.0.1", "::1")):
+            return None  # service, batch and local sign-ins: thousands a day and never an attack signal
+    elif eid == 4771:
+        f.update(status=data.get("Status"), service="kerberos")
+    elif eid == 4776:
+        status = str(data.get("Status") or "0x0").lower()
+        outcome = "success" if status in ("0x0", "0") else "failure"
+        f.update(status=status, workstation=_windows_user(data, "Workstation"), service="ntlm")
+    elif eid == 4740:
+        f.update(service="windows_logon", workstation=_windows_user(data, "TargetDomainName"))
+        domain = None
+    elif eid == 18456:
+        values = " ".join(str(v) for v in data.values()) + " " + message
+        if m := SQL_CLIENT.search(values):
+            ip = _ip(m["ip"])
+        user = (m["user"] if (m := SQL_USER.search(message)) else None) or _windows_user(data, "0")
+        if r := re.search(r"Reason: ?([^\[\]]+?)\s*(?:\[|$)", values):
+            f["reason"] = r.group(1).strip().rstrip(".")
+        f.update(service="mssql", program="mssql")
+    elif win_event == "group_member_added":
+        f.update(group=_windows_user(data, "TargetUserName"),
+                 member=_windows_user(data, "MemberName", "MemberSid"), by=_windows_user(data, "SubjectUserName"))
+        user = f["member"]
+    elif eid == 4720:
+        f["by"] = _windows_user(data, "SubjectUserName")
+    elif eid == 4688:
+        f.update(process=_windows_user(data, "NewProcessName"), parent=_windows_user(data, "ParentProcessName"),
+                 command_line=_windows_user(data, "CommandLine"))
+        user = _windows_user(data, "SubjectUserName")
+    elif win_event == "service_installed":
+        f.update(service_name=_windows_user(data, "ServiceName"),
+                 image_path=_windows_user(data, "ImagePath", "ServiceFileName"),
+                 account=_windows_user(data, "AccountName", "ServiceAccount"))
+        user = _windows_user(data, "SubjectUserName")
+    elif win_event in ("malware_detected", "malware_action"):
+        f.update(threat=_windows_user(data, "Threat Name", "ThreatName"), path=_windows_user(data, "Path"),
+                 severity=_windows_user(data, "Severity Name"), action=_windows_user(data, "Action Name"),
+                 program="defender")
+        user = _windows_user(data, "Detection User")
+    elif win_event == "log_cleared":
+        f["log"] = _windows_user(data, "Channel") or channel
+        user = _windows_user(data, "SubjectUserName")
+    if kind == "auth":
+        f["outcome"] = outcome
+        f.setdefault("service", "windows_logon")
+        if f["service"] == "rdp":
+            f["program"] = "rdp"
+    if kind == "auth" and user and domain and "\\" not in user and "@" not in user and domain not in ("-", "."):
+        user = f"{domain}\\{user}"
+    ts = _parse_iso(str(rec["time"]), tz) if rec.get("time") else None
+    return Parsed(f, ts=ts, host=str(rec["computer"]) if rec.get("computer") else None, src_ip=ip, user=user)
+
+
+def winevent_raw(p: Parsed) -> str:
+    """A readable one-line summary of a Windows event, used as the Event's ``raw``."""
+    f = p.fields
+    bits = [f"{k}={v}" for k, v in (("user", p.user), ("ip", p.src_ip), ("logon_type", f.get("logon_type")),
+                                    ("status", f.get("status")), ("group", f.get("group")),
+                                    ("service", f.get("service_name")), ("image", f.get("image_path")),
+                                    ("threat", f.get("threat")), ("path", f.get("path")),
+                                    ("parent", f.get("parent")), ("process", f.get("process")),
+                                    ("cmdline", f.get("command_line")), ("reason", f.get("reason"))) if v]
+    head = f"Windows {f.get('channel') or 'event'} {f['event_id']} {f['win_event']}:"
+    tail = f" | {f['message']}" if f.get("message") else ""
+    return " ".join([head, *bits]) + tail
+
+
+_EVT_NS = re.compile(r"\{[^}]*\}")
+
+
+def winevent_from_xml(xml: str) -> list[dict[str, Any]]:
+    """``wevtutil qe ... /f:RenderedXml /e:Events`` (or one ``<Event>``) -> plain records."""
+    import xml.etree.ElementTree as ET
+
+    try:
+        root = ET.fromstring(xml)
+    except ET.ParseError:
+        return []
+    events = [root] if _EVT_NS.sub("", root.tag) == "Event" else [e for e in root if _EVT_NS.sub("", e.tag) == "Event"]
+    out = []
+    for ev in events:
+        rec: dict[str, Any] = {"data": {}}
+        for part in ev:
+            name = _EVT_NS.sub("", part.tag)
+            if name == "System":
+                for el in part:
+                    tag = _EVT_NS.sub("", el.tag)
+                    if tag == "Provider":
+                        rec["provider"] = el.get("Name") or el.get("EventSourceName")
+                    elif tag == "EventID":
+                        rec["event_id"] = (el.text or "").strip()
+                    elif tag == "TimeCreated":
+                        rec["time"] = el.get("SystemTime")
+                    elif tag == "EventRecordID":
+                        rec["record_id"] = int(el.text) if (el.text or "").strip().isdigit() else None
+                    elif tag in ("Channel", "Computer"):
+                        rec[tag.lower()] = (el.text or "").strip()
+            elif name in ("EventData", "UserData"):
+                items = list(part) if name == "EventData" else [x for child in part for x in child]
+                for i, d in enumerate(items):
+                    key = d.get("Name") or (_EVT_NS.sub("", d.tag) if name == "UserData" else str(i))
+                    if _EVT_NS.sub("", d.tag) != "Binary":
+                        rec["data"][key] = (d.text or "").strip()
+            elif name == "RenderingInfo":
+                for el in part:
+                    if _EVT_NS.sub("", el.tag) == "Message":
+                        rec["message"] = (el.text or "").strip()
+        out.append(rec)
+    return out
+
+
+def winevent_from_json(obj: dict[str, Any]) -> dict[str, Any] | None:
+    """Winlogbeat, NXLog, or ``Get-WinEvent | ConvertTo-Json`` (with ``EventData``) -> plain record."""
+    if isinstance(obj.get("winlog"), dict):  # Winlogbeat / Elastic Agent
+        w = obj["winlog"]
+        return {"event_id": w.get("event_id"), "channel": w.get("channel"), "provider": w.get("provider_name"),
+                "computer": w.get("computer_name"), "record_id": w.get("record_id"),
+                "time": obj.get("@timestamp"), "data": w.get("event_data") or {}, "message": obj.get("message")}
+    eid = obj.get("EventID", obj.get("Id", obj.get("event_id")))
+    if eid is None:
+        return None
+    known = {"EventID", "Id", "event_id", "Channel", "LogName", "SourceName", "ProviderName", "Hostname",
+             "MachineName", "Computer", "EventTime", "TimeCreated", "RecordNumber", "RecordId", "Message", "EventData"}
+    data = obj.get("EventData") if isinstance(obj.get("EventData"), dict) else \
+        {k: v for k, v in obj.items() if k not in known and not isinstance(v, (dict, list))}
+    when = obj.get("EventTime") or obj.get("TimeCreated")
+    if isinstance(when, str) and (m := re.match(r"/Date\((\d+)\)/", when)):  # PowerShell 5 JSON dates
+        when = datetime.fromtimestamp(int(m.group(1)) / 1000, timezone.utc).isoformat()
+    return {"event_id": eid, "channel": obj.get("Channel") or obj.get("LogName"),
+            "provider": obj.get("SourceName") or obj.get("ProviderName"),
+            "computer": obj.get("Hostname") or obj.get("MachineName") or obj.get("Computer"),
+            "record_id": obj.get("RecordNumber") or obj.get("RecordId"), "time": when, "data": data,
+            "message": obj.get("Message")}
+
+
+def parse_winevent(line: str, tz: tzinfo | None = None, now: datetime | None = None) -> Parsed | None:
+    """One exported or forwarded Windows event per line: JSON (Winlogbeat, NXLog, Get-WinEvent) or
+    one ``<Event>`` XML element. Events of no interest come back dropped."""
+    line = line.strip()
+    rec: dict[str, Any] | None = None
+    if line.startswith("<"):
+        recs = winevent_from_xml(line)
+        rec = recs[0] if recs else None
+    else:
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            return None
+        rec = winevent_from_json(obj) if isinstance(obj, dict) else None
+    if rec is None:
+        return None
+    p = winevent_parsed(rec, tz)
+    return p if p is not None else _dropped({"format": "winevent", "kind": "log"})
+
+
+# ---------------------------------------------------------------- Suricata eve.json
+
+def parse_suricata(line: str, tz: tzinfo | None = None, now: datetime | None = None) -> Parsed | None:
+    """One line of Suricata's ``eve.json``. Only ``alert`` records are kept; flows, DNS, TLS, stats
+    and the rest come back dropped. ``src_ip`` is the far end of the connection (for an alert on
+    traffic leaving this network, the outside address it went to), so a block hits the right side."""
+    try:
+        rec = json.loads(line)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(rec, dict) or "event_type" not in rec:
+        return None
+    ts = _parse_iso(str(rec["timestamp"]), tz) if rec.get("timestamp") else None
+    if rec["event_type"] != "alert" or not isinstance(rec.get("alert"), dict):
+        return _dropped({"format": "suricata", "kind": "network", "event_type": rec["event_type"]}, ts)
+    a = rec["alert"]
+    src, dest = _ip(rec.get("src_ip")), _ip(rec.get("dest_ip"))
+    outbound = src is not None and dest is not None and _private(src) and not _private(dest)
+    f: dict[str, Any] = {"format": "suricata", "kind": "network_alert", "program": "suricata",
+                         "signature": a.get("signature"), "signature_id": a.get("signature_id"),
+                         "alert_category": a.get("category") or None, "severity": a.get("severity"),
+                         "action": a.get("action"), "proto": rec.get("proto"), "app_proto": rec.get("app_proto"),
+                         "src_ip": src, "src_port": rec.get("src_port"), "dest_ip": dest,
+                         "dest_port": rec.get("dest_port"), "direction": "outbound" if outbound else "inbound",
+                         "interface": rec.get("in_iface")}
+    if isinstance(rec.get("http"), dict):
+        f.update(http_host=rec["http"].get("hostname"), http_url=rec["http"].get("url"),
+                 user_agent=rec["http"].get("http_user_agent"))
+    return Parsed(f, ts=ts, src_ip=dest if outbound else src)
+
+
+def suricata_raw(p: Parsed) -> str:
+    f = p.fields
+    url = f" {f['http_host'] or ''}{f['http_url'] or ''}" if f.get("http_url") else ""
+    return (f"Suricata alert [{f.get('action') or 'allowed'}] {f.get('signature')} "
+            f"(category: {f.get('alert_category') or 'none'}, severity {f.get('severity')}) "
+            f"{f.get('proto') or ''} {f.get('src_ip')}:{f.get('src_port')} -> {f.get('dest_ip')}:{f.get('dest_port')}{url}")
+
+
+_LOCAL_NETS = ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10", "fc00::/7")
+
+
+def _private(ip: str) -> bool:
+    """An address inside this network (RFC 1918, CGNAT, ULA, loopback, link-local). Python's own
+    is_private also counts the documentation ranges, which tests and examples use as "outside"."""
+    import ipaddress
+
+    try:
+        a = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    return a.is_loopback or a.is_link_local or any(a in ipaddress.ip_network(n) for n in _LOCAL_NETS
+                                                   if ipaddress.ip_network(n).version == a.version)
+
+
+# ---------------------------------------------------------------- MySQL / MariaDB
+
+# Error log: "2026-10-26T10:00:00.123456Z 8 [Note] [MY-010926] [Server] Access denied for user ..."
+# (MySQL 8), "2026-10-26 10:00:00 8 [Warning] Access denied ..." (MariaDB), "161026 10:00:00 [Warning] ..." (old).
+MYSQL_ERROR = re.compile(
+    r"^(?P<ts>\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?|\d{6} +\d{1,2}:\d{2}:\d{2})"
+    r"\s+(?:(?P<thread>\d+)\s+)?\[(?P<level>[A-Za-z]+)\](?:\s+\[(?P<code>MY-\d+)\])?(?:\s+\[(?P<subsys>\w+)\])?\s+(?P<msg>.*)$")
+# General query log: "2026-10-26T10:00:00.123456Z\t   12 Query\tSELECT ..." / "...  12 Connect\troot@203.0.113.9 on shop"
+MYSQL_GENERAL = re.compile(
+    r"^(?P<ts>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)\s+(?P<thread>\d+)\s+"
+    r"(?P<cmd>Query|Connect|Quit|Init DB|Execute|Prepare)\b\s*(?P<arg>.*)$")
+MYSQL_DENIED = re.compile(r"Access denied for user '(?P<user>[^']*)'@'(?P<host>[^']*)'(?: \(using password: (?P<pw>YES|NO)\))?")
+MYSQL_CONNECT = re.compile(r"^(?P<user>[^@\s]+)@(?P<host>\S+) on (?P<db>\S*)")
+MYSQL_ABORTED = re.compile(r"Aborted connection \d+ to db: '(?P<db>[^']*)' user: '(?P<user>[^']*)' host: '(?P<host>[^']*)'")
+MYSQL_BLOCKED = re.compile(r"Host '(?P<host>[^']*)' is blocked because of many connection errors")
+
+
+def _mysql_time(ts: str, tz: tzinfo | None) -> str | None:
+    if re.match(r"^\d{6} ", ts):  # 161026 10:00:00
+        try:
+            return _iso(_local(datetime.strptime(re.sub(r" +", " ", ts), "%y%m%d %H:%M:%S"), tz))
+        except ValueError:
+            return None
+    return _parse_iso(ts, tz)
+
+
+def parse_mysql(line: str, tz: tzinfo | None = None, now: datetime | None = None) -> Parsed | None:
+    """MySQL / MariaDB error log or general query log. Failed sign-ins appear in the error log
+    (MariaDB by default; MySQL 8 with ``log_error_verbosity = 3``)."""
+    f: dict[str, Any] = {"format": "mysql", "program": "mysql", "service": "mysql"}
+    if m := MYSQL_GENERAL.match(line):
+        cmd, arg = m["cmd"], m["arg"].strip()
+        f.update(session=f"mysql:{m['thread']}", command=cmd)
+        if cmd in ("Query", "Execute"):
+            f.update(kind="db_query", sql=arg)
+            return Parsed(f, ts=_mysql_time(m["ts"], tz))
+        if cmd == "Connect":
+            if d := MYSQL_DENIED.search(arg):
+                f.update(kind="auth", auth_event="access_denied", outcome="failure",
+                         password_used=d["pw"] != "NO" if d["pw"] else None)
+                return Parsed(f, ts=_mysql_time(m["ts"], tz), src_ip=_ip(d["host"]), user=d["user"] or None)
+            if c := MYSQL_CONNECT.match(arg):
+                f.update(kind="auth", auth_event="connected", outcome="success", database=c["db"] or None)
+                return Parsed(f, ts=_mysql_time(m["ts"], tz), src_ip=_ip(c["host"]), user=c["user"])
+        return _dropped({**f, "kind": "log"}, _mysql_time(m["ts"], tz))
+    m = MYSQL_ERROR.match(line)
+    if not m:
+        return None
+    msg, ts = m["msg"], _mysql_time(m["ts"], tz)
+    f.update(kind="log", level=m["level"].lower(), code=m["code"], message=msg[:300])
+    if m["thread"]:
+        f["session"] = f"mysql:{m['thread']}"
+    ip = user = None
+    if d := MYSQL_DENIED.search(msg):
+        f.update(kind="auth", auth_event="access_denied", outcome="failure",
+                 password_used=d["pw"] != "NO" if d["pw"] else None)
+        ip, user = _ip(d["host"]), d["user"] or None
+    elif a := MYSQL_ABORTED.search(msg):
+        unauth = a["user"] in ("unauthenticated", "")
+        f.update(kind="auth", auth_event="aborted_preauth" if unauth else "aborted", outcome="info")
+        ip, user = _ip(a["host"]), None if unauth else a["user"]
+    elif b := MYSQL_BLOCKED.search(msg):
+        f.update(kind="auth", auth_event="host_blocked", outcome="info")
+        ip = _ip(b["host"])
+    elif f["level"] in ("note", "system", "info"):
+        return _dropped(f, ts)  # start-up, InnoDB and replication notes
+    return Parsed(f, ts=ts, src_ip=ip, user=user)
+
+
+# ---------------------------------------------------------------- PostgreSQL
+
+# log_line_prefix '%m [%p] ' (default) or '%m [%p] %q%u@%d ' (Debian), optionally with %h / %r (client).
+POSTGRES = re.compile(
+    r"^(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?)(?: (?P<tz>[A-Za-z]{1,5}|[+-]\d{2}(?::?\d{2})?))? "
+    r"\[(?P<pid>\d+)\](?:-\d+)? (?:(?P<prefix>.*?) )?"
+    r"(?P<level>LOG|FATAL|ERROR|WARNING|NOTICE|INFO|PANIC|STATEMENT|DETAIL|HINT|CONTEXT|DEBUG\d?):  (?P<msg>.*)$")
+PG_AUTH_FAILED = re.compile(r'(?:(?P<method>\w+) )?authentication failed for user "(?P<user>[^"]*)"')
+PG_HBA = re.compile(r'no pg_hba\.conf entry for host "(?P<host>[^"]*)", user "(?P<user>[^"]*)"')
+PG_NO_ROLE = re.compile(r'^role "(?P<user>[^"]*)" does not exist')
+PG_RECEIVED = re.compile(r"^connection received: host=(?P<host>\S+)")
+PG_AUTHORIZED = re.compile(r"^connection authorized: user=(?P<user>\S+)")
+PG_STATEMENT = re.compile(r"^(?:duration: [\d.]+ ms\s+)?(?:statement|execute [^:]*): (?P<sql>.*)$")
+PG_CLIENT = re.compile(r"(?:^|[\s@])(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F]*:[0-9a-fA-F:]+)(?:\(\d+\))?(?:\s|$)")
+
+
+def _pg_zone(name: str | None, tz: tzinfo | None) -> tzinfo | None:
+    """%m writes the server's zone as "UTC", "+08" or an abbreviation such as "SGT"."""
+    if name and (name.upper() in ("UTC", "GMT") or _OFFSET.match(name)):
+        return log_tz(name)
+    return tz  # an abbreviation: use the log machine's zone
+
+
+def parse_postgres(line: str, tz: tzinfo | None = None, now: datetime | None = None) -> Parsed | None:
+    """PostgreSQL server log (stderr / logging collector, the usual prefixes). Failed sign-ins need no
+    setting; the client address comes from the line prefix (%h / %r) or from the
+    ``connection received`` line of the same process (``log_connections = on``)."""
+    m = POSTGRES.match(line)
+    if not m:
+        return None
+    try:
+        dt = datetime.fromisoformat(m["ts"])
+    except ValueError:
+        return None
+    ts = _iso(_local(dt, _pg_zone(m["tz"], tz)).astimezone(tz or log_tz()))
+    msg, level = m["msg"], m["level"]
+    f: dict[str, Any] = {"format": "postgres", "kind": "log", "program": "postgres", "service": "postgres",
+                         "level": level.lower(), "pid": int(m["pid"]), "session": f"postgres:{m['pid']}",
+                         "message": msg[:300]}
+    prefix = m["prefix"] or ""
+    ip = _ip(c["ip"]) if (c := PG_CLIENT.search(prefix)) else None
+    user = None
+    if (pu := re.match(r"^(?P<user>[\w.-]+)@", prefix)) and pu["user"] not in ("[unknown]",):
+        user = pu["user"]
+    if level == "FATAL" and (a := PG_AUTH_FAILED.search(msg)):
+        f.update(kind="auth", auth_event="password_failed" if (a["method"] or "password") in ("password", "md5", "scram")
+                 else f"{a['method'].lower()}_failed", outcome="failure")
+        user = a["user"]
+    elif level == "FATAL" and (h := PG_HBA.search(msg)):
+        f.update(kind="auth", auth_event="no_hba_entry", outcome="failure")
+        ip, user = _ip(h["host"]) or ip, h["user"]
+    elif level == "FATAL" and (r := PG_NO_ROLE.search(msg)):
+        f.update(kind="auth", auth_event="no_such_role", outcome="failure", invalid_user=True)
+        user = r["user"]
+    elif r := PG_RECEIVED.search(msg):
+        f.update(kind="auth", auth_event="connection_received", outcome="info")
+        ip = _ip(r["host"])
+    elif a := PG_AUTHORIZED.search(msg):
+        f.update(kind="auth", auth_event="connected", outcome="success")
+        user = a["user"]
+    elif level in ("LOG", "STATEMENT") and (s := PG_STATEMENT.search(msg)):
+        f.update(kind="db_query", sql=s["sql"])
+    elif level == "STATEMENT":  # the query that caused the ERROR line above it
+        f.update(kind="db_query", sql=msg)
+    elif level not in ("FATAL", "ERROR", "WARNING", "PANIC"):
+        return _dropped(f, ts)  # checkpoints, autovacuum, DETAIL / HINT / CONTEXT lines
+    return Parsed(f, ts=ts, src_ip=ip, user=user)
+
+
+# ---------------------------------------------------------------- MongoDB
+
+def parse_mongodb(line: str, tz: tzinfo | None = None, now: datetime | None = None) -> Parsed | None:
+    """MongoDB 4.4+ structured log (one JSON object per line). Sign-ins are kept; everything else
+    (storage, replication, index builds) comes back dropped."""
+    try:
+        rec = json.loads(line)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(rec, dict) or "msg" not in rec or "c" not in rec:
+        return None
+    when = rec.get("t", {}).get("$date") if isinstance(rec.get("t"), dict) else rec.get("t")
+    ts = _parse_iso(str(when), tz) if when else None
+    attr = rec.get("attr") if isinstance(rec.get("attr"), dict) else {}
+    msg = str(rec["msg"])
+    f: dict[str, Any] = {"format": "mongodb", "kind": "auth", "program": "mongodb", "service": "mongodb",
+                         "component": rec["c"], "log_id": rec.get("id"), "message": msg[:300]}
+    if rec.get("ctx"):
+        f["session"] = f"mongodb:{rec['ctx']}"
+    remote = _ip(attr.get("remote") or attr.get("client"))
+    user = attr.get("principalName") or attr.get("user") or None
+    low = msg.lower()
+    if rec["c"] == "ACCESS" and ("authentication failed" in low or "failed to authenticate" in low):
+        f.update(auth_event="auth_failed", outcome="failure", mechanism=attr.get("mechanism"),
+                 database=attr.get("authenticationDatabase") or attr.get("db"), reason=attr.get("error"))
+    elif rec["c"] == "ACCESS" and ("authentication succeeded" in low or "successfully authenticated" in low):
+        f.update(auth_event="connected", outcome="success", mechanism=attr.get("mechanism"))
+    elif rec["c"] == "NETWORK" and msg == "Connection accepted":
+        f.update(auth_event="connection_received", outcome="info")
+        user = None
+    else:
+        return _dropped({**f, "kind": "log"}, ts)
+    return Parsed(f, ts=ts, src_ip=remote, user=str(user) if user else None)
+
+
 # ---------------------------------------------------------------- dispatch
 
 PARSERS = {
@@ -301,6 +797,13 @@ PARSERS = {
     "syslog": (parse_syslog,),
     "sshd": (parse_syslog,),
     "journald": (parse_journald,),
+    "winevent": (parse_winevent,),
+    "suricata": (parse_suricata,),
+    "mysql": (parse_mysql,),
+    "mariadb": (parse_mysql,),
+    "postgres": (parse_postgres,),
+    "postgresql": (parse_postgres,),
+    "mongodb": (parse_mongodb,),
 }
 AUTO = (parse_nginx_access, parse_syslog, parse_nginx_error)
 

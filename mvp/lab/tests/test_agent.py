@@ -178,3 +178,64 @@ def test_report_services_posts_names_only():
     assert agent.report_services(data, S(), lambda: [{"name": "nginx", "port": 443, "proto": "tcp", "process": "nginx"}])
     assert sent["url"] == "https://panel.example.com/fleet/services"
     assert sent["body"]["services"][0]["name"] == "nginx" and sent["headers"]["Authorization"] == "Bearer sa_x.y"
+
+
+# ---------------------------------------------------------------- jobs from the panel (tasks.py)
+def test_threat_scan_job_reads_only_local_folders(tmp_path, monkeypatch):
+    from agent import tasks
+
+    site = tmp_path / "site"
+    site.mkdir()
+    (site / "shell.php").write_text("<?php eval($_POST['c']); ?>")
+    monkeypatch.setenv("CACTAI_THREAT_PATHS", str(site))
+    ok, result, err = tasks.run_job({"id": "j-1", "kind": "threat_scan"}, tmp_path)
+    assert ok and err is None and result["files_checked"] == 1
+    assert result["findings"] and all("real_path" not in f for f in result["findings"])
+    monkeypatch.delenv("CACTAI_THREAT_PATHS")
+    ok, result, _ = tasks.run_job({"id": "j-2", "kind": "threat_scan"}, tmp_path)
+    assert ok and result["files_checked"] == 0 and "CACTAI_THREAT_PATHS" in result["note"]
+
+
+def test_backup_job_stays_on_this_machine(tmp_path, monkeypatch):
+    from agent import tasks
+
+    data = tmp_path / "data"
+    data.mkdir()
+    (data / "a.txt").write_text("hello")
+    monkeypatch.setenv("CACTAI_BACKUP_PATHS", str(data))
+    monkeypatch.delenv("CACTAI_BACKUP_DIR", raising=False)
+    ok, result, err = tasks.run_job({"id": "j-1", "kind": "backup"}, tmp_path / "agent")
+    assert ok, err
+    assert result["files"] == 1 and len(result["sha256"]) == 64
+    assert (tmp_path / "agent" / "backups" / f"{result['id']}.tar.gz").is_file()
+    monkeypatch.delenv("CACTAI_BACKUP_PATHS")
+    ok, _, err = tasks.run_job({"id": "j-2", "kind": "backup"}, tmp_path / "agent")
+    assert not ok and "CACTAI_BACKUP_PATHS" in err
+    ok, _, err = tasks.run_job({"id": "j-3", "kind": "format_disk"}, tmp_path)
+    assert not ok and "does not know" in err
+
+
+def test_job_loop_picks_up_runs_and_reports(tmp_path, monkeypatch):
+    import threading
+
+    from agent import tasks
+
+    monkeypatch.delenv("CACTAI_THREAT_PATHS", raising=False)
+    stop = threading.Event()
+    queue = [{"id": "j-1", "kind": "threat_scan"}]
+    sent = []
+
+    class Session:
+        def get(self, url, headers, timeout, verify):
+            assert url.endswith("/fleet/jobs/next") and headers["Authorization"] == "Bearer sa_x.k"
+            if not queue:
+                stop.set()
+            return FakeResponse(200, {"job": queue.pop(0) if queue else None})
+
+        def post(self, url, json, timeout, verify, headers):
+            sent.append(json)
+            return FakeResponse(200, {"ok": True})
+
+    monkeypatch.setattr(tasks.requests, "Session", Session)
+    tasks.job_loop({"panel": "https://p", "key": "sa_x.k"}, True, tmp_path, stop, every_s=0, log=lambda s: None)
+    assert sent and sent[0]["id"] == "j-1" and sent[0]["ok"] is True
