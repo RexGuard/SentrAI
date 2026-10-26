@@ -105,12 +105,13 @@ tar -C "$SRC" -cf - --exclude=.venv --exclude=__pycache__ --exclude=.pytest_cach
     ./lab ./core/app ./sentrai_config.py ./sentrai_llm.py ./sentrai_env.py | tar -C "$MVP" -xf - --no-same-owner
 chown -R root:root "$MVP"
 chmod -R u=rwX,go=rX "$MVP"
+PIP_HELP="could not download the Python packages (pip's message is above). This machine must reach pypi.org over HTTPS; fix that, then run this again."
 if [ ! -x "$MVP/lab/.venv/bin/python" ]; then
     echo "Creating venv ..."
-    "$PYTHON" -m venv "$MVP/lab/.venv"
-    "$MVP/lab/.venv/bin/python" -m pip install -q --upgrade pip
+    "$PYTHON" -m venv "$MVP/lab/.venv" || die "could not create the Python environment in $MVP/lab/.venv"
+    "$MVP/lab/.venv/bin/python" -m pip install -q --upgrade pip || { rm -rf "$MVP/lab/.venv"; die "$PIP_HELP"; }
 fi
-"$MVP/lab/.venv/bin/python" -m pip install -q -r "$MVP/lab/requirements.txt"
+"$MVP/lab/.venv/bin/python" -m pip install -q -r "$MVP/lab/requirements.txt" || die "$PIP_HELP"
 
 # --- settings ---------------------------------------------------------------
 # An upgrade keeps what an earlier run set: the addresses never to block, enforcing or dry run, and
