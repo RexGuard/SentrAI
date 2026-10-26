@@ -172,6 +172,13 @@ def test_agent_rows_and_join_commands():
     assert cmds["windows"] == ("powershell -ExecutionPolicy Bypass -File .\\mvp\\deploy\\install-agent.ps1 "
                                "-Panel https://panel.example.com:8000 -Code K7QM-2XPA-9RTD -Name web-01")
     assert "-Name" not in sh.join_commands("https://p.example.com", "K7QM-2XPA-9RTD")["windows"]
+    pin = "sha256:" + "ab" * 32
+    pinned = sh.join_commands("https://panel.example.com:8443", "K7QM-2XPA-9RTD", None, pin)
+    assert pinned["linux"].endswith(f"--code K7QM-2XPA-9RTD --pin {pin}") and pinned["windows"].endswith(f"-Pin {pin}")
+    off = sh.agent_rows([{"agent_id": "a", "host": "web-01", "offline": {"from": "2026-10-26T10:00:00+00:00",
+                                                                         "to": "2026-10-26T10:40:00+00:00",
+                                                                         "local_blocks": 2}}])
+    assert off["Last time offline"][0].startswith("2 local blocks")
 
 
 def test_services_on_a_machine():

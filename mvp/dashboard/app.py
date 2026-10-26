@@ -1746,8 +1746,9 @@ def page_machines() -> None:
             name = st.text_input("Machine name (optional)", key="join_name", placeholder="web-01",
                                  help="Leave empty to use the new machine's own host name")
             url = st.text_input("Panel address the machine will use", key="join_url",
-                                value=os.environ.get("CACTAI_PUBLIC_URL") or st.session_state.core_url,
-                                help="Must be https:// from another machine")
+                                value=os.environ.get("CACTAI_PANEL_URL") or os.environ.get("CACTAI_PUBLIC_URL")
+                                or st.session_state.core_url,
+                                help="Must be https:// from another machine (install.sh --panel opens port 8443)")
             if st.button("Make join code", icon=":material/key:", type="primary", key="join_make",
                          disabled=locked("configure"), help=why_locked("configure")):
                 try:
@@ -1759,14 +1760,22 @@ def page_machines() -> None:
             if made:
                 st.markdown(f'Join code <b>{html.escape(str(made["code"]))}</b> · works once, until '
                             f'{html.escape(f"{ts:%d %b %H:%M}" if (ts := sh.parse_ts(made.get("expires_at"))) else "-")}', unsafe_allow_html=True)
-                cmds = sh.join_commands(url, made["code"], made.get("name"))
+                pin = made.get("pin") if url.startswith("https://") else None
+                cmds = sh.join_commands(url, made["code"], made.get("name"), pin)
                 st.caption("On a Linux server, from a SentrAI checkout:")
                 st.code(cmds["linux"], language="bash")
                 st.caption("On Windows, from a SentrAI checkout in an Administrator PowerShell:")
                 st.code(cmds["windows"], language="powershell")
+                if pin:
+                    st.caption("The --pin is this panel's certificate fingerprint: the machine will talk to this "
+                               "panel and nothing pretending to be it.")
                 if not url.startswith("https://"):
-                    st.warning("Other machines refuse a plain http:// panel. Put HTTPS in front of the core first.",
+                    st.warning("Other machines refuse a plain http:// panel. Install the panel with "
+                               "sudo ./deploy/install.sh --panel to open its HTTPS port for agents.",
                                icon=":material/lock_open:")
+                elif not pin:
+                    st.info("No certificate pin is known (CACTAI_PANEL_CERT is not set), so the machine checks the "
+                            "panel's certificate against the usual authorities.", icon=":material/lock:")
 
     if panel:
         agents, aerr = fetch("fleet", [])
