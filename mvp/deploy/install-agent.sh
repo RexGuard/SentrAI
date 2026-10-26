@@ -23,7 +23,7 @@
 #   /var/lib/cactai/agent/             machine key, read positions, blocks in force (cactai 0700)
 #   /etc/systemd/system/cactai-agent.service
 # The agent also approves this machine's nginx, SSH login, Suricata and database logs (collector --add-system-logs).
-# Remove it with: systemctl disable --now cactai-agent && rm /etc/systemd/system/cactai-agent.service
+# Remove it with: sudo ./deploy/uninstall-agent.sh  (--purge also deletes the machine key)
 set -euo pipefail
 
 PREFIX=/opt/cactai
@@ -79,7 +79,7 @@ LOG_GROUPS=()
 for g in adm systemd-journal; do
     getent group "$g" >/dev/null && LOG_GROUPS+=("$g")
 done
-install -d -m 0755 /var/lib/cactai
+[ -d /var/lib/cactai ] || install -d -m 0755 /var/lib/cactai  # a panel on this machine keeps its own mode
 install -d -o "$SVC_USER" -g "$SVC_USER" -m 0700 "$STATE" "$STATE/logs"
 install -d -m 0750 -o root -g "$SVC_USER" /etc/cactai
 
