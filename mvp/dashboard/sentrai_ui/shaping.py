@@ -121,6 +121,17 @@ def mode_label(mode: Any) -> str:
     return MODE_LABELS.get(str(mode), str(mode).replace("_", " ").capitalize())
 
 
+def ai_classifier_state(status: Any) -> tuple[str, str]:
+    """The AI classifier's tile: ("On" | "Off" | "Unknown", why). Never claims "On" when the core said nothing."""
+    text = str(status or "").strip()
+    if text.startswith("enabled"):
+        return "On", "asked when the rules are unsure"
+    if text.startswith("disabled"):
+        why = text.split(":", 1)[1].split("(")[0].strip() if ":" in text else ""
+        return "Off", why or "keyword fallback in use"
+    return "Unknown", "the core did not report it"
+
+
 def plural(n: Any, word: str, many: str = "") -> str:
     """'1 action', '2 actions', '2 addresses': no '(s)' in what people read."""
     try:

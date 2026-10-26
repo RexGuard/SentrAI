@@ -2026,11 +2026,11 @@ def page_classifier() -> None:
     opened = sh.records_of(records, "incident_opened")
 
     by_rules = int((rows["Classified by"] == "Rules").sum()) if not rows.empty else 0
-    jev_status = str(jev.get("status") or "unknown")
+    ai_value, ai_note = sh.ai_classifier_state(jev.get("status"))
     stats(("Attacks identified", str(len(opened)), "incidents opened", sh.BAND_COLORS["critical"] if opened else None),
           ("Malicious events", str(len(rows)), "classified as an attack"),
           ("Settled by rules", str(by_rules), "certain, no AI needed"),
-          ("AI classifier", "off" if jev_status.startswith("disabled") else "on", jev_status.split("(")[0][:48]))
+          ("AI classifier", ai_value, ai_note[:48]))
 
     with st.container(border=True):
         section("Rules in use", "change them on the Configuration page", "rule")
