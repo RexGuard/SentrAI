@@ -222,7 +222,39 @@ sudo ./deploy/install-agent.sh --panel https://panel.example.com:8000 --code ABC
 sudo ./deploy/install-agent.sh --enforce          # later: really change the firewall (default is a dry run)
 ```
 
-Without systemd (Windows, a laptop) the same agent runs from a checkout:
+### Windows machines (`install-agent.ps1`)
+
+On Windows 10, 11 or Server 2016 and newer, `install-agent.ps1` does the same as a Windows
+service. It needs Python 3.10+ installed for all users (the python.org installer; the Microsoft
+Store Python cannot run as a service). From a SentrAI checkout, in an Administrator PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\mvp\deploy\install-agent.ps1 -Panel https://panel.example.com:8000 -Code ABCD-EFGH-JKLM -Name web-01
+powershell -ExecutionPolicy Bypass -File .\mvp\deploy\install-agent.ps1 -Enforce   # later: really block in Windows Firewall
+powershell -ExecutionPolicy Bypass -File .\mvp\deploy\uninstall-agent.ps1          # remove it (-Purge also deletes the key)
+```
+
+- The service is **SentrAI agent** (`SentrAIAgent`): starts with Windows, restarts itself after a
+  crash, runs as LocalSystem because Windows Firewall rules need it. `Get-Service SentrAIAgent`,
+  `Restart-Service SentrAIAgent`.
+- Code and venv: `C:\Program Files\SentrAI` (`-Prefix` moves it). The service wrapper is
+  [WinSW](https://github.com/winsw/winsw) 2.12.0, downloaded from its GitHub release and checked
+  by SHA-256 (`-WinSW <file>` uses a copy you downloaded yourself).
+- Settings: the `<env>` lines in `C:\Program Files\SentrAI\SentrAIAgent.xml`. Run the installer
+  again with `-Enforce`, `-DryRun` or `-Protect IP` to change them; other options are kept.
+- Machine key, read positions and service output: `C:\ProgramData\SentrAI\agent` (SYSTEM and
+  Administrators only); the output is in `service\SentrAIAgent.out.log`.
+- Blocks are one inbound Windows Firewall rule per address, named `SentrAI-block-<ip>`. They are a
+  dry run (only logged) until `-Enforce`. Uninstalling takes them all out (`-KeepBlocks` leaves them).
+- Options: `-Panel`, `-Code`, `-Name`, `-Ca FILE` (self-signed panel), `-AllowHttp` (test networks
+  only), `-Enforce` / `-DryRun`, `-Protect IP,IP`, `-Prefix DIR`, `-WinSW FILE`, `-NoStart`.
+  `Get-Help .\mvp\deploy\install-agent.ps1 -Full` explains each.
+
+The CI job "Windows agent installer" runs all of this on a real Windows machine for every pull
+request: install, join, report in, upgrade to `-Enforce`, one real Windows Firewall block,
+uninstall.
+
+On a laptop, without installing a service, the agent can also run from a checkout:
 
 ```bash
 cd mvp/lab

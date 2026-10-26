@@ -1501,7 +1501,7 @@ def page_machines() -> None:
                 cmds = sh.join_commands(url, made["code"], made.get("name"))
                 st.caption("On a Linux server, from a SentrAI checkout:")
                 st.code(cmds["linux"], language="bash")
-                st.caption("On Windows or a laptop, from a SentrAI checkout:")
+                st.caption("On Windows, from a SentrAI checkout in an Administrator PowerShell:")
                 st.code(cmds["windows"], language="powershell")
                 if not url.startswith("https://"):
                     st.warning("Other machines refuse a plain http:// panel. Put HTTPS in front of the core first.",
