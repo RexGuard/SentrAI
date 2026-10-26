@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .config import Settings, sign
 from .reports import build_report, render_markdown, render_pdf
-from . import ai, anchor, fleet, webhook
+from . import ai, anchor, fleet, integrations, jobs, webhook
 from .chat import OperatorChat, default_chat_provider
 from .discovery import Discovery
 from .threats import ThreatWatch
@@ -53,6 +53,17 @@ class OperatorIn(BaseModel):
 class AckIn(BaseModel):
     operator: str
     channel: Optional[str] = "dashboard"
+
+
+class AssignIn(BaseModel):
+    operator: str
+    assignee: str
+    note: Optional[str] = None
+
+
+class ResolveIn(BaseModel):
+    operator: str
+    note: str
 
 
 class DeliveredIn(BaseModel):
@@ -157,9 +168,43 @@ class ServicesIn(BaseModel):
     services: list[ServiceIn] = Field(default_factory=list, max_length=200)
 
 
+class JobIn(BaseModel):
+    host: str = Field(max_length=63)
+    kind: str = Field(max_length=32)
+    operator: str = Field("operator", max_length=64)
+
+
+class JobResultIn(BaseModel):
+    id: str = Field(max_length=32)
+    ok: bool
+    result: Optional[dict[str, Any]] = None
+    error: Optional[str] = Field(None, max_length=2000)
+
+
+class OfflineActionIn(BaseModel):
+    ip: str = Field(max_length=64)
+    category: str = Field(max_length=40)
+    reason: str = Field("", max_length=300)
+    score: float = 0.0
+    at: Optional[str] = Field(None, max_length=40)
+    until: Optional[str] = Field(None, max_length=40)
+    applied: bool = False
+    event_ids: list[str] = Field(default_factory=list, max_length=50)
+
+
+class OfflineReportIn(BaseModel):
+    """What an agent did on its own while the panel was out of reach (lab/agent/offline.py)."""
+    from_: Optional[str] = Field(None, alias="from", max_length=40)
+    to: Optional[str] = Field(None, max_length=40)
+    scored: int = Field(0, ge=0)
+    actions: list[OfflineActionIn] = Field(default_factory=list, max_length=500)
+
+
 # What a machine's own agent key may do (fleet.py): send its events and heartbeat, read its block list.
+# It also picks up the jobs the panel queued for its own machine and reports how they went (jobs.py).
 AGENT_ROUTES = frozenset({("POST", "/events"), ("POST", "/heartbeat"), ("GET", "/blocklist"), ("GET", "/fleet/me"),
-                           ("POST", "/fleet/services")})
+                           ("POST", "/fleet/services"), ("GET", "/fleet/jobs/next"), ("POST", "/fleet/jobs/result"),
+                           ("POST", "/fleet/offline-report")})
 
 
 # Open without a token: the launchers' readiness check, and the list the fake portal enforces
@@ -231,6 +276,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         backups)
     chat.off_reason = core.ai_off_reason = ai.why_off()
     machines = fleet.Fleet(core.settings.db_path.parent / "fleet.json")
+    machine_jobs = jobs.Jobs(core.settings.db_path.parent / "jobs.json")
 
     def require_token(request: Request) -> None:
         path = request.url.path
@@ -280,6 +326,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.threats = threats
     app.state.backups = backups
     app.state.fleet = machines
+    app.state.jobs = machine_jobs
 
     def not_found(iid: str) -> HTTPException:
         return HTTPException(status_code=404, detail=f"incident {iid} not found")
@@ -356,6 +403,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/incidents/{iid}/permanent")
     def post_permanent(iid: str, body: OperatorIn) -> dict[str, Any]:
         return _verb(core.make_permanent, iid, body.operator, body.justification)
+
+    @app.post("/incidents/{iid}/assign")
+    def post_assign(iid: str, body: AssignIn) -> dict[str, Any]:
+        return _verb(core.assign, iid, body.assignee, body.operator, body.note)
+
+    @app.post("/incidents/{iid}/resolve")
+    def post_resolve(iid: str, body: ResolveIn) -> dict[str, Any]:
+        return _verb(core.resolve, iid, body.operator, body.note)
+
+    @app.get("/routing")
+    def get_routing() -> dict[str, Any]:
+        return core.routing_public()
 
     @app.post("/incidents/{iid}/ack")
     def post_ack(iid: str, body: AckIn) -> dict[str, Any]:
@@ -589,6 +648,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def ai_test(body: Optional[AITestIn] = None) -> dict[str, Any]:
         return ai.test(core, chat, body.model_dump() if body else None)
 
+    @app.get("/integrations")
+    def get_integrations() -> list[dict[str, Any]]:
+        return integrations.status(core)
+
+    @app.post("/integrations/{name}/test")
+    def test_integration(name: str) -> dict[str, Any]:
+        try:
+            return integrations.test(core, name)
+        except KeyError as e:
+            raise HTTPException(404, str(e).strip("'\""))
+
     @app.post("/heartbeat")
     def post_heartbeat(request: Request, body: HeartbeatIn) -> dict[str, Any]:
         host = request.state.agent["host"] if request.state.agent is not None else body.collector
@@ -607,7 +677,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise fleet_error(exc)
         core.scribe.record(core.name, "join_code_created", {"operator": body.operator, "name": out["name"],
                                                             "expires_at": out["expires_at"]})
-        return out
+        return {**out, **fleet.panel_info()}
+
+    @app.get("/fleet/panel")
+    def get_fleet_panel() -> dict[str, Any]:
+        """The address and certificate pin new machines use (CACTAI_PANEL_URL, CACTAI_PANEL_CERT)."""
+        return fleet.panel_info()
 
     @app.post("/fleet/enrol")
     def post_enrol(body: EnrolIn) -> dict[str, Any]:
@@ -630,6 +705,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise fleet_error(exc)
         core.scribe.record(core.name, "machine_revoked", {"agent_id": agent_id, "host": out["host"],
                                                           "operator": body.operator})
+        machine_jobs.drop_host(out["host"], body.operator)
         return out
 
     @app.post("/fleet/services")
@@ -640,6 +716,101 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not host:
             raise HTTPException(status_code=400, detail="which machine? (?host=)")
         return core.set_services(host, [x.model_dump() for x in body.services])
+
+    # -- jobs the panel asks one machine to run (jobs.py): its agent picks them up on its next call out
+    def job_error(exc: jobs.JobError) -> HTTPException:
+        return HTTPException(status_code=exc.status, detail=str(exc))
+
+    def job_view(j: dict[str, Any]) -> dict[str, Any]:
+        return {**{k: v for k, v in j.items() if not k.endswith("_ts")}, "summary": jobs.summary(j)}
+
+    @app.post("/fleet/jobs")
+    def post_job(body: JobIn) -> dict[str, Any]:
+        if not any(a["host"] == body.host and not a.get("revoked_at") for a in machines.agents()):
+            raise HTTPException(status_code=404, detail=f"no joined machine named {body.host!r}")
+        try:
+            job = machine_jobs.queue(body.host, body.kind, body.operator)
+        except jobs.JobError as exc:
+            raise job_error(exc)
+        core.scribe.record(core.name, "machine_job_queued", {
+            "job": job["id"], "host": body.host, "kind": body.kind, "operator": body.operator,
+            "summary": f"{body.operator} asked {body.host} to run a {jobs.KINDS[body.kind].lower()}"})
+        return job_view(job)
+
+    @app.get("/fleet/jobs")
+    def get_jobs(host: Optional[str] = Query(None, max_length=63)) -> list[dict[str, Any]]:
+        return [job_view(j) for j in machine_jobs.list(host)]
+
+    @app.post("/fleet/jobs/{job_id}/cancel")
+    def cancel_job(job_id: str, body: OperatorIn) -> dict[str, Any]:
+        try:
+            return job_view(machine_jobs.cancel(job_id, body.operator))
+        except jobs.JobError as exc:
+            raise job_error(exc)
+
+    @app.get("/fleet/jobs/next")
+    def get_next_job(request: Request) -> dict[str, Any]:
+        a = request.state.agent
+        if a is None:
+            raise HTTPException(status_code=400, detail="only a machine's agent key picks up jobs")
+        return {"job": machine_jobs.next_for(a["host"])}
+
+    @app.post("/fleet/jobs/result")
+    def post_job_result(request: Request, body: JobResultIn) -> dict[str, Any]:
+        a = request.state.agent
+        if a is None:
+            raise HTTPException(status_code=400, detail="only a machine's agent key reports a job")
+        host = a["host"]
+        kind = next((j["kind"] for j in machine_jobs.list(host) if j["id"] == body.id), None)
+        result = None
+        if body.ok and body.result is not None:
+            result = jobs.clean_scan(body.result) if kind == "threat_scan" else jobs.clean_backup(body.result)
+        try:
+            job = machine_jobs.finish(host, body.id, body.ok, result, body.error)
+        except jobs.JobError as exc:
+            raise job_error(exc)
+        new_alerts = 0
+        if job["status"] == "done" and kind == "threat_scan":
+            new_alerts = threats.raise_remote(host, (job["result"] or {}).get("findings") or [])
+            job["result"]["new_alerts"] = new_alerts
+        line = jobs.summary(job)
+        core.scribe.record(core.name, "machine_job_done" if job["status"] == "done" else "machine_job_failed", {
+            "job": job["id"], "host": host, "kind": kind, "by": job["requested_by"], "new_alerts": new_alerts,
+            **({"sha256": job["result"].get("sha256"), "backup": job["result"].get("id")}
+               if kind == "backup" and job["result"] else {}),
+            "summary": f"{jobs.KINDS.get(kind, kind)} on {host}: {line}"})
+        if job["status"] != "done" and kind == "backup":
+            with core.lock:
+                core._notify(core.clock.now(), "backup_failed", None, [core.settings.on_duty],
+                             f"Backup on {host} failed", f"The backup {job['requested_by']} asked {host} to take "
+                             f"failed: {line[:300]}. Until one works, {host} has no fresh copy to restore from.", [])
+        return {"ok": True, "status": job["status"], "new_alerts": new_alerts}
+
+    @app.post("/fleet/offline-report")
+    def post_offline_report(request: Request, body: OfflineReportIn) -> dict[str, Any]:
+        """An agent is back: what it scored and blocked on its own while the panel could not be reached.
+        Its buffered logs arrive through /events as usual and are scored here; this is the record of
+        the local decisions, which already expire on the machine by themselves."""
+        a = request.state.agent
+        if a is None:
+            raise HTTPException(status_code=400, detail="only a machine's agent sends an offline report")
+        report = body.model_dump(by_alias=True)
+        summary = machines.offline_report(a, report)
+        host = a["host"]
+        for act in report["actions"]:
+            core.scribe.record(core.name, "agent_local_block", {"host": host, **act})
+        core.scribe.record(core.name, "agent_offline_report", {"host": host, **summary, "summary": (
+            f"{host} worked alone from {summary['from'] or '?'} to {summary['to'] or '?'}: scored {summary['scored']} "
+            f"events, made {summary['local_blocks']} local blocks")})
+        if report["actions"]:
+            ips = ", ".join(sorted({x["ip"] for x in report["actions"]})[:10])
+            with core.lock:
+                core._notify(core.clock.now(), "agent_offline_actions", None, [core.settings.on_duty],
+                             f"{host} blocked {summary['local_blocks']} address(es) while the panel was unreachable",
+                             f"While {host} could not reach the panel ({summary['from'] or '?'} to "
+                             f"{summary['to'] or '?'}), its local rules blocked: {ips}. Each block expires on its own; "
+                             f"the logs from that time are being scored here now.", [])
+        return {"ok": True, **summary}
 
     @app.get("/fleet/me")
     def get_fleet_me(request: Request) -> dict[str, Any]:

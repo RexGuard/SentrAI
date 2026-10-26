@@ -35,6 +35,11 @@
 #   --remote-copy-ca FILE  the witness's certificate, when it is self-signed
 #   --seal-journal         keep the system journal on disk and seal it (journald Forward Secure
 #                          Sealing): prints a verification key once, to store away from this server
+#   --panel [PORT]         make this server a central panel: agents on other machines join it over
+#                          HTTPS on PORT (default 8443) with a self-signed certificate they pin, and
+#                          each machine is scored on its own. That port only answers agents' machine
+#                          keys; the API and dashboard stay as set above. "--panel off" closes it.
+#   --panel-url URL        the address agents use (default https://<this server's name>:PORT)
 #
 # What it creates:
 #   /etc/cactai/cactai.env           ports, addresses and paths (root:cactai 0640, kept on upgrade)
@@ -68,6 +73,8 @@ SEAL=0
 REMOTE=""
 REMOTE_TOKEN=""
 REMOTE_CA=""
+PANEL=""
+PANEL_URL=""
 declare -A SET=()  # env values given on the command line
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -89,6 +96,8 @@ while [ $# -gt 0 ]; do
         --remote-copy) REMOTE="$2"; shift 2 ;;
         --remote-copy-token-file) REMOTE_TOKEN="$2"; shift 2 ;;
         --remote-copy-ca) REMOTE_CA="$2"; shift 2 ;;
+        --panel) case "${2:-}" in [0-9]*|off) PANEL="$2"; shift 2 ;; *) PANEL=8443; shift ;; esac ;;
+        --panel-url) PANEL_URL="$2"; shift 2 ;;
         -h|--help) sed -n '2,57p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "Unknown option: $1 (see --help)" >&2; exit 2 ;;
     esac
@@ -97,6 +106,9 @@ for k in CACTAI_CORE_PORT CACTAI_DASHBOARD_PORT; do
     v="${SET[$k]:-}"
     case "$v" in '') ;; *[!0-9]*) echo "$k must be a number (got '$v')" >&2; exit 2 ;; esac
 done
+
+case "$PANEL" in ''|off) ;; *[!0-9]*) echo "--panel takes a port number or off (got '$PANEL')" >&2; exit 2 ;; esac
+case "$PANEL_URL" in ''|https://*) ;; *) echo "--panel-url must start with https:// (got '$PANEL_URL')" >&2; exit 2 ;; esac
 
 case "$ADMIN_EMAIL" in ''|*@*) ;; *) echo "--admin-email needs an email address (got '$ADMIN_EMAIL')" >&2; exit 2 ;; esac
 
@@ -424,6 +436,45 @@ fi
 SCHEME=http
 if grep -q '^STREAMLIT_SERVER_SSL_CERT_FILE=' "$ENV_FILE"; then SCHEME=https; fi
 
+# --- central panel: the agents' HTTPS port (--panel) -------------------------
+# The core opens a second port (app/serve.py) that only answers agents' machine keys. Agents pin this
+# certificate (its SHA-256 comes with every join code), so it may stay self-signed.
+open_panel_port() {  # PORT [remove]: ufw and firewalld drop it on their own
+    if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then
+        if [ "${2:-}" = remove ]; then ufw delete allow proto tcp to any port "$1" >/dev/null 2>&1 || true
+        else ufw allow proto tcp to any port "$1" comment sentrai-panel >/dev/null; fi
+    elif command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --state >/dev/null 2>&1; then
+        if [ "${2:-}" = remove ]; then firewall-cmd -q --permanent --remove-port="$1/tcp" || true
+        else firewall-cmd -q --permanent --add-port="$1/tcp" || true; fi
+        firewall-cmd -q --reload || true
+    fi
+}
+if [ "$PANEL" = off ]; then
+    old="$(get_env CACTAI_PANEL_PORT)"
+    [ -n "$old" ] && open_panel_port "$old" remove
+    sed -i '/^CACTAI_PANEL_/d' "$ENV_FILE"
+elif [ -n "$PANEL" ]; then
+    command -v openssl >/dev/null 2>&1 || die "openssl is needed for the panel's HTTPS port"
+    install -d -o root -g "$SVC_USER" -m 0750 "$TLS"
+    if [ ! -f "$TLS/panel-cert.pem" ]; then
+        name="$(hostname -f 2>/dev/null || hostname)"
+        openssl req -x509 -newkey rsa:2048 -nodes -days 1825 -subj "/CN=$name" -addext "subjectAltName=DNS:$name" \
+            -keyout "$TLS/panel-key.pem" -out "$TLS/panel-cert.pem" >/dev/null 2>&1 \
+            || die "could not make the panel's certificate"
+    fi
+    chown root:"$SVC_USER" "$TLS"/panel-*.pem
+    chmod 0640 "$TLS"/panel-*.pem
+    old="$(get_env CACTAI_PANEL_PORT)"
+    [ -n "$old" ] && [ "$old" != "$PANEL" ] && open_panel_port "$old" remove
+    set_env CACTAI_PANEL_PORT "$PANEL"
+    set_env CACTAI_PANEL_HOST 0.0.0.0
+    set_env CACTAI_PANEL_CERT "$TLS/panel-cert.pem"
+    set_env CACTAI_PANEL_KEY "$TLS/panel-key.pem"
+    set_env CACTAI_PANEL_URL "${PANEL_URL:-https://$(hostname -f 2>/dev/null || hostname):$PANEL}"
+    set_env CACTAI_RISK_SCOPE host
+    open_panel_port "$PANEL"
+fi
+
 # --- sealed journal (--seal-journal) ----------------------------------------
 # journald signs the journal at intervals with a key that moves forward and forgets the old one,
 # so entries already sealed cannot be rewritten without "journalctl --verify" noticing. The
@@ -512,6 +563,13 @@ if [ -n "$SEAL_KEY" ]; then
     echo "  Journal sealing is on. Verification key (shown only now; keep it OFF this server):"
     echo "    $SEAL_KEY"
     echo "  Check the journal later with:  journalctl --verify --verify-key=<that key>"
+fi
+PANEL_PORT="$(get_env CACTAI_PANEL_PORT)"
+if [ -n "$PANEL_PORT" ]; then
+    pin="$(openssl x509 -in "$(get_env CACTAI_PANEL_CERT)" -outform DER 2>/dev/null | sha256sum | cut -d' ' -f1)"
+    echo "  Central panel: agents join at $(get_env CACTAI_PANEL_URL) (only machine keys are answered there)."
+    echo "    Certificate pin: sha256:$pin   (the Machines page shows it with every join code)"
+    echo "    On each machine: sudo ./mvp/deploy/install-agent.sh --panel $(get_env CACTAI_PANEL_URL) --code <code> --pin sha256:$pin"
 fi
 case "$CORE_HOST" in
     127.0.0.1|localhost|::1) ;;

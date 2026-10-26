@@ -8,6 +8,8 @@ os.environ["CACTAI_DB"] = str(_TMP / "import.db")
 os.environ["CACTAI_BACKGROUND"] = "0"
 os.environ["CACTAI_CONFIG"] = str(Path(_TMP) / "no-config.json")  # ignore this machine's saved settings
 os.environ.pop("TYPESAFE_API_KEY", None)
+for _name in ("CLOUDFLARE_API_TOKEN", "ABUSEIPDB_API_KEY", "SLACK_WEBHOOK_URL"):  # never call real services
+    os.environ.pop(_name, None)
 os.environ["CACTAI_API_TOKEN"] = "test-token"  # the token the test clients send
 os.environ["CYANIDE_ENABLED"] = "0"  # never call Claude from tests; Cyanide tests inject a fake planner
 

@@ -202,24 +202,32 @@ One SentrAI install can be the central panel for other machines. Each other mach
 the agent: it sends that machine's logs to the panel and puts the panel's blocks for that machine
 into its own firewall. The panel does the scoring; the agent only makes outgoing HTTPS calls.
 
-On the panel, score each machine on its own and keep the panel's own firewall out of it, in
-`/etc/cactai/cactai.env`:
+On the panel, install (or upgrade) with `--panel`. It opens a second core port for agents only
+(8443, HTTPS with a self-signed certificate), scores each machine on its own
+(`CACTAI_RISK_SCOPE=host`) and prints the certificate's pin. Keep the panel's own firewall out of it
+with `CACTAI_FIREWALL=off` in `/etc/cactai/cactai.env` when the panel is not itself a guarded server.
 
 ```bash
-CACTAI_RISK_SCOPE=host
-CACTAI_FIREWALL=off
+sudo ./deploy/install.sh --panel                                  # port 8443
+sudo ./deploy/install.sh --panel 9443 --panel-url https://panel.example.com:9443
+sudo ./deploy/install.sh --panel off                              # close it again
 ```
 
-Make the core reachable by the agents over HTTPS (for example nginx in front of port 8000 with a
-certificate), then make a one-time join code (valid 24 h) and install the agent on the new machine:
+The agents' port answers only what a machine key may do (send its events, read its blocks, report
+its services and offline work) plus `/fleet/enrol`; the operator's API and token never face the
+network through it. The local API on `127.0.0.1:8000` is unchanged.
+
+Make a one-time join code (valid 24 h) on the dashboard's Machines page, Add machine: it shows the
+command to paste, with the panel's address and pin. Or with the API, then on the new machine:
 
 ```bash
 # on the panel (TOKEN is the core's API token: python cactai_config.py token, with the service settings)
-curl -s -X POST https://panel.example.com:8000/fleet/join-codes \
+curl -s -X POST http://127.0.0.1:8000/fleet/join-codes \
      -H "Authorization: Bearer TOKEN" \
      -H 'content-type: application/json' -d '{"operator": "erick"}'
+# -> {"code": "ABCD-EFGH-JKLM", "panel_url": "https://panel.example.com:8443", "pin": "sha256:...", ...}
 # on the new machine
-sudo ./deploy/install-agent.sh --panel https://panel.example.com:8000 --code ABCD-EFGH-JKLM --name web-01
+sudo ./deploy/install-agent.sh --panel https://panel.example.com:8443 --code ABCD-EFGH-JKLM --pin sha256:... --name web-01
 sudo ./deploy/install-agent.sh --enforce          # later: really change the firewall (default is a dry run)
 ```
 
@@ -230,7 +238,7 @@ service. It needs Python 3.10+ installed for all users (the python.org installer
 Store Python cannot run as a service). From a SentrAI checkout, in an Administrator PowerShell:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\mvp\deploy\install-agent.ps1 -Panel https://panel.example.com:8000 -Code ABCD-EFGH-JKLM -Name web-01
+powershell -ExecutionPolicy Bypass -File .\mvp\deploy\install-agent.ps1 -Panel https://panel.example.com:8443 -Code ABCD-EFGH-JKLM -Pin sha256:... -Name web-01
 powershell -ExecutionPolicy Bypass -File .\mvp\deploy\install-agent.ps1 -Enforce   # later: really block in Windows Firewall
 powershell -ExecutionPolicy Bypass -File .\mvp\deploy\uninstall-agent.ps1          # remove it (-Purge also deletes the key)
 ```
@@ -247,7 +255,7 @@ powershell -ExecutionPolicy Bypass -File .\mvp\deploy\uninstall-agent.ps1       
   Administrators only); the output is in `service\SentrAIAgent.out.log`.
 - Blocks are one inbound Windows Firewall rule per address, named `SentrAI-block-<ip>`. They are a
   dry run (only logged) until `-Enforce`. Uninstalling takes them all out (`-KeepBlocks` leaves them).
-- Options: `-Panel`, `-Code`, `-Name`, `-Ca FILE` (self-signed panel), `-AllowHttp` (test networks
+- Options: `-Panel`, `-Code`, `-Name`, `-Pin sha256:...` (the panel's certificate pin), `-Ca FILE`, `-AllowHttp` (test networks
   only), `-Enforce` / `-DryRun`, `-Protect IP,IP`, `-Prefix DIR`, `-WinSW FILE`, `-NoStart`.
   `Get-Help .\mvp\deploy\install-agent.ps1 -Full` explains each.
 
@@ -259,13 +267,57 @@ On a laptop, without installing a service, the agent can also run from a checkou
 
 ```bash
 cd mvp/lab
-python -m agent join --panel https://panel.example.com:8000 --code ABCD-EFGH-JKLM
+python -m agent join --panel https://panel.example.com:8443 --code ABCD-EFGH-JKLM --pin sha256:...
 python -m agent run         # CACTAI_FIREWALL=netsh CACTAI_FIREWALL_ENFORCE=1 to block on Windows
 ```
 
-Each machine's key only sends that machine's events and reads its own block list; revoke one with
-`POST /fleet/agents/<id>/revoke`. If the panel cannot be reached, blocks already in place stay for
-24 h (`CACTAI_AGENT_OFFLINE_HOLD_H`) and are then removed.
+### The certificate pin
+
+With `--pin`, every call the agent makes checks that the panel shows exactly that
+certificate, so a self-signed panel needs no certificate file, and a look-alike server or an
+intercepting proxy is refused even if some authority signed its certificate. A panel behind a
+publicly trusted certificate (for example nginx with Let's Encrypt) can skip the pin; `--ca FILE`
+still works for a private authority. After the panel's certificate is renewed, set the new pin on
+each machine: `python -m agent pin` shows the kept and the current one, `python -m agent pin sha256:...`
+sets it (then restart the agent).
+
+### When the panel cannot be reached
+
+Each machine's key only sends that machine's events and reads
+its own block list; revoke one with `POST /fleet/agents/<id>/revoke`. If the panel goes quiet:
+
+- blocks already in place stay for 24 h (`CACTAI_AGENT_OFFLINE_HOLD_H`) and are then removed
+- the logs wait in the collector and reach the panel when it is back, where they are scored as usual
+- after 30 s the agent's local rules take over: the core's own rules (no AI) score each line, and an
+  outside address that reaches the panel's autonomous line (`RISK_THRESHOLD`, 80) in 10 minutes is
+  blocked for an hour (`CACTAI_AGENT_LOCAL_TTL_MIN`), at most 10 new blocks an hour
+  (`CACTAI_AGENT_LOCAL_MAX_PER_HOUR`). Only address blocks, only clear attacks (brute force, SQL
+  injection, XSS, port scans, privilege escalation, data theft, prompt injection), never private or
+  protected addresses. `CACTAI_AGENT_LOCAL_RULES=off` turns this off.
+- when the panel answers again the agent reports every local block (`POST /fleet/offline-report`):
+  it is written to the audit record, raises an alert, and the Machines page shows it under
+  "Last time offline"
+
+### Threat scans and backups from the panel
+
+On the Machines page, pick a machine and press **Scan for threats** or **Back up now**. The panel
+only queues the job; the machine's agent picks it up on its next call out (within about 15 s), runs
+it there and sends back a short result. Critical and high scan findings open a malware incident on
+that machine. Backups stay on the machine (restoring one is done there, by a person); the panel gets
+the backup's id, size and checksum. A job nobody picks up in 24 h expires.
+
+What is read is set on each machine, never by the panel. Add these to `/etc/cactai/agent.env`
+(folders separated by `:`, or `;` on Windows) and restart the agent:
+
+```bash
+CACTAI_THREAT_PATHS=/var/www:/srv/minecraft/plugins
+CACTAI_BACKUP_PATHS=/srv/app/data
+CACTAI_BACKUP_KEEP=7                 # optional; backups go to /var/lib/cactai/agent/backups
+```
+
+The agent runs as its own user, so it can only scan and back up folders that user can read.
+API: `POST /fleet/jobs {host, kind: threat_scan|backup}`, `GET /fleet/jobs?host=`,
+`POST /fleet/jobs/<id>/cancel`.
 
 ## Not covered yet
 

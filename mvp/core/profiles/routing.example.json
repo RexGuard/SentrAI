@@ -1,0 +1,77 @@
+{
+  "contacts": {
+    "amir": {
+      "name": "Amir (on duty)",
+      "role": "on_duty",
+      "email": "amir@example.com",
+      "telegram": "@amir",
+      "backup": "lee"
+    },
+    "lee": {
+      "name": "Lee (team lead)",
+      "role": "team_lead",
+      "email": "lee@example.com",
+      "backup": "ika"
+    },
+    "ika": {
+      "name": "Ika (IT manager)",
+      "role": "it_manager",
+      "email": "ika@example.com",
+      "backup": "boss"
+    },
+    "boss": {
+      "name": "Owner (CEO)",
+      "role": "cxo",
+      "email": "ceo@example.com"
+    },
+    "dana": {
+      "name": "Dana (database)",
+      "email": "dana@example.com",
+      "backup": "lee"
+    }
+  },
+  "rules": [
+    {
+      "name": "Database server",
+      "match": {
+        "host": "db-*"
+      },
+      "owner": "dana",
+      "notify": [
+        "ika"
+      ]
+    },
+    {
+      "name": "Critical",
+      "match": {
+        "severity": "critical"
+      },
+      "owner": "amir",
+      "notify": [
+        "lee",
+        "ika",
+        "boss"
+      ]
+    },
+    {
+      "name": "High",
+      "match": {
+        "severity": "high"
+      },
+      "owner": "amir",
+      "notify": [
+        "lee"
+      ]
+    },
+    {
+      "name": "Everything else",
+      "match": {},
+      "owner": "amir"
+    }
+  ],
+  "follow_up": {
+    "escalate_after_reminders": 2,
+    "max_escalations": 3,
+    "resolve_within_hours": 24
+  }
+}
