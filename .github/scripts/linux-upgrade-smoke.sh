@@ -25,7 +25,11 @@ wait_for() {  # WHAT SECONDS COMMAND...
 dump() {
     echo "--- journal ---"
     journalctl --no-pager -n 80 -u 'cactai-*' -u 'sentrai-*' || true
-    nft list ruleset 2>/dev/null | head -60 || true
+    echo "--- agent journal ---"
+    journalctl --no-pager -n 40 -u cactai-agent -u sentrai-agent || true
+    echo "--- agent state ---"
+    cat /var/lib/sentrai/agent/agent.json 2>/dev/null | python3 -c 'import json, sys; d = json.load(sys.stdin); print({k: d.get(k) for k in ("blocked", "panel_blocked", "last_ok")})' || true
+    for t in cactai sentrai; do nft list table inet "$t" 2>/dev/null || true; done
 }
 trap 'rc=$?; [ "$rc" = 0 ] || dump; exit "$rc"' EXIT
 
@@ -54,6 +58,7 @@ nft add table inet cactai
 nft add set inet cactai blocked4 '{ type ipv4_addr ; }'
 nft add element inet cactai blocked4 "{ $BLOCKED }"
 iptables -w -I INPUT -s "$BLOCKED" -m comment --comment cactai -j DROP
+nft list table inet cactai
 echo "ok: old version installed (panel and agent)"
 
 # --- today's install.sh, run once ---------------------------------------------------------------
