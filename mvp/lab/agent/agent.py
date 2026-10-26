@@ -259,7 +259,7 @@ def run(data: dict[str, Any]) -> None:
     mode = (f"{enforcer.backend}, {'enforcing' if enforcer.enforce else 'dry run'}" if enforcer.backend
             else "no firewall (CACTAI_FIREWALL=off)")
     print(f"[agent] {data['host']} -> {data['panel']} (blocks: {mode})", flush=True)
-    collector = Collector(data["panel"], paths.logs_dir(), token=data["key"])
+    collector = Collector(data["panel"], paths.logs_dir(), token=data["key"], host=data["host"])
     collector.session.verify = _verify(data)
     stop = threading.Event()
     threading.Thread(target=collector.run, name="collector", daemon=True).start()

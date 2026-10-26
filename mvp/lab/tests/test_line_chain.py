@@ -48,3 +48,17 @@ def test_collector_seals_what_it_sends_and_saves_the_head_after_delivery(tmp_pat
 
 def test_streaming_defaults():
     assert collector.POLL_S <= 0.1  # new lines leave within ~50 ms, not a 1 s batch
+
+
+def test_an_agent_seals_events_under_the_name_it_joined_as(tmp_path, monkeypatch):
+    # The panel stamps an agent's events with its joined name; sealing under any other name
+    # (the demo logs' web-01, a syslog line's own host) would read as altered on the panel.
+    monkeypatch.setenv("CACTAI_COLLECTOR_STATE", str(tmp_path / "state.json"))
+    log = tmp_path / "app.log"
+    log.write_text("Oct 26 10:00:00 other-name sshd[1]: Accepted publickey for deploy\n")
+    col = collector.Collector("http://127.0.0.1:9", tmp_path, host="lab-portal",
+                              sources=[collector.DiscoveredLogSource(log, "os")])
+    col.collect()
+    (ev,) = col.pending
+    assert ev["host"] == "lab-portal"
+    assert ev["chain"]["hash"] == chain_hash(ev["chain"]["prev"], ev)
