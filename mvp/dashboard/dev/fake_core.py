@@ -310,8 +310,19 @@ def machines():
                         "open_incidents": sum(i["status"] in ("open", "acknowledged") for i in incs),
                         "contained_incidents": sum(i["status"] == "contained" for i in incs),
                         "blocked": len(blocklist()["ips"]) if h == "web-01" else 0,
-                        "last_seen": iso(now()), "silent": False})
+                        "last_seen": iso(now()), "silent": False,
+                        "services": FAKE_SERVICES.get(h, []) if h != "web-01" else [
+                            {**x, "open_incidents": sum(1 for i in incs if i["status"] in ("open", "acknowledged"))
+                             if x["name"] == "web" else 0} for x in FAKE_SERVICES["web-01"]]})
         return sorted(out, key=lambda m: -m["risk_index"])
+
+
+FAKE_SERVICES = {
+    "web-01": [{"name": "sshd", "port": 22, "proto": "tcp", "process": "sshd"},
+               {"name": "web", "port": 443, "proto": "tcp", "process": "nginx"},
+               {"name": "mysql", "port": 3306, "proto": "tcp", "process": "mysqld"}],
+    "office-pc": [{"name": "rdp", "port": 3389, "proto": "tcp", "process": "svchost.exe"}],
+}
 
 
 @app.get("/fleet/agents")

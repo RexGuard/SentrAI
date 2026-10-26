@@ -118,6 +118,19 @@ def _host(obj: dict[str, Any]) -> str:
     return str(obj.get("host") or "unknown")
 
 
+def service_of(ev: dict[str, Any]) -> str | None:
+    """Which service on the machine an event is about (nginx, sshd, ...), for the panel's per-service view."""
+    if ev.get("service"):
+        return str(ev["service"])
+    parsed = ev.get("parsed") if isinstance(ev.get("parsed"), dict) else {}
+    fmt, program = str(parsed.get("format") or ""), str(parsed.get("program") or "")
+    if fmt.startswith("nginx"):
+        return "nginx"
+    if program:
+        return "sshd" if program.startswith("sshd") else program
+    return str(ev.get("source") or "") or None
+
+
 def _score(raw: float) -> dict[str, Any]:
     raw = round(raw, 1)
     idx = risk_index(raw)
@@ -193,6 +206,7 @@ class Saguaro(Agent):
         self._host_risk: dict[str, dict[str, Any]] = {}  # per machine, from _compute
         self._host_seen: dict[str, float] = {}  # machine name -> clock time of its last event or heartbeat
         self._host_history: dict[str, deque[dict[str, Any]]] = {}
+        self._host_services: dict[str, dict[str, Any]] = {}  # machine -> {"services": [...], "at": iso} from its agent
         self._reported: set[str] = set()
 
     def _next_incident_from_audit(self) -> int:
@@ -324,6 +338,7 @@ class Saguaro(Agent):
         )
         if inc is None:
             inc = self._open_incident(ev, cls, agent, needs_review, now)
+            inc.setdefault("service", service_of(ev))
         else:
             self._attach(inc, ev, cls, needs_review, now)
         self.scribe.record(
@@ -1181,6 +1196,29 @@ class Saguaro(Agent):
                 out["host"] = host
             return out
 
+    def set_services(self, host: str, services: list[dict[str, Any]]) -> dict[str, Any]:
+        """What runs on a machine (its agent reports it every minute): name, port, protocol, process."""
+        with self.lock:
+            self._host_seen.setdefault(host, self.clock.now())
+            self._host_services[host] = {"services": services[:200], "at": self.clock.iso(self.clock.now())}
+            return {"ok": True, "services": len(self._host_services[host]["services"])}
+
+    def _services_with_incidents(self, host: str, incs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """The machine's services, each with its open incidents; a service named only by an incident is listed too."""
+        out = [dict(x) for x in (self._host_services.get(host) or {}).get("services", [])]
+        for svc in out:
+            svc["open_incidents"] = 0
+        for inc in incs:
+            name = inc.get("service")
+            if not name or inc["status"] not in RISK_STATUSES:
+                continue
+            svc = next((x for x in out if x.get("name") == name), None)
+            if svc is None:
+                svc = {"name": name, "port": None, "proto": None, "process": None, "open_incidents": 0}
+                out.append(svc)
+            svc["open_incidents"] += 1
+        return out
+
     def machines(self) -> list[dict[str, Any]]:
         """Every machine SentrAI has heard from or opened an incident for, worst first."""
         with self.lock:
@@ -1203,6 +1241,8 @@ class Saguaro(Agent):
                     "blocked": len(self.blocklist(h)["ips"]),
                     "last_seen": self.clock.iso(seen) if seen is not None else None,
                     "silent": h in silent,
+                    "services": self._services_with_incidents(h, incs),
+                    "services_at": (self._host_services.get(h) or {}).get("at"),
                 })
             out.sort(key=lambda m: (-m["risk_index"], m["host"]))
             return out

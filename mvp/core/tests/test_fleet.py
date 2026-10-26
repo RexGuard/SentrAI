@@ -129,3 +129,37 @@ def test_saved_without_plain_secrets(panel):
         assert (panel.tmp / "fleet.json").stat().st_mode & 0o777 == 0o600
     again = fleet.Fleet(panel.tmp / "fleet.json")
     assert again.check(a["key"])["host"] == "office-pc"
+
+
+def test_agent_reports_its_services(panel):
+    key = join(panel, "web-01")["key"]
+    svcs = [{"name": "nginx", "port": 443, "proto": "tcp", "process": "nginx"},
+            {"name": "sshd", "port": 22, "proto": "tcp", "process": "sshd"}]
+    out = panel.post("/fleet/services", json={"services": svcs}, headers=as_agent(key))
+    assert out.json() == {"ok": True, "services": 2}
+    other = panel.post("/fleet/services", json={"services": svcs}, params={"host": "office-pc"}, headers=as_agent(key))
+    assert other.status_code == 403  # an agent speaks for its own machine only
+    for i in range(5):
+        panel.post("/events", json={**ev(i, "Failed password for root from 203.0.113.9 port 4022 ssh2", ip="203.0.113.9",
+                                          layer="os", source="auth"),
+                                    "parsed": {"format": "syslog", "kind": "ssh", "program": "sshd", "ssh_event": "failed_auth"}},
+                   headers=as_agent(key))
+    m = {x["host"]: x for x in panel.get("/machines").json()}
+    assert "office-pc" not in m
+    by = {s["name"]: s for s in m["web-01"]["services"]}
+    assert by["nginx"]["port"] == 443 and by["nginx"]["open_incidents"] == 0
+    incs = panel.get("/incidents").json()
+    assert incs and incs[0]["service"] == "sshd" and by["sshd"]["open_incidents"] == 1
+    assert m["web-01"]["services_at"]
+    bad = panel.post("/fleet/services", json={"services": [{"name": "x", "port": 70000}]}, headers=as_agent(key))
+    assert bad.status_code == 422
+    assert panel.post("/fleet/services", json={"services": []}).status_code == 400  # operator must name the host
+
+
+def test_service_of():
+    from app.saguaro import service_of
+    assert service_of({"parsed": {"format": "nginx_access"}}) == "nginx"
+    assert service_of({"parsed": {"program": "sshd-session"}}) == "sshd"
+    assert service_of({"parsed": {"program": "postfix/smtpd"}}) == "postfix/smtpd"
+    assert service_of({"source": "flask_auth"}) == "flask_auth"
+    assert service_of({"service": "minecraft", "source": "x"}) == "minecraft"

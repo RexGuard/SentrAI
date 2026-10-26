@@ -1454,9 +1454,13 @@ def page_machines() -> None:
         hosts = [m["host"] for m in found if m.get("host") and not m.get("waiting")]
         if panel and hosts:
             pick = st.selectbox("Look at one machine", hosts, key="machine_pick")
+            chosen = next((m for m in found if m.get("host") == pick), {})
+            st.caption("Services running on it (its agent reports them every minute)")
+            table(sh.service_rows(chosen.get("services")), "No services reported yet.")
             incs, ierr = safe(lambda: client.machine_incidents(pick), [])
             if ierr:
                 st.warning(f"Could not load incidents: {ierr}")
+            st.caption("Its incidents")
             table(sh.risk_breakdown(incs or []), f"All quiet on {pick}. No incidents.")
     with right, st.container(border=True):
         section("Add machine", "a one-time join code, valid for 24 hours", "add_circle")

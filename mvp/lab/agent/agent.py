@@ -4,6 +4,7 @@ It does two jobs and nothing else:
 
   * sends this machine's approved logs to the panel (the collector, with this machine's own key)
   * puts the panel's blocks for this machine into the local firewall, and takes them out again
+  * once a minute, tells the panel which services listen here (names and ports only, services.py)
 
 The panel does the scoring and decides; the agent only makes outgoing HTTPS calls, so no port is
 opened on the machine. If the panel cannot be reached, blocks already in place stay for
@@ -44,6 +45,7 @@ import cactai_config  # noqa: E402
 from app import firewall, protect  # noqa: E402  (the core's firewall commands and safety checks)
 
 POLL_S = 5.0
+SERVICES_EVERY_S = 60.0
 OFFLINE_HOLD_H = float(os.environ.get("CACTAI_AGENT_OFFLINE_HOLD_H", "24") or 24)
 
 
@@ -218,9 +220,25 @@ def fetch_blocklist(data: dict[str, Any], session: requests.Session) -> set[str]
     return {str(ip) for ip in r.json().get("ips", [])}
 
 
+def report_services(data: dict[str, Any], session: requests.Session,
+                    found: Callable[[], list[dict[str, Any]]] | None = None) -> bool:
+    """Tell the panel what runs on this machine (names and ports only). True when it was accepted."""
+    from agent import services
+
+    try:
+        r = session.post(f"{data['panel']}/fleet/services", json={"services": (found or services.listening)()},
+                         headers={"Authorization": f"Bearer {data['key']}"}, timeout=5, verify=_verify(data))
+    except requests.RequestException:
+        return False
+    return r.status_code == 200
+
+
 def enforce_loop(data: dict[str, Any], enforcer: Enforcer, stop: threading.Event, poll_s: float = POLL_S) -> None:
     session = requests.Session()
+    next_services = 0.0
     while not stop.is_set():
+        if time.monotonic() >= next_services:
+            next_services = time.monotonic() + (SERVICES_EVERY_S if report_services(data, session) else poll_s * 2)
         change = enforcer.sync(fetch_blocklist(data, session))
         for line in enforcer.log:
             print(f"[agent] {line}", flush=True)

@@ -11,7 +11,7 @@ from typing import Any, Optional, Union
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse, Response
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from .config import Settings, sign
 from .reports import build_report, render_markdown, render_pdf
@@ -134,8 +134,20 @@ class RevokeIn(BaseModel):
     operator: str = "operator"
 
 
+class ServiceIn(BaseModel):
+    name: str = Field(max_length=64)
+    port: Optional[int] = Field(None, ge=0, le=65535)
+    proto: Optional[str] = Field(None, max_length=8)
+    process: Optional[str] = Field(None, max_length=64)
+
+
+class ServicesIn(BaseModel):
+    services: list[ServiceIn] = Field(default_factory=list, max_length=200)
+
+
 # What a machine's own agent key may do (fleet.py): send its events and heartbeat, read its block list.
-AGENT_ROUTES = frozenset({("POST", "/events"), ("POST", "/heartbeat"), ("GET", "/blocklist"), ("GET", "/fleet/me")})
+AGENT_ROUTES = frozenset({("POST", "/events"), ("POST", "/heartbeat"), ("GET", "/blocklist"), ("GET", "/fleet/me"),
+                           ("POST", "/fleet/services")})
 
 
 # Open without a token: the launchers' readiness check, and the list the fake portal enforces
@@ -561,6 +573,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         core.scribe.record(core.name, "machine_revoked", {"agent_id": agent_id, "host": out["host"],
                                                           "operator": body.operator})
         return out
+
+    @app.post("/fleet/services")
+    def post_services(request: Request, body: ServicesIn, host: Optional[str] = Query(None)) -> dict[str, Any]:
+        """What runs on a machine: its agent reports for itself; the operator token may name a host."""
+        if request.state.agent is not None:
+            host = request.state.agent["host"]
+        if not host:
+            raise HTTPException(status_code=400, detail="which machine? (?host=)")
+        return core.set_services(host, [x.model_dump() for x in body.services])
 
     @app.get("/fleet/me")
     def get_fleet_me(request: Request) -> dict[str, Any]:
