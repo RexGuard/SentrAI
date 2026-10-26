@@ -344,3 +344,15 @@ def test_incident_age_reads_like_speech():
     opened = (datetime.now().astimezone() - timedelta(minutes=7, seconds=5)).isoformat()
     df = sh.board_rows([{"id": "A", "status": "open", "opened_at": opened}])
     assert df.iloc[0]["Open for"] == "7 min"
+
+
+def test_actions_read_in_plain_words():
+    inc = {"id": "R1", "actions": [{"action_id": "a1", "type": "block_ip", "target": "1.2.3.4", "mode": "autonomous",
+                                   "status": "rolled_back"},
+                                  {"action_id": "a2", "type": "new_thing", "target": "x", "mode": "operator"}]}
+    df = sh.action_rows(inc)
+    assert list(df["Type"]) == ["Block IP", "New thing"]
+    assert list(df["Mode"]) == ["Automatic", "By a person"]
+    assert list(df["Status"]) == ["Rolled back", "-"]
+    rows = sh.build_containment_rows({"ips": ["1.2.3.4"], "users": ["bob"]}, [])
+    assert list(rows["Action"]) == ["Block IP", "Lock account"] and list(rows["Mode"]) == ["-", "-"]
