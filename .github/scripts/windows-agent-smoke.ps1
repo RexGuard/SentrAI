@@ -74,7 +74,13 @@ try {
 } finally {
     Write-Host "--- agent service output ---"
     Get-ChildItem (Join-Path $State "service") -Filter *.log -ErrorAction SilentlyContinue | ForEach-Object {
-        Write-Host "== $($_.Name)"; Get-Content $_.FullName -Tail 40
+        Write-Host "== $($_.Name)"
+        # The running service keeps its logs open; share the file, and never fail the job over a log.
+        try {
+            $stream = [IO.File]::Open($_.FullName, "Open", "Read", "ReadWrite")
+            try { (New-Object IO.StreamReader($stream)).ReadToEnd() -split "`n" | Select-Object -Last 40 | Write-Host }
+            finally { $stream.Dispose() }
+        } catch { Write-Host "(could not read it: $($_.Exception.Message))" }
     }
 }
 
