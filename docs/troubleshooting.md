@@ -38,6 +38,7 @@ rm -rf core/.venv lab/.venv dashboard/.venv notifier/.venv
 The installer fetches its Python packages from pypi.org, so the machine needs outgoing HTTPS. Check
 with `curl -sI https://pypi.org/simple/ | head -1` (it should print a `200` line). Behind a proxy, set
 `HTTPS_PROXY` when you run the installer, for example `sudo HTTPS_PROXY=http://proxy:3128 ./mvp/deploy/install.sh`.
+On Windows, run `$env:HTTPS_PROXY = "http://proxy:3128"` in the same PowerShell first.
 Then run the same install command again: it carries on where it stopped.
 
 ## PowerShell says running scripts is disabled
