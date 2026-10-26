@@ -56,8 +56,8 @@ def test_risk_breakdown_counts_only_active_incidents():
 APP = str(Path(__file__).resolve().parents[1] / "app.py")
 
 
-@pytest.mark.parametrize("page", ["config", "approvals", "chat", "collector", "classifier", "responder", "machines",
-                                  "review", "reports", "audit", "backups", "integrations"])
+@pytest.mark.parametrize("page", ["config", "approvals", "incidents", "chat", "collector", "classifier", "responder",
+                                  "machines", "review", "reports", "audit", "backups", "integrations"])
 def test_every_page_renders(fake_core, page, tmp_path, monkeypatch):
     from streamlit.testing.v1 import AppTest
 

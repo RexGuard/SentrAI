@@ -516,6 +516,7 @@ if "page" not in st.session_state:  # land on what needs a person; a new machine
 
 PAGES = {  # key: (Material icon, label, menu group)
     "approvals": ("approval_delegation", "Approvals", "Decide"),
+    "incidents": ("assignment_ind", "Incidents", "Decide"),
     "chat": ("forum", "Chat", "Decide"),
     "collector": ("input", "Collector", "Pipeline"),
     "classifier": ("category", "Classifier", "Pipeline"),
@@ -575,7 +576,8 @@ def menu() -> None:
     page, seen = st.session_state.page, st.session_state.seen
     if page in sh.ALERT_TYPES:  # whatever arrives while you look at a page counts as seen
         seen[page] = sh.head_seq(records)
-    bubbles = {**sh.unseen_counts(records, seen), "approvals": len(sh.pending_approvals(incidents or []))}
+    bubbles = {**sh.unseen_counts(records, seen), "approvals": len(sh.pending_approvals(incidents or [])),
+               "incidents": sh.board_counts(incidents or [])["overdue"]}
 
     side_risk()
     group = None
@@ -1192,6 +1194,118 @@ def page_approvals() -> None:
             incident_summary(inc)
             decision_controls(inc)
             table(sh.action_rows(inc), "No containment actions yet.")
+
+
+def owner_controls(inc: dict, contacts: list[dict]) -> None:
+    """Who has the incident, its hand-over history, and the Assign / Mark resolved forms."""
+    inc_id, op = str(inc.get("id")), st.session_state.operator
+    owner, backup = inc.get("owner") or "Nobody yet", inc.get("backup")
+    level = int(inc.get("escalation_level") or 0)
+    st.markdown(
+        f'<div class="detail-grid">'
+        f'<div><span>Owner</span><b>{html.escape(str(owner))}</b></div>'
+        f'<div><span>Backup</span><b>{html.escape(str(backup or "-"))}</b></div>'
+        f'<div><span>Given by</span><b>{html.escape(str(inc.get("assigned_by") or "-"))}</b></div>'
+        f'<div><span>Escalations</span><b>{level}</b></div>'
+        '</div>', unsafe_allow_html=True)
+    history = sh.owner_history(inc)
+    if history:
+        st.caption("  \n".join(html.escape(h) for h in history[-6:]))
+    if inc.get("status") not in sh.OPEN_STATUSES:
+        if inc.get("resolution"):
+            st.caption(f"Resolved by {inc.get('resolved_by')}: {inc.get('resolution')}")
+        return
+    names = [str(c.get("name")) for c in contacts if c.get("name")]
+    a, b = st.columns(2)
+    with a, st.form(key=f"assign_{inc_id}", clear_on_submit=True, border=True):
+        me, other = f"Me ({op})", "Someone else"
+        choice = st.selectbox("Give it to", [me, *[n for n in names if n != owner], other], key=f"to_{inc_id}")
+        typed = st.text_input("Name, if someone else", key=f"toname_{inc_id}")
+        note = st.text_input("Note (optional)", key=f"tonote_{inc_id}", placeholder="e.g. You know this server best")
+        go_assign = st.form_submit_button("Assign", icon=":material/person_add:", width="stretch",
+                                          disabled=locked(), help=why_locked())
+    with b, st.form(key=f"resolve_{inc_id}", clear_on_submit=True, border=True):
+        done = st.text_area("What was done (required, written to the audit log)", key=f"done_{inc_id}", height=108,
+                            placeholder="e.g. Password reset for admin, attacker IP blocked at the router")
+        go_resolve = st.form_submit_button("Mark resolved", icon=":material/task_alt:", type="primary", width="stretch",
+                                           disabled=locked(), help=why_locked())
+    if go_assign:
+        who = op if choice == me else typed.strip() if choice == other else choice
+        if not who:
+            st.error("Type the name of the person to give it to.")
+        else:
+            run_action(f"{inc_id} given to {who}", lambda: client.assign(inc_id, who, op, note.strip()))
+    elif go_resolve:
+        if not done.strip():
+            st.error("Write a short note on what was done first. Nothing was changed.")
+        else:
+            run_action(f"Resolved {inc_id}", lambda: client.resolve(inc_id, op, done.strip()))
+
+
+def incident_card(inc: dict, contacts: list[dict]) -> None:
+    incident_summary(inc)
+    owner_controls(inc, contacts)
+    if sh.available_actions(inc)["decide"] or sh.available_actions(inc)["contain_controls"]:
+        decision_controls(inc)
+
+
+@st.fragment(run_every=AUTO)
+def page_incidents() -> None:
+    show_flash()
+    if header("Incidents", "who owns each incident, and what still needs a person") is None:
+        return
+    incidents, err = fetch("incidents", [])
+    if err:
+        st.warning(f"Could not load incidents: {err}")
+    incidents = incidents or []
+    routing, rerr = safe(client.routing, {})
+    contacts = (routing or {}).get("contacts") or []
+    me = st.session_state.operator
+    c = sh.board_counts(incidents, me)
+    stats(("Open", str(c["open"]), "not resolved yet"),
+          ("Needs attention", str(c["attention"]), f"{c['unassigned']} with no owner",
+           sh.BAND_COLORS["amber"] if c["attention"] else None),
+          ("Overdue", str(c["overdue"]), "past the SLA, nobody answered",
+           sh.BAND_COLORS["critical"] if c["overdue"] else None),
+          ("Escalated", str(c["escalated"]), "handed to a backup contact",
+           sh.BAND_COLORS["amber"] if c["escalated"] else None),
+          ("Yours", str(c["mine"]), f"owned by {me}"))
+
+    with st.container(border=True):
+        section("Needs attention", "most urgent first", "notification_important")
+        todo = sh.needs_attention(incidents)
+        if not todo:
+            empty("Nothing needs a person right now. Every open incident is in hand.", "check_circle", good=True)
+        for n, inc in enumerate(todo):
+            title = (f"{inc.get('id')} · {sh.category_label(inc.get('category'))} · {inc.get('owner') or 'no owner'}"
+                     f" · {'; '.join(sh.attention(inc))}")
+            with st.expander(title, expanded=n == 0):
+                incident_card(inc, contacts)
+
+    with st.container(border=True):
+        section("All incidents", "owner, backup and what each one still needs", "assignment_ind")
+        t1, t2 = st.columns(2)
+        closed = t1.toggle("Show resolved and rejected", key="board_closed")
+        mine = t2.toggle(f"Only mine ({me})", key="board_mine")
+        shown = [i for i in incidents if not mine or str(i.get("owner") or "").lower().lstrip("@") == me.lower().lstrip("@")]
+        table(sh.board_rows(shown, include_closed=closed), "No incidents. All quiet at the gate.")
+        ids = [str(i.get("id")) for i in shown if closed or i.get("status") in sh.OPEN_STATUSES]
+        if ids:
+            pick = st.selectbox("Open one to assign, resolve or decide", ["-", *ids], key="board_pick")
+            inc = next((i for i in shown if str(i.get("id")) == pick), None)
+            if inc is not None:
+                with st.container(border=True):
+                    incident_card(inc, contacts)
+
+    with st.container(border=True):
+        section("Who gets what", "routing rules: the first match owns the incident", "alt_route")
+        if rerr:
+            st.caption(f"Could not load the routing rules: {rerr}")
+        else:
+            st.caption(f"From {routing.get('source')}. Unanswered alerts go to the owner's backup after "
+                       f"{(routing.get('follow_up') or {}).get('escalate_after_reminders', '?')} reminders.")
+            table(sh.routing_rows(routing), "", )
+            table(sh.contact_rows(routing), "")
 
 
 CHAT_STARTERS = ("What is happening right now?", "Which incident should I deal with first?",
@@ -2139,7 +2253,8 @@ def page_team() -> None:
 if not page_allowed(st.session_state.page):
     st.session_state.page = "config"
 {
-    "config": page_config, "approvals": page_approvals, "chat": page_chat, "collector": page_collector, "classifier": page_classifier,
-    "responder": page_responder, "machines": page_machines, "review": page_review, "reports": page_reports, "audit": page_audit,
+    "config": page_config, "approvals": page_approvals, "incidents": page_incidents, "chat": page_chat,
+    "collector": page_collector, "classifier": page_classifier, "responder": page_responder, "machines": page_machines,
+    "review": page_review, "reports": page_reports, "audit": page_audit,
     "backups": page_backups, "team": page_team, "integrations": page_integrations,
 }[st.session_state.page]()

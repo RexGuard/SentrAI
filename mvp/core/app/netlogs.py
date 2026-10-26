@@ -5,7 +5,9 @@ These helpers read `parsed` first and parse `raw` when it is missing, so the rul
 events from an older collector or a replay:
 
 - nginx / Apache "combined" access lines, and the lab portal's short "GET /path 200" form;
-- OpenSSH lines as written to auth.log / secure, or as bare journald messages.
+- OpenSSH lines as written to auth.log / secure, or as bare journald messages;
+- sign-ins to other services (Windows logons and RDP, SQL Server, MySQL/MariaDB, PostgreSQL,
+  MongoDB) and Suricata network alerts, which only come as a collector `parsed` object.
 
 `enrich()` only fills fields that are missing; it never overwrites what the collector sent.
 """
@@ -157,6 +159,51 @@ def parse_sshd(event: dict[str, Any]) -> SshLine | None:
             gd = m.groupdict()
             return SshLine(kind, gd.get("ip") or event.get("src_ip"), gd.get("user") or event.get("user"), pid)
     return SshLine(str(event.get("ssh_event") or "other"), event.get("src_ip"), event.get("user"), pid)
+
+
+@dataclass
+class AuthLine:
+    """A sign-in to a service other than sshd (``parsed.kind == "auth"``)."""
+    service: str  # windows_logon, rdp, kerberos, ntlm, mssql, mysql, postgres, mongodb
+    outcome: str  # success, failure, info
+    event: str    # the format's own name: logon_failed, access_denied, password_failed, ...
+    src_ip: str | None
+    user: str | None
+
+
+@dataclass
+class NetworkAlert:
+    """An IDS alert (``parsed.kind == "network_alert"``, Suricata eve.json)."""
+    signature: str
+    category: str
+    severity: int | None
+    action: str
+    remote_ip: str | None
+    dest_port: int | None
+    outbound: bool
+
+
+def _parsed(event: dict[str, Any]) -> dict[str, Any]:
+    p = event.get("parsed")
+    return p if isinstance(p, dict) else {}
+
+
+def parse_auth(event: dict[str, Any]) -> AuthLine | None:
+    p = _parsed(event)
+    if p.get("kind") != "auth":
+        return None
+    return AuthLine(str(p.get("service") or p.get("program") or p.get("format") or "service"),
+                    str(p.get("outcome") or "info"), str(p.get("auth_event") or p.get("win_event") or ""),
+                    event.get("src_ip"), event.get("user"))
+
+
+def parse_network_alert(event: dict[str, Any]) -> NetworkAlert | None:
+    p = _parsed(event)
+    if p.get("kind") != "network_alert":
+        return None
+    return NetworkAlert(str(p.get("signature") or ""), str(p.get("alert_category") or ""), _int(p.get("severity")),
+                        str(p.get("action") or "allowed"), event.get("src_ip"), _int(p.get("dest_port")),
+                        p.get("direction") == "outbound")
 
 
 def enrich(event: dict[str, Any]) -> dict[str, Any]:

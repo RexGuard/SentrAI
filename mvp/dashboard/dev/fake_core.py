@@ -163,6 +163,9 @@ def open_incident(category: str, src_ip: str, user: str, conf: float, crit: floa
         "recommended_action": RECOMMEND[category].format(src_ip=src_ip, user=user),
         "explanation": f"{category.replace('_', ' ').capitalize()} activity from {src_ip} against '{user}' on web-01.",
         "actions": [], "event_ids": [f"evt-{int(time.time())}-{i:03d}" for i in range(3)],
+        "owner": ROUTING["contacts"][0]["name"], "owner_id": "on_duty", "backup": ROUTING["contacts"][1]["name"],
+        "backup_id": "team_lead", "assigned_by": "routing: High", "route": "High", "notify": [],
+        "escalation_level": 0, "escalations": [], "resolved_by": None, "resolution": None, "timeline": [],
     }
     S.incidents[iid] = inc
     audit("classification", "Jev" if by == "jev" else "Warden", incident=iid, category=category, confidence=conf)
@@ -441,6 +444,50 @@ def rollback(iid: str, body: dict = Body(...)):
 @app.post("/incidents/{iid}/permanent")
 def permanent(iid: str, body: dict = Body(...)):
     return _close_actions(iid, body, "permanent", "permanent")
+
+
+ROUTING = {"source": "defaults", "contacts": [
+    {"id": "on_duty", "name": "John Doe (SEC-409) / Shift Bravo", "role": "on_duty", "email": "", "telegram": "", "backup": "team_lead"},
+    {"id": "team_lead", "name": "Team lead", "role": "team_lead", "email": "", "telegram": "", "backup": "it_manager"},
+    {"id": "it_manager", "name": "IT manager", "role": "it_manager", "email": "", "telegram": "", "backup": "cxo"},
+    {"id": "cxo", "name": "CXO", "role": "cxo", "email": "", "telegram": "", "backup": ""}],
+    "rules": [{"name": "Everything else", "match": {}, "owner": "on_duty", "notify": []}],
+    "follow_up": {"escalate_after_reminders": 2, "max_escalations": 3, "resolve_within_hours": 24}}
+
+
+@app.get("/routing")
+def routing():
+    return ROUTING
+
+
+@app.post("/incidents/{iid}/assign")
+def assign(iid: str, body: dict = Body(...)):
+    with lock:
+        inc = get_inc(iid)
+        if inc["status"] in ("resolved", "rejected"):
+            raise HTTPException(409, f"incident is {inc['status']}")
+        who = str(body.get("assignee") or "").strip()
+        if not who:
+            raise HTTPException(400, "assignee is required")
+        inc.update(owner=who, assigned_by=body.get("operator"), assigned_at=iso(now()))
+        inc.setdefault("timeline", []).append({"ts": iso(now()), "kind": "assigned",
+                                               "text": f"Assigned to {who} by {body.get('operator')}"})
+        audit("incident_assigned", "Warden", incident=iid, to=who, operator=body.get("operator"))
+        return inc
+
+
+@app.post("/incidents/{iid}/resolve")
+def resolve(iid: str, body: dict = Body(...)):
+    with lock:
+        inc = get_inc(iid)
+        if inc["status"] in ("resolved", "rejected"):
+            raise HTTPException(409, f"incident is {inc['status']}")
+        if not str(body.get("note") or "").strip():
+            raise HTTPException(400, "resolving requires a short note on what was done")
+        inc.update(status="resolved", resolved_by=body.get("operator"), resolution=body.get("note"),
+                   acked=True, acked_by=inc.get("acked_by") or body.get("operator"))
+        audit("incident_resolved", "Warden", incident=iid, operator=body.get("operator"), note=body.get("note"))
+        return inc
 
 
 @app.post("/incidents/{iid}/ack")

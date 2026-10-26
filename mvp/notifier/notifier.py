@@ -35,7 +35,7 @@ from typing import Callable
 from core import Core, CoreError
 from emailer import EmailConfig, email_sender
 from slack import slack_from_env, with_slack
-from formatting import (APPROVE, PERMANENT, REJECT, ROLLBACK, button_specs, format_console,
+from formatting import (APPROVE, PERMANENT, REJECT, ROLLBACK, TAKE, button_specs, format_console,
                         format_telegram, incident_id_of, parse_callback, witness_of)
 
 log = logging.getLogger("cactai.notifier")
@@ -264,7 +264,10 @@ def run_telegram(core: Core, token: str, chat_id: str, poll: float, fallback_ope
             log.warning("ack failed for %s: %s", iid, exc)
         stamp = datetime.now().strftime("%H:%M:%S")
         try:
-            if verb == APPROVE:
+            if verb == TAKE:
+                await asyncio.to_thread(core.assign, iid, op, op, "Taken via Telegram")
+                result = f"🙋 {iid} taken by @{op} at {stamp}. It is yours until it is resolved."
+            elif verb == APPROVE:
                 await asyncio.to_thread(core.decision, iid, op, "approve", "Approved via Telegram")
                 result = f"✅ Approved & patch applied by @{op} at {stamp}"
             elif verb == REJECT:
