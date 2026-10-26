@@ -29,9 +29,11 @@ KIND_HEADERS = {
     "audit_anchor": ("🔏", "Record fingerprint"),
     "action_check": ("🔎", "After-action check: needs a look"),
     "undo_failed": ("❗", "Undo failed: check by hand"),
+    "backup_failed": ("💾", "Backup problem"),
+    "backup_restored": ("💾", "Backup restored"),
 }
 # Kinds that are not about one incident: shown as a short note (header, title, text), no risk or buttons.
-NOTICE_KINDS = ("audit_anchor",)
+NOTICE_KINDS = ("audit_anchor", "backup_failed", "backup_restored")
 
 # Callback data: "<verb>:<incident_id>" (Telegram limits callback_data to 64 bytes).
 APPROVE = "approve"

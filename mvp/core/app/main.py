@@ -19,6 +19,7 @@ from . import ai, anchor, fleet, webhook
 from .chat import OperatorChat, default_chat_provider
 from .discovery import Discovery
 from .threats import ThreatWatch
+from .backups import BackupWatch
 from .cyanide import Cyanide, default_planner
 from .saguaro import BadRequestError, ConflictError, Saguaro
 
@@ -89,6 +90,17 @@ class ThreatScanIn(BaseModel):
 class QuarantineIn(BaseModel):
     operator: str
     reason: str = ""
+
+
+class BackupIn(BaseModel):
+    operator: str = "operator"
+
+
+class RestoreIn(BaseModel):
+    operator: str
+    in_place: bool = False
+    confirm: str = ""      # the backup id, typed again, for an in-place restore
+    target: Optional[str] = None
 
 
 class PendingDecisionIn(BaseModel):
@@ -183,14 +195,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 except Exception:
                     log.exception("threat scan failed")
 
+    async def backup_scheduler() -> None:
+        """Take a backup whenever backup.every_hours have passed since the last one (checked each minute)."""
+        while True:
+            await asyncio.sleep(60)
+            try:
+                if backups.due():
+                    await asyncio.to_thread(backups.make, "schedule", "schedule")
+            except Exception:
+                log.exception("scheduled backup failed")
+
     @contextlib.asynccontextmanager
     async def lifespan(_: FastAPI):
         task = asyncio.create_task(ticker()) if core.settings.background else None
         scanner = asyncio.create_task(threat_scanner()) if core.settings.background else None
+        backer = asyncio.create_task(backup_scheduler()) if core.settings.background else None
         if core.remote is not None and core.settings.background:
             core.remote.start()
         yield
-        for t in (task, scanner):
+        for t in (task, scanner, backer):
             if t:
                 t.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
@@ -202,8 +225,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Operator chat: read-only tools plus suggestion buttons; answers from the core's own
     # explanations when no AI key is set (or when the fixed-playbook engine runs).
     threats = ThreatWatch(core)
+    backups = BackupWatch(core)
     discovery = Discovery(core, threats)
-    chat = OperatorChat(core, default_chat_provider() if isinstance(core, Cyanide) else None, discovery, threats)
+    chat = OperatorChat(core, default_chat_provider() if isinstance(core, Cyanide) else None, discovery, threats,
+                        backups)
     chat.off_reason = core.ai_off_reason = ai.why_off()
     machines = fleet.Fleet(core.settings.db_path.parent / "fleet.json")
 
@@ -253,6 +278,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.chat = chat
     app.state.discovery = discovery
     app.state.threats = threats
+    app.state.backups = backups
     app.state.fleet = machines
 
     def not_found(iid: str) -> HTTPException:
@@ -493,6 +519,32 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def restore_quarantined(qid: str, body: OperatorIn) -> dict[str, Any]:
         try:
             return threats.restore(qid, body.operator)
+        except KeyError as e:
+            raise HTTPException(404, str(e).strip("'\""))
+        except ValueError as e:
+            raise HTTPException(409, str(e))
+
+    # Backups: chosen folders plus SentrAI's own data, on a schedule. Restoring always needs a person;
+    # by default it unpacks into a new folder and changes nothing live.
+    @app.get("/backups")
+    def get_backups() -> dict[str, Any]:
+        return backups.status()
+
+    @app.post("/backups")
+    def post_backup(body: Optional[BackupIn] = None) -> dict[str, Any]:
+        return backups.make((body.operator if body else None) or "operator", "manual")
+
+    @app.post("/backups/{bid}/verify")
+    def verify_backup(bid: str, body: Optional[BackupIn] = None) -> dict[str, Any]:
+        try:
+            return backups.verify(bid, (body.operator if body else None) or "operator")
+        except KeyError as e:
+            raise HTTPException(404, str(e).strip("'\""))
+
+    @app.post("/backups/{bid}/restore")
+    def restore_backup(bid: str, body: RestoreIn) -> dict[str, Any]:
+        try:
+            return backups.restore(bid, body.operator, body.in_place, body.confirm, body.target)
         except KeyError as e:
             raise HTTPException(404, str(e).strip("'\""))
         except ValueError as e:
