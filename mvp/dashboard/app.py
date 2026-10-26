@@ -1535,6 +1535,22 @@ def telegram_links(contacts: list[dict]) -> None:
 
 CHAT_STARTERS = ("What is happening right now?", "Which incident should I deal with first?",
                  "Why did you block the last IP address?")
+CHAT_FOLLOW_UPS = CHAT_STARTERS + ("Is anything waiting for my approval?", "What changed in the last hour?",
+                                   "Is any machine offline?")
+
+
+def chat_quick_replies(questions: list[str] | tuple[str, ...], key: str) -> None:
+    """Questions to send with one click, shown under Cyanide's message like quick replies."""
+    cols = st.container(key=f"quick_{key}").columns(len(questions))
+    for col, q in zip(cols, questions):
+        if col.button(q, key=f"{key}_{q}", width="stretch"):
+            st.session_state["chat_pending"] = q
+
+
+def chat_follow_ups(messages: list[dict]) -> list[str]:
+    """Up to three questions the operator has not asked yet, for under the latest reply."""
+    asked = {str(m.get("text") or "").strip().lower() for m in messages if m.get("role") == "operator"}
+    return [q for q in CHAT_FOLLOW_UPS if q.lower() not in asked][:3]
 
 
 def page_chat() -> None:
@@ -1580,17 +1596,17 @@ def page_chat() -> None:
         safe(client.clear_chat)
         st.rerun()
 
-    with st.container(height=540, border=True):
+    with st.container(height=540, border=True, key="chat_log"):
         if not messages:
-            st.caption(f"Ask {assistant} about incidents, its decisions, or what to do next.")
-        for m in messages:
-            chat_message(m, assistant, by_id)
+            with st.chat_message("assistant", avatar=":material/science:"):
+                st.caption(f"**{assistant}**")
+                st.markdown(f"Hi, I'm {assistant}. Ask me about incidents, why I acted, or what to do next. "
+                            "Or pick one of these to start:")
+                chat_quick_replies(CHAT_STARTERS, "starter")
+        last = max((n for n, m in enumerate(messages) if m.get("role") != "operator"), default=-1)
+        for n, m in enumerate(messages):
+            chat_message(m, assistant, by_id, follow_ups=chat_follow_ups(messages) if n == last else None)
 
-    if not messages:
-        cols = st.columns(len(CHAT_STARTERS))
-        for col, q in zip(cols, CHAT_STARTERS):
-            if col.button(q, width="stretch", key=f"starter_{q}"):
-                st.session_state["chat_pending"] = q
     prompt = st.chat_input(f"Ask {assistant}…") or st.session_state.pop("chat_pending", None)
     if prompt:
         with st.spinner(f"{assistant} is looking into it…"):
@@ -1620,20 +1636,20 @@ def setup_conversation() -> None:
         del st.session_state.setup_chat
         st.session_state.setup_later = True
         st.rerun()
-    with st.container(height=540, border=True):
-        for m in sc.messages:
+    answer = None
+    options = sc.options()
+    with st.container(height=540, border=True, key="chat_log"):
+        for i, m in enumerate(sc.messages):
             mine = m["role"] == "user"
             with st.chat_message("user" if mine else "assistant", avatar=":material/person:" if mine else ":material/science:"):
                 st.markdown(m["text"].replace("\n", "  \n") if mine else m["text"])
-    answer = None
-    options = sc.options()
-    if options:
-        per_row = 2 if any(len(label) > 26 for _, label in options) else 4  # long labels are never cut off
-        cols = st.columns(min(len(options), per_row))
-        for n, (value, label) in enumerate(options):
-            if cols[n % len(cols)].button(label, key=f"setup_{len(sc.messages)}_{value}", width="stretch",
-                                          type="primary" if n == 0 and sc.state == "review" else "secondary"):
-                answer = value
+                if options and i == len(sc.messages) - 1:  # the answers sit under the question they answer
+                    per_row = 2 if any(len(label) > 26 for _, label in options) else 4  # long labels are never cut off
+                    cols = st.columns(min(len(options), per_row))
+                    for n, (value, label) in enumerate(options):
+                        if cols[n % len(cols)].button(label, key=f"setup_{len(sc.messages)}_{value}", width="stretch",
+                                                      type="primary" if n == 0 and sc.state == "review" else "secondary"):
+                            answer = value
     if sc.secret:
         with st.form(f"setup_secret_{len(sc.messages)}", clear_on_submit=True, border=False):
             f1, f2 = st.columns([5, 1], vertical_alignment="bottom")
@@ -1697,7 +1713,7 @@ def save_setup(sc: "setup_chat.SetupChat") -> None:
     sc.saved(note + "\n\nYou can change anything later here or on the Configuration page.")
 
 
-def chat_message(m: dict, assistant: str, by_id: dict[str, dict]) -> None:
+def chat_message(m: dict, assistant: str, by_id: dict[str, dict], follow_ups: list[str] | None = None) -> None:
     mine = m.get("role") == "operator"
     who = m.get("operator") or st.session_state.operator if mine else assistant
     with st.chat_message("user" if mine else "assistant", avatar=":material/person:" if mine else ":material/science:"):
@@ -1712,6 +1728,8 @@ def chat_message(m: dict, assistant: str, by_id: dict[str, dict]) -> None:
             st.caption("Looked at: " + ", ".join(dict.fromkeys(m["looked_at"])))
         for n, s in enumerate(m.get("suggestions") or []):
             chat_suggestion(m.get("id"), n, s, by_id.get(str(s.get("incident"))))
+        if follow_ups:
+            chat_quick_replies(follow_ups, f"follow_{m.get('id')}")
 
 
 def chat_suggestion(mid: Any, n: int, s: dict, inc: dict | None) -> None:
