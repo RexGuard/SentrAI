@@ -113,6 +113,16 @@ class CoreClient:
     def ack(self, incident_id: str, operator: str, channel: str = "dashboard") -> Any:
         return self.post_json(f"/incidents/{incident_id}/ack", {"operator": operator, "channel": channel})
 
+    def assign(self, incident_id: str, assignee: str, operator: str, note: str = "") -> Any:
+        return self.post_json(f"/incidents/{incident_id}/assign",
+                              {"assignee": assignee, "operator": operator, "note": note or None})
+
+    def resolve(self, incident_id: str, operator: str, note: str) -> Any:
+        return self.post_json(f"/incidents/{incident_id}/resolve", {"operator": operator, "note": note})
+
+    def routing(self) -> dict:
+        return self.get_json("/routing")
+
     def rollback(self, incident_id: str, operator: str, justification: str) -> Any:
         return self.post_json(
             f"/incidents/{incident_id}/rollback", {"operator": operator, "justification": justification}

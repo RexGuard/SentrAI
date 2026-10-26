@@ -66,6 +66,10 @@ class Core:
     def ack(self, incident_id: str, operator: str, channel: str) -> Any:
         return self._req("POST", f"/incidents/{incident_id}/ack", {"operator": operator, "channel": channel})
 
+    def assign(self, incident_id: str, assignee: str, operator: str, note: str | None = None) -> Any:
+        return self._req("POST", f"/incidents/{incident_id}/assign",
+                         {"assignee": assignee, "operator": operator, "note": note})
+
     def decision(self, incident_id: str, operator: str, decision: str, justification: str) -> Any:
         return self._req("POST", f"/incidents/{incident_id}/decision",
                          {"operator": operator, "decision": decision, "justification": justification})

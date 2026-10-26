@@ -23,6 +23,10 @@ KIND_HEADERS = {
     "reminder": ("⏰", "Reminder: still unacknowledged"),
     "sla_breach": ("⏰", "SLA breached"),
     "escalation": ("📣", "Escalation"),
+    "escalated": ("📣", "Escalated to the backup contact"),
+    "assigned": ("🙋", "Assigned to you"),
+    "sla_reminder": ("⏰", "Reminder: still unacknowledged"),
+    "resolve_reminder": ("⏰", "Reminder: still not resolved"),
     "autonomous_action": ("🛡️", "Autonomous containment applied"),
     "containment": ("🛡️", "Containment applied"),
     "report": ("📄", "Evidence report ready"),
@@ -36,6 +40,7 @@ APPROVE = "approve"
 REJECT = "reject"
 ROLLBACK = "rollback"
 PERMANENT = "permanent"
+TAKE = "take"  # the person who presses it becomes the incident's owner
 
 
 def band_for(index: Any) -> str:
@@ -116,6 +121,16 @@ def alert_fields(notification: dict, incident: dict | None = None, risk: dict | 
     }
 
 
+def handles_of(notification: dict) -> list[str]:
+    """Telegram handles of the people this alert is for (from the core's routing contacts)."""
+    out = []
+    for d in notification.get("deliver_to") or []:
+        h = str((d or {}).get("telegram") or "").strip()
+        if h:
+            out.append(h if h.startswith("@") or h.lstrip("-").isdigit() else f"@{h}")
+    return [h for h in out if not h.lstrip("-").isdigit()]  # chat ids cannot be mentioned
+
+
 def witness_of(notification: dict) -> str:
     """The signed audit fingerprint the core put on this notification ("SENTRAI-FP v1 ..."), or ""."""
     w = str(notification.get("witness") or "").strip()
@@ -155,6 +170,9 @@ def format_telegram(notification: dict, incident: dict | None = None, risk: dict
     ]
     if f["text"]:
         lines.append(e(f["text"]))
+    handles = handles_of(notification)
+    if handles:
+        lines.append("For: " + " ".join(e(h) for h in handles))
     lines += [
         "",
         f"Severity: <b>{e(f['severity'])}</b> · AI confidence: {e(f['confidence'])} ({e(str(f['classified_by']))})",
@@ -185,12 +203,13 @@ def button_specs(notification: dict, incident: dict | None = None) -> list[tuple
         return [("↩️ Rollback", f"{ROLLBACK}:{iid}"), ("📌 Make Permanent", f"{PERMANENT}:{iid}")]
     if status in ("resolved", "rejected"):
         return []
-    return [("✅ Approve & Patch", f"{APPROVE}:{iid}"), ("⛔ Reject with Justification", f"{REJECT}:{iid}")]
+    return [("✅ Approve & Patch", f"{APPROVE}:{iid}"), ("⛔ Reject with Justification", f"{REJECT}:{iid}"),
+            ("🙋 Take it", f"{TAKE}:{iid}")]
 
 
 def parse_callback(data: str) -> tuple[str, str] | None:
     verb, sep, iid = (data or "").partition(":")
-    if not sep or not iid or verb not in (APPROVE, REJECT, ROLLBACK, PERMANENT):
+    if not sep or not iid or verb not in (APPROVE, REJECT, ROLLBACK, PERMANENT, TAKE):
         return None
     return verb, iid
 

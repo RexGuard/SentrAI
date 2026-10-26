@@ -153,3 +153,12 @@ def test_main_console_mode_reports_email_off(fake_core, monkeypatch, capsys):
     assert notifier.main(["--core", fake_core, "--once"]) == 0
     assert "email alerts off" in capsys.readouterr().out
     assert FakeSMTP.sent == []
+
+
+def test_routed_alerts_go_to_the_owner_not_the_whole_list():
+    from emailer import recipients_for
+    cfg = EmailConfig.from_env({"SMTP_HOST": "smtp.example.test", "ALERT_EMAIL_TO": "soc@example.test"})
+    routed = {"deliver_to": [{"name": "Amir", "email": "amir@example.test"}, {"name": "Lee", "email": ""},
+                             {"name": "Amir again", "email": "amir@example.test"}]}
+    assert recipients_for(cfg, routed) == ("amir@example.test",)
+    assert recipients_for(cfg, {"deliver_to": [{"name": "Lee"}]}) == ("soc@example.test",)

@@ -37,6 +37,7 @@ Tests:
 | `HOTPATCH_TTL_HOURS` | `2` | How long a hotpatch lasts, in hours. |
 | `ON_DUTY` | `John Doe (SEC-409) / Shift Bravo` | The responsible entity named in reports and notifications. |
 | `TEAM_LEAD`, `IT_MANAGER`, `CXO` | role names | Escalation recipients. |
+| `CACTAI_ROUTING` | `routing.json` next to the database | Contacts, routing rules and follow-up policy (see "Owners, routing and escalation"). Without the file, the four names above form the chain. |
 | `TYPESAFE_API_KEY` | unset | Turns on Jev (TypeSafe System One). Without it the fallback classifier is used. |
 | `JEV_TIMEOUT_S` | `3` | Timeout for each Jev call. After 3 failures in a row a 60 s circuit breaker opens. |
 | `JEV_CACHE_SIZE` / `JEV_CACHE_TTL_S` | `2048` / `3600` | Jev answers kept per log template (the line with IPs, times, ids, pids and ports replaced), so the same request from many addresses is asked about once. Size `0` turns the cache off. |
@@ -60,6 +61,29 @@ Tests:
 | `CLOCK_JUMP_S` | `120` | A clock change bigger than this (core host or a collector) counts as log tampering. |
 | `ANCHOR_EVERY_MIN` | `60` | Send the signed record fingerprint to the alert channels this often (real minutes, only when new records exist; 0 = never). |
 | `CACTAI_ANCHOR_KEY` | (made on first use) | Fingerprint signing key. Default: `anchor.key` next to the audit database, mode 0600. |
+
+### Owners, routing and escalation
+
+Every incident gets an owner the moment it opens. `app/routing.py` reads a routing file
+(`CACTAI_ROUTING`, sample `profiles/routing.example.json`) with:
+
+- **contacts**: name, role (`on_duty`, `team_lead`, `it_manager`, `cxo`), email, Telegram handle and a **backup** contact.
+- **rules**: match on `category`, `severity`, `host` (patterns like `db-*`) and `layer`. The first match wins: its
+  `owner` owns the incident and hears every reminder; the people under `notify` hear about it once.
+- **follow_up**: `escalate_after_reminders` (default 2), `max_escalations` (3), `resolve_within_hours` (24).
+
+Without a file, the defaults are: critical incidents tell the team lead, IT manager and CXO; malware, data export,
+log tampering and privilege escalation tell the team lead and IT manager; high tells the team lead; the on-duty
+operator owns all of them, backed up by the team lead, then the IT manager, then the CXO.
+
+Unanswered alerts: once the SLA passes, the owner gets a reminder every hour. After `escalate_after_reminders`
+unanswered reminders, the incident is handed to the owner's backup (`escalated` notification to both,
+`incident_escalated` audit record), up to `max_escalations` times. Acknowledging stops it. An acknowledged incident
+that is still not resolved after `resolve_within_hours` gets a `resolve_reminder` to its owner (up to 3).
+
+Each notification carries `deliver_to` (the recipients' email and Telegram from the contacts): the notifier
+emails those addresses instead of `ALERT_EMAIL_TO` and names the Telegram handles in the alert. The Telegram
+**Take it** button makes whoever pressed it the owner.
 
 ### Off-box copy
 
@@ -218,15 +242,19 @@ Additions that do not change the contract:
 - `POST /heartbeat {"collector": "web-01"}`: collector heartbeat for Watchdog. An event with `"source": "heartbeat"` does the same.
 - `POST /system/scan {"operator": "erick"}` and `GET /system/scan` (latest): read-only process scan with suggested log files.
 - `POST /threats/scan {"operator": "erick"}`, `GET /threats`, `POST /threats/{id}/quarantine`, `GET /quarantine`, `POST /quarantine/{id}/restore`: threat scan and quarantine.
+- `POST /incidents/{id}/assign {"operator", "assignee", "note"?}`: give the incident to a contact (id, name, role or Telegram handle) or anyone by name.
+- `POST /incidents/{id}/resolve {"operator", "note"}`: close it with a note on what was done (400 without one). Blocks in force stay until they expire or are rolled back.
+- `GET /routing`: the contacts, rules and follow-up policy in use.
 - `GET /log-sources` and `POST /log-sources {"operator", "file_id", "layer"?}`: extra log files the collector watches; a file is added only by its id from the latest scan.
 
 ### Response shapes the contract leaves open
 
 - `/audit` returns `{"chain_valid", "first_invalid_seq", "count", "head_hash", "records": [{"seq","ts","type","data","prev_hash","hash"}]}`.
 - A notification has these fields: `id`, `incident`, `kind`, `title`, `text`, `recipients`, `risk_index`, `band`, `buttons`, `report_url`, `created_at`, `delivered`, `delivered_at`, `channel`, `message_id`, `deliveries`.
-  - `kind` is one of `incident_opened`, `needs_review`, `sla_reminder`, `escalation`, `autonomous_action`, `operator_action`, `needs_operator`, `action_expired` or `watchdog`.
+  - `deliver_to` lists `{id, name, email, telegram}` for each recipient found in the routing contacts, and `owner` is the incident's owner.
+  - `kind` is one of `incident_opened`, `needs_review`, `sla_reminder`, `escalated`, `assigned`, `resolve_reminder`, `escalation`, `autonomous_action`, `operator_action`, `needs_operator`, `action_expired` or `watchdog`.
   - `buttons` is a list of `[{label, action}]`, where `action` is one of `approve`, `reject`, `ack`, `rollback` or `permanent`.
-- Incidents have extra fields beyond the contract: `asset_criticality`, `malicious_probability`, `needs_review`, `contribution`, `time_unaddressed_hours`, `classification_reason`, `analyzed_by`, `notifications`, `timeline`, `decisions`, `ack_channel`. Actions also carry `verified`, `enforcement`, `applied_at`, `executed_by` and `proposed_by`.
+- Incidents have extra fields beyond the contract: `asset_criticality`, `malicious_probability`, `needs_review`, `contribution`, `time_unaddressed_hours`, `classification_reason`, `analyzed_by`, `notifications`, `timeline`, `decisions`, `ack_channel`, and the ownership fields `owner`, `owner_id`, `backup`, `backup_id`, `assigned_by`, `assigned_at`, `route`, `notify`, `escalation_level`, `escalations`, `resolved_by`, `resolution`. Actions also carry `verified`, `enforcement`, `applied_at`, `executed_by` and `proposed_by`.
 
 ### Operator verbs
 
@@ -236,6 +264,8 @@ Additions that do not change the contract:
 | `decision=reject` | Requires a justification (HTTP 400 without one). Sets the status to `rejected` and rolls back any active actions. |
 | `rollback` | Rolls back active actions. The incident becomes `acknowledged`, so its points count again but it will not be auto-contained. Returns 409 if nothing is active. |
 | `permanent` | Makes active or expired actions permanent (no expiry). The incident becomes `resolved`. |
+| `assign` | Makes someone the owner. A contact's backup comes from the contact book; someone outside it keeps the previous owner as backup. Tells the new owner unless they took it themselves. 409 on a closed incident. |
+| `resolve` | Requires a note (HTTP 400 without one). Acknowledges if needed and sets the status to `resolved`. |
 | `ack` | Records who acknowledged, when and on which channel. Freezes the inaction penalty. Idempotent. |
 
 ## Limitations

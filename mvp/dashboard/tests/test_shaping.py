@@ -126,3 +126,32 @@ def test_machine_rows():
 def test_demote_headings():
     out = sh.demote_headings("# Title\n## Sub\nnot # a heading\n")
     assert out.splitlines() == ["### Title", "#### Sub", "not # a heading"]
+
+
+def test_board_says_who_owns_what_and_what_needs_a_person():
+    incs = [
+        {"id": "A", "status": "open", "severity": "high", "owner": "Amir", "sla_breached": True, "acked": False,
+         "escalation_level": 1, "category": "brute_force", "opened_at": "2026-10-26T10:00:00+08:00"},
+        {"id": "B", "status": "acknowledged", "severity": "medium", "owner": "Lee", "acked": True, "category": "xss"},
+        {"id": "C", "status": "open", "severity": "critical", "owner": None, "acked": False, "category": "malware"},
+        {"id": "D", "status": "resolved", "severity": "high", "owner": "Lee", "resolved_by": "Lee"},
+    ]
+    assert sh.attention(incs[1]) == []  # acknowledged and owned: in hand
+    assert sh.attention(incs[0])[:2] == ["Overdue, nobody answered", "Escalated to Amir"]
+    assert sh.attention(incs[2])[0] == "No owner"
+    assert [i["id"] for i in sh.needs_attention(incs)] == ["C", "A"]
+    c = sh.board_counts(incs, me="lee")
+    assert (c["open"], c["attention"], c["overdue"], c["escalated"], c["unassigned"], c["mine"]) == (3, 2, 1, 1, 1, 1)
+    df = sh.board_rows(incs)
+    assert list(df["Incident"]) == ["C", "A", "B"] and list(df["Owner"]) == ["Nobody", "Amir", "Lee"]
+    assert list(df[df["Incident"] == "B"]["Needs"]) == ["In hand"]
+    assert "D" in list(sh.board_rows(incs, include_closed=True)["Incident"])
+
+
+def test_routing_tables_use_names():
+    routing = {"contacts": [{"id": "a", "name": "Amir", "role": "on_duty", "backup": "b"}, {"id": "b", "name": "Lee"}],
+               "rules": [{"name": "High", "match": {"severity": ["high"]}, "owner": "a", "notify": ["b"]},
+                         {"name": "Everything else", "match": {}, "owner": "a", "notify": []}]}
+    rules = sh.routing_rows(routing)
+    assert list(rules["When"]) == ["severity is high", "anything else"] and list(rules["Also told"]) == ["Lee", "-"]
+    assert list(sh.contact_rows(routing)["Backup"]) == ["Lee", "-"]

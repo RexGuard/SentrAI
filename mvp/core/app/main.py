@@ -54,6 +54,17 @@ class AckIn(BaseModel):
     channel: Optional[str] = "dashboard"
 
 
+class AssignIn(BaseModel):
+    operator: str
+    assignee: str
+    note: Optional[str] = None
+
+
+class ResolveIn(BaseModel):
+    operator: str
+    note: str
+
+
 class DeliveredIn(BaseModel):
     channel: str
     message_id: Optional[Union[str, int]] = None
@@ -274,6 +285,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/incidents/{iid}/permanent")
     def post_permanent(iid: str, body: OperatorIn) -> dict[str, Any]:
         return _verb(core.make_permanent, iid, body.operator, body.justification)
+
+    @app.post("/incidents/{iid}/assign")
+    def post_assign(iid: str, body: AssignIn) -> dict[str, Any]:
+        return _verb(core.assign, iid, body.assignee, body.operator, body.note)
+
+    @app.post("/incidents/{iid}/resolve")
+    def post_resolve(iid: str, body: ResolveIn) -> dict[str, Any]:
+        return _verb(core.resolve, iid, body.operator, body.note)
+
+    @app.get("/routing")
+    def get_routing() -> dict[str, Any]:
+        return core.routing_public()
 
     @app.post("/incidents/{iid}/ack")
     def post_ack(iid: str, body: AckIn) -> dict[str, Any]:
