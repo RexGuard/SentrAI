@@ -337,34 +337,6 @@ def locked(permission: str = "act") -> bool:
 
 def why_locked(permission: str = "act", otherwise: str | None = None) -> str | None:
     return READ_ONLY_MESSAGE if locked(permission) else otherwise
-    _, mid, _ = st.columns([1, 1.2, 1])
-    brand = BRAND
-    if not account["hash"] and not account["plain"]:
-        with mid.container(border=True):
-            st.markdown(brand, unsafe_allow_html=True)
-            st.warning("No dashboard sign-in is set up yet. On this machine, run "
-                       "`python cactai_config.py admin` (on a server: `sudo cactai-admin`), then reload this page.")
-        st.stop()
-    with mid.form("login"):
-        st.markdown(brand, unsafe_allow_html=True)
-        email = st.text_input("Email", autocomplete="username",
-                              placeholder=account["email"] if account["email"].endswith(".local") else "")
-        typed = st.text_input("Password", type="password", autocomplete="current-password")
-        if st.form_submit_button("Sign in", type="primary", width="stretch"):
-            ip = _client_ip()
-            wait = signin.wait_seconds(ip)
-            if wait:
-                st.error(f"Too many wrong tries. Wait {int(wait) // 60 + 1} min and try again.")
-            elif check_login(email, typed, account):
-                signin.succeeded(ip)
-                st.session_state.signed_in = account["email"]
-                st.rerun()
-            else:
-                signin.failed(ip)
-                st.error("Wrong email or password.")
-    st.stop()
-
-login()
 
 
 # ------------------------------------------------------------------ helpers
