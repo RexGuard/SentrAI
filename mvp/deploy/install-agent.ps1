@@ -82,7 +82,7 @@ $WinSWSha256 = "B5066B7BBDFBA1293E5D15CDA3CAAEA88FBEAB35BD5B38C41C913D492AADFC4F
 function Native {
     $ErrorActionPreference = "Continue"
     $exe = $args[0]
-    $rest = @($args | Select-Object -Skip 1)  # an array even for one argument (a string would splat letter by letter)
+    $rest = @($args | Select-Object -Skip 1)
     & $exe @rest
 }
 
@@ -131,6 +131,14 @@ function Find-Python {
     return $null
 }
 
+# Agents an older install left running: the venv launcher's child outlived the service stop.
+function Stop-LeftoverAgents {
+    $alive = @(Get-Process | ForEach-Object { $_.Id })
+    Get-CimInstance Win32_Process -Filter "Name = 'python.exe'" |
+        Where-Object { $_.CommandLine -like "*-m agent run*" -and ($_.ExecutablePath -like "$Prefix\*" -or $alive -notcontains $_.ParentProcessId) } |
+        ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+}
+
 # --- stop an older install while files change --------------------------------
 $existing = Get-Service -Name $ServiceId -ErrorAction SilentlyContinue
 if ($existing -and $existing.Status -ne "Stopped") {
@@ -138,6 +146,7 @@ if ($existing -and $existing.Status -ne "Stopped") {
     Stop-Service -Name $ServiceId -Force
     $existing.WaitForStatus("Stopped", [TimeSpan]::FromSeconds(30))
 }
+Stop-LeftoverAgents
 
 # --- folders (the machine key lives in $State: SYSTEM and Administrators only; what is
 #     created inside later inherits that) ---
@@ -169,6 +178,12 @@ if (-not (Test-Path $VenvPy)) {
     if ($LASTEXITCODE -ne 0) { Die "could not create the venv" }
     Native $VenvPy -m pip install -q --upgrade pip
 }
+# The service runs the venv's base interpreter with the venv's packages on PYTHONPATH. The venv's
+# own python.exe on Windows is only a launcher that starts the base one as a child, and that child
+# outlives a service stop (it kept running and kept its log files open).
+$home_ = (Get-Content (Join-Path $Venv "pyvenv.cfg") | Where-Object { $_ -match '^\s*home\s*=' } | Select-Object -First 1) -replace '^\s*home\s*=\s*', ''
+$BasePy = Join-Path $home_.Trim() "python.exe"
+if (-not (Test-Path $BasePy)) { Die "the venv's Python ($BasePy) is gone; delete $Venv and run the installer again" }
 $req = Join-Path $Mvp "lab\requirements.txt"
 $stamp = Join-Path $Venv "requirements.installed"
 $want = (Get-FileHash $req -Algorithm SHA256).Hash
@@ -235,6 +250,7 @@ $settings = [ordered]@{
     CACTAI_FIREWALL         = "netsh"
     CACTAI_FIREWALL_ENFORCE = $enforceValue
     PROTECTED_IPS           = $protected
+    PYTHONPATH              = (Join-Path $Venv "Lib\site-packages")
     PYTHONUNBUFFERED        = "1"
     PYTHONUTF8              = "1"
     PYTHONIOENCODING        = "utf-8"
@@ -249,7 +265,7 @@ $xml = @"
   <id>$ServiceId</id>
   <name>SentrAI agent</name>
   <description>Sends this machine's logs to the central SentrAI panel and applies its blocks in Windows Firewall.</description>
-  <executable>$(Esc $VenvPy)</executable>
+  <executable>$(Esc $BasePy)</executable>
   <arguments>-m agent run</arguments>
   <workingdirectory>$(Esc (Join-Path $Mvp "lab"))</workingdirectory>
   <startmode>Automatic</startmode>

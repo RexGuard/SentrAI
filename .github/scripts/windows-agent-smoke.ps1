@@ -59,6 +59,16 @@ try {
     if (-not (Select-String -Path $Xml -SimpleMatch 'name="CACTAI_FIREWALL_ENFORCE" value="1"' -Quiet)) { Fail "-Enforce was not saved" }
     if (-not (Select-String -Path $Xml -SimpleMatch '203.0.113.10' -Quiet)) { Fail "-Protect was lost on upgrade" }
     Wait-For "service is running after the upgrade" { (Get-Service SentrAIAgent).Status -eq "Running" }
+    # A service stop must stop the agent itself, not only the wrapper.
+    Stop-Service SentrAIAgent
+    Start-Sleep -Seconds 2
+    $left = @(Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like "*-m agent run*" })
+    if ($left) { Fail "the agent kept running after Stop-Service: $($left.CommandLine -join '; ')" }
+    Start-Service SentrAIAgent
+    Wait-For "the agent reports in again after a restart" {
+        $m = @(Invoke-RestMethod "$Panel/machines" -Headers $Headers) | Where-Object { $_.host -eq "ci-win" }
+        $m -and ([datetimeoffset]$m.last_seen).UtcDateTime -gt [datetime]::UtcNow.AddSeconds(-15)
+    }
     if (@(Invoke-RestMethod "$Panel/fleet/agents" -Headers $Headers).Count -ne 1) { Fail "the upgrade joined a second time" }
 
     # --- one real Windows Firewall block through the agent's own netsh commands ---
@@ -87,6 +97,8 @@ try {
 # --- uninstall: service, code and blocks go; the key stays until -Purge ---------
 & .\deploy\uninstall-agent.ps1
 if (Get-Service SentrAIAgent -ErrorAction SilentlyContinue) { Fail "service still installed" }
+$left = @(Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like "*-m agent run*" })
+if ($left) { Fail "the agent kept running after the service was removed: $($left.CommandLine -join '; ')" }
 if (Test-Path $Prefix) { Fail "$Prefix still there" }
 if (Get-NetFirewallRule -DisplayName "SentrAI-block-*" -ErrorAction SilentlyContinue) { Fail "block rules left behind" }
 if (-not (Test-Path (Join-Path $State "agent.json"))) { Fail "uninstall deleted the machine key without -Purge" }
