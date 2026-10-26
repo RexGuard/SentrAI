@@ -96,6 +96,30 @@ STATUS_LABELS = {
 
 CLASSIFIER_LABELS = {"rules": "Rules", "jev": "Jev (AI)", "fallback": "Fallback"}
 
+ACTION_LABELS = {
+    "block_ip": "Block IP",
+    "lock_user": "Lock account",
+    "rate_limit": "Rate limit",
+    "waf_rule": "Web firewall rule",
+    "kill_process": "Stop process",
+    "revoke_public_acl": "Make private again",
+}
+
+# Who decided: the two-key automatic path, or a person pressing Approve.
+MODE_LABELS = {"autonomous": "Automatic", "operator": "By a person"}
+
+
+def action_label(kind: Any) -> str:
+    if not kind or kind == "-":
+        return "-"
+    return ACTION_LABELS.get(str(kind), str(kind).replace("_", " ").capitalize())
+
+
+def mode_label(mode: Any) -> str:
+    if not mode or mode == "-":
+        return "-"
+    return MODE_LABELS.get(str(mode), str(mode).replace("_", " ").capitalize())
+
 
 def category_label(category: str | None) -> str:
     if not category:
@@ -287,11 +311,11 @@ def action_rows(inc: dict) -> pd.DataFrame:
     rows = [
         {
             "Action": a.get("action_id", "-"),
-            "Type": str(a.get("type", "-")).replace("_", " "),
+            "Type": action_label(a.get("type")),
             "Target": a.get("target", "-"),
-            "Mode": a.get("mode", "-"),
+            "Mode": mode_label(a.get("mode")),
             "Approved by": agent_label(a.get("approved_by", "-")),
-            "Status": a.get("status", "-"),
+            "Status": str(a.get("status") or "-").replace("_", " ").capitalize(),
             "Expires": expires_label(a.get("expires_at")) if a.get("status") == "active" else short_time(a.get("expires_at")),
             "Checked": check_text(a),
             "Undo": undo_text(a),
@@ -328,9 +352,9 @@ def build_containment_rows(blocklist: dict | None, incidents: Iterable[dict]) ->
                 {
                     "Kind": kind,
                     "Target": target,
-                    "Action": str(a.get("type", "block_ip" if kind == "IP" else "lock_user")).replace("_", " "),
+                    "Action": action_label(a.get("type", "block_ip" if kind == "IP" else "lock_user")),
                     "Incident": a.get("incident", "-"),
-                    "Mode": a.get("mode", "-"),
+                    "Mode": mode_label(a.get("mode")),
                     "Approved by": agent_label(a.get("approved_by", "-")),
                     "Expires": "permanent" if a.get("status") == "permanent" else expires_label(a.get("expires_at")),
                 }
@@ -343,9 +367,9 @@ def build_containment_rows(blocklist: dict | None, incidents: Iterable[dict]) ->
             {
                 "Kind": "Rule",
                 "Target": target,
-                "Action": str(a.get("type", "-")).replace("_", " "),
+                "Action": action_label(a.get("type")),
                 "Incident": a.get("incident", "-"),
-                "Mode": a.get("mode", "-"),
+                "Mode": mode_label(a.get("mode")),
                 "Approved by": agent_label(a.get("approved_by", "-")),
                 "Expires": expires_label(a.get("expires_at")),
             }
