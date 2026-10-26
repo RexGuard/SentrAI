@@ -247,6 +247,15 @@ def undo_text(a: dict) -> str:
     return "done" if undo.get("ok") else "unconfirmed"
 
 
+def incident_target(inc: dict) -> str:
+    """What the incident is about, in a few words: the blocked thing if there is one, else the source and host."""
+    acts = [a for a in inc.get("actions") or [] if isinstance(a, dict) and a.get("target")]
+    live = [a for a in acts if a.get("status") == "active"] or acts
+    who = str(live[-1]["target"]) if live else str(inc.get("src_ip") or "")
+    host = str(inc.get("host") or "")
+    return " on ".join(x for x in (who, host) if x) or "-"
+
+
 def action_rows(inc: dict) -> pd.DataFrame:
     rows = [
         {
