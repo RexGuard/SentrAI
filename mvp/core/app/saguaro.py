@@ -113,6 +113,30 @@ def raw_summary(raw: Any) -> dict[str, Any]:
             "raw_sha256": hashlib.sha256(text.encode("utf-8", "replace")).hexdigest()}
 
 
+def _host(obj: dict[str, Any]) -> str:
+    """The machine an event or incident belongs to."""
+    return str(obj.get("host") or "unknown")
+
+
+def service_of(ev: dict[str, Any]) -> str | None:
+    """Which service on the machine an event is about (nginx, sshd, ...), for the panel's per-service view."""
+    if ev.get("service"):
+        return str(ev["service"])
+    parsed = ev.get("parsed") if isinstance(ev.get("parsed"), dict) else {}
+    fmt, program = str(parsed.get("format") or ""), str(parsed.get("program") or "")
+    if fmt.startswith("nginx"):
+        return "nginx"
+    if program:
+        return "sshd" if program.startswith("sshd") else program
+    return str(ev.get("source") or "") or None
+
+
+def _score(raw: float) -> dict[str, Any]:
+    raw = round(raw, 1)
+    idx = risk_index(raw)
+    return {"risk_index": idx, "band": band(idx), "raw_score": raw}
+
+
 class Saguaro(Agent):
     name = "Warden"
     role = "lead orchestrator: routes events, merges findings, owns the risk index"
@@ -184,6 +208,10 @@ class Saguaro(Agent):
         self._above_threshold = False
         self._started_ts = self.clock.now()
         self._last_risk: dict[str, Any] = {"risk_index": 0, "band": "green", "raw_score": 0.0}
+        self._host_risk: dict[str, dict[str, Any]] = {}  # per machine, from _compute
+        self._host_seen: dict[str, float] = {}  # machine name -> clock time of its last event or heartbeat
+        self._host_history: dict[str, deque[dict[str, Any]]] = {}
+        self._host_services: dict[str, dict[str, Any]] = {}  # machine -> {"services": [...], "at": iso} from its agent
         self._reported: set[str] = set()
 
     def _next_incident_from_audit(self) -> int:
@@ -201,6 +229,7 @@ class Saguaro(Agent):
         return {
             "demo_speed": s.demo_speed,
             "threshold": s.threshold,
+            "risk_scope": s.risk_scope,
             "sla_hours": s.sla_hours,
             "ttl_hours": s.ttl_hours,
             "on_duty": s.on_duty,
@@ -257,6 +286,7 @@ class Saguaro(Agent):
                 if self.remote is not None:
                     self.remote.add_line(raw_ev)  # off the box as it arrives
                 self.events[ev["event_id"]] = {**ev, "category": None}
+                self._host_seen[str(ev["host"])] = now
                 recovered = self.watchdog.observe(str(ev["host"]), now, heartbeat)
                 if recovered:
                     self.scribe.record(self.watchdog.name, "collector_recovered", recovered)
@@ -299,6 +329,7 @@ class Saguaro(Agent):
             return
         needs_review = 0.4 <= cls.malicious <= 0.6
         key = ev.get("src_ip") or ev.get("user") or ev.get("host")
+        per_host = self.settings.risk_scope == "host"  # the same attacker on two machines is two incidents
         inc = next(
             (
                 i
@@ -306,11 +337,13 @@ class Saguaro(Agent):
                 if i["category"] == cls.category
                 and i["status"] in MERGE_STATUSES
                 and (i.get("src_ip") or i.get("user") or i.get("host")) == key
+                and (not per_host or _host(i) == _host(ev))
             ),
             None,
         )
         if inc is None:
             inc = self._open_incident(ev, cls, agent, needs_review, now)
+            inc.setdefault("service", service_of(ev))
         else:
             self._attach(inc, ev, cls, needs_review, now)
         self.scribe.record(
@@ -472,14 +505,33 @@ class Saguaro(Agent):
     def _compute(self, now: float) -> dict[str, Any]:
         for inc in self.incidents.values():
             self._refresh_incident(inc, now)
-        raw = round(sum(i["contribution"] for i in self.incidents.values()), 1)
-        idx = risk_index(raw)
-        self._last_risk = {"risk_index": idx, "band": band(idx), "raw_score": raw}
+        by_host: dict[str, float] = {}
+        for inc in self.incidents.values():
+            by_host[_host(inc)] = by_host.get(_host(inc), 0.0) + inc["contribution"]
+        self._host_risk = {h: _score(v) for h, v in by_host.items()}
+        if self.settings.risk_scope == "host":
+            # Each machine on its own: the headline is the worst machine, not the sum of all of them.
+            raw = max(by_host.values(), default=0.0)
+        else:
+            raw = sum(by_host.values())
+        self._last_risk = _score(raw)
         return self._last_risk
+
+    def _risk_of(self, inc: dict[str, Any]) -> int:
+        """The index containment compares with the threshold: the incident's own machine in host scope."""
+        if self.settings.risk_scope == "host":
+            return self._host_risk.get(_host(inc), _score(0.0))["risk_index"]
+        return self._last_risk["risk_index"]
 
     def _record_history(self, now: float) -> None:
         r = self._last_risk
-        self.history.append({"t": self.clock.iso(now), "risk_index": r["risk_index"], "raw": r["raw_score"], "band": r["band"]})
+        t = self.clock.iso(now)
+        self.history.append({"t": t, "risk_index": r["risk_index"], "raw": r["raw_score"], "band": r["band"]})
+        for h in {*self._host_risk, *self._host_seen}:
+            hr = self._host_risk.get(h) or _score(0.0)
+            if h not in self._host_history:
+                self._host_history[h] = deque(maxlen=self.settings.history_len)
+            self._host_history[h].append({"t": t, "risk_index": hr["risk_index"], "raw": hr["raw_score"], "band": hr["band"]})
 
     def tick(self) -> None:
         """Background step (every TICK_S real seconds)."""
@@ -542,6 +594,7 @@ class Saguaro(Agent):
                 i for i in self.incidents.values()
                 if i["status"] == "open" and not i["acked"] and not i["needs_review"]
                 and not i["_autonomous_denied"] and not self._active_actions(i, now)
+                and self._risk_of(i) >= self.settings.threshold
             ]
             if self.monitor_only:
                 for inc in candidates:
@@ -555,7 +608,7 @@ class Saguaro(Agent):
                                                              f"({inc['recommended_action']}), nothing applied")
                 candidates = []
             for inc in candidates:
-                self._contain(inc, "autonomous", self.needle.name, now, r["risk_index"])
+                self._contain(inc, "autonomous", self.needle.name, now, self._risk_of(inc))
             if candidates:
                 r = self._compute(now)
                 self._band_changes(now, r)
@@ -854,9 +907,28 @@ class Saguaro(Agent):
     def _active_actions(self, inc: dict[str, Any], now: float) -> list[dict[str, Any]]:
         return [a for a in inc["actions"] if self._is_active(a, now)]
 
-    def blocklist(self) -> dict[str, list[str]]:
+    def blocklist(self, host: str | None = None) -> dict[str, list[str]]:
+        """Everything blocked; with a host in host scope, only what that machine's agent must enforce.
+        In fleet scope every machine guards against every block, so the host makes no difference."""
         with self.lock:
-            return self.blocklist_responder.blocklist()
+            if host is None or self.settings.risk_scope != "host":
+                return self.blocklist_responder.blocklist()
+            now = self.clock.now()
+            ips: set[str] = set()
+            users: set[str] = set()
+            for a in self.actions:
+                if not (self._is_active(a, now) and a.get("verified")) or self._action_host(a) != host:
+                    continue
+                if a["type"] == "block_ip":
+                    ips.add(str(a["target"]))
+                elif a["type"] == "lock_user":
+                    users.add(str(a["target"]))
+            return {"ips": sorted(ips), "users": sorted(users)}
+
+    def _action_host(self, a: dict[str, Any]) -> str:
+        if a.get("host"):
+            return str(a["host"])
+        return _host(self.incidents.get(a["incident"]) or {})  # actions saved before they named a host
 
     def _end_action(self, a: dict[str, Any], status: str) -> None:
         """Every way an action stops (expired, rolled back) goes through here, so the responder undoes it."""
@@ -909,6 +981,7 @@ class Saguaro(Agent):
             aid = f"act-{self._next_action:04d}"
             self._next_action += 1
             a = executor.apply(p, inc["id"], aid, mode, approver, now, self.clock, s.ttl_hours, snap)
+            a["host"] = inc.get("host")  # the machine whose agent puts this block in place
             self.actions.append(a)
             inc["actions"].append(a)
             new_actions.append(a)
@@ -1177,7 +1250,7 @@ class Saguaro(Agent):
                 if self._active_actions(inc, now):
                     self._timeline(inc, now, "decision", "Containment already active; operator endorsed it")
                 else:
-                    self._contain(inc, "operator", operator, now, self._last_risk["risk_index"], justification)
+                    self._contain(inc, "operator", operator, now, self._risk_of(inc), justification)
             else:
                 raise BadRequestError("decision must be 'approve' or 'reject'")
             self._evaluate(now)
@@ -1246,11 +1319,11 @@ class Saguaro(Agent):
     def incident_public(self, inc: dict[str, Any]) -> dict[str, Any]:
         return public(inc)
 
-    def list_incidents(self) -> list[dict[str, Any]]:
+    def list_incidents(self, host: str | None = None) -> list[dict[str, Any]]:
         with self.lock:
             now = self.clock.now()
             self._compute(now)
-            return [public(i) for i in self.incidents.values()]
+            return [public(i) for i in self.incidents.values() if host is None or _host(i) == host]
 
     def get_incident(self, iid: str) -> dict[str, Any]:
         with self.lock:
@@ -1258,25 +1331,87 @@ class Saguaro(Agent):
             self._refresh_incident(inc, self.clock.now())
             return public(inc)
 
-    def risk(self, history: int = 600) -> dict[str, Any]:
+    def risk(self, history: int = 600, host: str | None = None) -> dict[str, Any]:
+        """The risk index. With a host: that one machine's own score, incidents and history."""
         with self.lock:
             now = self.clock.now()
             r = self._compute(now)
-            hist = list(self.history)[-history:] if history > 0 else []
-            return {
+            source = self.history
+            incs = list(self.incidents.values())
+            if host is not None:
+                r = self._host_risk.get(host) or _score(0.0)
+                source = self._host_history.get(host) or deque()
+                incs = [i for i in incs if _host(i) == host]
+            hist = list(source)[-history:] if history > 0 else []
+            out = {
                 "risk_index": r["risk_index"],
                 "band": r["band"],
                 "raw_score": r["raw_score"],
                 "threshold": self.settings.threshold,
-                "open_incidents": [i["id"] for i in self.incidents.values() if i["status"] in RISK_STATUSES],
-                "needs_review": [i["id"] for i in self.incidents.values() if i["needs_review"] and i["status"] in RISK_STATUSES],
-                "contained_incidents": [i["id"] for i in self.incidents.values() if i["status"] == "contained"],
+                "risk_scope": self.settings.risk_scope,
+                "open_incidents": [i["id"] for i in incs if i["status"] in RISK_STATUSES],
+                "needs_review": [i["id"] for i in incs if i["needs_review"] and i["status"] in RISK_STATUSES],
+                "contained_incidents": [i["id"] for i in incs if i["status"] == "contained"],
                 "monitor_only": self.monitor_only,
                 "demo_speed": self.settings.demo_speed,
                 "demo_hours_elapsed": round(self.clock.demo_hours(self._started_ts, now), 2),
                 "timestamp": self.clock.iso(now),
                 "history": hist,
             }
+            if host is not None:
+                out["host"] = host
+            return out
+
+    def set_services(self, host: str, services: list[dict[str, Any]]) -> dict[str, Any]:
+        """What runs on a machine (its agent reports it every minute): name, port, protocol, process."""
+        with self.lock:
+            self._host_seen.setdefault(host, self.clock.now())
+            self._host_services[host] = {"services": services[:200], "at": self.clock.iso(self.clock.now())}
+            return {"ok": True, "services": len(self._host_services[host]["services"])}
+
+    def _services_with_incidents(self, host: str, incs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """The machine's services, each with its open incidents; a service named only by an incident is listed too."""
+        out = [dict(x) for x in (self._host_services.get(host) or {}).get("services", [])]
+        for svc in out:
+            svc["open_incidents"] = 0
+        for inc in incs:
+            name = inc.get("service")
+            if not name or inc["status"] not in RISK_STATUSES:
+                continue
+            svc = next((x for x in out if x.get("name") == name), None)
+            if svc is None:
+                svc = {"name": name, "port": None, "proto": None, "process": None, "open_incidents": 0}
+                out.append(svc)
+            svc["open_incidents"] += 1
+        return out
+
+    def machines(self) -> list[dict[str, Any]]:
+        """Every machine SentrAI has heard from or opened an incident for, worst first."""
+        with self.lock:
+            now = self.clock.now()
+            self._compute(now)
+            silent = {c["collector"] for c in self.watchdog.collectors.values() if c["silent"]}
+            names = {*self._host_seen, *(_host(i) for i in self.incidents.values())}
+            out = []
+            for h in names:
+                r = self._host_risk.get(h) or _score(0.0)
+                incs = [i for i in self.incidents.values() if _host(i) == h]
+                seen = self._host_seen.get(h)
+                out.append({
+                    "host": h,
+                    "risk_index": r["risk_index"],
+                    "band": r["band"],
+                    "raw_score": r["raw_score"],
+                    "open_incidents": sum(1 for i in incs if i["status"] in RISK_STATUSES),
+                    "contained_incidents": sum(1 for i in incs if i["status"] == "contained"),
+                    "blocked": len(self.blocklist(h)["ips"]),
+                    "last_seen": self.clock.iso(seen) if seen is not None else None,
+                    "silent": h in silent,
+                    "services": self._services_with_incidents(h, incs),
+                    "services_at": (self._host_services.get(h) or {}).get("at"),
+                })
+            out.sort(key=lambda m: (-m["risk_index"], m["host"]))
+            return out
 
     def why(self, iid: str) -> str:
         with self.lock:
