@@ -352,18 +352,19 @@ for f in "$MVP"/lab/scout/trails/*.jsonl; do
 done
 
 hash_file() { sha256sum "$1" | cut -d' ' -f1; }
+PIP_HELP="could not download the Python packages (pip's message is above). This server must reach pypi.org over HTTPS; fix that, then run this again (it picks up where it stopped)."
 for c in core lab dashboard notifier; do
     dir="$MVP/$c"
     if [ ! -x "$dir/.venv/bin/python" ]; then
         echo "Creating venv for $c ..."
-        "$PYTHON" -m venv "$dir/.venv"
-        "$dir/.venv/bin/python" -m pip install -q --upgrade pip
+        "$PYTHON" -m venv "$dir/.venv" || die "could not create the Python environment in $dir/.venv"
+        "$dir/.venv/bin/python" -m pip install -q --upgrade pip || { rm -rf "$dir/.venv"; die "$PIP_HELP"; }
     fi
     want="$(hash_file "$dir/requirements.txt")"
     have="$(cat "$dir/.venv/requirements.installed" 2>/dev/null || true)"
     if [ "$want" != "$have" ]; then
         echo "Installing packages for $c ..."
-        "$dir/.venv/bin/python" -m pip install -q -r "$dir/requirements.txt"
+        "$dir/.venv/bin/python" -m pip install -q -r "$dir/requirements.txt" || die "$PIP_HELP"
         echo "$want" > "$dir/.venv/requirements.installed"
     fi
     "$dir/.venv/bin/python" -m compileall -q "$dir" -x '/\.venv/' >/dev/null || true
@@ -470,7 +471,7 @@ if [ "$PANEL" = off ]; then
     [ -n "$old" ] && open_panel_port "$old" remove
     sed -i '/^SENTRAI_PANEL_/d' "$ENV_FILE"
 elif [ -n "$PANEL" ]; then
-    command -v openssl >/dev/null 2>&1 || die "openssl is needed for the panel's HTTPS port"
+    command -v openssl >/dev/null 2>&1 || die "openssl is needed for the panel's HTTPS port (Debian/Ubuntu: apt install openssl)"
     install -d -o root -g "$SVC_USER" -m 0750 "$TLS"
     if [ ! -f "$TLS/panel-cert.pem" ]; then
         # Named after the address agents use (--panel-url), else this server's name. Agents check the pin,
