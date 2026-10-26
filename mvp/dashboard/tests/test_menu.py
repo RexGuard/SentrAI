@@ -56,8 +56,8 @@ def test_risk_breakdown_counts_only_active_incidents():
 APP = str(Path(__file__).resolve().parents[1] / "app.py")
 
 
-@pytest.mark.parametrize("page", ["config", "approvals", "staff", "chat", "collector", "classifier", "responder", "review",
-                                  "reports", "audit"])
+@pytest.mark.parametrize("page", ["config", "approvals", "staff", "chat", "collector", "classifier", "responder", "machines",
+                                  "review", "reports", "audit"])
 def test_every_page_renders(fake_core, page, tmp_path, monkeypatch):
     from streamlit.testing.v1 import AppTest
 
@@ -383,6 +383,20 @@ def test_staff_report_page_sends_without_sign_in(fake_core, tmp_path, monkeypatc
     assert any("reached the security team" in s.value for s in at.success)
     reports = requests.get(f"{fake_core}/staff-reports", timeout=3).json()["reports"]
     assert reports[0]["reporter"] == "Mei" and reports[0]["channel"] == "dashboard"
+    assert reports[0]["host"] is None  # "Not sure" sends no machine
+
+
+def test_staff_report_page_names_the_machine(fake_core, tmp_path, monkeypatch):
+    at = _report_page(fake_core, tmp_path, monkeypatch)
+    picker = at.selectbox[0]
+    assert picker.label == "Which computer is it about?" and "office-pc" in picker.options
+    at.text_area[0].input("The office PC keeps opening pop-ups about a prize.")
+    picker.select("office-pc")
+    at.button[0].click().run()
+    assert not at.exception, at.exception
+    r = requests.get(f"{fake_core}/staff-reports", timeout=3).json()["reports"][0]
+    assert r["host"] == "office-pc"
+    assert requests.get(f"{fake_core}/incidents/{r['incident']}", timeout=3).json()["host"] == "office-pc"
 
 
 def test_staff_report_page_asks_for_the_code_when_set(fake_core, tmp_path, monkeypatch):

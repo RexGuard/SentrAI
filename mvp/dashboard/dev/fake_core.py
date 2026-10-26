@@ -8,7 +8,7 @@ NOT the real core. In-memory, single process, plays a scripted demo scenario:
 Run:  .venv\\Scripts\\python dev\\fake_core.py   (serves http://127.0.0.1:8900)
 Env:  FAKE_CORE_PORT (8900, so it never collides with the real core on 8000), FAKE_DEMO_SPEED (120 = 30 real s per demo hour),
       FAKE_TTL_SECONDS (300 real s before containment expires),
-      FAKE_AUTOPLAY (1), FAKE_THRESHOLD (80)
+      FAKE_AUTOPLAY (1), FAKE_THRESHOLD (80), FAKE_RISK_SCOPE (host: a central panel with two joined machines; fleet)
 Extra dev-only endpoints: POST /dev/trigger/{category}?src_ip=..&user=.., POST /dev/reset
 """
 from __future__ import annotations
@@ -32,6 +32,7 @@ AUTOPLAY = os.environ.get("FAKE_AUTOPLAY", "1") != "0"
 SLA_HOURS = 2.0
 TTL_SECONDS = float(os.environ.get("FAKE_TTL_SECONDS", "300"))
 BASELINE_RAW = 5.0
+RISK_SCOPE = "fleet" if os.environ.get("FAKE_RISK_SCOPE", "host") == "fleet" else "host"
 
 SEVERITY = {
     "brute_force": ("high", 30), "sql_injection": ("high", 40), "xss": ("medium", 20),
@@ -98,6 +99,13 @@ class State:
         self.threats: dict | None = None
         self.quarantine: list[dict] = []
         self.pending: list[dict] = []  # Scout proposals; seed one with POST /_fake/scout-proposal
+        # Machines joined to this (pretend) central panel: web-01 has the scripted incidents, office-pc is quiet.
+        self.agents: dict[str, dict] = {
+            "a1b2c3": {"agent_id": "a1b2c3", "host": "web-01", "joined_at": iso(now()), "invited_by": "erick",
+                       "last_seen": iso(now()), "revoked_at": None, "revoked_by": None},
+            "d4e5f6": {"agent_id": "d4e5f6", "host": "office-pc", "joined_at": iso(now()), "invited_by": "erick",
+                       "last_seen": iso(now()), "revoked_at": None, "revoked_by": None},
+        }
         self.staff_reports: list[dict] = []
 
 
@@ -281,13 +289,67 @@ def risk():
         idx = risk_index()
         return {"risk_index": idx, "band": band(idx), "raw_score": round(raw_score(), 1), "threshold": THRESHOLD,
                 "open_incidents": [i for i, v in S.incidents.items() if v["status"] in ("open", "acknowledged")],
-                "monitor_only": S.protection["monitor_only"], "history": S.history}
+                "monitor_only": S.protection["monitor_only"], "history": S.history, "risk_scope": RISK_SCOPE}
 
 
 @app.get("/incidents")
-def incidents():
+def incidents(host: str | None = None):
     with lock:
-        return list(S.incidents.values())
+        return [i for i in S.incidents.values() if host is None or i["host"] == host]
+
+
+@app.get("/machines")
+def machines():
+    with lock:
+        idx = risk_index()
+        for a in S.agents.values():
+            if not a["revoked_at"]:
+                a["last_seen"] = iso(now())
+        out = []
+        for h in sorted({"web-01", *(a["host"] for a in S.agents.values() if not a["revoked_at"])}):
+            incs = [i for i in S.incidents.values() if i["host"] == h]
+            hi = idx if h == "web-01" else 0
+            out.append({"host": h, "risk_index": hi, "band": band(hi), "raw_score": 0.0,
+                        "open_incidents": sum(i["status"] in ("open", "acknowledged") for i in incs),
+                        "contained_incidents": sum(i["status"] == "contained" for i in incs),
+                        "blocked": len(blocklist()["ips"]) if h == "web-01" else 0,
+                        "last_seen": iso(now()), "silent": False,
+                        "services": FAKE_SERVICES.get(h, []) if h != "web-01" else [
+                            {**x, "open_incidents": sum(1 for i in incs if i["status"] in ("open", "acknowledged"))
+                             if x["name"] == "web" else 0} for x in FAKE_SERVICES["web-01"]]})
+        return sorted(out, key=lambda m: -m["risk_index"])
+
+
+FAKE_SERVICES = {
+    "web-01": [{"name": "sshd", "port": 22, "proto": "tcp", "process": "sshd"},
+               {"name": "web", "port": 443, "proto": "tcp", "process": "nginx"},
+               {"name": "mysql", "port": 3306, "proto": "tcp", "process": "mysqld"}],
+    "office-pc": [{"name": "rdp", "port": 3389, "proto": "tcp", "process": "svchost.exe"}],
+}
+
+
+@app.get("/fleet/agents")
+def fleet_agents():
+    with lock:
+        return list(S.agents.values())
+
+
+@app.post("/fleet/join-codes")
+def fleet_join_code(body: dict = Body(...)):
+    with lock:
+        audit("join_code_created", "Warden", operator=body.get("operator"), name=body.get("name"))
+    return {"code": "K7QM-2XPA-9RTD", "expires_at": iso(now() + timedelta(hours=24)), "name": body.get("name") or None}
+
+
+@app.post("/fleet/agents/{agent_id}/revoke")
+def fleet_revoke(agent_id: str, body: dict = Body(...)):
+    with lock:
+        a = S.agents.get(agent_id)
+        if a is None:
+            raise HTTPException(404, f"no machine with id {agent_id}")
+        a.update(revoked_at=iso(now()), revoked_by=body.get("operator"))
+        audit("machine_revoked", "Warden", agent_id=agent_id, host=a["host"])
+        return a
 
 
 @app.get("/incidents/{iid}")
@@ -595,9 +657,10 @@ def post_staff_report(body: dict = Body(...)):
         high = any(w in text.lower() for w in ("clicked", "typed my password", "paid", "locked"))
         inc = open_incident("staff_report", None, body.get("reporter") or "anonymous", 1.0, 1.5 if high else 1.0, "rules")
         inc["needs_review"] = True
+        inc["host"] = body.get("host") or inc["host"]
         r = {"id": rid, "received_at": iso(now()), "channel": body.get("channel") or "api",
              "reporter": body.get("reporter") or "anonymous", "contact": body.get("contact") or None,
-             "where": body.get("where") or None, "text": text, "status": "new", "assignee": None,
+             "where": body.get("where") or None, "host": body.get("host") or None, "text": text, "status": "new", "assignee": None,
              "incident": inc["id"], "notes": [], "kind_label": "Suspicious email, message or link",
              "triage": {"kind": "phishing", "urgency": "high" if high else "medium",
                         "summary": text.split(".")[0][:160], "advice": FAKE_ADVICE, "by": "keywords",

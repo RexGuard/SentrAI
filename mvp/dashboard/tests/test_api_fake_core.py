@@ -64,6 +64,6 @@ def test_protection_switch(fake_core):
     requests.post(f"{fake_core}/dev/reset", timeout=3)
 
 
-def test_machine_names_is_empty_without_a_central_panel(fake_core):
-    from cactai_ui.api import CoreClient
-    assert CoreClient(fake_core).machine_names() == []  # no GET /machines here: the report form shows no picker
+def test_machine_names_for_the_report_form(fake_core):
+    assert {"web-01", "office-pc"} <= set(CoreClient(fake_core).machine_names())
+    assert CoreClient("http://127.0.0.1:9", timeout=0.3).machine_names() == []  # no list: the form shows no picker
