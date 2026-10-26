@@ -2,7 +2,6 @@
 
 Run:  .venv\\Scripts\\python make_assets.py   (from mvp\\assets)
 """
-import math
 import re
 from pathlib import Path
 

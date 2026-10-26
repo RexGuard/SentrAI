@@ -47,4 +47,4 @@ def ev(n, raw, ip="203.0.113.45", user="admin", layer="web", crit=1.5, host="web
 
 
 def brute_force(client, ip="203.0.113.45", start=0, count=5):
-    return [client.post("/events", json=ev(start + i, f"POST /login 401 user=admin", ip=ip)).json() for i in range(count)]
+    return [client.post("/events", json=ev(start + i, "POST /login 401 user=admin", ip=ip)).json() for i in range(count)]

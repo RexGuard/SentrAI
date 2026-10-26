@@ -45,7 +45,7 @@ from core import Core, CoreError
 from direct import Target, deliver, group_mode, plan, receipts
 from emailer import EmailConfig, email_sender
 from slack import slack_from_env, with_slack
-from formatting import (APPROVE, PERMANENT, REJECT, ROLLBACK, TAKE, button_specs, format_console,
+from formatting import (APPROVE, REJECT, ROLLBACK, TAKE, button_specs, format_console,
                         format_telegram, incident_id_of, parse_callback, witness_of)
 
 log = logging.getLogger("cactai.notifier")
