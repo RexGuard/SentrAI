@@ -59,6 +59,7 @@ TITLES = {
     "log_tampering": "Log tampering",
     "malware": "Malware found",
     "prompt_injection": "Prompt injection",
+    "staff_report": "Staff report",
 }
 
 BUTTONS_DECIDE = [
@@ -1014,6 +1015,26 @@ class Saguaro(Agent):
                     self._contain(inc, "operator", operator, now, self._last_risk["risk_index"], justification)
             else:
                 raise BadRequestError("decision must be 'approve' or 'reject'")
+            self._evaluate(now)
+            return self.incident_public(inc)
+
+    def resolve(self, iid: str, operator: str, justification: str) -> dict[str, Any]:
+        """Close an incident a person dealt with by hand (no hotpatch to keep), such as a staff report."""
+        with self.lock:
+            inc = self._get(iid)
+            now = self.clock.now()
+            if inc["status"] in CLOSED_STATUSES:
+                raise ConflictError(f"{iid} is already {inc['status']}")
+            if not (justification or "").strip():
+                raise BadRequestError("resolve requires a justification")
+            self._set_acked(inc, operator, "decision", now)
+            inc["status"] = "resolved"
+            inc["closed_at"] = self.clock.iso(now)
+            inc["decisions"].append({"operator": operator, "decision": "resolve", "justification": justification,
+                                     "at": inc["closed_at"]})
+            self.scribe.record(self.name, "decision", {"incident": iid, "operator": operator, "decision": "resolve",
+                                                       "justification": justification})
+            self._timeline(inc, now, "decision", f"Resolved by {operator}: {justification}", -inc["points"])
             self._evaluate(now)
             return self.incident_public(inc)
 

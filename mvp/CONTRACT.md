@@ -90,10 +90,11 @@ missing run of events or one that does not follow its predecessor becomes an `au
 
 ### Categories (exact strings)
 `benign, brute_force, sql_injection, xss, port_scan, privilege_escalation, data_exfiltration, misconfiguration, log_tampering, malware, prompt_injection`
+(`staff_report` is also an incident category, but only a staff report makes it; classifiers never return it.)
 
 ### Severity → base points
 low 5-10, medium 15-25, high 30-45, critical 50-70. Default mapping:
-brute_force=high(30), sql_injection=high(40), xss=medium(20), port_scan=medium(15), privilege_escalation=critical(60), data_exfiltration=critical(70), misconfiguration=medium(20), log_tampering=critical(55), malware=critical(65), prompt_injection=critical(60), benign=0.
+brute_force=high(30), sql_injection=high(40), xss=medium(20), port_scan=medium(15), privilege_escalation=critical(60), data_exfiltration=critical(70), misconfiguration=medium(20), log_tampering=critical(55), malware=critical(65), prompt_injection=critical(60), staff_report=medium(20, times 1.5 / 1 / 0.5 for high / medium / low urgency), benign=0.
 
 ### Risk index
 `risk_index = round(100 * (1 - exp(-raw/60)))`, raw = sum of open incident points (base × ai_confidence × asset_criticality) + inaction penalty (+5 per hour unacknowledged, capped +30 per incident) − resolved incidents.
@@ -145,6 +146,10 @@ that signature (HMAC of the path with the token), which fits that one report onl
 | POST | `/threats/{id}/quarantine` | `{"operator", "reason": optional}`: moves that file (by finding id, only if unchanged since the scan) into quarantine; audited as `file_quarantined` |
 | GET | `/quarantine` | files in quarantine: `[{"id","name","original","sha256","finding","operator","at"}]` |
 | POST | `/quarantine/{id}/restore` | `{"operator"}`: puts the file back; audited as `file_restored` |
+| POST | `/staff-reports` | `{"text", "reporter", "contact", "where", "channel", "sender"}` (only `text` required, 10-4000 characters; `sender` is the reporter's address or chat id for the limit of 5 per 10 minutes) → `{"id","status","kind","kind_label","urgency","advice"}`, the answer for the reporter. 400 for too little text, 429 when the limit is hit. Sorted by the AI model or keyword rules, ingested as an event with `source: "staff_report"` (category `staff_report`, needs review, never contained); audited as `staff_report_received` |
+| GET | `/staff-reports?status=` | `{"reports": [...newest first], "counts": {"new","reviewing","resolved","not_a_threat"}}`; `status` filters, `open` = new + reviewing. A report: `{"id","received_at","channel","reporter","contact","where","text","triage": {"kind","urgency","summary","advice","for_tech","by": "ai" \| "keywords"},"status","assignee","incident","notes","history","kind_label"}` |
+| GET | `/staff-reports/{id}` | one report |
+| POST | `/staff-reports/{id}` | `{"operator", "status": optional, "assignee": optional, "note": optional}`. Status `new`, `reviewing`, `resolved` or `not_a_threat`; closing needs a note. An assignee or note on a new report makes it `reviewing` and acknowledges its incident; closing the last open report on an incident resolves it (or rejects it when every report was `not_a_threat`). Audited as `staff_report_updated` |
 | GET | `/log-sources` | extra log files the collector watches (approved from a process scan, or from Scout) |
 | GET | `/log-sources/pending` | Scout proposals waiting for an operator: `[{"id","name","path","layer","format","why","goal","proposed_at"}]` |
 | POST | `/log-sources/pending/{id}` | `{"operator", "approve": bool, "layer": optional, "reason": optional}`: approve adds the file to the collector list, reject drops it; audited as `log_source_added` / `log_source_rejected` |

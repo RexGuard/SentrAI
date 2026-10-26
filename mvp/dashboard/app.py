@@ -92,6 +92,72 @@ def _client_ip() -> str:
     return ip if isinstance(ip, str) and ip else "local"  # a test run has no real address
 
 
+# ------------------------------------------------------------------ staff report page (no sign-in)
+
+def report_page() -> None:
+    """The open page staff use to report something suspicious: <dashboard address>/?report.
+
+    No sign-in, and it shows nothing from SentrAI: it only sends the report (with this console's API
+    token) and shows the reporter what to do now. The core caps how often one address may send.
+    CACTAI_REPORT_CODE asks for a shared code first (put it on the staff noticeboard);
+    CACTAI_REPORT_PAGE=off turns the page off.
+    """
+    _, mid, _ = st.columns([1, 2, 1])
+    with mid:
+        st.markdown(BRAND, unsafe_allow_html=True)
+        if os.environ.get("CACTAI_REPORT_PAGE", "on").strip().lower() in ("off", "0", "no", "false"):
+            st.info("Reporting from this page is turned off. Please tell your IT contact directly.")
+            return
+        done = st.session_state.get("report_sent")
+        if done:
+            st.success(f"Thank you. Your report {done['id']} reached the security team.", icon=":material/check_circle:")
+            st.markdown(f"**It sounds like:** {html.escape(done.get('kind_label') or 'something to check')}"
+                        + (" · **treated as urgent**" if done.get("urgency") == "high" else ""))
+            st.markdown("**What to do now**\n\n" + "\n".join(f"1. {html.escape(a)}" for a in done.get("advice") or []))
+            st.caption("Someone will look at it and may contact you. If it gets worse, tell your manager or IT contact.")
+            if st.button("Report something else", icon=":material/add:"):
+                st.session_state.pop("report_sent", None)
+                st.rerun()
+            return
+        st.markdown("### Report something suspicious")
+        st.caption("Seen a strange email, a pop-up, a login you didn't make, or a stranger near the computers? "
+                   "Tell us in your own words. You don't need to be sure; it is always fine to report.")
+        code_needed = os.environ.get("CACTAI_REPORT_CODE", "").strip()
+        with st.form("staff_report", clear_on_submit=False):
+            text = st.text_area("What did you notice?", height=150, max_chars=4000,
+                                placeholder="e.g. I got an email from 'IT support' asking me to confirm my password. "
+                                            "I clicked the link but did not type anything.")
+            a, b = st.columns(2)
+            reporter = a.text_input("Your name (optional)", max_chars=120)
+            where = b.text_input("Where? (computer, room or account)", max_chars=120,
+                                 placeholder="e.g. front desk PC")
+            contact = st.text_input("How can we reach you? (optional)", max_chars=120,
+                                    placeholder="phone, email or extension")
+            code = st.text_input("Report code (on the staff noticeboard)", type="password") if code_needed else ""
+            if st.form_submit_button("Send report", type="primary", icon=":material/send:", width="stretch"):
+                if code_needed and not hmac.compare_digest(code.strip().encode(), code_needed.encode()):
+                    st.error("That report code is not right. Ask your manager for it.")
+                elif len(text.strip()) < 10:
+                    st.error("Please describe what you saw in a sentence or two.")
+                else:
+                    try:
+                        with st.spinner("Sending..."):
+                            sent = CoreClient(st.session_state.get("core_url") or DEFAULT_CORE, token=cfg.api_token()) \
+                                .report_suspicious(text, reporter, contact, where, sender=_client_ip())
+                        st.session_state.report_sent = sent
+                        st.rerun()
+                    except CoreError as exc:
+                        if exc.status in (400, 429):
+                            st.error(str(exc).split(": ", 1)[-1])
+                        else:
+                            st.error("The report could not be sent right now. Please tell your IT contact directly.")
+
+
+if "report" in st.query_params:
+    report_page()
+    st.stop()
+
+
 def check_login(email: str, password: str, account: dict[str, str]) -> bool:
     if not hmac.compare_digest(email.strip().lower().encode(), account["email"].strip().lower().encode()):
         cfg.check_password(password, cfg.hash_password("x"))  # same work either way, so timing tells nothing
@@ -238,7 +304,7 @@ AUDIT_WINDOW = 500  # latest records the dashboard reads; the core still verifie
 def _get(base_url: str, what: str) -> Any:
     c = CoreClient(base_url, token=TOKEN)
     return {"risk": c.risk, "incidents": c.incidents, "blocklist": c.blocklist, "agents": c.agents,
-            "audit": lambda: c.audit(AUDIT_WINDOW)}[what]()
+            "audit": lambda: c.audit(AUDIT_WINDOW), "staff": c.staff_reports}[what]()
 
 
 def fetch(what: str, default: Any = None) -> tuple[Any, str | None]:
@@ -277,6 +343,7 @@ if "page" not in st.session_state:  # land on what needs a person; a new machine
 
 PAGES = {  # key: (Material icon, label, menu group)
     "approvals": ("approval_delegation", "Approvals", "Decide"),
+    "staff": ("campaign", "Staff reports", "Decide"),
     "chat": ("forum", "Chat", "Decide"),
     "collector": ("input", "Collector", "Pipeline"),
     "classifier": ("category", "Classifier", "Pipeline"),
@@ -328,7 +395,9 @@ def menu() -> None:
     page, seen = st.session_state.page, st.session_state.seen
     if page in sh.ALERT_TYPES:  # whatever arrives while you look at a page counts as seen
         seen[page] = sh.head_seq(records)
-    bubbles = {**sh.unseen_counts(records, seen), "approvals": len(sh.pending_approvals(incidents or []))}
+    staff, _ = fetch("staff", {})
+    bubbles = {**sh.unseen_counts(records, seen), "approvals": len(sh.pending_approvals(incidents or [])),
+               "staff": int(((staff or {}).get("counts") or {}).get("new") or 0)}
 
     side_risk()
     group = None
@@ -860,8 +929,127 @@ def page_approvals() -> None:
         title = f"{verb} · {inc.get('id')} · {sh.category_label(inc.get('category'))} · {sh.incident_contribution(inc)} pts"
         with st.expander(title, expanded=n == 0):
             incident_summary(inc)
+            if inc.get("category") == "staff_report":
+                st.info("Someone at the business reported this. Read it and close it with a note under Staff reports; "
+                        "closing every report on it closes this incident too.", icon=":material/campaign:")
+                if st.button("Open Staff reports", key=f"to_staff_{inc.get('id')}", icon=":material/arrow_forward:"):
+                    go("staff")
             decision_controls(inc)
             table(sh.action_rows(inc), "No containment actions yet.")
+
+
+STAFF_FILTERS = {"Open": "open", "New": "new", "Reviewing": "reviewing", "Resolved": "resolved",
+                 "Not a threat": "not_a_threat", "All": None}
+STAFF_STATUS = {"new": ("New", "amber"), "reviewing": ("Reviewing", "green"), "resolved": ("Resolved", None),
+                "not_a_threat": ("Not a threat", None)}
+URGENCY_COLOR = {"high": "critical", "medium": "amber", "low": "green"}
+
+
+def report_link() -> str:
+    """The open report page's address, from the address this console was opened on."""
+    try:
+        base = str(st.context.url or "").split("?", 1)[0].rstrip("/")
+    except Exception:  # noqa: BLE001 - no browser behind this run
+        base = ""
+    return f"{base or 'http://<this dashboard>'}/?report"
+
+
+@st.fragment(run_every=AUTO)
+def page_staff() -> None:
+    show_flash()
+    if header("Staff reports", "what people at the business flagged · a person reads and closes each one") is None:
+        return
+    data, err = fetch("staff", {})
+    if err:
+        st.warning(f"Could not load staff reports: {err}")
+    data = data or {}
+    counts = data.get("counts") or {}
+    stats(("New", str(counts.get("new", 0)), "nobody has picked these up",
+           sh.BAND_COLORS["amber"] if counts.get("new") else None),
+          ("Reviewing", str(counts.get("reviewing", 0)), "someone is on it"),
+          ("Resolved", str(counts.get("resolved", 0)), "real problems dealt with"),
+          ("Not a threat", str(counts.get("not_a_threat", 0)), "checked and harmless"))
+    with st.container(border=True):
+        section("Share the report page", "no sign-in; it shows nothing from SentrAI", "share")
+        st.markdown(f"Staff can report from {code(report_link())}. Put it on the noticeboard or in the staff chat. "
+                    "Each report is sorted straight away (the AI model when one is set up, keywords otherwise), "
+                    "tells the reporter what to do now, and opens a *needs review* incident that is never "
+                    "acted on automatically.", unsafe_allow_html=True)
+    choice = st.segmented_control("Show", list(STAFF_FILTERS), default="Open", key="staff_filter") or "Open"
+    want = STAFF_FILTERS[choice]
+    reports = [r for r in data.get("reports") or [] if want is None or r.get("status") == want
+               or (want == "open" and r.get("status") in ("new", "reviewing"))]
+    if not reports:
+        empty("No staff reports here." if choice != "Open" else "No open staff reports. All quiet.", "campaign",
+              good=choice == "Open")
+        return
+    for n, r in enumerate(reports):
+        tri = r.get("triage") or {}
+        label, _ = STAFF_STATUS.get(str(r.get("status")), (str(r.get("status")), None))
+        title = (f"{r.get('id')} · {r.get('kind_label') or tri.get('kind')} · {str(tri.get('urgency', '')).capitalize()} · "
+                 f"{r.get('reporter') or 'anonymous'} · {label}")
+        with st.expander(title, expanded=n == 0 and r.get("status") == "new"):
+            staff_report_detail(r)
+
+
+def staff_report_detail(r: dict) -> None:
+    tri = r.get("triage") or {}
+    rid = str(r.get("id"))
+    label, color = STAFF_STATUS.get(str(r.get("status")), (str(r.get("status")), None))
+    urg = str(tri.get("urgency") or "medium")
+    st.markdown(
+        '<div class="inc-head">'
+        f'<span class="inc-id">{html.escape(rid)}</span>'
+        f'{pill(urg.capitalize() + " urgency", sh.BAND_COLORS[URGENCY_COLOR.get(urg, "amber")])}'
+        f'{pill(label, sh.BAND_COLORS[color] if color else sh.TEXT_SECONDARY)}'
+        + (pill(f"With {r['assignee']}", sh.TEXT_SECONDARY) if r.get("assignee") else "")
+        + '</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="detail-grid">'
+        f'<div><span>Reported by</span><b>{html.escape(str(r.get("reporter") or "anonymous"))}</b></div>'
+        f'<div><span>Contact</span><b>{html.escape(str(r.get("contact") or "-"))}</b></div>'
+        f'<div><span>Where</span><b>{html.escape(str(r.get("where") or "-"))}</b></div>'
+        f'<div><span>Received</span><b>{html.escape(sh.short_time(r.get("received_at")))} · '
+        f'{html.escape(str(r.get("channel") or "-"))}</b></div>'
+        f'<div><span>Sorted by</span><b>{"AI model" if tri.get("by") == "ai" else "Keyword rules"}</b></div>'
+        f'<div><span>Incident</span><b>{html.escape(str(r.get("incident") or "-"))}</b></div>'
+        '</div>', unsafe_allow_html=True)
+    section("What they wrote", "", "chat")
+    st.text(str(r.get("text") or ""))
+    left, right = st.columns(2)
+    with left:
+        section("Summary", "", "summarize")
+        st.markdown(html.escape(str(tri.get("summary") or "-")))
+        section("Check first", "", "search")
+        st.markdown(html.escape(str(tri.get("for_tech") or "-")))
+    with right:
+        section("What the reporter was told", "", "support_agent")
+        st.markdown("\n".join(f"1. {html.escape(str(a))}" for a in tri.get("advice") or []) or "-")
+    if r.get("notes"):
+        section("Notes", "", "sticky_note_2")
+        for note in r["notes"]:
+            st.markdown(f"**{html.escape(str(note.get('by')))}** · {html.escape(sh.short_time(note.get('at')))}  \n"
+                        f"{html.escape(str(note.get('text')))}")
+    if r.get("status") not in ("new", "reviewing"):
+        return
+    with st.form(f"staff_{rid}", border=False):
+        a, b = st.columns([1, 2])
+        who = a.text_input("Handled by", value=r.get("assignee") or st.session_state.operator, key=f"sa_{rid}")
+        note = b.text_input("Note", key=f"sn_{rid}", placeholder="What you found or did (needed to close)")
+        c1, c2, c3 = st.columns(3)
+        save = c1.form_submit_button("Save", icon=":material/save:", width="stretch")
+        resolve = c2.form_submit_button("Resolved", icon=":material/task_alt:", type="primary", width="stretch")
+        harmless = c3.form_submit_button("Not a threat", icon=":material/do_not_disturb_on:", width="stretch")
+    status = "resolved" if resolve else "not_a_threat" if harmless else None
+    if save or status:
+        if status and not note.strip():
+            st.warning("Add a short note saying what you found before closing it.")
+            return
+        run_action(f"{rid} updated", lambda: client.update_staff_report(
+            rid, st.session_state.operator, status=status, assignee=who.strip(), note=note.strip() or None),
+            rerun=False)
+        _get.clear()  # the menu bubble and counts show the change at once
+        st.rerun()
 
 
 CHAT_STARTERS = ("What is happening right now?", "Which incident should I deal with first?",
@@ -1500,6 +1688,6 @@ def report_viewer(inc_id: str) -> None:
 
 
 {
-    "config": page_config, "approvals": page_approvals, "chat": page_chat, "collector": page_collector, "classifier": page_classifier,
+    "config": page_config, "approvals": page_approvals, "staff": page_staff, "chat": page_chat, "collector": page_collector, "classifier": page_classifier,
     "responder": page_responder, "review": page_review, "reports": page_reports, "audit": page_audit,
 }[st.session_state.page]()

@@ -188,3 +188,19 @@ class CoreClient:
     def decide_log_source(self, proposal_id: str, operator: str, approve: bool, reason: str = "") -> dict:
         return self.post_json(f"/log-sources/pending/{proposal_id}",
                               {"operator": operator, "approve": approve, "reason": reason})
+
+    # ---- staff reports: anyone at the business reports something suspicious ----
+    def report_suspicious(self, text: str, reporter: str = "", contact: str = "", where: str = "",
+                          sender: str = "") -> dict:
+        """Send one staff report; the answer holds the advice for the reporter. Sorting may use the AI model."""
+        return self.post_json("/staff-reports", {"text": text, "reporter": reporter, "contact": contact,
+                                                 "where": where, "channel": "dashboard", "sender": sender},
+                              timeout=CHAT_TIMEOUT)
+
+    def staff_reports(self, status: str | None = None) -> dict:
+        return self.get_json(f"/staff-reports?status={status}" if status else "/staff-reports")
+
+    def update_staff_report(self, report_id: str, operator: str, status: str | None = None,
+                            assignee: str | None = None, note: str | None = None) -> dict:
+        return self.post_json(f"/staff-reports/{report_id}", {"operator": operator, "status": status,
+                                                              "assignee": assignee, "note": note})

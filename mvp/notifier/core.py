@@ -77,3 +77,20 @@ class Core:
     def permanent(self, incident_id: str, operator: str, justification: str) -> Any:
         return self._req("POST", f"/incidents/{incident_id}/permanent",
                          {"operator": operator, "justification": justification})
+
+    def staff_report(self, text: str, reporter: str, sender: str, channel: str = "telegram") -> dict:
+        """Sends a staff report. Returns the core's answer, or {"error": why} when the core refused it
+        (too short, too many reports): that reason is meant for the reporter."""
+        try:
+            r = self.session.post(f"{self.base_url}/staff-reports", timeout=(1.0, max(self.timeout, 60.0)),
+                                  json={"text": text, "reporter": reporter, "channel": channel, "sender": sender})
+        except requests.RequestException as exc:
+            raise CoreError(f"core unreachable at {self.base_url}: {exc.__class__.__name__}") from exc
+        if r.status_code in (400, 429):
+            try:
+                return {"error": str(r.json().get("detail") or "The report was refused.")}
+            except ValueError:
+                return {"error": "The report was refused."}
+        if r.status_code >= 400:
+            raise CoreError(f"POST /staff-reports -> HTTP {r.status_code}: {r.text[:200]}")
+        return r.json()

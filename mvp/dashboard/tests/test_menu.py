@@ -56,7 +56,7 @@ def test_risk_breakdown_counts_only_active_incidents():
 APP = str(Path(__file__).resolve().parents[1] / "app.py")
 
 
-@pytest.mark.parametrize("page", ["config", "approvals", "chat", "collector", "classifier", "responder", "review",
+@pytest.mark.parametrize("page", ["config", "approvals", "staff", "chat", "collector", "classifier", "responder", "review",
                                   "reports", "audit"])
 def test_every_page_renders(fake_core, page, tmp_path, monkeypatch):
     from streamlit.testing.v1 import AppTest
@@ -358,3 +358,63 @@ def test_console_opens_on_what_needs_a_decision(fake_core, tmp_path, monkeypatch
     at.run()
     assert not at.exception, at.exception
     assert at.session_state["page"] == "approvals"
+
+
+def _report_page(fake_core, tmp_path, monkeypatch):
+    from streamlit.testing.v1 import AppTest
+
+    monkeypatch.setenv("CACTAI_CONFIG", str(tmp_path / "config.json"))
+    monkeypatch.setenv("CACTAI_DASHBOARD_LOGIN", "on")  # the report page needs no sign-in even when it is on
+    at = AppTest.from_file(APP, default_timeout=20)
+    at.query_params["report"] = ""
+    at.session_state["core_url"] = fake_core
+    at.run()
+    return at
+
+
+def test_staff_report_page_sends_without_sign_in(fake_core, tmp_path, monkeypatch):
+    at = _report_page(fake_core, tmp_path, monkeypatch)
+    assert not at.exception, at.exception
+    assert not at.sidebar.button  # no menu, nothing from SentrAI
+    at.text_area[0].input("I got an email asking for my password and I clicked the link.")
+    at.text_input[0].input("Mei")
+    at.button[0].click().run()
+    assert not at.exception, at.exception
+    assert any("reached the security team" in s.value for s in at.success)
+    reports = requests.get(f"{fake_core}/staff-reports", timeout=3).json()["reports"]
+    assert reports[0]["reporter"] == "Mei" and reports[0]["channel"] == "dashboard"
+
+
+def test_staff_report_page_asks_for_the_code_when_set(fake_core, tmp_path, monkeypatch):
+    monkeypatch.setenv("CACTAI_REPORT_CODE", "lighthouse")
+    at = _report_page(fake_core, tmp_path, monkeypatch)
+    before = len(requests.get(f"{fake_core}/staff-reports", timeout=3).json()["reports"])
+    at.text_area[0].input("A stranger was using the front desk computer at lunch.")
+    at.text_input[3].input("wrong")
+    at.button[0].click().run()
+    assert any("report code is not right" in e.value for e in at.error)
+    assert len(requests.get(f"{fake_core}/staff-reports", timeout=3).json()["reports"]) == before
+
+
+def test_staff_reports_page_closes_a_report_with_a_note(fake_core, tmp_path, monkeypatch):
+    from streamlit.testing.v1 import AppTest
+
+    monkeypatch.setenv("CACTAI_CONFIG", str(tmp_path / "config.json"))
+    rid = requests.post(f"{fake_core}/staff-reports", timeout=3,
+                        json={"text": "My laptop shows pop-ups asking me to call Microsoft.", "reporter": "Arif"}).json()["id"]
+    at = AppTest.from_file(APP, default_timeout=20)
+    at.session_state["core_url"] = fake_core
+    at.session_state["auto_refresh"] = False
+    at.session_state["page"] = "staff"
+    at.run()
+    assert not at.exception, at.exception
+    assert any(rid in e.label for e in at.expander)
+    resolve = next(b for b in at.button if b.label == "Resolved")
+    resolve.click().run()
+    assert any("Add a short note" in w.value for w in at.warning)  # no note, no close
+    note = next(t for t in at.text_input if t.label == "Note")
+    note.input("Scam pop-up; browser reset.")
+    next(b for b in at.button if b.label == "Resolved").click().run()
+    assert not at.exception, at.exception
+    r = next(r for r in requests.get(f"{fake_core}/staff-reports", timeout=3).json()["reports"] if r["id"] == rid)
+    assert r["status"] == "resolved" and r["notes"][-1]["text"] == "Scam pop-up; browser reset."

@@ -15,6 +15,7 @@ CATEGORY_LABELS = {
     "misconfiguration": "Misconfiguration",
     "log_tampering": "Log tampering",
     "malware": "Malware found",
+    "staff_report": "Staff report",
     "prompt_injection": "Prompt injection",
 }
 

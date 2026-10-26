@@ -72,7 +72,7 @@ class RulesClassifier(Classifier):
         hit = self.rules.check(event, now)
         if hit is None:
             return None
-        malicious = 0.0 if hit.category == "benign" else 1.0
+        malicious = hit.malicious if hit.malicious is not None else 0.0 if hit.category == "benign" else 1.0
         return Classification(hit.category, 1.0, malicious, hit.reason, hit.related_event_ids)
 
 

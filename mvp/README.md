@@ -156,6 +156,10 @@ behind an arrow.
 | `CACTAI_DASHBOARD_EMAIL` | `admin@sentrai.local` | dashboard: the sign-in email |
 | `CACTAI_DASHBOARD_PASSWORD_HASH` | made on first run | dashboard: the sign-in password, saved only as a salted PBKDF2 hash |
 | `CACTAI_DASHBOARD_LOGIN` | on | dashboard: `off` opens it without signing in (local testing only) |
+| `CACTAI_REPORT_PAGE` | on | dashboard: `off` turns off the open staff report page (`/?report`) |
+| `CACTAI_REPORT_CODE` | unset | dashboard: a shared code staff must type on the report page (put it on the noticeboard) |
+| `TELEGRAM_REPORT_FROM` | `alert-chat` | notifier: who may send `/report`: the alert chat only, `any` chat that messages the bot, or a comma list of chat ids |
+| `CACTAI_STAFF_REPORTS` | next to the core database | core: where staff reports are saved (`staff_reports.json`) |
 
 ### Access
 
@@ -192,6 +196,26 @@ dashboard password keep working; the file then keeps only its hash.
 3. Enter both in `python cactai_config.py setup`, or before `run.ps1`: `$env:TELEGRAM_BOT_TOKEN = "<token>"; $env:TELEGRAM_CHAT_ID = "<chat id>"`.
 
 Only the configured chat can press the buttons.
+
+### Staff reports
+
+Anyone at the business can report something suspicious (a strange email, a pop-up, a login they
+did not make, a stranger at the computers) without a dashboard account:
+
+- **Web:** the dashboard address plus `/?report`, for example `https://server:8501/?report`. No
+  sign-in, and the page shows nothing from SentrAI. Set `CACTAI_REPORT_CODE` to ask for a shared code.
+  Staff must be able to reach the dashboard (on a server, add their network to `--protect`).
+- **Telegram:** `/report I got an email asking for my password`. Only the alert chat by default; set
+  `TELEGRAM_REPORT_FROM=any` so staff can message the bot directly.
+- **Anything else** that holds the API token can `POST /staff-reports` (`CONTRACT.md`).
+
+Each report is sorted at once (the AI model when one is set up, keyword rules otherwise): what kind
+of problem it sounds like, how urgent, what the reporter should do now, and what technical staff
+should check first. It opens a "Staff report" incident marked *needs review*, which alerts like any
+other and is never acted on automatically. On the **Staff reports** page technical staff pick a
+report up (that acknowledges the incident), add notes, and close it as *resolved* or *not a threat*
+with a note; closing the last report on an incident closes the incident. Every step is in the audit
+trail. One sender may send 5 reports every 10 minutes.
 
 ### Email alerts (optional backup)
 

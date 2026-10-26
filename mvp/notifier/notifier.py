@@ -8,6 +8,8 @@ Env:
   CACTAI_OPERATOR      fallback operator name (default "operator")
   NOTIFIER_POLL_SECONDS poll interval (default 2)
   NOTIFIER_WITNESS_FILE where the last delivered audit fingerprint is kept (default notifier/data/last_witness.txt)
+  TELEGRAM_REPORT_FROM  who may send /report <what you saw>: "alert-chat" (default, only TELEGRAM_CHAT_ID),
+                       "any" (anyone who messages the bot, e.g. all staff), or a comma list of chat ids
   SMTP_HOST, ALERT_EMAIL_TO, ...  email backup channel, see emailer.py
 If TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is missing, runs in CONSOLE mode.
 Email is off until SMTP_HOST and ALERT_EMAIL_TO are set. Then it is sent when Telegram fails
@@ -17,7 +19,8 @@ the console in CONSOLE mode.
 Usage:  python notifier.py [--console] [--once] [--core URL]
         python notifier.py --verify [LINE]   check the core's audit chain against the last witnessed
                                              fingerprint (or LINE); exit 1 if it was changed
-In Telegram, /verify does the same.
+In Telegram, /verify does the same, and /report <what you saw> sends a staff report (see staff_reports.py
+in the core): the reporter gets back what to do now, and technical staff review it on the dashboard.
 """
 from __future__ import annotations
 
@@ -76,6 +79,35 @@ def verify_witness(core: Core, line: str) -> tuple[bool | None, str]:
     ok = bool(res.get("ok"))
     why = str(res.get("reason") or "")
     return ok, ("✅ Audit log intact: " if ok else "🚨 AUDIT LOG CHANGED: ") + why
+
+
+def report_allowed(chat_id: str, alert_chat: str, setting: str | None) -> bool:
+    """May this chat send /report? TELEGRAM_REPORT_FROM: alert-chat (default), any, or chat ids."""
+    setting = (setting or "alert-chat").strip().lower()
+    if setting == "any":
+        return True
+    if setting == "alert-chat":
+        return str(chat_id) == str(alert_chat)
+    return str(chat_id) in {c.strip() for c in setting.split(",") if c.strip()} or str(chat_id) == str(alert_chat)
+
+
+def staff_report_reply(core: Core, text: str, reporter: str, chat_id: str) -> str:
+    """Sends /report text to the core and words the answer for the person who reported."""
+    text = text.strip()
+    if not text:
+        return ("Tell us what you noticed after /report, in your own words. For example:\n"
+                "/report I got an email asking for my password and clicked the link.")
+    try:
+        res = core.staff_report(text, reporter, f"telegram:{chat_id}")
+    except CoreError:
+        return "The report could not be sent right now. Please tell your IT contact directly."
+    if res.get("error"):
+        return f"⚠️ {res['error']}"
+    steps = "\n".join(f"{n}. {a}" for n, a in enumerate(res.get("advice") or [], 1))
+    urgent = " It is treated as urgent." if res.get("urgency") == "high" else ""
+    return (f"✅ Thank you. Report {res.get('id')} reached the security team.{urgent}\n"
+            f"It sounds like: {res.get('kind_label') or 'something to check'}.\n\n"
+            + (f"What to do now:\n{steps}" if steps else ""))
 
 
 # ------------------------------------------------------------------ shared delivery loop
@@ -332,9 +364,25 @@ def run_telegram(core: Core, token: str, chat_id: str, poll: float, fallback_ope
         _, message = await asyncio.to_thread(verify_witness, core, line)
         await update.message.reply_text(message)
 
+    report_from = os.environ.get("TELEGRAM_REPORT_FROM")
+
+    async def on_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """/report <what you saw>: a staff report. Staff can message the bot directly when
+        TELEGRAM_REPORT_FROM allows their chat; the core limits how often one chat may send."""
+        if update.message is None or update.effective_chat is None:
+            return
+        chat = str(update.effective_chat.id)
+        if not report_allowed(chat, allowed_chat, report_from):
+            await update.message.reply_text("This chat cannot send reports. Please tell your IT contact directly.")
+            return
+        text = (update.message.text or "").partition(" ")[2]
+        reply = await asyncio.to_thread(staff_report_reply, core, text, operator_of(update), chat)
+        await update.message.reply_text(reply)
+
     app = Application.builder().token(token).post_init(post_init).build()
     app.add_handler(CommandHandler("start", on_start))
     app.add_handler(CommandHandler("verify", on_verify))
+    app.add_handler(CommandHandler("report", on_report))
     app.add_handler(CallbackQueryHandler(on_button))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
     app.run_polling(allowed_updates=Update.ALL_TYPES)
