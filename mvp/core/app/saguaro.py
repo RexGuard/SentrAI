@@ -53,6 +53,7 @@ log = logging.getLogger("sentrai.saguaro")
 RISK_STATUSES = ("open", "acknowledged")  # count toward raw score
 MERGE_STATUSES = ("open", "acknowledged", "contained")  # new events attach to these
 CLOSED_STATUSES = ("resolved", "rejected")
+ROLES = ("on_duty", "team_lead", "it_manager", "cxo")  # the four people in the settings (routing.defaults)
 
 TITLES = {
     "brute_force": "Brute force",
@@ -244,11 +245,13 @@ class Saguaro(Agent):
         self.settings = s = settings or Settings()
         # Who owns, hears about and backs up each incident (routing.py). Names in a routing file
         # replace the four role names everywhere an alert goes to a role.
-        self.router = routing.from_settings(s)
+        self.routing_path = routing.path_from_settings(s)
+        self.role_names = {role: getattr(s, role) for role in ROLES}  # the settings' own, before the file renames them
+        self.router = routing.load(self.routing_path, *self.role_names.values())
         # The private Telegram chat linked to each contact, so their alerts go to them directly.
         self.tg_links = telegram_links.from_settings(s)
-        for role in ("on_duty", "team_lead", "it_manager", "cxo"):
-            setattr(s, role, self.router.by_role(role, getattr(s, role)))
+        for role in ROLES:
+            setattr(s, role, self.router.by_role(role, self.role_names[role]))
         self.clock = DemoClock(s.demo_speed)
         self.audit = AuditLog(s.db_path)
         self.rules = RulesEngine(s.brute_force_count, s.brute_force_window_s, s.export_rows_threshold,
@@ -1550,6 +1553,23 @@ class Saguaro(Agent):
             for c in out["contacts"]:
                 c["telegram_linked"] = bool(self.tg_links.chat_for(c["id"], c.get("telegram") or ""))
             return out
+
+    def routing_update(self, data: dict[str, Any], operator: str) -> dict[str, Any]:
+        """Replace the routing file (people, rules, follow-up) and use it from the next alert on."""
+        clean = routing.validate(data)  # ValueError: nothing is written
+        with self.lock:
+            before = {c.id: c.name for c in self.router.contacts.values()}
+            routing.save(self.routing_path, clean)
+            self.router = routing.load(self.routing_path, *self.role_names.values())
+            for role in ROLES:
+                setattr(self.settings, role, self.router.by_role(role, self.role_names[role]))
+            after = {c.id: c.name for c in self.router.contacts.values()}
+            self.scribe.record(self.name, "routing_changed", {
+                "operator": operator, "file": str(self.routing_path),
+                "people": len(after), "rules": len(self.router.rules),
+                "added": sorted(after[i] for i in after.keys() - before.keys()),
+                "removed": sorted(before[i] for i in before.keys() - after.keys())})
+        return self.routing_public()
 
     # ---------------------------------------------------- personal Telegram alerts
     def _addresses(self, recipients: list[str]) -> list[dict[str, str]]:
