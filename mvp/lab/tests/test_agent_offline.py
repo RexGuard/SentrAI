@@ -153,6 +153,16 @@ def test_enforcer_holds_panel_blocks_and_adds_local_ones():
     assert e.sync(None, set()) == {"added": [], "removed": [PUBLIC]}  # local block expired
 
 
+def test_enforcer_puts_saved_blocks_back_after_a_restart():
+    # saved while in dry run (or before a reboot emptied the firewall): the first pass must block for real
+    calls, run = recorder()
+    e = agent.Enforcer("nftables", True, {"127.0.0.1"}, runner=run, applied=["203.0.113.1"], panel=["203.0.113.1"])
+    assert e.sync({"203.0.113.1"})["added"] == ["203.0.113.1"]
+    assert any("203.0.113.1" in " ".join(c) for c in calls)  # the firewall was checked, not trusted
+    calls.clear()
+    assert e.sync({"203.0.113.1"}) == {"added": [], "removed": []} and calls == []  # later passes: no work
+
+
 class FakeSession:
     """A panel that can be switched off; records what the agent posts."""
 
