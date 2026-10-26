@@ -298,3 +298,22 @@ def test_incident_target_names_the_live_block_then_the_source():
     assert sh.incident_target(inc) == "9.9.9.9 on web"
     assert sh.incident_target({"src_ip": "1.2.3.4"}) == "1.2.3.4"
     assert sh.incident_target({}) == "-"
+
+
+def test_times_from_the_core_show_in_local_time():
+    import os
+    import time
+    old = os.environ.get("TZ")
+    os.environ["TZ"] = "Asia/Singapore"
+    time.tzset()
+    try:
+        assert sh.short_time("2026-10-26T18:52:58+00:00") == "02:52:58"  # UTC from the fleet / jobs code
+        assert sh.short_time("2026-10-27T02:52:58+08:00") == "02:52:58"  # already local
+        assert sh.short_time("2026-10-26T18:52:58Z") == "02:52:58"
+        assert sh.short_time("2026-10-26T18:52:58") == "18:52:58"  # no offset: taken as local already
+    finally:
+        if old is None:
+            os.environ.pop("TZ", None)
+        else:
+            os.environ["TZ"] = old
+        time.tzset()

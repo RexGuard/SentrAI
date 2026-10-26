@@ -115,9 +115,12 @@ def parse_ts(value: Any) -> datetime | None:
     if isinstance(value, (int, float)):
         return datetime.fromtimestamp(float(value))
     try:
-        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        ts = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     except ValueError:
         return None
+    # The core writes some times in UTC and some with this computer's offset; show them all in local time,
+    # like the page's own clock, so one screen never mixes two time zones.
+    return ts.astimezone() if ts.tzinfo else ts
 
 
 def short_time(value: Any) -> str:
