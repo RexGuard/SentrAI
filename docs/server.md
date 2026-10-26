@@ -90,6 +90,10 @@ open **Collector** and press **Scan running programs**: it lists the log files o
 the server and lets you choose which to watch. The collector picks up an approved file within a
 few seconds.
 
+SentrAI can read nginx, SSH, Suricata, MySQL or MariaDB, PostgreSQL and MongoDB logs, and on
+Windows the Windows Event Log. [Log sources](log-sources.html) lists what it catches in each one
+and the setting some of them need.
+
 With an AI key set (see [Settings](settings.html#ai-key)), SentrAI can also search for logs from a
 plain request:
 

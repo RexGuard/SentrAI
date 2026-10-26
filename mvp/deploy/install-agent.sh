@@ -22,7 +22,7 @@
 #   /etc/cactai/agent.env              settings (root:cactai 0640)
 #   /var/lib/cactai/agent/             machine key, read positions, blocks in force (cactai 0700)
 #   /etc/systemd/system/cactai-agent.service
-# The agent also approves this machine's nginx and SSH login logs (collector --add-system-logs).
+# The agent also approves this machine's nginx, SSH login, Suricata and database logs (collector --add-system-logs).
 # Remove it with: systemctl disable --now cactai-agent && rm /etc/systemd/system/cactai-agent.service
 set -euo pipefail
 
@@ -137,7 +137,7 @@ if [ -n "$CODE" ]; then
     [ "$ALLOW_HTTP" = 1 ] && args+=(--allow-http)
     as_agent "${args[@]}" || die "could not join the panel (see the message above)"
 fi
-as_agent -m collector.collector --add-system-logs || echo "No nginx or SSH logs found yet; approve logs later with Scout."
+as_agent -m collector.collector --add-system-logs || echo "No web, SSH, Suricata or database logs found yet; approve logs later with Scout."
 
 # --- service ----------------------------------------------------------------
 sed -e "s|@PREFIX@|$PREFIX|g" -e "s|@USER@|$SVC_USER|g" -e "s|@LOGGROUPS@|${LOG_GROUPS[*]}|g" \

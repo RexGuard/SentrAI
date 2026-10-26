@@ -1,0 +1,7 @@
+2026-10-26T02:00:01.123456Z 8 [Note] [MY-010926] [Server] Access denied for user 'root'@'203.0.113.30' (using password: YES)
+2026-10-26 10:00:02 9 [Warning] Access denied for user 'admin'@'203.0.113.30' (using password: YES)
+2026-10-26 10:00:03 10 [Warning] Aborted connection 10 to db: 'unconnected' user: 'unauthenticated' host: '203.0.113.31' (This connection closed normally without authentication)
+2026-10-26 10:00:04 0 [Note] InnoDB: Buffer pool(s) load completed at 261026 10:00:04
+261026 10:00:05 [Warning] Access denied for user 'sa'@'localhost' (using password: NO)
+2026-10-26T02:00:06.000000Z	   12 Connect	shop@203.0.113.32 on shop using TCP/IP
+2026-10-26T02:00:07.000000Z	   12 Query	SELECT * FROM customers

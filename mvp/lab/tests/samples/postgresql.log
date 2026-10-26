@@ -1,0 +1,8 @@
+2026-10-26 10:00:01.123 +08 [4321] LOG:  connection received: host=203.0.113.40 port=50432
+2026-10-26 10:00:01.200 +08 [4321] postgres@postgres FATAL:  password authentication failed for user "postgres"
+2026-10-26 10:00:01.201 +08 [4321] postgres@postgres DETAIL:  Connection matched pg_hba.conf line 99: "host all all 0.0.0.0/0 scram-sha-256"
+2026-10-26 02:00:02.000 UTC [4322] FATAL:  no pg_hba.conf entry for host "203.0.113.41", user "admin", database "postgres", no encryption
+2026-10-26 10:00:03.000 SGT [4323] [unknown]@[unknown] FATAL:  role "oracle" does not exist
+2026-10-26 10:00:04.000 +08 [4324] app@shop LOG:  connection authorized: user=app database=shop
+2026-10-26 10:00:05.000 +08 [4324] app@shop LOG:  statement: SELECT id FROM orders WHERE id = 7
+2026-10-26 10:00:06.000 +08 [99] LOG:  checkpoint starting: time
