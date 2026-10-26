@@ -57,7 +57,7 @@ APP = str(Path(__file__).resolve().parents[1] / "app.py")
 
 
 @pytest.mark.parametrize("page", ["config", "approvals", "chat", "collector", "classifier", "responder", "machines",
-                                  "review", "reports", "audit", "backups"])
+                                  "review", "reports", "audit", "backups", "integrations"])
 def test_every_page_renders(fake_core, page, tmp_path, monkeypatch):
     from streamlit.testing.v1 import AppTest
 
@@ -296,3 +296,23 @@ def test_console_opens_on_what_needs_a_decision(fake_core, tmp_path, monkeypatch
     at.run()
     assert not at.exception, at.exception
     assert at.session_state["page"] == "approvals"
+
+
+def test_integrations_page_shows_each_service_and_its_test(fake_core, tmp_path, monkeypatch):
+    from streamlit.testing.v1 import AppTest
+
+    monkeypatch.setenv("CACTAI_CONFIG", str(tmp_path / "config.json"))
+    at = AppTest.from_file(APP, default_timeout=20)
+    at.session_state["core_url"] = fake_core
+    at.session_state["auto_refresh"] = False
+    at.session_state["page"] = "integrations"
+    at.run()
+    text = " ".join(m.value for m in at.markdown)
+    for name in ("Cloudflare", "AbuseIPDB", "Slack", "Telegram"):
+        assert name in text
+    test = next(b for b in at.button if b.key == "test_cloudflare")
+    test.click().run()
+    assert not at.exception, at.exception
+    assert any("fake core does not call outside services" in e.value for e in at.error)
+    next(b for b in at.button if b.key == "set_cloudflare").click().run()
+    assert at.session_state["page"] == "config" and at.session_state["cfg_search"] == "cloudflare"

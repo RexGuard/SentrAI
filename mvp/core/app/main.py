@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .config import Settings, sign
 from .reports import build_report, render_markdown, render_pdf
-from . import ai, anchor, fleet, jobs, webhook
+from . import ai, anchor, fleet, integrations, jobs, webhook
 from .chat import OperatorChat, default_chat_provider
 from .discovery import Discovery
 from .threats import ThreatWatch
@@ -604,6 +604,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/ai/test")
     def ai_test(body: Optional[AITestIn] = None) -> dict[str, Any]:
         return ai.test(core, chat, body.model_dump() if body else None)
+
+    @app.get("/integrations")
+    def get_integrations() -> list[dict[str, Any]]:
+        return integrations.status(core)
+
+    @app.post("/integrations/{name}/test")
+    def test_integration(name: str) -> dict[str, Any]:
+        try:
+            return integrations.test(core, name)
+        except KeyError as e:
+            raise HTTPException(404, str(e).strip("'\""))
 
     @app.post("/heartbeat")
     def post_heartbeat(request: Request, body: HeartbeatIn) -> dict[str, Any]:

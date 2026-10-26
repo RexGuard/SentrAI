@@ -542,6 +542,43 @@ def ai_reload():
     return FAKE_AI
 
 
+FAKE_INTEGRATIONS = [
+    {"name": "cloudflare", "title": "Cloudflare", "kind": "Blocking", "configured": True, "testable": True,
+     "what": "Blocks attacking addresses at Cloudflare's edge, so they never reach your site. "
+             "Removed again when SentrAI's block ends.",
+     "detail": "IP Access rules, block on zone 0123abcd · 2 address(es) blocked now", "last_ok": "2026-10-26 10:02:11",
+     "settings": ["CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ZONE_ID"],
+     "docs": "https://developers.cloudflare.com/fundamentals/api/get-started/create-token/"},
+    {"name": "webhook", "title": "Any other system (webhook)", "kind": "Blocking", "configured": False, "testable": False,
+     "what": "Sends each block and its removal to a URL you choose: n8n, Zapier, a router, a SOAR.",
+     "detail": "Set a URL to hand blocks to another system.", "settings": ["CACTAI_RESPONDER_WEBHOOK_URL"], "docs": ""},
+    {"name": "abuseipdb", "title": "AbuseIPDB", "kind": "Lookups", "configured": True, "testable": True,
+     "what": "Shows how often other people have reported an attacking address, on each incident.",
+     "detail": "14 lookup(s) since start, answers kept 24 h", "settings": ["ABUSEIPDB_API_KEY"],
+     "docs": "https://www.abuseipdb.com/account/api"},
+    {"name": "slack", "title": "Slack", "kind": "Alerts", "configured": False, "testable": False,
+     "what": "Posts a copy of every alert to a Slack channel, next to Telegram and email.",
+     "detail": "Create an incoming webhook in Slack and paste its URL.", "settings": ["SLACK_WEBHOOK_URL"],
+     "docs": "https://api.slack.com/messaging/webhooks"},
+    {"name": "telegram", "title": "Telegram", "kind": "Alerts", "configured": True, "testable": False,
+     "what": "Sends alerts with Approve / Reject buttons to a Telegram chat.", "detail": "Handled by the notifier.",
+     "settings": ["TELEGRAM_BOT_TOKEN"], "docs": "https://core.telegram.org/bots/tutorial"},
+    {"name": "email", "title": "Email", "kind": "Alerts", "configured": False, "testable": False,
+     "what": "Emails alerts, as a backup to Telegram or always.", "detail": "Handled by the notifier.",
+     "settings": ["SMTP_HOST", "ALERT_EMAIL_TO"], "docs": ""},
+]
+
+
+@app.get("/integrations")
+def integrations():
+    return FAKE_INTEGRATIONS
+
+
+@app.post("/integrations/{name}/test")
+def test_integration(name: str):
+    return {"ok": False, "error": "the fake core does not call outside services; start the real core to test"}
+
+
 @app.post("/ai/test")
 def ai_test(body: dict = Body(None)):
     return {"ok": False, "provider": (body or {}).get("provider"), "model": None, "ms": 0, "hint": None,

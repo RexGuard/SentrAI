@@ -53,6 +53,10 @@ Tests:
 | `CACTAI_RESPONDER_WEBHOOK_URL` | unset | Also hand approved actions to another system (a firewall API, WAF or SOAR) as JSON POSTs `{"op": "apply"\|"revert", "type", "target", ...}`. An action counts as in force only on a 2xx answer. Blocks still go on `/blocklist` too. |
 | `CACTAI_RESPONDER_WEBHOOK_ACTIONS` | all six | Which action types go to the webhook (`block_ip,lock_user,rate_limit,waf_rule,kill_process,revoke_public_acl`). |
 | `CACTAI_RESPONDER_WEBHOOK_SECRET` | unset | Sent as `Authorization: Bearer` and used to sign each body (`X-SentrAI-Signature: sha256=<HMAC>`). `_FILE` works too. |
+| `CLOUDFLARE_API_TOKEN` | unset | Also block each `block_ip` address at Cloudflare (app/cloudflare.py) and remove it when the block ends. `_FILE` works too. Needs `CLOUDFLARE_ZONE_ID` (one site) or `CLOUDFLARE_ACCOUNT_ID` (every site). A Cloudflare failure never weakens the local block; a failed removal is a failed undo (retried, on-duty told). |
+| `CLOUDFLARE_METHOD` / `CLOUDFLARE_MODE` | `access_rule` / `block` | `list` puts addresses in an account IP list (`CLOUDFLARE_LIST_ID`) for your own WAF custom rule. Mode: `block`, `managed_challenge`, `challenge`, `js_challenge`. |
+| `ABUSEIPDB_API_KEY` | unset | Look up each public attacking address on AbuseIPDB in the background and note it on the incident (context only, no score change). Answers kept `ABUSEIPDB_CACHE_HOURS` (24). |
+| `SLACK_WEBHOOK_URL` | unset | The notifier posts a copy of every alert there. The core only uses it for `POST /integrations/slack/test`. |
 | `CACTAI_FIREWALL_ENFORCE` | `0` | `0` is a dry run: the command is logged and written to the audit trail, never run. `1` runs it (admin/root). Loopback, link-local, multicast and `PROTECTED_IPS` are never sent to the firewall. |
 | `CACTAI_DB` | `data/cactai.db` | SQLite audit chain. |
 | `BRUTE_FORCE_COUNT` / `BRUTE_FORCE_WINDOW_S` | `5` / `60` | Brute-force rule: this many failed logins from the same IP within this many seconds. |
