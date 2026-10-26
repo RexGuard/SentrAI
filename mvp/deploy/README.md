@@ -286,8 +286,9 @@ certificate, so a self-signed panel needs no certificate file, and a look-alike 
 intercepting proxy is refused even if some authority signed its certificate. A panel behind a
 publicly trusted certificate (for example nginx with Let's Encrypt) can skip the pin; `--ca FILE`
 still works for a private authority. After the panel's certificate is renewed, set the new pin on
-each machine: `python -m agent pin` shows the kept and the current one, `python -m agent pin sha256:...`
-sets it (then restart the agent).
+each machine: `sudo ./deploy/install-agent.sh --pin sha256:...` (it keeps every other setting and
+restarts the agent). From a checkout without the service, `python -m agent pin` shows the kept and
+the current one, and `python -m agent pin sha256:...` sets it.
 
 ### When the panel cannot be reached
 

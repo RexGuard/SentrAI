@@ -101,8 +101,9 @@ The agent installer prints why. The usual causes:
   `curl -k https://panel.example.com:8443/health`. If it fails, allow port 8443 from that machine in
   the panel's firewall and in your cloud provider's.
 - **"could not reach the panel … SSLError"**: the certificate does not match the pin. Copy the
-  command again from **Add machine**, with its `--pin`. After a certificate change, set the new pin
-  with `python -m agent pin sha256:...`.
+  command again from **Add machine**, with its `--pin`. After the panel's certificate changed, give
+  an installed machine the new pin with `sudo ./mvp/deploy/install-agent.sh --pin sha256:...`
+  (`-Pin sha256:...` on Windows); the dashboard shows it with every join code.
 - **"the panel refused to join this machine"**: the join code was already used or is more than 24
   hours old. Make a new one under **Machines**, **Add machine**.
 - **"the panel no longer accepts this machine's key"**: the machine was revoked. Join it again with
