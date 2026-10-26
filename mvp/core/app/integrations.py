@@ -41,7 +41,7 @@ CATALOG: dict[str, dict[str, Any]] = {
     "webhook": {
         "title": "Any other system (webhook)", "kind": "Blocking",
         "what": "Sends each block and its removal to a URL you choose: n8n, Zapier, a router, a SOAR.",
-        "settings": ["CACTAI_RESPONDER_WEBHOOK_URL", "CACTAI_RESPONDER_WEBHOOK_SECRET", "CACTAI_RESPONDER_WEBHOOK_ACTIONS"],
+        "settings": ["SENTRAI_RESPONDER_WEBHOOK_URL", "SENTRAI_RESPONDER_WEBHOOK_SECRET", "SENTRAI_RESPONDER_WEBHOOK_ACTIONS"],
         "docs": "",
     },
     "telegram": {

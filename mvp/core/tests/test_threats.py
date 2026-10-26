@@ -32,8 +32,8 @@ def put(path, text):
 @pytest.fixture
 def server(tmp_path, monkeypatch):
     """A game host with a few servers: some clean files, some planted ones."""
-    monkeypatch.setenv("CACTAI_THREAT_STATE", str(tmp_path / "state" / "seen.json"))
-    monkeypatch.setenv("CACTAI_QUARANTINE", str(tmp_path / "state" / "quarantine"))
+    monkeypatch.setenv("SENTRAI_THREAT_STATE", str(tmp_path / "state" / "seen.json"))
+    monkeypatch.setenv("SENTRAI_QUARANTINE", str(tmp_path / "state" / "quarantine"))
     monkeypatch.setattr(procscan, "_homes", lambda: [str(tmp_path / "home" / "erick")])
     vol = tmp_path / "volumes"
     a = vol / "a1" / "plugins" / "web" / "upload"
@@ -176,12 +176,12 @@ def test_quarantine_refuses_a_changed_file(server):
 
 
 def test_no_folders_means_no_scan(monkeypatch):
-    monkeypatch.delenv("CACTAI_THREAT_PATHS", raising=False)
+    monkeypatch.delenv("SENTRAI_THREAT_PATHS", raising=False)
     core = FakeCore([])
     w = ThreatWatch(core)
     assert w.every_s() == 0
     assert "No folders" in w.scan()["note"]
-    monkeypatch.setenv("CACTAI_THREAT_PATHS", "/nonexistent-a")
+    monkeypatch.setenv("SENTRAI_THREAT_PATHS", "/nonexistent-a")
     assert w.config()["paths"] == ["/nonexistent-a"]
 
 

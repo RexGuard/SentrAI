@@ -78,15 +78,15 @@ def test_deleted_records_and_forged_lines(tmp_path):
 
 
 def test_key_is_made_once_and_private(tmp_path, monkeypatch):
-    monkeypatch.delenv("CACTAI_ANCHOR_KEY", raising=False)
-    db = tmp_path / "x" / "cactai.db"
+    monkeypatch.delenv("SENTRAI_ANCHOR_KEY", raising=False)
+    db = tmp_path / "x" / "sentrai.db"
     assert anchor.load_key(db, create=False) is None
     k1 = anchor.load_key(db)
     assert anchor.load_key(db) == k1 and len(k1) == 64
     import os
     if os.name == "posix":
         assert oct(anchor.key_path(db).stat().st_mode & 0o777) == "0o600"
-    monkeypatch.setenv("CACTAI_ANCHOR_KEY", "kept-elsewhere")
+    monkeypatch.setenv("SENTRAI_ANCHOR_KEY", "kept-elsewhere")
     assert anchor.load_key(db) == b"kept-elsewhere"
 
 

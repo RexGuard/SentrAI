@@ -11,12 +11,12 @@ limits, because no person can be asked:
   * an address is blocked when its score in the last ``window_s`` seconds reaches the panel's own
     autonomous line (RISK_THRESHOLD, 80), using the panel's severity points (app/risk.py)
   * never private, shared or protected addresses (PROTECTED_NETS, PROTECTED_IPS, the panel itself)
-  * each block lasts ``ttl_s`` (CACTAI_AGENT_LOCAL_TTL_MIN, 60 minutes) and ends by itself
-  * at most ``max_per_hour`` new blocks an hour (CACTAI_AGENT_LOCAL_MAX_PER_HOUR, 10)
+  * each block lasts ``ttl_s`` (SENTRAI_AGENT_LOCAL_TTL_MIN, 60 minutes) and ends by itself
+  * at most ``max_per_hour`` new blocks an hour (SENTRAI_AGENT_LOCAL_MAX_PER_HOUR, 10)
 
 When the panel answers again, the agent sends it a report of what it scored and blocked (POST
 /fleet/offline-report). The logs themselves were held by the collector and reach the panel as usual,
-where they are scored properly. CACTAI_AGENT_LOCAL_RULES=off turns local rules off.
+where they are scored properly. SENTRAI_AGENT_LOCAL_RULES=off turns local rules off.
 """
 from __future__ import annotations
 
@@ -51,7 +51,7 @@ def _env_float(name: str, default: float) -> float:
 
 
 def enabled() -> bool:
-    return os.environ.get("CACTAI_AGENT_LOCAL_RULES", "on").strip().lower() not in protect.OFF
+    return os.environ.get("SENTRAI_AGENT_LOCAL_RULES", "on").strip().lower() not in protect.OFF
 
 
 def _iso(ts: float | None) -> str | None:
@@ -68,9 +68,9 @@ class LocalGuard:
         self.private_nets = protect.nets(os.environ.get("PROTECTED_NETS", protect.PRIVATE_NETS)) \
             if private_nets is None else set(private_nets)
         self.block_at = block_at if block_at is not None else int(_env_float("RISK_THRESHOLD", 80))
-        self.ttl_s = ttl_s if ttl_s is not None else _env_float("CACTAI_AGENT_LOCAL_TTL_MIN", 60) * 60
+        self.ttl_s = ttl_s if ttl_s is not None else _env_float("SENTRAI_AGENT_LOCAL_TTL_MIN", 60) * 60
         self.max_per_hour = max_per_hour if max_per_hour is not None else int(
-            _env_float("CACTAI_AGENT_LOCAL_MAX_PER_HOUR", 10))
+            _env_float("SENTRAI_AGENT_LOCAL_MAX_PER_HOUR", 10))
         self.window_s = window_s
         self.offline_after_s = offline_after_s
         self.clock = clock
@@ -105,7 +105,7 @@ class LocalGuard:
                     if self.report is None:  # an undelivered report from a short return carries on
                         self.report = {"from": _iso(last_ok), "scored": 0, "actions": []}
                     self.log.append(f"panel unreachable for {now - last_ok:.0f} s: local rules now decide"
-                                    + ("" if self.on else " (off: CACTAI_AGENT_LOCAL_RULES)"))
+                                    + ("" if self.on else " (off: SENTRAI_AGENT_LOCAL_RULES)"))
                 return None
             if self.offline_since is not None:
                 away = now - self.offline_since

@@ -1,6 +1,6 @@
 """Scout: an AI model walks the folders of an unfamiliar system to find its security logs.
 
-Any provider in mvp/cactai_llm.py works (Claude by default; OpenAI, DeepSeek or a compatible API).
+Any provider in mvp/sentrai_llm.py works (Claude by default; OpenAI, DeepSeek or a compatible API).
 
 Made for a novice technician. They ask in plain words ("where are the login logs on this
 server?"); Scout browses with read-only tools, says what it is doing and why, asks the
@@ -20,8 +20,8 @@ from typing import Any, Callable
 
 from .tools import SafeFS
 
-sys.path.append(str(Path(__file__).resolve().parents[2]))  # mvp/, for cactai_llm
-import cactai_llm  # noqa: E402
+sys.path.append(str(Path(__file__).resolve().parents[2]))  # mvp/, for sentrai_llm
+import sentrai_llm  # noqa: E402
 from .trails import LAYERS, TRAILS_DIR, lessons
 
 MAX_STEPS = 30
@@ -70,14 +70,14 @@ TOOLS: list[dict[str, Any]] = [
 
 
 class Scout:
-    def __init__(self, fs: SafeFS, provider: cactai_llm.Provider | None = None,
+    def __init__(self, fs: SafeFS, provider: sentrai_llm.Provider | None = None,
                  trails_dir: Path = TRAILS_DIR, ask: Callable[[str], str] = input,
                  say: Callable[[str], None] = print, max_steps: int = MAX_STEPS,
                  on_propose: Callable[[dict[str, str]], None] | None = None) -> None:
         if provider is None:
-            provider = cactai_llm.from_env(effort=os.getenv("SCOUT_EFFORT", "medium"))
+            provider = sentrai_llm.from_env(effort=os.getenv("SCOUT_EFFORT", "medium"))
             if provider is None:
-                raise cactai_llm.LLMError("no AI key set: add one with `python cactai_config.py setup` (section 5)")
+                raise sentrai_llm.LLMError("no AI key set: add one with `python sentrai_config.py setup` (section 5)")
             provider.model = os.getenv("SCOUT_MODEL") or provider.model
         self.provider = provider
         self.fs, self.trails_dir, self.ask, self.say, self.max_steps = fs, trails_dir, ask, say, max_steps
@@ -105,7 +105,7 @@ class Scout:
         self.say("(Scout reached its step limit; here is what it found so far.)")
         return self.proposals
 
-    def _run_tool(self, call: cactai_llm.ToolCall) -> tuple[str, str, bool]:
+    def _run_tool(self, call: sentrai_llm.ToolCall) -> tuple[str, str, bool]:
         try:
             return call.id, self._dispatch(call.name, call.input), False
         except (PermissionError, ValueError, OSError, KeyError, TypeError) as e:

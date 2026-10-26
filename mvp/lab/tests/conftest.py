@@ -12,7 +12,7 @@ sys.path.insert(0, str(LAB_DIR))
 
 # Redirect all file output to a throwaway temp directory BEFORE the
 # collector modules resolve any paths. paths.py reads these env vars lazily.
-_TMP = tempfile.mkdtemp(prefix="cactai-lab-test-")
-os.environ.setdefault("CACTAI_LAB_LOGS", str(Path(_TMP) / "logs"))
-os.environ["CACTAI_SCOUT_SOURCES"] = str(Path(_TMP) / "scout-sources.json")
-os.environ["CACTAI_CONFIG"] = str(Path(_TMP) / "no-config.json")  # ignore this machine's saved settings
+_TMP = tempfile.mkdtemp(prefix="sentrai-lab-test-")
+os.environ.setdefault("SENTRAI_LAB_LOGS", str(Path(_TMP) / "logs"))
+os.environ["SENTRAI_SCOUT_SOURCES"] = str(Path(_TMP) / "scout-sources.json")
+os.environ["SENTRAI_CONFIG"] = str(Path(_TMP) / "no-config.json")  # ignore this machine's saved settings

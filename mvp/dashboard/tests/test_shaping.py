@@ -1,4 +1,4 @@
-from cactai_ui import shaping as sh
+from sentrai_ui import shaping as sh
 
 
 def test_band_boundaries():

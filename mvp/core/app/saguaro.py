@@ -48,7 +48,7 @@ from .risk import SEVERITY, band, band_rank, inaction_penalty, risk_index
 from .rules import TRIPWIRE_REASONS, RulesEngine
 from .state import StateStore
 
-log = logging.getLogger("cactai.saguaro")
+log = logging.getLogger("sentrai.saguaro")
 
 RISK_STATUSES = ("open", "acknowledged")  # count toward raw score
 MERGE_STATUSES = ("open", "acknowledged", "contained")  # new events attach to these
@@ -826,7 +826,7 @@ class Saguaro(Agent):
         env = self.settings.monitor_only
         if env is not None and env.strip() != "":
             self.monitor_only = env.strip().lower() in ("1", "true", "yes", "on")
-            saved = {"changed_by": "CACTAI_MONITOR_ONLY", "reason": "set in the environment"}
+            saved = {"changed_by": "SENTRAI_MONITOR_ONLY", "reason": "set in the environment"}
         else:
             self.monitor_only = bool(saved.get("monitor_only", False))
         self._protection_meta = {k: saved.get(k) for k in ("changed_at", "changed_by", "reason")}

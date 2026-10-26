@@ -25,7 +25,7 @@ Issues are ranked by severity. Line numbers refer to the files as they were when
 ### H3. `/audit` response shape differs from the contract
 - `core/app/main.py:147-157` returns `{"chain_valid", "first_invalid_seq", "count", "head_hash", "records": [...]}`.
 - `CONTRACT.md:69` says "records `[{seq,ts,type,data,prev_hash,hash}]` + `{"chain_valid": bool}`". That wording is ambiguous, and a consumer might iterate over the response as a list.
-- **Fix:** have the lead clarify the shape in CONTRACT.md as the object form that core returns. Then check that `dashboard/cactai_ui/api.py` reads `resp["records"]` and `resp["chain_valid"]`. (This consumer check was not done.)
+- **Fix:** have the lead clarify the shape in CONTRACT.md as the object form that core returns. Then check that `dashboard/sentrai_ui/api.py` reads `resp["records"]` and `resp["chain_valid"]`. (This consumer check was not done.)
 
 ---
 
@@ -33,8 +33,8 @@ Issues are ranked by severity. Line numbers refer to the files as they were when
 
 ### M1. `/demo/reset` swaps the audit DB file while other threads may be using it (Windows)
 - `core/app/audit.py:107-119`, `core/app/saguaro.py:836-845`.
-- The swap is protected by the audit lock and the connection is closed before `Path.replace`, so it is safe inside the process. On Windows, however, `replace` fails with `PermissionError` (WinError 32) if any other process has `data/cactai.db` open. Examples are a DB browser or a second uvicorn started by mistake with `--reload` or a stale window. The reset then returns 500 and leaves `self._conn` as `None`, so every later append fails with an `AssertionError`.
-- **Fix:** wrap the call in try/except. On failure, reopen the original DB and start a new chain in a fresh file named with a timestamp (for example `cactai-<stamp>.db`) instead of renaming. Never leave `_conn` as `None`.
+- The swap is protected by the audit lock and the connection is closed before `Path.replace`, so it is safe inside the process. On Windows, however, `replace` fails with `PermissionError` (WinError 32) if any other process has `data/sentrai.db` open. Examples are a DB browser or a second uvicorn started by mistake with `--reload` or a stale window. The reset then returns 500 and leaves `self._conn` as `None`, so every later append fails with an `AssertionError`.
+- **Fix:** wrap the call in try/except. On failure, reopen the original DB and start a new chain in a fresh file named with a timestamp (for example `sentrai-<stamp>.db`) instead of renaming. Never leave `_conn` as `None`.
 
 ### M2. Fallback classifier keywords produce false positives
 - `core/app/classifier.py:385-391`: the substrings `"acl"`, `"scan"`, `"copy "`, `"dump"` and `"select "` are matched against the whole raw line. For example, `/search?q=oracle` matches `acl`, and a search containing "select " matches too.

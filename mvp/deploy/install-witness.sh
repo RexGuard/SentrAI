@@ -44,6 +44,9 @@ command -v python3 >/dev/null 2>&1 || die "python3 is required"
 python3 -c 'import sys; sys.exit(sys.version_info < (3, 10))' || die "python 3.10 or newer is required"
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 [ -f "$SRC/witness/witness.py" ] || die "run it from a SentrAI checkout (mvp/deploy/install-witness.sh)"
+# An install from before the CactAI -> SentrAI rename moves to the new names first.
+. "$SRC/deploy/migrate-from-cactai.sh"
+migrate_from_cactai witness
 NAME="${NAME:-$(hostname -I 2>/dev/null | awk '{print $1}')}"
 [ -n "$NAME" ] || die "--name is required"
 

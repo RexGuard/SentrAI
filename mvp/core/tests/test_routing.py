@@ -28,7 +28,7 @@ ROUTING = {
 
 def routed_client(tmp_path, routing=ROUTING):
     (tmp_path / "routing.json").write_text(json.dumps(routing), encoding="utf-8")
-    settings = Settings(db_path=tmp_path / "cactai.db", background=False, demo_speed=60.0)
+    settings = Settings(db_path=tmp_path / "sentrai.db", background=False, demo_speed=60.0)
     app = create_app(settings)
     c = TestClient(app, headers=AUTH)
     c.__enter__()
@@ -140,7 +140,7 @@ def test_owner_survives_a_restart(tmp_path):
 
 def test_a_broken_routing_file_falls_back_to_the_settings(tmp_path):
     (tmp_path / "routing.json").write_text("{not json", encoding="utf-8")
-    settings = Settings(db_path=tmp_path / "cactai.db", background=False, demo_speed=60.0)
+    settings = Settings(db_path=tmp_path / "sentrai.db", background=False, demo_speed=60.0)
     with TestClient(create_app(settings), headers=AUTH) as c:
         brute_force(c)
         assert c.get("/incidents/RSK-2026-081").json()["owner"] == settings.on_duty

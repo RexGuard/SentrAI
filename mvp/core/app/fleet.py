@@ -5,7 +5,7 @@ key (POST /fleet/enrol). That key only lets the agent send its own machine's eve
 own block list, and the owner can revoke it without touching any other machine. Only SHA-256
 hashes of codes and keys are kept, in fleet.json next to the database (mode 0600).
 
-Agents reach the panel over HTTPS (app/serve.py, CACTAI_PANEL_PORT) and pin its certificate: the join
+Agents reach the panel over HTTPS (app/serve.py, SENTRAI_PANEL_PORT) and pin its certificate: the join
 code comes with the certificate's SHA-256 fingerprint (``pin``), and an agent that sees any other
 certificate refuses to talk, so a self-signed panel needs no certificate file copied around.
 """
@@ -80,9 +80,9 @@ def cert_pin(cert_file: str | os.PathLike | None) -> str:
 
 
 def panel_info() -> dict[str, str]:
-    """What a new machine needs to reach this panel: its HTTPS address (CACTAI_PANEL_URL) and pin."""
-    return {"panel_url": os.environ.get("CACTAI_PANEL_URL", "").strip().rstrip("/"),
-            "pin": cert_pin(os.environ.get("CACTAI_PANEL_CERT", "").strip())}
+    """What a new machine needs to reach this panel: its HTTPS address (SENTRAI_PANEL_URL) and pin."""
+    return {"panel_url": os.environ.get("SENTRAI_PANEL_URL", "").strip().rstrip("/"),
+            "pin": cert_pin(os.environ.get("SENTRAI_PANEL_CERT", "").strip())}
 
 
 class Fleet:

@@ -14,15 +14,15 @@ file keeps the preset's name and every value. Values that no longer match their 
 as Advanced (see `settle_preset()`).
 
 Run (any venv, stdlib only):
-    python cactai_config.py              set up if this is a new machine, then show settings
-    python cactai_config.py setup        run the wizard again (current values as defaults)
-    python cactai_config.py get NAME     print one value, for scripts
-    python cactai_config.py token        print the core API token (made and saved on first use)
-    python cactai_config.py admin        who may sign in; on a new machine, a one-time setup code for the Owner
-    python cactai_config.py admin --email you@example.com --password-stdin   make the Owner directly (install.sh)
-    python cactai_config.py admin --reset [--email you@example.com]          new password, authenticator again
+    python sentrai_config.py              set up if this is a new machine, then show settings
+    python sentrai_config.py setup        run the wizard again (current values as defaults)
+    python sentrai_config.py get NAME     print one value, for scripts
+    python sentrai_config.py token        print the core API token (made and saved on first use)
+    python sentrai_config.py admin        who may sign in; on a new machine, a one-time setup code for the Owner
+    python sentrai_config.py admin --email you@example.com --password-stdin   make the Owner directly (install.sh)
+    python sentrai_config.py admin --reset [--email you@example.com]          new password, authenticator again
 
-Dashboard accounts (Owner, Admin, Auditor) live in accounts.json next to this file: see cactai_accounts.py.
+Dashboard accounts (Owner, Admin, Auditor) live in accounts.json next to this file: see sentrai_accounts.py.
 """
 from __future__ import annotations
 
@@ -37,18 +37,19 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-import cactai_llm
+import sentrai_env  # first: old CACTAI_* names still work
+import sentrai_llm
 
 MVP_DIR = Path(__file__).resolve().parent
 
 
 def config_path() -> Path:
-    return Path(os.environ.get("CACTAI_CONFIG") or Path.home() / ".cactai" / "config.json")
+    return Path(os.environ.get("SENTRAI_CONFIG") or sentrai_env.home_dir() / "config.json")
 
 
 def accounts_path() -> Path:
-    """The dashboard accounts (cactai_accounts.py), next to the settings file."""
-    return Path(os.environ.get("CACTAI_ACCOUNTS") or config_path().parent / "accounts.json")
+    """The dashboard accounts (sentrai_accounts.py), next to the settings file."""
+    return Path(os.environ.get("SENTRAI_ACCOUNTS") or config_path().parent / "accounts.json")
 
 
 def _write_private(path: Path, text: str) -> None:
@@ -81,7 +82,7 @@ class Section:
     fields: tuple[Field, ...]
 
 
-PRESET_ENV = "CACTAI_PRESET"
+PRESET_ENV = "SENTRAI_PRESET"
 DEFAULT_PRESET = "moderate"  # the values the demo was built and recorded with
 
 
@@ -117,12 +118,12 @@ SECTIONS = (
         Field(PRESET_ENV, "Preset", DEFAULT_PRESET, choices=PRESET_CHOICES),
     )),
     Section("collector", "1. Collector", "Where the logs are and where to send events.", (
-        Field("CACTAI_LAB_LOGS", "Logs directory", str(MVP_DIR / "lab" / "logs")),
-        Field("CACTAI_LOG_ACCESS", "Web access log file name", "access.jsonl"),
-        Field("CACTAI_LOG_AUTH", "Login log file name", "auth.jsonl"),
-        Field("CACTAI_LOG_DB", "Database log file name", "db.jsonl"),
-        Field("CACTAI_LOG_OS", "OS / process log file name", "os.jsonl"),
-        Field("CACTAI_CORE_URL", "Core URL", "http://127.0.0.1:8000"),
+        Field("SENTRAI_LAB_LOGS", "Logs directory", str(MVP_DIR / "lab" / "logs")),
+        Field("SENTRAI_LOG_ACCESS", "Web access log file name", "access.jsonl"),
+        Field("SENTRAI_LOG_AUTH", "Login log file name", "auth.jsonl"),
+        Field("SENTRAI_LOG_DB", "Database log file name", "db.jsonl"),
+        Field("SENTRAI_LOG_OS", "OS / process log file name", "os.jsonl"),
+        Field("SENTRAI_CORE_URL", "Core URL", "http://127.0.0.1:8000"),
     )),
     Section("classifier", "2. Classifier", "When an event counts as an attack.", (
         Field("BRUTE_FORCE_COUNT", "Failed logins that count as brute force", "5", int),
@@ -139,7 +140,7 @@ SECTIONS = (
               "block_ip,rate_limit,waf_rule"),
         Field("MAX_TTL_HOURS", "Longest any temporary action may last, in hours", "24", float),
         Field("MAX_AUTO_ACTIONS_PER_HOUR", "Most automatic actions in one hour (then a person decides)", "10", int),
-        Field("CACTAI_HEALTH_URL", "A page that must keep working while SentrAI blocks (checked after each action)"),
+        Field("SENTRAI_HEALTH_URL", "A page that must keep working while SentrAI blocks (checked after each action)"),
         Field("PROTECTED_IPS", "IPs or networks never to block (comma-separated)", "127.0.0.1,::1,localhost"),
         Field("PROTECTED_USERS", "More accounts never to lock (admin and service accounts always are)"),
         Field("ON_DUTY", "On-duty responder shown in alerts (name, ID, shift)", "On-duty responder"),
@@ -148,7 +149,7 @@ SECTIONS = (
             "Leave both blank to print alerts to the console.", (
         Field("TELEGRAM_BOT_TOKEN", "Telegram bot token", secret=True),
         Field("TELEGRAM_CHAT_ID", "Telegram chat id"),
-        Field("CACTAI_OPERATOR", "Your name, as shown on approvals", "operator"),
+        Field("SENTRAI_OPERATOR", "Your name, as shown on approvals", "operator"),
         Field("SMTP_HOST", "Email: SMTP server, blank for no email alerts"),
         Field("SMTP_PORT", "Email: SMTP port (587 STARTTLS, 465 SSL)", "587", int),
         Field("SMTP_SECURITY", "Email: connection security", "starttls", choices=("starttls", "ssl", "none")),
@@ -156,19 +157,19 @@ SECTIONS = (
         Field("SMTP_PASSWORD", "Email: SMTP password or app password", secret=True),
         Field("ALERT_EMAIL_FROM", "Email: sender address, blank to use the login"),
         Field("ALERT_EMAIL_TO", "Email: recipients (comma-separated)"),
-        Field("CACTAI_EMAIL_MODE", "Email: send when Telegram fails, or always", "backup",
+        Field("SENTRAI_EMAIL_MODE", "Email: send when Telegram fails, or always", "backup",
               choices=("backup", "always")),
     )),
     Section("ai", "5. AI model", "Cyanide and Scout. Pick a provider and paste its key; "
             "leave the key blank to run on fixed playbooks.", (
-        Field("CACTAI_LLM_PROVIDER", "Provider", "anthropic", choices=cactai_llm.PROVIDERS),
-        Field("CACTAI_LLM_API_KEY", "API key", secret=True),
-        Field("CACTAI_LLM_BASE_URL", "Base URL (only for another OpenAI-compatible service)"),
-        Field("CACTAI_LLM_MODEL", "Model name, blank for the provider's default"),
+        Field("SENTRAI_LLM_PROVIDER", "Provider", "anthropic", choices=sentrai_llm.PROVIDERS),
+        Field("SENTRAI_LLM_API_KEY", "API key", secret=True),
+        Field("SENTRAI_LLM_BASE_URL", "Base URL (only for another OpenAI-compatible service)"),
+        Field("SENTRAI_LLM_MODEL", "Model name, blank for the provider's default"),
     )),
     Section("access", "6. Access", "The token the parts of SentrAI use to talk to the core. "
             "People sign in with their own accounts (dashboard Team page).", (
-        Field("CACTAI_API_TOKEN", "Core API token (shared by the collector, dashboard and Telegram bot)",
+        Field("SENTRAI_API_TOKEN", "Core API token (shared by the collector, dashboard and Telegram bot)",
               secret=True, generated=True),
     )),
     Section("integrations", "7. Integrations", "Outside services SentrAI works with. Each stays off while its "
@@ -187,17 +188,17 @@ SECTIONS = (
 )
 FIELDS = {f.env: f for s in SECTIONS for f in s.fields}
 EMAIL_FIELDS = ("SMTP_PORT", "SMTP_SECURITY", "SMTP_USER", "SMTP_PASSWORD", "ALERT_EMAIL_FROM", "ALERT_EMAIL_TO",
-                "CACTAI_EMAIL_MODE")  # asked only when SMTP_HOST is set
+                "SENTRAI_EMAIL_MODE")  # asked only when SMTP_HOST is set
 CLOUDFLARE_FIELDS = ("CLOUDFLARE_ZONE_ID", "CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_METHOD", "CLOUDFLARE_LIST_ID",
                      "CLOUDFLARE_MODE")  # asked only when CLOUDFLARE_API_TOKEN is set
-MODEL_ENV = "CACTAI_LLM_MODEL"
-TOKEN_ENV = "CACTAI_API_TOKEN"
+MODEL_ENV = "SENTRAI_LLM_MODEL"
+TOKEN_ENV = "SENTRAI_API_TOKEN"
 # Before accounts: one dashboard sign-in in the settings file. Read only to make it the first Owner account.
-PASSWORD_ENV = "CACTAI_DASHBOARD_PASSWORD"  # before the sign-in had an email: a plain password
-EMAIL_ENV = "CACTAI_DASHBOARD_EMAIL"
-HASH_ENV = "CACTAI_DASHBOARD_PASSWORD_HASH"
+PASSWORD_ENV = "SENTRAI_DASHBOARD_PASSWORD"  # before the sign-in had an email: a plain password
+EMAIL_ENV = "SENTRAI_DASHBOARD_EMAIL"
+HASH_ENV = "SENTRAI_DASHBOARD_PASSWORD_HASH"
 LEGACY_EMAIL = "admin@sentrai.local"
-LOGIN_ENV = "CACTAI_DASHBOARD_LOGIN"  # "off" opens the dashboard without signing in (local testing only)
+LOGIN_ENV = "SENTRAI_DASHBOARD_LOGIN"  # "off" opens the dashboard without signing in (local testing only)
 _ITERATIONS = 600_000
 
 
@@ -233,19 +234,19 @@ def _migrate_password(values: dict[str, str]) -> dict[str, str]:
 
 def _one_ai_key(values: dict[str, str]) -> dict[str, str]:
     """Settings saved before the AI section had one key field: keep the key of the provider in use."""
-    legacy = {p: values.pop(env) for p, env in cactai_llm.KEY_ENV.items()
-              if env != cactai_llm.GENERIC_KEY_ENV and env in values}
+    legacy = {p: values.pop(env) for p, env in sentrai_llm.KEY_ENV.items()
+              if env != sentrai_llm.GENERIC_KEY_ENV and env in values}
     legacy = {p: k for p, k in legacy.items() if k}
-    provider = values.get("CACTAI_LLM_PROVIDER", "")
-    if provider in cactai_llm.PROVIDERS and provider != "compatible" and provider in legacy:
-        values[cactai_llm.GENERIC_KEY_ENV] = legacy[provider]
+    provider = values.get("SENTRAI_LLM_PROVIDER", "")
+    if provider in sentrai_llm.PROVIDERS and provider != "compatible" and provider in legacy:
+        values[sentrai_llm.GENERIC_KEY_ENV] = legacy[provider]
     elif provider in ("", "auto"):
         if legacy:  # what "auto" used to pick: the first provider with a key
             provider = next(iter(legacy))
-            values[cactai_llm.GENERIC_KEY_ENV] = legacy[provider]
-        elif values.get(cactai_llm.GENERIC_KEY_ENV):
+            values[sentrai_llm.GENERIC_KEY_ENV] = legacy[provider]
+        elif values.get(sentrai_llm.GENERIC_KEY_ENV):
             provider = "compatible"
-        values["CACTAI_LLM_PROVIDER"] = provider if provider != "auto" else FIELDS["CACTAI_LLM_PROVIDER"].default
+        values["SENTRAI_LLM_PROVIDER"] = provider if provider != "auto" else FIELDS["SENTRAI_LLM_PROVIDER"].default
     return values
 
 
@@ -303,7 +304,8 @@ def read() -> dict[str, str]:
         data = json.loads(config_path().read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
-    values = {k: str(v) for key, section in data.items() if isinstance(section, dict) and key != APPEARANCE_KEY
+    values = {sentrai_env.new_name(k): str(v)  # a file saved before the rename has CACTAI_* keys
+              for key, section in data.items() if isinstance(section, dict) and key != APPEARANCE_KEY
               for k, v in section.items()}
     return settle_preset(_one_ai_key(_migrate_password(values))) if values else values
 
@@ -402,7 +404,7 @@ def new_token() -> str:
 def api_token() -> str:
     """The token every client sends to the core, and the core requires.
 
-    An explicit CACTAI_API_TOKEN wins. Otherwise the saved one is used, and a machine without
+    An explicit SENTRAI_API_TOKEN wins. Otherwise the saved one is used, and a machine without
     one gets a new token saved to the settings file, so every component finds the same value.
     """
     token = os.environ.get(TOKEN_ENV, "").strip()
@@ -425,8 +427,8 @@ def _own_env(name: str) -> str:
 def dashboard_login() -> dict[str, str]:
     """The sign-in from before accounts existed: {"email", "hash", "plain"}, all "" parts when there was none.
 
-    "plain" is a CACTAI_DASHBOARD_PASSWORD set in the environment. An environment variable wins over the
-    settings file, as everywhere else. cactai_accounts makes this the first Owner account.
+    "plain" is a SENTRAI_DASHBOARD_PASSWORD set in the environment. An environment variable wins over the
+    settings file, as everywhere else. sentrai_accounts makes this the first Owner account.
     """
     values = read()
     return {"email": _own_env(EMAIL_ENV) or values.get(EMAIL_ENV) or LEGACY_EMAIL,
@@ -451,8 +453,8 @@ def valid(field: Field, answer: str) -> bool:
 
 def fetch_models(values: dict[str, str]) -> list[str]:
     """The models the chosen provider offers for the key in these settings (raises LLMError)."""
-    return cactai_llm.list_models(values.get("CACTAI_LLM_PROVIDER", ""), values.get(cactai_llm.GENERIC_KEY_ENV, ""),
-                                  values.get("CACTAI_LLM_BASE_URL") or None)
+    return sentrai_llm.list_models(values.get("SENTRAI_LLM_PROVIDER", ""), values.get(sentrai_llm.GENERIC_KEY_ENV, ""),
+                                  values.get("SENTRAI_LLM_BASE_URL") or None)
 
 
 def wizard(ask: Callable[[str], str] | None = None, ask_secret: Callable[[str], str] | None = None,
@@ -485,7 +487,7 @@ def wizard(ask: Callable[[str], str] | None = None, ask_secret: Callable[[str], 
                 continue
             if f.generated:
                 values[f.env] = current[f.env] or new_token()
-                say(f"  {f.prompt}: {'kept' if current[f.env] else 'generated'} (python cactai_config.py token shows it)")
+                say(f"  {f.prompt}: {'kept' if current[f.env] else 'generated'} (python sentrai_config.py token shows it)")
                 continue
             shown = ("set" if current[f.env] else "not set") if f.secret else current[f.env]
             prompt = f.prompt
@@ -494,7 +496,7 @@ def wizard(ask: Callable[[str], str] | None = None, ask_secret: Callable[[str], 
                     if f.env == PRESET_ENV:
                         say(f"    {n}. {preset_label(choice)}: {PRESETS[choice].about if choice in PRESETS else ADVANCED_ABOUT}")
                     else:
-                        say(f"    {n}. {cactai_llm.LABEL.get(choice, choice)}")
+                        say(f"    {n}. {sentrai_llm.LABEL.get(choice, choice)}")
                 prompt += " (number)"
             listed: list[str] = []
             if f.env == MODEL_ENV:
@@ -504,7 +506,7 @@ def wizard(ask: Callable[[str], str] | None = None, ask_secret: Callable[[str], 
                 if f.env == MODEL_ENV and answer == "?":
                     try:
                         listed = models(values)
-                    except cactai_llm.LLMError as e:
+                    except sentrai_llm.LLMError as e:
                         say(f"    Could not list the models: {e}.")
                         continue
                     for n, name in enumerate(listed, 1):
@@ -533,9 +535,9 @@ def ensure(interactive: bool | None = None) -> dict[str, str]:
     if interactive is None:
         interactive = sys.stdin.isatty()
     if interactive and not config_path().exists():
-        print(f"[cactai] No settings found at {config_path()}; this looks like a new machine.")
+        print(f"[sentrai] No settings found at {config_path()}; this looks like a new machine.")
         setup()
-        print("[cactai] Change them any time with: python cactai_config.py setup")
+        print("[sentrai] Change them any time with: python sentrai_config.py setup")
     return load()
 
 
@@ -546,17 +548,17 @@ def setup() -> None:
     except (KeyboardInterrupt, EOFError):
         print("\nSetup cancelled; nothing saved.")
         raise SystemExit(1)
-    print(f"[cactai] Saved to {save(values)}.")
+    print(f"[sentrai] Saved to {save(values)}.")
     mark_setup_done("wizard")
 
 
 def admin(args: list[str]) -> int:
-    """`python cactai_config.py admin` (on a server `sudo cactai-admin`): the dashboard's people, from the shell.
+    """`python sentrai_config.py admin` (on a server `sudo sentrai-admin`): the dashboard's people, from the shell.
 
     Whoever can run this on the machine is trusted: it makes the setup code for the first Owner, makes
     the Owner directly (install.sh), or resets someone's password and authenticator.
     """
-    import cactai_accounts as acc
+    import sentrai_accounts as acc
 
     email, reset, typed = "", False, ""
     while args:
@@ -567,7 +569,7 @@ def admin(args: list[str]) -> int:
         elif args[0] == "--password-stdin":
             typed, args = sys.stdin.readline().rstrip("\r\n"), args[1:]
         else:
-            print("usage: python cactai_config.py admin [--email you@example.com] [--reset] [--password-stdin]")
+            print("usage: python sentrai_config.py admin [--email you@example.com] [--reset] [--password-stdin]")
             return 2
     try:
         if not acc.has_accounts():

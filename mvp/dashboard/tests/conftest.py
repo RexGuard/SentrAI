@@ -14,8 +14,8 @@ sys.path.insert(0, str(ROOT))
 @pytest.fixture(autouse=True)
 def _no_login(monkeypatch):
     """Page tests open the console directly; the sign-in has its own tests."""
-    monkeypatch.setenv("CACTAI_DASHBOARD_LOGIN", "off")
-    from cactai_ui import signin
+    monkeypatch.setenv("SENTRAI_DASHBOARD_LOGIN", "off")
+    from sentrai_ui import signin
     signin._fails.clear()  # wrong tries from one test must not lock the next one out
 
 

@@ -45,7 +45,7 @@ def go_offline(g: offline.LocalGuard, clock: Clock) -> float:
 
 @pytest.fixture(autouse=True)
 def agent_file(tmp_path, monkeypatch):
-    monkeypatch.setenv("CACTAI_AGENT_FILE", str(tmp_path / "agent.json"))
+    monkeypatch.setenv("SENTRAI_AGENT_FILE", str(tmp_path / "agent.json"))
     return tmp_path / "agent.json"
 
 

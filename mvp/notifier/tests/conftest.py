@@ -10,8 +10,8 @@ import requests
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-os.environ["CACTAI_CONFIG"] = str(ROOT / "tests" / "no-config.json")  # ignore this machine's saved settings
-os.environ["CACTAI_API_TOKEN"] = "test-token"  # never generate (and save) a real token from tests
+os.environ["SENTRAI_CONFIG"] = str(ROOT / "tests" / "no-config.json")  # ignore this machine's saved settings
+os.environ["SENTRAI_API_TOKEN"] = "test-token"  # never generate (and save) a real token from tests
 os.environ.pop("SLACK_WEBHOOK_URL", None)  # never post to a real Slack from tests
 FAKE = ROOT.parent / "dashboard" / "dev" / "fake_core.py"
 # fake_core needs fastapi/uvicorn, which live in the dashboard venv (not the notifier's).

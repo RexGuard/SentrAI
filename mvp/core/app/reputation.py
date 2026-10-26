@@ -25,7 +25,7 @@ from typing import Any
 
 from . import protect
 
-log = logging.getLogger("cactai.reputation")
+log = logging.getLogger("sentrai.reputation")
 
 API = "https://api.abuseipdb.com/api/v2/check"
 CACHE_SIZE = 2048

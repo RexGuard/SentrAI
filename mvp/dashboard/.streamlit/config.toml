@@ -7,7 +7,7 @@ runOnSave = false
 [browser]
 gatherUsageStats = false
 
-# SentrAI Black theme with the Mono accent: the first paint before cactai_ui/theme.py applies the saved look
+# SentrAI Black theme with the Mono accent: the first paint before sentrai_ui/theme.py applies the saved look
 # (Configuration > Appearance), which replaces these values at run time.
 [theme]
 base = "dark"

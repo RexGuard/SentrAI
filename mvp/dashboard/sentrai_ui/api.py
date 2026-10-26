@@ -33,7 +33,7 @@ class CoreClient:
         self.timeout = timeout
         self.read_only = read_only  # an Auditor's console: every change is refused before it leaves
         self.session = requests.Session()
-        if token:  # the core's API token (cactai_config.api_token())
+        if token:  # the core's API token (sentrai_config.api_token())
             self.session.headers["Authorization"] = f"Bearer {token}"
 
     def _url(self, path: str) -> str:

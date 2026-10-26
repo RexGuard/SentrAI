@@ -1,6 +1,6 @@
 """Runtime settings, read from environment variables once per engine instance.
 
-Values saved by the setup wizard (``mvp/cactai_config.py``) fill in any variable not set.
+Values saved by the setup wizard (``mvp/sentrai_config.py``) fill in any variable not set.
 """
 
 from __future__ import annotations
@@ -14,12 +14,26 @@ from pathlib import Path
 
 CORE_DIR = Path(__file__).resolve().parent.parent
 sys.path.append(str(CORE_DIR.parent))
-import cactai_config  # noqa: E402
+import sentrai_config  # noqa: E402
 
 from . import protect  # noqa: E402
 
-cactai_config.load()
-DEFAULT_DB = CORE_DIR / "data" / "cactai.db"
+sentrai_config.load()
+DEFAULT_DB = CORE_DIR / "data" / "sentrai.db"
+OLD_DB = CORE_DIR / "data" / "cactai.db"  # its name before the CactAI -> SentrAI rename
+
+
+def _default_db() -> str:
+    """The audit database in the checkout; one saved under the old name is renamed first."""
+    if not DEFAULT_DB.exists() and OLD_DB.exists():
+        try:
+            for suffix in ("", "-wal", "-shm"):
+                old = OLD_DB.with_name(OLD_DB.name + suffix)
+                if old.exists():
+                    old.rename(DEFAULT_DB.with_name(DEFAULT_DB.name + suffix))
+        except OSError:  # still open in an old core (Windows): keep using it under its old name
+            return str(OLD_DB)
+    return str(DEFAULT_DB)
 
 
 def sign(token: str, path: str) -> str:
@@ -78,7 +92,7 @@ class Settings:
     # How the risk index is kept: "fleet" (default) adds every machine's incidents into one score, as on a
     # single server; "host" scores each machine on its own, so a central panel never blocks a quiet machine
     # because another one is under attack. The headline index is then the worst machine's.
-    risk_scope: str = field(default_factory=lambda: "host" if os.getenv("CACTAI_RISK_SCOPE", "fleet").strip().lower()
+    risk_scope: str = field(default_factory=lambda: "host" if os.getenv("SENTRAI_RISK_SCOPE", "fleet").strip().lower()
                             in ("host", "machine", "per-host") else "fleet")
     ttl_hours: float = field(default_factory=lambda: _f("HOTPATCH_TTL_HOURS", 2.0))
     penalty_per_hour: float = 5.0
@@ -88,7 +102,7 @@ class Settings:
     team_lead: str = field(default_factory=lambda: os.getenv("TEAM_LEAD", "Team lead"))
     it_manager: str = field(default_factory=lambda: os.getenv("IT_MANAGER", "IT manager"))
     cxo: str = field(default_factory=lambda: os.getenv("CXO", "CXO"))
-    db_path: Path = field(default_factory=lambda: Path(os.getenv("CACTAI_DB", str(DEFAULT_DB))))
+    db_path: Path = field(default_factory=lambda: Path(os.getenv("SENTRAI_DB") or _default_db()))
     brute_force_count: int = field(default_factory=lambda: _i("BRUTE_FORCE_COUNT", 5))
     brute_force_window_s: float = field(default_factory=lambda: _f("BRUTE_FORCE_WINDOW_S", 60.0))
     export_rows_threshold: int = field(default_factory=lambda: _i("EXPORT_ROWS_THRESHOLD", 100))
@@ -116,9 +130,9 @@ class Settings:
     anchor_every_min: float = field(default_factory=lambda: _f("ANCHOR_EVERY_MIN", 60.0))
     # Off-box copy (remote_copy.py): a SentrAI witness on another machine that keeps every audit
     # record and log line where this server's root cannot change them. Empty URL = off.
-    remote_copy_url: str = field(default_factory=lambda: os.getenv("CACTAI_REMOTE_COPY_URL", "").strip().rstrip("/"))
-    remote_copy_token: str = field(default_factory=lambda: _secret("CACTAI_REMOTE_COPY_TOKEN"))
-    remote_copy_ca: str = field(default_factory=lambda: os.getenv("CACTAI_REMOTE_COPY_CA", "").strip())
+    remote_copy_url: str = field(default_factory=lambda: os.getenv("SENTRAI_REMOTE_COPY_URL", "").strip().rstrip("/"))
+    remote_copy_token: str = field(default_factory=lambda: _secret("SENTRAI_REMOTE_COPY_TOKEN"))
+    remote_copy_ca: str = field(default_factory=lambda: os.getenv("SENTRAI_REMOTE_COPY_CA", "").strip())
     id_year: int = field(default_factory=lambda: _i("ID_YEAR", 2026))
     id_start: int = field(default_factory=lambda: _i("ID_START", 81))
     history_len: int = 3600
@@ -145,18 +159,18 @@ class Settings:
     contain_min_severity: str = field(default_factory=lambda: os.getenv("CONTAIN_MIN_SEVERITY", "high").strip().lower())
     contain_min_points: float = field(default_factory=lambda: _f("CONTAIN_MIN_POINTS", 20.0))
     # Host firewall for block_ip (app/firewall.py): off keeps blocking portal-only; enforce=False is a dry run.
-    firewall: str = field(default_factory=lambda: os.getenv("CACTAI_FIREWALL", "off"))
+    firewall: str = field(default_factory=lambda: os.getenv("SENTRAI_FIREWALL", "off"))
     firewall_enforce: bool = field(
-        default_factory=lambda: os.getenv("CACTAI_FIREWALL_ENFORCE", "0").strip().lower() in ("1", "true", "yes", "on")
+        default_factory=lambda: os.getenv("SENTRAI_FIREWALL_ENFORCE", "0").strip().lower() in ("1", "true", "yes", "on")
     )
     # Responder webhook (responders.WebhookResponder): hand these action types to another system by URL.
-    responder_webhook_url: str = field(default_factory=lambda: os.getenv("CACTAI_RESPONDER_WEBHOOK_URL", "").strip())
+    responder_webhook_url: str = field(default_factory=lambda: os.getenv("SENTRAI_RESPONDER_WEBHOOK_URL", "").strip())
     responder_webhook_actions: tuple[str, ...] = field(default_factory=lambda: tuple(
-        x.strip() for x in os.getenv("CACTAI_RESPONDER_WEBHOOK_ACTIONS",
+        x.strip() for x in os.getenv("SENTRAI_RESPONDER_WEBHOOK_ACTIONS",
                                      "block_ip,lock_user,rate_limit,waf_rule,kill_process,revoke_public_acl").split(",")
         if x.strip()))
-    responder_webhook_secret: str = field(default_factory=lambda: _secret("CACTAI_RESPONDER_WEBHOOK_SECRET"), repr=False)
-    responder_webhook_timeout_s: float = field(default_factory=lambda: _f("CACTAI_RESPONDER_WEBHOOK_TIMEOUT_S", 3.0))
+    responder_webhook_secret: str = field(default_factory=lambda: _secret("SENTRAI_RESPONDER_WEBHOOK_SECRET"), repr=False)
+    responder_webhook_timeout_s: float = field(default_factory=lambda: _f("SENTRAI_RESPONDER_WEBHOOK_TIMEOUT_S", 3.0))
     # Cloudflare (app/cloudflare.py): block_ip also blocks at Cloudflare's edge. Off while the token is blank.
     cloudflare_api_token: str = field(default_factory=lambda: _secret("CLOUDFLARE_API_TOKEN"), repr=False)
     cloudflare_zone_id: str = field(default_factory=lambda: os.getenv("CLOUDFLARE_ZONE_ID", "").strip())
@@ -173,11 +187,11 @@ class Settings:
     slack_webhook_url: str = field(default_factory=lambda: _secret("SLACK_WEBHOOK_URL"), repr=False)
     jev_budget_s: float = field(default_factory=lambda: _f("JEV_BUDGET_S", 2.0))
     # Protection switch override at start: "1"/"0", or unset to use the last choice saved in protection.json.
-    monitor_only: str | None = field(default_factory=lambda: os.getenv("CACTAI_MONITOR_ONLY"))
-    public_url: str = field(default_factory=lambda: os.getenv("CACTAI_PUBLIC_URL", "http://127.0.0.1:8000").rstrip("/"))
-    background: bool = field(default_factory=lambda: os.getenv("CACTAI_BACKGROUND", "1") != "0")
+    monitor_only: str | None = field(default_factory=lambda: os.getenv("SENTRAI_MONITOR_ONLY"))
+    public_url: str = field(default_factory=lambda: os.getenv("SENTRAI_PUBLIC_URL", "http://127.0.0.1:8000").rstrip("/"))
+    background: bool = field(default_factory=lambda: os.getenv("SENTRAI_BACKGROUND", "1") != "0")
     # Every endpoint but /health and /blocklist needs it (see main.py). Made and saved on first use.
-    api_token: str = field(default_factory=cactai_config.api_token, repr=False)
+    api_token: str = field(default_factory=sentrai_config.api_token, repr=False)
     # Business limits on protective actions (Countersign and Warden apply them).
     # Action types SentrAI may take on its own; any other type waits for a person to approve it.
     auto_actions: set[str] = field(default_factory=lambda: _set("AUTO_ACTIONS", "block_ip,rate_limit,waf_rule"))
@@ -190,7 +204,7 @@ class Settings:
     # After-action check: this many timer minutes after an action starts, check it worked and did no harm.
     check_after_min: float = field(default_factory=lambda: _f("CHECK_AFTER_MIN", 10.0))
     # A page that should keep answering while SentrAI blocks things (your site's home page), blank = not probed.
-    health_url: str = field(default_factory=lambda: os.getenv("CACTAI_HEALTH_URL", "").strip())
+    health_url: str = field(default_factory=lambda: os.getenv("SENTRAI_HEALTH_URL", "").strip())
     # A failed undo is retried this often (real seconds), up to this many times, then left to a person.
     undo_retry_s: float = field(default_factory=lambda: _f("UNDO_RETRY_S", 60.0))
     undo_retries: int = field(default_factory=lambda: _i("UNDO_RETRIES", 3))
@@ -201,7 +215,7 @@ class Settings:
         return max(0.0, min(hours, self.max_ttl_hours)) if self.max_ttl_hours > 0 else max(0.0, hours)
     # One-page client summary (summary.py): daily | weekly | off, local time HH:MM, weekday for weekly,
     # and the name it is addressed to. A choice saved from the dashboard (summary.json) wins over these.
-    summary_every: str = field(default_factory=lambda: os.getenv("CACTAI_SUMMARY", "daily"))
-    summary_at: str = field(default_factory=lambda: os.getenv("CACTAI_SUMMARY_AT", "08:00"))
-    summary_day: str = field(default_factory=lambda: os.getenv("CACTAI_SUMMARY_DAY", "mon"))
-    summary_to: str = field(default_factory=lambda: os.getenv("CACTAI_SUMMARY_TO", "Client"))
+    summary_every: str = field(default_factory=lambda: os.getenv("SENTRAI_SUMMARY", "daily"))
+    summary_at: str = field(default_factory=lambda: os.getenv("SENTRAI_SUMMARY_AT", "08:00"))
+    summary_day: str = field(default_factory=lambda: os.getenv("SENTRAI_SUMMARY_DAY", "mon"))
+    summary_to: str = field(default_factory=lambda: os.getenv("SENTRAI_SUMMARY_TO", "Client"))

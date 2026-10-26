@@ -36,8 +36,8 @@ def test_pin_from_the_certificate_file(cert):
 
 
 def test_join_code_comes_with_the_panel_address_and_pin(panel, cert, monkeypatch):  # noqa: F811
-    monkeypatch.setenv("CACTAI_PANEL_CERT", str(cert[0]))
-    monkeypatch.setenv("CACTAI_PANEL_URL", "https://panel.example.com:8443/")
+    monkeypatch.setenv("SENTRAI_PANEL_CERT", str(cert[0]))
+    monkeypatch.setenv("SENTRAI_PANEL_URL", "https://panel.example.com:8443/")
     made = panel.post("/fleet/join-codes", json={"operator": "erick"}).json()
     assert made["pin"] == fleet.cert_pin(cert[0]) and made["panel_url"] == "https://panel.example.com:8443"
     assert panel.get("/fleet/panel").json() == {"panel_url": made["panel_url"], "pin": made["pin"]}
@@ -79,8 +79,8 @@ def test_agents_port_only_answers_machine_keys(panel):  # noqa: F811
 
 def test_panel_port_needs_a_certificate(cert):
     assert serve.panel_config(object(), {}) is None
-    with pytest.raises(SystemExit, match="CACTAI_PANEL_CERT"):
-        serve.panel_config(object(), {"CACTAI_PANEL_PORT": "8443"})
-    cfg = serve.panel_config(object(), {"CACTAI_PANEL_PORT": "8443", "CACTAI_PANEL_CERT": str(cert[0]),
-                                        "CACTAI_PANEL_KEY": str(cert[1])})
+    with pytest.raises(SystemExit, match="SENTRAI_PANEL_CERT"):
+        serve.panel_config(object(), {"SENTRAI_PANEL_PORT": "8443"})
+    cfg = serve.panel_config(object(), {"SENTRAI_PANEL_PORT": "8443", "SENTRAI_PANEL_CERT": str(cert[0]),
+                                        "SENTRAI_PANEL_KEY": str(cert[1])})
     assert cfg.port == 8443 and cfg.host == "0.0.0.0" and cfg.ssl_certfile == str(cert[0]) and cfg.lifespan == "off"

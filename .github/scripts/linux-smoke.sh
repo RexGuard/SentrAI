@@ -24,7 +24,7 @@ wait_for() {  # WHAT SECONDS COMMAND...
 }
 dump() {
     echo "--- journal ---"
-    journalctl --no-pager -n 60 -u cactai-core -u cactai-collector -u cactai-dashboard -u cactai-notifier -u cactai-agent || true
+    journalctl --no-pager -n 60 -u sentrai-core -u sentrai-collector -u sentrai-dashboard -u sentrai-notifier -u sentrai-agent || true
     nft list ruleset 2>/dev/null | head -60 || true
 }
 trap 'rc=$?; [ "$rc" = 0 ] || dump; exit "$rc"' EXIT
@@ -43,20 +43,20 @@ chmod 0640 "$LOG"
 # As on a VPS: agents reach the panel over the internet on its agents-only HTTPS port (--panel).
 ./deploy/install.sh --no-questions --admin-email ci@example.com --protect "$ADMIN_IP" \
     --panel 8443 --panel-url "$AGENT_URL"
-for u in cactai-core cactai-collector cactai-dashboard; do
+for u in sentrai-core sentrai-collector sentrai-dashboard; do
     wait_for "$u is running" 30 systemctl is-active --quiet "$u"
 done
 wait_for "core answers" 60 curl -sf "$PANEL/health"
 wait_for "dashboard answers over HTTPS" 90 curl -skf https://127.0.0.1:8501/_stcore/health
-nft list table inet cactai_dashboard | grep -q "$ADMIN_IP" || fail "dashboard firewall rule does not allow $ADMIN_IP"
-[ "$(stat -c '%U:%G %a' /etc/cactai/cactai.env)" = "root:cactai 640" ] || fail "cactai.env owner/mode"
-[ "$(stat -c '%a' /var/lib/cactai/core)" = 700 ] || fail "core state folder is not 0700"
-TOKEN="$(cd /opt/cactai/mvp && set -a && . /etc/cactai/cactai.env && set +a && \
-    runuser -u cactai -- env HOME=/var/lib/cactai lab/.venv/bin/python cactai_config.py token)"
+nft list table inet sentrai_dashboard | grep -q "$ADMIN_IP" || fail "dashboard firewall rule does not allow $ADMIN_IP"
+[ "$(stat -c '%U:%G %a' /etc/sentrai/sentrai.env)" = "root:sentrai 640" ] || fail "sentrai.env owner/mode"
+[ "$(stat -c '%a' /var/lib/sentrai/core)" = 700 ] || fail "core state folder is not 0700"
+TOKEN="$(cd /opt/sentrai/mvp && set -a && . /etc/sentrai/sentrai.env && set +a && \
+    runuser -u sentrai -- env HOME=/var/lib/sentrai lab/.venv/bin/python sentrai_config.py token)"
 [ -n "$TOKEN" ] || fail "no API token"
 api() { curl -sf -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' "$@"; }
 
-grep -q '^CACTAI_RISK_SCOPE=host' /etc/cactai/cactai.env || fail "--panel did not turn on per-machine scoring"
+grep -q '^SENTRAI_RISK_SCOPE=host' /etc/sentrai/sentrai.env || fail "--panel did not turn on per-machine scoring"
 wait_for "the agents' HTTPS port answers" 30 curl -skf "$AGENT_URL/health"
 # That port answers machine keys only: the operator API stays on 127.0.0.1, even with the token.
 code="$(curl -sk -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $TOKEN" "$AGENT_URL/incidents")"
@@ -74,28 +74,28 @@ echo "join code $CODE, pin $PIN"
 if ./deploy/install-agent.sh --panel "$AGENT_URL" --code "$CODE" --name "$NAME" --no-start \
     --pin "sha256:$(printf '0%.0s' $(seq 1 64))"; then fail "a wrong pin was accepted"; fi
 echo "ok: a wrong pin is refused"
-rm -rf /var/lib/cactai/agent /etc/cactai/agent.env
+rm -rf /var/lib/sentrai/agent /etc/sentrai/agent.env
 
 # --- agent: first install is a dry run ------------------------------------------------------
 ./deploy/install-agent.sh --panel "$AGENT_URL" --code "$CODE" --pin "$PIN" --name "$NAME" --protect "$ADMIN_IP"
-wait_for "cactai-agent is running" 30 systemctl is-active --quiet cactai-agent
+wait_for "sentrai-agent is running" 30 systemctl is-active --quiet sentrai-agent
 machine_reported() {
     api "$PANEL/machines" | python3 -c "import json, sys; m = [x for x in json.load(sys.stdin) if x['host'] == '$NAME']; sys.exit(not (m and m[0].get('services_at')))"
 }
 wait_for "the machine reports to the panel" 60 machine_reported
-grep -q '^CACTAI_FIREWALL_ENFORCE=0' /etc/cactai/agent.env || fail "first install is not a dry run"
-grep -q "$LOG" /var/lib/cactai/agent/sources.json || fail "the installer did not approve $LOG"
-grep -q "$ADMIN_IP" /etc/cactai/agent.env || fail "--protect was not kept"
-[ "$(stat -c '%U %a' /var/lib/cactai/agent)" = "cactai 700" ] || fail "agent state folder owner/mode"
-[ "$(systemctl show -p User --value cactai-agent)" = cactai ] || fail "agent does not run as cactai"
+grep -q '^SENTRAI_FIREWALL_ENFORCE=0' /etc/sentrai/agent.env || fail "first install is not a dry run"
+grep -q "$LOG" /var/lib/sentrai/agent/sources.json || fail "the installer did not approve $LOG"
+grep -q "$ADMIN_IP" /etc/sentrai/agent.env || fail "--protect was not kept"
+[ "$(stat -c '%U %a' /var/lib/sentrai/agent)" = "sentrai 700" ] || fail "agent state folder owner/mode"
+[ "$(systemctl show -p User --value sentrai-agent)" = sentrai ] || fail "agent does not run as sentrai"
 
 # --- upgrade in place with --enforce (no code: the machine stays joined) ----------------------
 # --pin without a code sets the pin on the joined machine (as after a panel certificate change).
 ./deploy/install-agent.sh --enforce --pin "$PIN"
-grep -q "\"pin\": \"$PIN\"" /var/lib/cactai/agent/agent.json || fail "--pin on a joined machine was not saved"
-grep -q '^CACTAI_FIREWALL_ENFORCE=1' /etc/cactai/agent.env || fail "--enforce was not saved"
-grep -q "$ADMIN_IP" /etc/cactai/agent.env || fail "--protect was lost on upgrade"
-wait_for "cactai-agent is running after the upgrade" 30 systemctl is-active --quiet cactai-agent
+grep -q "\"pin\": \"$PIN\"" /var/lib/sentrai/agent/agent.json || fail "--pin on a joined machine was not saved"
+grep -q '^SENTRAI_FIREWALL_ENFORCE=1' /etc/sentrai/agent.env || fail "--enforce was not saved"
+grep -q "$ADMIN_IP" /etc/sentrai/agent.env || fail "--protect was lost on upgrade"
+wait_for "sentrai-agent is running after the upgrade" 30 systemctl is-active --quiet sentrai-agent
 n="$(api "$PANEL/fleet/agents" | python3 -c 'import json, sys; print(len(json.load(sys.stdin)))')"
 [ "$n" = 1 ] || fail "the upgrade joined a second time ($n agents)"
 
@@ -120,14 +120,14 @@ approve() {  # IP: approve the block for that address, as an operator on the das
     api -X POST "$PANEL/incidents/$iid/decision" -d '{"operator": "ci", "decision": "approve", "justification": "CI"}' >/dev/null
     echo "$iid"
 }
-nft_has() { nft list set inet cactai blocked4 | grep -q "$1"; }
-ipt_has() { iptables -w -C INPUT -s "$1" -m comment --comment cactai -j DROP; }
+nft_has() { nft list set inet sentrai blocked4 | grep -q "$1"; }
+ipt_has() { iptables -w -C INPUT -s "$1" -m comment --comment sentrai -j DROP; }
 
 attack "$ATTACKER"
 IID="$(approve "$ATTACKER" | tail -1)"
 wait_for "the panel lists $ATTACKER for $NAME" 30 sh -c "curl -sf -H 'Authorization: Bearer $TOKEN' '$PANEL/blocklist?host=$NAME' | grep -q '$ATTACKER'"
 wait_for "nftables drops $ATTACKER" 60 nft_has "$ATTACKER"
-nft list chain inet cactai input | grep -q 'ip saddr @blocked4 drop' || fail "no drop rule for the blocked set"
+nft list chain inet sentrai input | grep -q 'ip saddr @blocked4 drop' || fail "no drop rule for the blocked set"
 
 # Undo it on the panel: the agent takes the block out again.
 api -X POST "$PANEL/incidents/$IID/rollback" -d '{"operator": "ci"}' >/dev/null
@@ -136,37 +136,37 @@ for _ in $(seq 1 60); do nft_has "$ATTACKER" || break; sleep 1; done
 echo "ok: rollback removed the block"
 
 # A stop must stop the agent itself.
-systemctl stop cactai-agent
+systemctl stop sentrai-agent
 sleep 1
 ! pgrep -f -- '-m agent run' >/dev/null || fail "the agent kept running after systemctl stop"
 
 # --- iptables instead of nftables ---------------------------------------------------------------
-sed -i 's/^CACTAI_FIREWALL=.*/CACTAI_FIREWALL=iptables/' /etc/cactai/agent.env
-systemctl start cactai-agent
-wait_for "cactai-agent is running on iptables" 30 systemctl is-active --quiet cactai-agent
+sed -i 's/^SENTRAI_FIREWALL=.*/SENTRAI_FIREWALL=iptables/' /etc/sentrai/agent.env
+systemctl start sentrai-agent
+wait_for "sentrai-agent is running on iptables" 30 systemctl is-active --quiet sentrai-agent
 attack "$ATTACKER2"
 approve "$ATTACKER2" >/dev/null
 wait_for "iptables drops $ATTACKER2" 60 ipt_has "$ATTACKER2"
 
-if journalctl -q --no-pager -u cactai-core -u cactai-collector -u cactai-notifier -u cactai-agent | grep "Read-only file system"; then
+if journalctl -q --no-pager -u sentrai-core -u sentrai-collector -u sentrai-notifier -u sentrai-agent | grep "Read-only file system"; then
     fail "a service tried to write outside its own folder (above)"
 fi
 
 # --- uninstall: service, code and blocks go; the key stays until --purge -------------------------
 ./deploy/uninstall-agent.sh
-! systemctl cat cactai-agent >/dev/null 2>&1 || fail "agent service still installed"
+! systemctl cat sentrai-agent >/dev/null 2>&1 || fail "agent service still installed"
 ! ipt_has "$ATTACKER2" 2>/dev/null || fail "iptables block left behind"
-[ -f /var/lib/cactai/agent/agent.json ] || fail "uninstall deleted the machine key without --purge"
-[ -f /opt/cactai/mvp/core/app/main.py ] || fail "agent uninstall removed the panel's code"
-systemctl is-active --quiet cactai-core || fail "agent uninstall stopped the panel"
+[ -f /var/lib/sentrai/agent/agent.json ] || fail "uninstall deleted the machine key without --purge"
+[ -f /opt/sentrai/mvp/core/app/main.py ] || fail "agent uninstall removed the panel's code"
+systemctl is-active --quiet sentrai-core || fail "agent uninstall stopped the panel"
 ./deploy/uninstall-agent.sh --purge
-[ ! -e /var/lib/cactai/agent ] || fail "--purge left /var/lib/cactai/agent"
+[ ! -e /var/lib/sentrai/agent ] || fail "--purge left /var/lib/sentrai/agent"
 
 ./deploy/uninstall.sh --purge
-for u in cactai-core cactai-collector cactai-dashboard cactai-notifier; do
+for u in sentrai-core sentrai-collector sentrai-dashboard sentrai-notifier; do
     ! systemctl cat "$u" >/dev/null 2>&1 || fail "$u still installed"
 done
-[ ! -e /opt/cactai ] || fail "/opt/cactai still there"
-! nft list table inet cactai_dashboard >/dev/null 2>&1 || fail "dashboard firewall rule left behind"
-! id cactai >/dev/null 2>&1 || fail "cactai user still there"
+[ ! -e /opt/sentrai ] || fail "/opt/sentrai still there"
+! nft list table inet sentrai_dashboard >/dev/null 2>&1 || fail "dashboard firewall rule left behind"
+! id sentrai >/dev/null 2>&1 || fail "sentrai user still there"
 echo "Linux install: all checks passed"

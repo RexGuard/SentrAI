@@ -437,7 +437,7 @@ On a new machine, `run_demo.ps1` first asks a few questions, one section per par
 3. **Responder:** risk threshold, block expiry, SLA, and IPs and accounts that must never be touched.
 4. **Notifications:** Telegram bot token and chat ID.
 
-Pressing Enter keeps the demo defaults. Answers are saved to `%USERPROFILE%\.cactai\config.json` and read by every component on start. Change them later with `python cactai_config.py setup` or on the dashboard's Configuration page.
+Pressing Enter keeps the demo defaults. Answers are saved to `%USERPROFILE%\.sentrai\config.json` and read by every component on start. Change them later with `python sentrai_config.py setup` or on the dashboard's Configuration page.
 
 **Dashboard**
 

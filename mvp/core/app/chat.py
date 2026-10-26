@@ -22,12 +22,12 @@ import re
 import threading
 from typing import Any
 
-from .config import Settings  # noqa: F401  (puts mvp/ on sys.path, for cactai_llm)
+from .config import Settings  # noqa: F401  (puts mvp/ on sys.path, for sentrai_llm)
 from .saguaro import Saguaro
 
-import cactai_llm  # noqa: E402
+import sentrai_llm  # noqa: E402
 
-log = logging.getLogger("cactai.chat")
+log = logging.getLogger("sentrai.chat")
 
 MAX_HISTORY = 200           # messages kept in memory
 HISTORY_IN_PROMPT = 10      # earlier messages the model sees
@@ -132,14 +132,14 @@ TOOLS: list[dict[str, Any]] = [
 ]
 
 
-def default_chat_provider() -> cactai_llm.Provider | None:
+def default_chat_provider() -> sentrai_llm.Provider | None:
     """The configured model for chat, or None (answers from the core's own explanations)."""
     if os.getenv("CYANIDE_ENABLED", "1") == "0" or os.getenv("CYANIDE_CHAT", "1") == "0":
         return None
     try:
-        provider = cactai_llm.from_env(effort=os.getenv("CYANIDE_CHAT_EFFORT", "low"),
+        provider = sentrai_llm.from_env(effort=os.getenv("CYANIDE_CHAT_EFFORT", "low"),
                                        timeout_s=float(os.getenv("CYANIDE_CHAT_TIMEOUT_S", "45")))
-    except (ImportError, cactai_llm.LLMError) as e:
+    except (ImportError, sentrai_llm.LLMError) as e:
         log.warning("Chat answers without an AI model: %s", e)
         return None
     if provider is not None:
@@ -148,7 +148,7 @@ def default_chat_provider() -> cactai_llm.Provider | None:
 
 
 class OperatorChat:
-    def __init__(self, core: Saguaro, provider: cactai_llm.Provider | None = None, discovery: Any = None,
+    def __init__(self, core: Saguaro, provider: sentrai_llm.Provider | None = None, discovery: Any = None,
                  threats: Any = None, backups: Any = None) -> None:
         self.core, self.provider, self.discovery, self.threats = core, provider, discovery, threats
         self.backups = backups
@@ -190,7 +190,7 @@ class OperatorChat:
         if self.provider:
             try:
                 answer = self._ask_model(text, incident, earlier, looked_at, suggestions)
-            except cactai_llm.LLMError as e:
+            except sentrai_llm.LLMError as e:
                 log.warning("chat model failed: %s", e)
                 source = "fallback"
                 answer = f"(The AI model is unavailable: {str(e)[:160]}. Here is what the core itself knows.)\n\n"
@@ -227,7 +227,7 @@ class OperatorChat:
             out = self.provider.complete_json(SETUP_SYSTEM.format(name=self.core.name), (
                 f"Question: {question[:800]}\nOptions:\n{listing}\nUser's answer: {answer[:MAX_QUESTION_CHARS]}"),
                 schema)
-        except cactai_llm.LLMError as e:
+        except sentrai_llm.LLMError as e:
             log.warning("setup interpret failed: %s", e)
             return {"ai": False, "choice": "", "reply": ""}
         choice = str(out.get("choice") or "")
@@ -262,7 +262,7 @@ class OperatorChat:
         lines.append(f"Operator: {text}")
         return "\n".join(lines)
 
-    def _run_tool(self, call: cactai_llm.ToolCall, looked_at: list[str],
+    def _run_tool(self, call: sentrai_llm.ToolCall, looked_at: list[str],
                   suggestions: list[dict[str, str]]) -> tuple[str, str, bool]:
         try:
             out = self._dispatch(call.name, call.input, looked_at, suggestions)

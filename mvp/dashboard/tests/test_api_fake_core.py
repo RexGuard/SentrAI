@@ -1,6 +1,6 @@
 import requests
 
-from cactai_ui.api import CoreClient, CoreError
+from sentrai_ui.api import CoreClient, CoreError
 
 
 def test_core_down_raises_coreerror():

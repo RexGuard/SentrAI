@@ -1,6 +1,6 @@
 """Who hears about an incident, who owns it, and who it goes to when nobody answers.
 
-Contacts, routing rules and the follow-up policy come from a JSON file (CACTAI_ROUTING, default
+Contacts, routing rules and the follow-up policy come from a JSON file (SENTRAI_ROUTING, default
 ``routing.json`` next to the database). Without one, the four people in the settings (ON_DUTY,
 TEAM_LEAD, IT_MANAGER, CXO) form a chain where each one backs up the one before.
 
@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-log = logging.getLogger("cactai.routing")
+log = logging.getLogger("sentrai.routing")
 
 MATCH_KEYS = ("category", "severity", "host", "layer")
 # Kept by the attacker's touch on files or data: the IT manager hears about them as well.
@@ -232,5 +232,5 @@ def load(path: Path, on_duty: str, team_lead: str, it_manager: str, cxo: str) ->
 
 
 def from_settings(s: Any) -> Router:
-    path = Path(os.getenv("CACTAI_ROUTING", "").strip() or s.db_path.parent / "routing.json")
+    path = Path(os.getenv("SENTRAI_ROUTING", "").strip() or s.db_path.parent / "routing.json")
     return load(path, s.on_duty, s.team_lead, s.it_manager, s.cxo)

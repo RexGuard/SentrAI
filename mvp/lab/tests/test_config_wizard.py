@@ -1,4 +1,4 @@
-"""The first-run setup wizard (mvp/cactai_config.py)."""
+"""The first-run setup wizard (mvp/sentrai_config.py)."""
 from __future__ import annotations
 
 import json
@@ -8,13 +8,13 @@ import pytest
 
 from collector import paths
 
-cfg = paths.cactai_config
+cfg = paths.sentrai_config
 
 
 @pytest.fixture
 def config_file(tmp_path, monkeypatch):
     path = tmp_path / "config.json"
-    monkeypatch.setenv("CACTAI_CONFIG", str(path))
+    monkeypatch.setenv("SENTRAI_CONFIG", str(path))
     return path
 
 
@@ -43,8 +43,8 @@ def test_answers_are_saved_per_part_and_loaded_as_env_defaults(config_file, monk
     saved = json.loads(config_file.read_text())
     assert set(saved) == {"preset", "collector", "classifier", "responder", "notifications", "ai", "access",
                           "integrations"}
-    assert saved["preset"]["CACTAI_PRESET"] == "advanced"
-    assert saved["collector"]["CACTAI_LAB_LOGS"] == "/var/log/portal"
+    assert saved["preset"]["SENTRAI_PRESET"] == "advanced"
+    assert saved["collector"]["SENTRAI_LAB_LOGS"] == "/var/log/portal"
     assert saved["classifier"]["BRUTE_FORCE_COUNT"] == "3"
     assert saved["responder"]["RISK_THRESHOLD"] == "70"
 
@@ -62,9 +62,9 @@ def test_invalid_number_is_asked_again(config_file):
 
 
 def test_rerun_offers_saved_values_as_defaults(config_file):
-    cfg.save({"CACTAI_LOG_AUTH": "login.jsonl"})
+    cfg.save({"SENTRAI_LOG_AUTH": "login.jsonl"})
     values = cfg.wizard(ask=scripted([]), ask_secret=scripted([]), say=lambda _: None)
-    assert values["CACTAI_LOG_AUTH"] == "login.jsonl"
+    assert values["SENTRAI_LOG_AUTH"] == "login.jsonl"
 
 
 def test_new_machine_runs_wizard_only_when_interactive(config_file, monkeypatch):
@@ -95,37 +95,37 @@ def test_ai_section_takes_a_provider_number_one_key_and_lists_models(config_file
     answers = iter(PLAIN_BEFORE_AI + ["3", "", "?", "2"])  # provider, base URL, list, pick
     values = cfg.wizard(ask=lambda p: next(answers, ""),
                         ask_secret=scripted(SECRET_BEFORE_AI + ["sk-deep"]), say=said.append, models=listed)
-    assert values["CACTAI_LLM_PROVIDER"] == "deepseek"
-    assert values["CACTAI_LLM_API_KEY"] == "sk-deep"
-    assert values["CACTAI_LLM_MODEL"] == "deepseek-reasoner"
+    assert values["SENTRAI_LLM_PROVIDER"] == "deepseek"
+    assert values["SENTRAI_LLM_API_KEY"] == "sk-deep"
+    assert values["SENTRAI_LLM_MODEL"] == "deepseek-reasoner"
     assert "    3. DeepSeek" in said and "    2. deepseek-reasoner" in said
 
 
 def test_model_listing_failure_is_explained_and_asked_again(config_file):
     def broken(values):
-        raise cfg.cactai_llm.LLMError("the service rejected this API key")
+        raise cfg.sentrai_llm.LLMError("the service rejected this API key")
 
     said = []
     answers = iter(PLAIN_BEFORE_AI + ["", "", "?", "my-model"])
     values = cfg.wizard(ask=lambda p: next(answers, ""), ask_secret=scripted(SECRET_BEFORE_AI + ["bad"]), say=said.append, models=broken)
-    assert values["CACTAI_LLM_MODEL"] == "my-model"
+    assert values["SENTRAI_LLM_MODEL"] == "my-model"
     assert "    Could not list the models: the service rejected this API key." in said
 
 
 def test_settings_saved_with_one_key_per_provider_keep_the_key_in_use(config_file):
-    old = {"CACTAI_LLM_PROVIDER": "auto", "ANTHROPIC_API_KEY": "", "OPENAI_API_KEY": "sk-open",
-           "DEEPSEEK_API_KEY": "sk-deep", "CACTAI_LLM_MODEL": ""}
+    old = {"SENTRAI_LLM_PROVIDER": "auto", "ANTHROPIC_API_KEY": "", "OPENAI_API_KEY": "sk-open",
+           "DEEPSEEK_API_KEY": "sk-deep", "SENTRAI_LLM_MODEL": ""}
     config_file.write_text(json.dumps({"ai": old}))
     values = cfg.read()
-    assert (values["CACTAI_LLM_PROVIDER"], values["CACTAI_LLM_API_KEY"]) == ("openai", "sk-open")
+    assert (values["SENTRAI_LLM_PROVIDER"], values["SENTRAI_LLM_API_KEY"]) == ("openai", "sk-open")
     assert "OPENAI_API_KEY" not in values
 
-    config_file.write_text(json.dumps({"ai": {**old, "CACTAI_LLM_PROVIDER": "deepseek"}}))
-    assert cfg.read()["CACTAI_LLM_API_KEY"] == "sk-deep"
+    config_file.write_text(json.dumps({"ai": {**old, "SENTRAI_LLM_PROVIDER": "deepseek"}}))
+    assert cfg.read()["SENTRAI_LLM_API_KEY"] == "sk-deep"
 
-    config_file.write_text(json.dumps({"ai": {"CACTAI_LLM_PROVIDER": "auto", "CACTAI_LLM_API_KEY": "c",
-                                              "CACTAI_LLM_BASE_URL": "https://llm.example.com/v1"}}))
-    assert cfg.read()["CACTAI_LLM_PROVIDER"] == "compatible"
+    config_file.write_text(json.dumps({"ai": {"SENTRAI_LLM_PROVIDER": "auto", "SENTRAI_LLM_API_KEY": "c",
+                                              "SENTRAI_LLM_BASE_URL": "https://llm.example.com/v1"}}))
+    assert cfg.read()["SENTRAI_LLM_PROVIDER"] == "compatible"
 
 
 def test_default_preset_is_what_the_demo_uses():
@@ -138,7 +138,7 @@ def test_default_preset_is_what_the_demo_uses():
 def test_picking_a_preset_sets_its_values_without_asking_them(config_file):
     said = []
     values = cfg.wizard(ask=scripted(["1"]), ask_secret=scripted([]), say=said.append)
-    assert values["CACTAI_PRESET"] == "strict"
+    assert values["SENTRAI_PRESET"] == "strict"
     assert {env: values[env] for env in cfg.PRESET_FIELDS} == cfg.preset_values("strict")
     assert any(line.startswith("    1. Strict: ") for line in said)
     assert any(line.startswith("    4. Advanced: ") for line in said)
@@ -148,29 +148,29 @@ def test_advanced_asks_each_value_and_offers_it_again(config_file):
     # Advanced, 6 collector fields, then brute force count 4 and Enter for the rest
     values = cfg.wizard(ask=scripted(["4", "", "", "", "", "", "", "4"]), ask_secret=scripted([]),
                         say=lambda _: None)
-    assert values["CACTAI_PRESET"] == "advanced" and values["BRUTE_FORCE_COUNT"] == "4"
+    assert values["SENTRAI_PRESET"] == "advanced" and values["BRUTE_FORCE_COUNT"] == "4"
     assert values["RISK_THRESHOLD"] == cfg.preset_values("moderate")["RISK_THRESHOLD"]
     cfg.save(values)
 
     again = cfg.wizard(ask=scripted([]), ask_secret=scripted([]), say=lambda _: None)  # Enter keeps everything
-    assert again["CACTAI_PRESET"] == "advanced" and again["BRUTE_FORCE_COUNT"] == "4"
+    assert again["SENTRAI_PRESET"] == "advanced" and again["BRUTE_FORCE_COUNT"] == "4"
 
     back = cfg.wizard(ask=scripted(["2"]), ask_secret=scripted([]), say=lambda _: None)
-    assert back["CACTAI_PRESET"] == "moderate" and back["BRUTE_FORCE_COUNT"] == "5"
+    assert back["SENTRAI_PRESET"] == "moderate" and back["BRUTE_FORCE_COUNT"] == "5"
 
 
 def test_a_preset_with_values_changed_by_hand_is_saved_as_advanced(config_file):
-    cfg.save(cfg.preset_values("strict") | {"CACTAI_PRESET": "strict", "SLA_HOURS": "3"})
-    assert json.loads(config_file.read_text())["preset"]["CACTAI_PRESET"] == "advanced"
-    cfg.save(cfg.preset_values("strict") | {"CACTAI_PRESET": "strict", "SLA_HOURS": "1.0"})
-    assert cfg.read()["CACTAI_PRESET"] == "strict"  # 1.0 is the same number as 1
+    cfg.save(cfg.preset_values("strict") | {"SENTRAI_PRESET": "strict", "SLA_HOURS": "3"})
+    assert json.loads(config_file.read_text())["preset"]["SENTRAI_PRESET"] == "advanced"
+    cfg.save(cfg.preset_values("strict") | {"SENTRAI_PRESET": "strict", "SLA_HOURS": "1.0"})
+    assert cfg.read()["SENTRAI_PRESET"] == "strict"  # 1.0 is the same number as 1
 
 
 def test_settings_saved_before_presets_read_as_advanced_when_changed(config_file):
     config_file.write_text(json.dumps({"responder": {"RISK_THRESHOLD": "70", "SLA_HOURS": "2"}}))
-    assert cfg.read()["CACTAI_PRESET"] == "advanced"
+    assert cfg.read()["SENTRAI_PRESET"] == "advanced"
     config_file.write_text(json.dumps({"responder": {"RISK_THRESHOLD": "80"}}))
-    assert cfg.read()["CACTAI_PRESET"] == "moderate"
+    assert cfg.read()["SENTRAI_PRESET"] == "moderate"
 
 
 def test_api_token_is_made_once_and_kept(config_file, monkeypatch):
@@ -180,7 +180,7 @@ def test_api_token_is_made_once_and_kept(config_file, monkeypatch):
     assert cfg.api_token() == first
     # the wizard and a settings form that leaves the token out both keep it
     assert cfg.wizard(ask=scripted([]), ask_secret=scripted([]), say=lambda _: None)[cfg.TOKEN_ENV] == first
-    cfg.save({"CACTAI_PRESET": "strict"})
+    cfg.save({"SENTRAI_PRESET": "strict"})
     assert cfg.api_token() == first
     monkeypatch.setenv(cfg.TOKEN_ENV, "from-env")  # an explicit env var wins
     assert cfg.api_token() == "from-env"

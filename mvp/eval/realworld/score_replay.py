@@ -47,7 +47,7 @@ def load_parser(path: Path):
     """The collector's parse_line(), or None."""
     if not path.exists():
         return None
-    spec = importlib.util.spec_from_file_location("cactai_collector_parsers", path)
+    spec = importlib.util.spec_from_file_location("sentrai_collector_parsers", path)
     mod = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = mod
     spec.loader.exec_module(mod)

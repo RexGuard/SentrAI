@@ -5,10 +5,10 @@ from pathlib import Path
 import pytest
 import requests
 
-from cactai_ui import shaping as sh
+from sentrai_ui import shaping as sh
 
 sys.path.append(str(Path(__file__).resolve().parents[2]))
-import cactai_config as cfg  # noqa: E402
+import sentrai_config as cfg  # noqa: E402
 
 RECORDS = [
     {"seq": 1, "type": "core_started", "data": {}},
@@ -61,7 +61,7 @@ APP = str(Path(__file__).resolve().parents[1] / "app.py")
 def test_every_page_renders(fake_core, page, tmp_path, monkeypatch):
     from streamlit.testing.v1 import AppTest
 
-    monkeypatch.setenv("CACTAI_CONFIG", str(tmp_path / "config.json"))
+    monkeypatch.setenv("SENTRAI_CONFIG", str(tmp_path / "config.json"))
     requests.post(f"{fake_core}/dev/trigger/brute_force", timeout=3)
     at = AppTest.from_file(APP, default_timeout=20)
     at.session_state["core_url"] = fake_core
@@ -84,7 +84,7 @@ def test_chat_suggestion_only_while_the_incident_allows_it():
 def test_chat_asks_and_the_suggestion_goes_through_the_normal_decision(fake_core, tmp_path, monkeypatch):
     from streamlit.testing.v1 import AppTest
 
-    monkeypatch.setenv("CACTAI_CONFIG", str(tmp_path / "config.json"))
+    monkeypatch.setenv("SENTRAI_CONFIG", str(tmp_path / "config.json"))
     requests.post(f"{fake_core}/dev/reset", timeout=3)
     requests.post(f"{fake_core}/dev/trigger/brute_force", timeout=3)
     import streamlit as st
@@ -141,27 +141,27 @@ def test_ai_settings_fetch_the_models_and_save_the_pick(fake_core, models_api, t
     from streamlit.testing.v1 import AppTest
 
     path = tmp_path / "config.json"
-    monkeypatch.setenv("CACTAI_CONFIG", str(path))
+    monkeypatch.setenv("SENTRAI_CONFIG", str(path))
     at = AppTest.from_file(APP, default_timeout=20)
     at.session_state["core_url"] = fake_core
     at.session_state["auto_refresh"] = False
     at.session_state["page"] = "config"
     at.run()
-    at.selectbox(key="cfg_CACTAI_LLM_PROVIDER").set_value("compatible").run()
-    at.text_input(key="cfg_CACTAI_LLM_BASE_URL").set_value(models_api)
-    at.text_input(key="cfg_CACTAI_LLM_API_KEY").set_value("k").run()
+    at.selectbox(key="cfg_SENTRAI_LLM_PROVIDER").set_value("compatible").run()
+    at.text_input(key="cfg_SENTRAI_LLM_BASE_URL").set_value(models_api)
+    at.text_input(key="cfg_SENTRAI_LLM_API_KEY").set_value("k").run()
     next(b for b in at.button if "Fetch models" in b.label).click().run()
     assert not at.exception, at.exception
     assert at.selectbox(key="ai_model_pick").options == ["big-model", "small-model"]
     at.selectbox(key="ai_model_pick").set_value("small-model").run()
-    assert at.text_input(key="cfg_CACTAI_LLM_MODEL").value == "small-model"
+    assert at.text_input(key="cfg_SENTRAI_LLM_MODEL").value == "small-model"
 
     next(b for b in at.button if "Save settings" in b.label).click().run()
     assert not at.exception, at.exception
-    assert json.loads(path.read_text())["ai"] == {"CACTAI_LLM_PROVIDER": "compatible", "CACTAI_LLM_API_KEY": "k",
-                                                  "CACTAI_LLM_BASE_URL": models_api, "CACTAI_LLM_MODEL": "small-model"}
+    assert json.loads(path.read_text())["ai"] == {"SENTRAI_LLM_PROVIDER": "compatible", "SENTRAI_LLM_API_KEY": "k",
+                                                  "SENTRAI_LLM_BASE_URL": models_api, "SENTRAI_LLM_MODEL": "small-model"}
 
-    at.text_input(key="cfg_CACTAI_LLM_API_KEY").set_value("wrong").run()
+    at.text_input(key="cfg_SENTRAI_LLM_API_KEY").set_value("wrong").run()
     next(b for b in at.button if "Fetch models" in b.label).click().run()
     assert any("rejected this API key" in w.value for w in at.warning)
 
@@ -169,7 +169,7 @@ def test_ai_settings_fetch_the_models_and_save_the_pick(fake_core, models_api, t
 def test_collector_page_scans_and_watches_a_log(fake_core, tmp_path, monkeypatch):
     from streamlit.testing.v1 import AppTest
 
-    monkeypatch.setenv("CACTAI_CONFIG", str(tmp_path / "config.json"))
+    monkeypatch.setenv("SENTRAI_CONFIG", str(tmp_path / "config.json"))
     requests.post(f"{fake_core}/dev/reset", timeout=3)
     import streamlit as st
     st.cache_data.clear()
@@ -195,7 +195,7 @@ def test_scout_proposals_are_approved_or_dismissed_on_the_collector_page(fake_co
     import streamlit as st
     from streamlit.testing.v1 import AppTest
 
-    monkeypatch.setenv("CACTAI_CONFIG", str(tmp_path / "config.json"))
+    monkeypatch.setenv("SENTRAI_CONFIG", str(tmp_path / "config.json"))
     requests.post(f"{fake_core}/dev/reset", timeout=3)
     for name in ("auth.log", "syslog"):
         requests.post(f"{fake_core}/_fake/scout-proposal", json={"name": name, "path": f"/var/log/{name}"}, timeout=3)
@@ -224,28 +224,28 @@ def test_preset_fills_the_values_and_a_change_by_hand_switches_to_advanced(fake_
     from streamlit.testing.v1 import AppTest
 
     path = tmp_path / "config.json"
-    monkeypatch.setenv("CACTAI_CONFIG", str(path))
+    monkeypatch.setenv("SENTRAI_CONFIG", str(path))
     at = AppTest.from_file(APP, default_timeout=20)
     at.session_state["core_url"] = fake_core
     at.session_state["auto_refresh"] = False
     at.session_state["page"] = "config"
     at.run()
-    preset = at.button_group(key="cfg_CACTAI_PRESET")
+    preset = at.button_group(key="cfg_SENTRAI_PRESET")
     assert preset.value == "moderate" and preset.options[-1] == "Advanced"
     preset.set_value("strict").run()
     assert not at.exception, at.exception
     assert at.text_input(key="cfg_RISK_THRESHOLD").value == cfg.preset_values("strict")["RISK_THRESHOLD"]
 
     at.text_input(key="cfg_SLA_HOURS").set_value("3").run()
-    assert at.button_group(key="cfg_CACTAI_PRESET").value == "advanced"
+    assert at.button_group(key="cfg_SENTRAI_PRESET").value == "advanced"
     next(b for b in at.button if "Save settings" in b.label).click().run()
     assert not at.exception, at.exception
-    assert json.loads(path.read_text())["preset"] == {"CACTAI_PRESET": "advanced"}
+    assert json.loads(path.read_text())["preset"] == {"SENTRAI_PRESET": "advanced"}
     values = cfg.read()
     assert values["BRUTE_FORCE_COUNT"] == cfg.preset_values("strict")["BRUTE_FORCE_COUNT"]
     assert values["SLA_HOURS"] == "3"
 
-    at.button_group(key="cfg_CACTAI_PRESET").set_value("balanced").run()
+    at.button_group(key="cfg_SENTRAI_PRESET").set_value("balanced").run()
     assert at.text_input(key="cfg_SLA_HOURS").value == cfg.preset_values("balanced")["SLA_HOURS"]
 
 
@@ -253,7 +253,7 @@ def test_threat_paths_are_shown_escaped(fake_core, tmp_path, monkeypatch):
     """A scanned file name is chosen by whoever uploaded it, so it must never reach the page as HTML."""
     from streamlit.testing.v1 import AppTest
 
-    monkeypatch.setenv("CACTAI_CONFIG", str(tmp_path / "config.json"))
+    monkeypatch.setenv("SENTRAI_CONFIG", str(tmp_path / "config.json"))
     requests.post(f"{fake_core}/threats/scan", json={"operator": "erick"}, timeout=3)
     import streamlit as st
     st.cache_data.clear()
@@ -284,8 +284,8 @@ def test_console_opens_on_what_needs_a_decision(fake_core, tmp_path, monkeypatch
 
     conf = tmp_path / "config.json"
     conf.write_text('{"setup_done": "dashboard"}', encoding="utf-8")
-    monkeypatch.setenv("CACTAI_CONFIG", str(conf))
-    monkeypatch.setenv("CACTAI_CORE_URL", fake_core)
+    monkeypatch.setenv("SENTRAI_CONFIG", str(conf))
+    monkeypatch.setenv("SENTRAI_CORE_URL", fake_core)
     requests.post(f"{fake_core}/dev/trigger/brute_force", params={"src_ip": "203.0.113.77", "user": "landing"},
                   timeout=3)
     import streamlit as st
@@ -301,7 +301,7 @@ def test_console_opens_on_what_needs_a_decision(fake_core, tmp_path, monkeypatch
 def test_integrations_page_shows_each_service_and_its_test(fake_core, tmp_path, monkeypatch):
     from streamlit.testing.v1 import AppTest
 
-    monkeypatch.setenv("CACTAI_CONFIG", str(tmp_path / "config.json"))
+    monkeypatch.setenv("SENTRAI_CONFIG", str(tmp_path / "config.json"))
     at = AppTest.from_file(APP, default_timeout=20)
     at.session_state["core_url"] = fake_core
     at.session_state["auto_refresh"] = False

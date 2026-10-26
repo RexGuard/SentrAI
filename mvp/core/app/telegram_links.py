@@ -25,7 +25,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-log = logging.getLogger("cactai.telegram_links")
+log = logging.getLogger("sentrai.telegram_links")
 
 CODE_TTL_S = 30 * 60
 # No 0/O or 1/I/L, so a code read off a screen is typed right the first time.
@@ -133,5 +133,5 @@ class LinkBook:
 
 
 def from_settings(s: Any) -> LinkBook:
-    path = Path(os.getenv("CACTAI_TELEGRAM_LINKS", "").strip() or s.db_path.parent / "telegram_links.json")
+    path = Path(os.getenv("SENTRAI_TELEGRAM_LINKS", "").strip() or s.db_path.parent / "telegram_links.json")
     return LinkBook(path)

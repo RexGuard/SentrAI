@@ -5,9 +5,9 @@ from pathlib import Path
 import pytest
 
 sys.path.append(str(Path(__file__).resolve().parents[2]))
-import cactai_accounts as acc  # noqa: E402
-import cactai_config as cfg  # noqa: E402
-from cactai_ui.api import CoreClient, CoreError  # noqa: E402
+import sentrai_accounts as acc  # noqa: E402
+import sentrai_config as cfg  # noqa: E402
+from sentrai_ui.api import CoreClient, CoreError  # noqa: E402
 
 APP = str(Path(__file__).resolve().parents[1] / "app.py")
 GOOD = "a-long-password-1"
@@ -17,9 +17,9 @@ GOOD = "a-long-password-1"
 def app(fake_core, tmp_path, monkeypatch):
     from streamlit.testing.v1 import AppTest
 
-    monkeypatch.setenv("CACTAI_CONFIG", str(tmp_path / "config.json"))
-    monkeypatch.delenv("CACTAI_ACCOUNTS", raising=False)
-    monkeypatch.delenv("CACTAI_DASHBOARD_LOGIN")
+    monkeypatch.setenv("SENTRAI_CONFIG", str(tmp_path / "config.json"))
+    monkeypatch.delenv("SENTRAI_ACCOUNTS", raising=False)
+    monkeypatch.delenv("SENTRAI_DASHBOARD_LOGIN")
     for name in (cfg.EMAIL_ENV, cfg.HASH_ENV, cfg.PASSWORD_ENV):
         monkeypatch.delenv(name, raising=False)
     at = AppTest.from_file(APP, default_timeout=20)
@@ -65,7 +65,7 @@ def password_step(at, email, password):
 def test_new_machine_without_a_setup_code_says_how_to_get_one(app):
     app.run()
     assert not app.sidebar.button
-    assert any("cactai_config.py admin" in w.value for w in app.warning)
+    assert any("sentrai_config.py admin" in w.value for w in app.warning)
 
 
 def test_setup_code_creates_the_owner_who_adds_an_authenticator(app):

@@ -41,7 +41,7 @@ from typing import Any
 from .firewall import unsafe_reason
 from .responders import Action, Responder
 
-log = logging.getLogger("cactai.cloudflare")
+log = logging.getLogger("sentrai.cloudflare")
 
 API = "https://api.cloudflare.com/client/v4"
 METHODS = ("access_rule", "list")
