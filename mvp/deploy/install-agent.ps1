@@ -117,7 +117,7 @@ if (-not (Test-Path $AgentFile) -and (-not $Panel -or -not $Code)) {
 # Python 3.10+ that the SYSTEM account can run too (not the per-user Microsoft Store one).
 function Find-Python {
     $ErrorActionPreference = "Continue"  # a broken python on PATH writes to stderr: try the next one
-    foreach ($cmd in @("py -3", "python", "python3")) {
+    foreach ($cmd in @("python", "py -3", "python3")) {
         $exe, $pre = $cmd.Split(" ")
         if (-not (Get-Command $exe -ErrorAction SilentlyContinue)) { continue }
         $out = & $exe @($pre | Where-Object { $_ }) -c "import sys, venv, ensurepip; print(sys.version_info >= (3, 10)); print(sys.executable)" 2>$null
@@ -153,7 +153,7 @@ function Copy-Tree([string]$From, [string]$To, [string[]]$Extra = @()) {
 }
 Copy-Tree (Join-Path $Src "lab") (Join-Path $Mvp "lab") @((Join-Path $Src "lab\logs"), "/XF", "sources.json", "pending.json")
 Copy-Tree (Join-Path $Src "core\app") (Join-Path $Mvp "core\app")
-Copy-Item -Force (Join-Path $Src "cactai_config.py") (Join-Path $Mvp "cactai_config.py")
+foreach ($f in "cactai_config.py", "cactai_llm.py") { Copy-Item -Force (Join-Path $Src $f) (Join-Path $Mvp $f) }
 
 if (-not (Test-Path $VenvPy)) {
     $python = Find-Python
