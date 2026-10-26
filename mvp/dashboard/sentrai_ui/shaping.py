@@ -121,6 +121,15 @@ def mode_label(mode: Any) -> str:
     return MODE_LABELS.get(str(mode), str(mode).replace("_", " ").capitalize())
 
 
+def plural(n: Any, word: str, many: str = "") -> str:
+    """'1 action', '2 actions', '2 addresses': no '(s)' in what people read."""
+    try:
+        one = int(n) == 1
+    except (TypeError, ValueError):
+        one = False
+    return f"{n} {word if one else (many or word + 's')}"
+
+
 def category_label(category: str | None) -> str:
     if not category:
         return "Unknown"
