@@ -119,6 +119,7 @@ Its suggestions appear under **Collector**, then **Scout proposals**, where you 
 | `--no-start` | install and enable the services without starting them |
 | `--seal-journal` | sign the system journal so old entries cannot be rewritten unnoticed. Prints a key once: keep it off the server |
 | `--remote-copy URL` | send every record to a second machine that keeps a copy root on this server cannot change. See the [server README](https://github.com/RexGuard/SentrAI/blob/main/mvp/deploy/README.md#off-box-copy---remote-copy) |
+| `--panel [PORT]` / `--panel-url URL` | make this server a [central panel](panel.html) that agents on other machines join (port 8443 by default); `--panel off` closes it |
 | `--prefix DIR` / `--user NAME` | install somewhere other than `/opt/cactai`, or run as another account |
 
 A setup with no questions, for a script:

@@ -116,9 +116,9 @@ powershell -ExecutionPolicy Bypass -File .\mvp\deploy\install-agent.ps1 -Enforce
 ```
 
 The panel's own address is never blocked on an added machine. Add `--protect` (`-Protect`) for
-every address you manage that machine from, just as on the panel. On Linux, a rerun with
-`--protect` or `--enforce` rewrites the machine's settings, so give both together whenever you
-change either. `-DryRun` turns enforcement off again on Windows.
+every address you manage that machine from, just as on the panel. A rerun keeps what earlier
+runs set: `--protect` adds to the addresses already kept, and enforcing stays on until you pass
+`--dry-run` (`-DryRun` on Windows) to go back to only logging.
 
 ### Agent installer options
 
@@ -128,7 +128,7 @@ change either. `-DryRun` turns enforcement off again on Windows.
 | `--code CODE` | `-Code CODE` | the one-time join code (needed the first time) |
 | `--pin sha256:...` | `-Pin sha256:...` | the panel's certificate pin, shown with the join code |
 | `--name NAME` | `-Name NAME` | the machine's name on the panel (default: its host name) |
-| `--enforce` | `-Enforce` / `-DryRun` | really change the firewall, or go back to only logging |
+| `--enforce` / `--dry-run` | `-Enforce` / `-DryRun` | really change the firewall, or go back to only logging |
 | `--protect IP` | `-Protect IP,IP` | never block these addresses on this machine |
 | `--ca FILE` | `-Ca FILE` | the panel's certificate file, instead of a pin |
 | `--allow-http` | `-AllowHttp` | accept a plain `http://` panel. Only on a private test network |
