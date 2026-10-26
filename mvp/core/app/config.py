@@ -142,3 +142,9 @@ class Settings:
     background: bool = field(default_factory=lambda: os.getenv("CACTAI_BACKGROUND", "1") != "0")
     # Every endpoint but /health and /blocklist needs it (see main.py). Made and saved on first use.
     api_token: str = field(default_factory=cactai_config.api_token, repr=False)
+    # One-page client summary (summary.py): daily | weekly | off, local time HH:MM, weekday for weekly,
+    # and the name it is addressed to. A choice saved from the dashboard (summary.json) wins over these.
+    summary_every: str = field(default_factory=lambda: os.getenv("CACTAI_SUMMARY", "daily"))
+    summary_at: str = field(default_factory=lambda: os.getenv("CACTAI_SUMMARY_AT", "08:00"))
+    summary_day: str = field(default_factory=lambda: os.getenv("CACTAI_SUMMARY_DAY", "mon"))
+    summary_to: str = field(default_factory=lambda: os.getenv("CACTAI_SUMMARY_TO", "Client"))

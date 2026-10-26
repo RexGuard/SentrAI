@@ -37,6 +37,9 @@ Tests:
 | `HOTPATCH_TTL_HOURS` | `2` | How long a hotpatch lasts, in hours. |
 | `ON_DUTY` | `John Doe (SEC-409) / Shift Bravo` | The responsible entity named in reports and notifications. |
 | `TEAM_LEAD`, `IT_MANAGER`, `CXO` | role names | Escalation recipients. |
+| `CACTAI_SUMMARY` | `daily` | How often the one-page client summary goes out on the alert channels: `daily`, `weekly` or `off`. A choice saved on the dashboard (Reports page, kept in `summary.json` next to the database) wins over this. |
+| `CACTAI_SUMMARY_AT` / `CACTAI_SUMMARY_DAY` | `08:00` / `mon` | Local time it goes out, and the weekday for `weekly`. |
+| `CACTAI_SUMMARY_TO` | `Client` | Who the summary is addressed to (shown on the page). |
 | `TYPESAFE_API_KEY` | unset | Turns on Jev (TypeSafe System One). Without it the fallback classifier is used. |
 | `JEV_TIMEOUT_S` | `3` | Timeout for each Jev call. After 3 failures in a row a 60 s circuit breaker opens. |
 | `JEV_CACHE_SIZE` / `JEV_CACHE_TTL_S` | `2048` / `3600` | Jev answers kept per log template (the line with IPs, times, ids, pids and ports replaced), so the same request from many addresses is asked about once. Size `0` turns the cache off. |
@@ -212,6 +215,9 @@ These follow the contract:
 
 Additions that do not change the contract:
 - `GET /incidents/{id}/why`: HelpDesk explanation.
+- `GET /summary/{daily|weekly}` (JSON), `.md` and `.pdf`: the one-page client summary for the last 24 hours or 7 days, in plain words, with counts, what needs attention and what to do next, a per-machine table and the audit fingerprint to check it by. `?until=<unix time>` ends the period earlier. The link sent to the client is signed (`?until=...&sig=...`) so it opens without the API token, for that period only.
+- `GET /summary/schedule`, `POST /summary/schedule` (`{"operator", "every", "at", "day", "to"}`): the client's preference. `POST /summary/send` (`{"operator"}`) sends one now. Each send is audited as `summary_sent`, each change as `summary_schedule_changed`.
+- Each incident carries `next_steps`: what a person should do next, in everyday words. The evidence report adds `in_plain_words`, `outcome`, `next_steps` and `how_to_check`, and its Markdown and PDF name each internal part by its job ("safety check", "record keeper") instead of its code name.
 - `GET /helpdesk/why?target=<ip|user>`: "why was my IP blocked?"
 - `GET /agents`: status of each agent and of Jev.
 - `GET /notifications`: all notifications, including delivered ones.

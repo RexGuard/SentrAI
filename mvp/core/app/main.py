@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict
 
 from .config import Settings, sign
 from .reports import build_report, render_markdown, render_pdf
+from . import summary as client_summary
 from . import ai, anchor, webhook
 from .chat import OperatorChat, default_chat_provider
 from .discovery import Discovery
@@ -63,6 +64,14 @@ class ProtectionIn(BaseModel):
     operator: str
     on: bool
     reason: Optional[str] = None
+
+
+class SummaryScheduleIn(BaseModel):
+    operator: str
+    every: Optional[str] = None  # daily | weekly | off
+    at: Optional[str] = None     # local time, HH:MM
+    day: Optional[str] = None    # weekday for weekly: mon..sun
+    to: Optional[str] = None     # who the summary is addressed to
 
 
 class ChatIn(BaseModel):
@@ -184,6 +193,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if sig and request.method == "GET" and path.startswith("/reports/") and path.endswith(".md") \
                 and hmac.compare_digest(sig, sign(core.settings.api_token, path)):
             return  # the signed report link from an alert
+        if sig and request.method == "GET" and path.startswith("/summary/") and path.endswith((".md", ".pdf")) \
+                and hmac.compare_digest(sig, sign(core.settings.api_token,
+                                                  f"{path}?until={request.query_params.get('until', '')}")):
+            return  # the signed one-page summary link sent to the client
         auth = request.headers.get("authorization", "")
         sent = auth[7:].strip() if auth[:7].lower() == "bearer " else request.headers.get(TOKEN_HEADER, "")
         if not (sent and hmac.compare_digest(sent.encode(), core.settings.api_token.encode())):
@@ -330,6 +343,44 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return build_report(core, iid)
         except KeyError:
             raise not_found(iid)
+
+    # One-page client summary (summary.py). The schedule routes come before /summary/{period}.
+    @app.get("/summary/schedule")
+    def get_summary_schedule() -> dict[str, Any]:
+        return core.summary_settings()
+
+    @app.post("/summary/schedule")
+    def post_summary_schedule(body: SummaryScheduleIn) -> dict[str, Any]:
+        try:
+            return core.set_summary_settings(body.operator, body.every, body.at, body.day, body.to)
+        except BadRequestError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @app.post("/summary/send")
+    def post_summary_send(body: OperatorIn) -> dict[str, Any]:
+        """Send the summary to the client now (for the client's chosen period), outside the schedule."""
+        return core.send_summary_now(body.operator)
+
+    def _summary(period: str, until: Optional[int]) -> dict[str, Any]:
+        try:
+            return client_summary.build_summary(core, period, float(until) if until else None)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+
+    @app.get("/summary/{period}.pdf")
+    def get_summary_pdf(period: str, until: Optional[int] = None) -> Response:
+        r = _summary(period, until)
+        return Response(client_summary.render_pdf(r), media_type="application/pdf",
+                        headers={"Content-Disposition": f'attachment; filename="{r["summary_id"]}.pdf"'})
+
+    @app.get("/summary/{period}.md", response_class=PlainTextResponse)
+    def get_summary_md(period: str, until: Optional[int] = None) -> PlainTextResponse:
+        return PlainTextResponse(client_summary.render_markdown(_summary(period, until)),
+                                 media_type="text/markdown; charset=utf-8")
+
+    @app.get("/summary/{period}")
+    def get_summary(period: str, until: Optional[int] = None) -> dict[str, Any]:
+        return _summary(period, until)
 
     @app.get("/protection")
     def get_protection() -> dict[str, Any]:

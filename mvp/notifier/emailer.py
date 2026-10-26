@@ -27,7 +27,7 @@ from email.utils import make_msgid
 from typing import Callable
 
 from formatting import (BAND_COLORS, BAND_EMOJI, BRAND_BUTTON, BRAND_ON_DARK, BRAND_DARK, TAGLINE, alert_fields,
-                        button_specs, is_notice, notice_lines, risk_meter)
+                        button_specs, is_notice, LINK_TEXT, notice_lines, risk_meter)
 
 log = logging.getLogger("cactai.notifier.email")
 
@@ -89,8 +89,12 @@ def format_email(notification: dict, incident: dict | None = None, risk: dict | 
         icon, header, lines = notice_lines(notification)
         subject = f"[SentrAI] {lines[0] if lines else header}"
         text = "\n".join([f"{icon} {header}", *lines, "", f"-- SentrAI · {TAGLINE}"])
+        url = notification.get("report_url")
         body = "".join(f"<p style=\"margin:0 0 8px 0;font-family:{'monospace' if ln.startswith('SENTRAI-FP') else 'Arial,sans-serif'};"
-                       f"font-size:14px;word-break:break-all\">{html.escape(ln)}</p>" for ln in lines)
+                       f"font-size:14px;word-break:break-all\">"
+                       + (f"<a href=\"{html.escape(ln, quote=True)}\" style=\"color:{BRAND_BUTTON}\">"
+                          f"{html.escape(LINK_TEXT.get(notification.get('kind'), 'Open'))}</a>" if url and ln == url
+                          else html.escape(ln)) + "</p>" for ln in lines)
         html_body = (f"<div style=\"max-width:640px\"><div style=\"background:{BRAND_DARK};color:#fff;padding:12px 16px;"
                      f"font-family:Arial,sans-serif;font-weight:bold\">{icon} {html.escape(header)} · SentrAI</div>"
                      f"<div style=\"padding:16px\">{body}</div></div>")

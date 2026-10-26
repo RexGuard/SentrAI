@@ -29,9 +29,11 @@ from .agents import (
     Scribe,
     SpineNet,
     Watchdog,
+    next_steps,
 )
 from . import firewall
 from . import anchor, remote_copy
+from . import summary as client_summary
 from .audit import AuditLog
 from .classifier import Classification, JevCache, default_chain
 from .clock import DemoClock, fmt_demo_hours
@@ -156,6 +158,8 @@ class Saguaro(Agent):
         self.lock = threading.RLock()
         self._protection_file = s.db_path.parent / "protection.json"
         self._load_protection()
+        self._summary_file = s.db_path.parent / "summary.json"
+        self.summary_schedule = client_summary.load_schedule(self._summary_file, s, time.time())
         self.store = StateStore(self.audit)
         self._init_state()
         self._configure()
@@ -402,6 +406,7 @@ class Saguaro(Agent):
         proposals = self._proposals(inc, agent)
         inc["recommended_action"] = agent.recommended_text(proposals, self.settings.ttl_hours)
         inc["explanation"] = agent.explain(inc)
+        inc["next_steps"] = next_steps(inc)
         if inc.get("needs_review"):
             inc["explanation"] += " The classifier is uncertain: needs human review (never auto-contained)."
 
@@ -475,6 +480,7 @@ class Saguaro(Agent):
             self._evaluate(now)
             self._record_history(now)
             self._send_fingerprint(now)
+            self._send_summary(now)
             findings = self.integrity.check()
             if self.remote is not None:
                 refused, notes = self.remote.take()
@@ -499,6 +505,70 @@ class Saguaro(Agent):
                             f"Fingerprint of audit records 1 to {fp.seq}. Keep this message: if the audit log on "
                             f"the server is ever rebuilt, this line proves it (python -m app.anchor verify).\n"
                             f"{fp.line()}", [])
+
+    # ------------------------------------------------------- client summary
+    def _summary_url(self, period: str, until: int, ext: str = "pdf") -> str:
+        """Signed like the report links, so the client opens it from Telegram or email without the API token."""
+        path = f"/summary/{period}.{ext}"
+        return f"{self.settings.public_url}{path}?until={until}&sig={sign(self.settings.api_token, f'{path}?until={until}')}"
+
+    def _send_summary(self, now: float, force: bool = False, operator: str | None = None) -> dict[str, Any] | None:
+        """At each due time of the client's schedule, queue the one-page summary for the alert channels."""
+        sched = self.summary_schedule
+        slot = sched.last_slot(now)
+        if not force and (slot is None or (sched.last_sent_ts is not None and slot <= sched.last_sent_ts)):
+            return None
+        period = sched.every if sched.every in client_summary.PERIODS else "daily"
+        until = now if force else slot
+        r = client_summary.build_summary(self, period, until)
+        sched.last_sent_ts = now if force else slot
+        client_summary.save_schedule(self._summary_file, sched)
+        num = r["numbers"]
+        link = self._summary_url(period, r["until_ts"])
+        n = self._notify(now, "summary", None, [sched.to], f"{r['title']}: {r['headline']}",
+                         f"{r['period_text']}. Threats found: {num['threats']}, stopped automatically: "
+                         f"{num['stopped_automatically']}, handled by staff: {num['handled_by_staff']}, "
+                         f"need attention: {num['need_attention']}.", [])
+        n["report_url"] = link  # the alert channels show it as a link to the one-page PDF
+        self.scribe.record(self.scribe.name, "summary_sent", {
+            "summary_id": r["summary_id"], "period": period, "from": r["from"], "until": r["until"],
+            "numbers": num, "notification": n["id"], "recipients": [sched.to], "requested_by": operator,
+            "chain_head_hash": self.audit.head_hash()})
+        self._save()
+        return {"summary": r, "notification": public(n), "link": link}
+
+    def send_summary_now(self, operator: str) -> dict[str, Any]:
+        with self.lock:
+            return self._send_summary(self.clock.now(), force=True, operator=operator)  # type: ignore[return-value]
+
+    def summary_settings(self) -> dict[str, Any]:
+        with self.lock:
+            return self.summary_schedule.public(self.clock.now())
+
+    def set_summary_settings(self, operator: str, every: str | None = None, at: str | None = None,
+                             day: str | None = None, to: str | None = None) -> dict[str, Any]:
+        """The client's preference: daily or weekly (or off), what time, which weekday and who it goes to."""
+        with self.lock:
+            sched = self.summary_schedule
+            if every is not None and every.strip().lower() not in client_summary.EVERY:
+                raise BadRequestError(f"every must be one of {', '.join(client_summary.EVERY)}")
+            if day is not None and day.strip().lower()[:3] not in client_summary.DAYS:
+                raise BadRequestError("day must be a weekday such as mon or friday")
+            if at is not None and client_summary.clock_time(at) is None:
+                raise BadRequestError("at must be a time of day such as 08:00")
+            before = {k: getattr(sched, k) for k in ("every", "at", "day", "to")}
+            for k, v in (("every", every), ("at", at), ("day", day), ("to", to)):
+                if v is not None:
+                    setattr(sched, k, v)
+            sched.checked()
+            now = self.clock.now()
+            sched.changed_by, sched.changed_at = operator, self.clock.iso(now)
+            # A new schedule starts from now: no catch-up summary for a time that has already passed.
+            sched.last_sent_ts = max(sched.last_sent_ts or 0.0, now)
+            client_summary.save_schedule(self._summary_file, sched)
+            self.scribe.record(self.name, "summary_schedule_changed", {
+                "operator": operator, "before": before, "after": {k: getattr(sched, k) for k in ("every", "at", "day", "to")}})
+            return sched.public(now)
 
     def _evaluate(self, now: float) -> None:
         self._expire_actions(now)
