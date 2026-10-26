@@ -123,6 +123,16 @@ class CoreClient:
     def revoke_agent(self, agent_id: str, operator: str) -> dict:
         return self.post_json(f"/fleet/agents/{quote(agent_id, safe='')}/revoke", {"operator": operator})
 
+    def machine_jobs(self, host: str) -> list[dict]:
+        return list(self.get_json(f"/fleet/jobs?host={quote(host, safe='')}") or [])
+
+    def queue_job(self, host: str, kind: str, operator: str) -> dict:
+        """Ask one joined machine's agent to run a threat scan or a backup there (core jobs.py)."""
+        return self.post_json("/fleet/jobs", {"host": host, "kind": kind, "operator": operator})
+
+    def cancel_job(self, job_id: str, operator: str) -> dict:
+        return self.post_json(f"/fleet/jobs/{quote(job_id, safe='')}/cancel", {"operator": operator})
+
     def report_md(self, incident_id: str) -> str:
         return self.get_text(f"/reports/{incident_id}.md")
 
@@ -132,6 +142,21 @@ class CoreClient:
     def report_pdf(self, incident_id: str) -> bytes:
         return self._request("GET", f"/reports/{incident_id}.pdf").content
 
+    def summary_md(self, period: str) -> str:
+        return self.get_text(f"/summary/{period}.md")
+
+    def summary_pdf(self, period: str) -> bytes:
+        return self._request("GET", f"/summary/{period}.pdf").content
+
+    def summary_schedule(self) -> dict:
+        return self.get_json("/summary/schedule")
+
+    def set_summary_schedule(self, operator: str, every: str, at: str, day: str, to: str) -> dict:
+        return self.post_json("/summary/schedule", {"operator": operator, "every": every, "at": at, "day": day, "to": to})
+
+    def send_summary(self, operator: str) -> dict:
+        return self.post_json("/summary/send", {"operator": operator})
+
     def decision(self, incident_id: str, operator: str, decision: str, justification: str = "") -> Any:
         return self.post_json(
             f"/incidents/{incident_id}/decision",
@@ -140,6 +165,22 @@ class CoreClient:
 
     def ack(self, incident_id: str, operator: str, channel: str = "dashboard") -> Any:
         return self.post_json(f"/incidents/{incident_id}/ack", {"operator": operator, "channel": channel})
+
+    def assign(self, incident_id: str, assignee: str, operator: str, note: str = "") -> Any:
+        return self.post_json(f"/incidents/{incident_id}/assign",
+                              {"assignee": assignee, "operator": operator, "note": note or None})
+
+    def resolve(self, incident_id: str, operator: str, note: str) -> Any:
+        return self.post_json(f"/incidents/{incident_id}/resolve", {"operator": operator, "note": note})
+
+    def routing(self) -> dict:
+        return self.get_json("/routing")
+
+    def telegram_link_code(self, contact: str, operator: str) -> dict:
+        return self.post_json("/telegram/link-codes", {"contact": contact, "operator": operator})
+
+    def telegram_unlink(self, contact: str, operator: str) -> Any:
+        return self.post_json("/telegram/unlink", {"contact": contact, "operator": operator})
 
     def rollback(self, incident_id: str, operator: str, justification: str) -> Any:
         return self.post_json(
@@ -174,6 +215,13 @@ class CoreClient:
     def ai_reload(self) -> dict:
         """Make the running core read the saved AI settings again (no restart)."""
         return self.post_json("/ai/reload", {})
+
+    def integrations(self) -> list[dict]:
+        """Outside services (Cloudflare, AbuseIPDB, Slack...): whether each is set up. Never their keys."""
+        return self.get_json("/integrations")
+
+    def test_integration(self, name: str) -> dict:
+        return self.post_json(f"/integrations/{name}/test", timeout=AI_TEST_TIMEOUT)
 
     def ai_test(self, settings: dict | None = None) -> dict:
         """One real request to the AI provider: with settings, those; without, what Cyanide uses now."""

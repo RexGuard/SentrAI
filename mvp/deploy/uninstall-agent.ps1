@@ -35,6 +35,14 @@ if (-not $me.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     exit 1
 }
 
+# Agents an older install left running: the venv launcher's child outlived the service stop.
+function Stop-LeftoverAgents {
+    $alive = @(Get-Process | ForEach-Object { $_.Id })
+    Get-CimInstance Win32_Process -Filter "Name = 'python.exe'" |
+        Where-Object { $_.CommandLine -like "*-m agent run*" -and ($_.ExecutablePath -like "$Prefix\*" -or $alive -notcontains $_.ParentProcessId) } |
+        ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+}
+
 $svc = Get-Service -Name $ServiceId -ErrorAction SilentlyContinue
 if ($svc) {
     if ($svc.Status -ne "Stopped") {
@@ -48,6 +56,7 @@ if ($svc) {
 } else {
     Write-Host "The $ServiceId service is not installed."
 }
+Stop-LeftoverAgents
 
 if (-not $KeepBlocks) {
     # netsh "name=" is the rule's display name; the agent names each rule SentrAI-block-<ip>.

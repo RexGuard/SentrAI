@@ -41,7 +41,8 @@ def test_answers_are_saved_per_part_and_loaded_as_env_defaults(config_file, monk
     cfg.save(values)
 
     saved = json.loads(config_file.read_text())
-    assert set(saved) == {"preset", "collector", "classifier", "responder", "notifications", "ai", "access"}
+    assert set(saved) == {"preset", "collector", "classifier", "responder", "notifications", "ai", "access",
+                          "integrations"}
     assert saved["preset"]["CACTAI_PRESET"] == "advanced"
     assert saved["collector"]["CACTAI_LAB_LOGS"] == "/var/log/portal"
     assert saved["classifier"]["BRUTE_FORCE_COUNT"] == "3"

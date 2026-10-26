@@ -15,7 +15,7 @@ from datetime import datetime
 from typing import Any
 from urllib.parse import unquote, unquote_plus
 
-from .netlogs import SSH_FAILURES, HttpLine, parse_http, parse_sshd
+from .netlogs import SSH_FAILURES, AuthLine, HttpLine, NetworkAlert, parse_auth, parse_http, parse_network_alert, parse_sshd
 
 
 @dataclass
@@ -217,6 +217,37 @@ def log_wipe(text: str) -> str | None:
     return None
 
 
+# --- sign-ins to other services, Suricata alerts and Windows events (collector `parsed` objects) ---
+SERVICE_NAMES = {"windows_logon": "Windows", "rdp": "Remote Desktop", "kerberos": "Windows (Kerberos)",
+                 "ntlm": "Windows (NTLM)", "mssql": "SQL Server", "mysql": "MySQL", "postgres": "PostgreSQL",
+                 "mongodb": "MongoDB"}
+# Suricata signature + classtype text -> category. First match wins; the specific words come first.
+SURICATA_CATEGORIES: list[tuple[re.Pattern[str], str]] = [(re.compile(rx, re.I), cat) for rx, cat in [
+    (r"sql.?injection|\bsqli\b", "sql_injection"),
+    (r"\bxss\b|cross.?site.?script", "xss"),
+    (r"\b(malware|trojan|cnc|c2|botnet|ransomware|coin.?miner|cryptominer|mining pool|stratum|backdoor|web.?shell"
+     r"|exploit kit|phishing|dropper)\b|command and control", "malware"),
+    (r"brute.?forc|password.?guess|excessive (failed )?(login|auth)|login attempts", "brute_force"),
+    (r"privilege gain|privilege escalation", "privilege_escalation"),
+    (r"exfiltrat|data (leak|theft)", "data_exfiltration"),
+    (r"\bscan|network scan|information leak|reconnaissance|\brecon\b|\b(nmap|masscan|zmap)\b|\bsweep\b"
+     r"|web application attack|exploit|shellcode", "port_scan"),
+]]
+# Classtypes and signature families that are notices, not attacks (decoder events, policy, info).
+SURICATA_LOW = re.compile(r"not suspicious|unknown traffic|generic protocol command decode|misc activity"
+                          r"|corporate privacy violation|non-standard protocol|external ip address"
+                          r"|^(ET INFO|ET POLICY|SURICATA) ", re.I)
+# Groups whose members can run the machine or the domain (Windows events 4728, 4732, 4756).
+PRIVILEGED_GROUPS = re.compile(
+    r"^(\S+\\)?(administrators|domain admins|enterprise admins|schema admins|account operators|backup operators"
+    r"|server operators|print operators|dnsadmins|group policy creator owners|hyper-v administrators"
+    r"|remote desktop users|remote management users|key admins|enterprise key admins)$", re.I)
+# A new Windows service that runs a script host, an encoded command or a file from a temp folder.
+BAD_SERVICE = re.compile(
+    r"\b(powershell|pwsh|mshta|rundll32|regsvr32|wscript|cscript|certutil|bitsadmin)(\.exe)?\b|cmd(\.exe)?\s+/[ck]\b"
+    r"|\s-(e|en|enc|encodedcommand)\s|frombase64string|%comspec%|\\(temp|tmp|appdata|users\\public|perflogs)\\"
+    r"|\\\\[^\\]+\\(admin|c)\$\\|\bpsexesvc\b", re.I)
+
 # The lab portal writes each failed sign-in twice: "POST /login 401" (access log) and "login fail" (auth log).
 # The access line is counted; the auth line joins the same burst without counting again.
 AUTH_COMPANION = re.compile(r"^login\s+fail\b", re.I)
@@ -267,6 +298,7 @@ class RulesEngine:
         self._ssh_probes: dict[str, deque[tuple[float, str]]] = defaultdict(deque)
         self._http_4xx: dict[str, deque[tuple[float, str]]] = defaultdict(deque)
         self._companions: dict[str, deque[tuple[float, str]]] = defaultdict(deque)
+        self._svc_failed: dict[str, deque[tuple[float, str]]] = defaultdict(deque)  # Windows, RDP, databases
         # Every counted guess from one IP, any source; capped so a day-long flood cannot grow without limit.
         self._slow: dict[str, deque[tuple[float, str]]] = defaultdict(lambda: deque(maxlen=1000))
         self._lock = threading.Lock()
@@ -276,7 +308,8 @@ class RulesEngine:
         """Forget sources that have been quiet for longer than their window (a server runs for months)."""
         for store, window in ((self._failed, self.window_s), (self._ssh_failed, self.ssh_window_s),
                               (self._ssh_probes, self.ssh_window_s), (self._http_4xx, self.scan_window_s),
-                              (self._companions, self.window_s), (self._slow, self.slow_window_s)):
+                              (self._companions, self.window_s), (self._slow, self.slow_window_s),
+                              (self._svc_failed, self.ssh_window_s)):
             for key in [k for k, dq in store.items() if not dq or ts - dq[-1][0] > window]:
                 del store[key]
                 if store is self._ssh_failed:
@@ -285,7 +318,7 @@ class RulesEngine:
     def reset(self) -> None:
         with self._lock:
             for d in (self._failed, self._ssh_failed, self._ssh_attempts, self._ssh_probes, self._http_4xx,
-                      self._companions, self._slow):
+                      self._companions, self._slow, self._svc_failed):
                 d.clear()
 
     def check(self, event: dict[str, Any], now: float) -> RuleHit | None:
@@ -311,6 +344,15 @@ class RulesEngine:
         ssh = parse_sshd(event)
         if ssh is not None:
             return self._sshd(event, ssh, now)
+        auth = parse_auth(event)
+        if auth is not None:
+            return self._service_auth(event, auth, now)
+        alert = parse_network_alert(event)
+        if alert is not None:
+            return self._network_alert(alert)
+        parsed = event.get("parsed") if isinstance(event.get("parsed"), dict) else {}
+        if parsed.get("kind") == "windows_event" and (hit := self._windows(event, parsed)) is not None:
+            return hit
         if source in INTEGRITY_SOURCES:
             return RuleHit("log_tampering", f"Log integrity: {raw[:300]}")
         http = parse_http(event)
@@ -372,8 +414,12 @@ class RulesEngine:
             return self._http_tail(event, http, now)
         if BENIGN_FAST.search(text.strip()):
             return RuleHit("benign", "normal successful request")
-        if source == "db_query":
+        if source == "db_query" or parsed.get("kind") == "db_query":
             return RuleHit("benign", "routine database query (no injection signature, below bulk-export threshold)")
+        if parsed.get("kind") == "windows_event":
+            return RuleHit("benign", f"Windows event {parsed.get('event_id')} ({parsed.get('win_event')}), no attack sign")
+        if parsed.get("format") in ("mysql", "postgres", "mongodb"):
+            return RuleHit("benign", f"{parsed['format']} {parsed.get('level') or 'log'} line, no sign-in or attack sign")
         return None
 
     def _failed_login(self, event: dict[str, Any], now: float, src_ip: str | None = None,
@@ -471,6 +517,85 @@ class RulesEngine:
         if status >= 500:
             return RuleHit("benign", f"server error {status}, no attack signature")
         return RuleHit("benign", f"normal request ({http.method} {status or 'no status'})")
+
+    # ------------------------------------------------------------------ other services
+    def _service_auth(self, event: dict[str, Any], auth: AuthLine, now: float) -> RuleHit:
+        """A sign-in to Windows, RDP, SQL Server, MySQL, PostgreSQL or MongoDB. Failures from one address
+        (or for one account, when the log has no address) count like SSH guesses: ssh_count within
+        ssh_window_s, or ssh_slow_count in a day; a success after that many failures is a guessed password."""
+        name = SERVICE_NAMES.get(auth.service, auth.service)
+        key = auth.src_ip or (f"{auth.user}@{event.get('host') or 'unknown'}" if auth.user else None)
+        ts = _event_ts(event, now)
+        eid = str(event.get("event_id"))
+        if auth.outcome == "failure" and key:
+            with self._lock:
+                ids = _window_add(self._svc_failed[key], ts, eid, self.ssh_window_s)
+                slow = self._slow_add(key, ts, eid, threshold=self.ssh_slow_count)
+            if len(ids) >= self.ssh_count:
+                return RuleHit("brute_force", f"{len(ids)} failed {name} sign-ins from {key} within "
+                                              f"{int(self.ssh_window_s)} s (threshold {self.ssh_count}); last user "
+                                              f"'{auth.user or '?'}'", related_event_ids=ids)
+            if slow is not None:
+                return slow
+            return RuleHit("benign", f"failed {name} sign-in {len(ids)}/{self.ssh_count} from {key}; "
+                                     f"below brute-force threshold")
+        if auth.outcome == "success" and key:
+            with self._lock:
+                dq = self._svc_failed.get(key)
+                while dq and ts - dq[0][0] > self.ssh_window_s:
+                    dq.popleft()
+                ids = [e for _, e in dq] if dq else []
+            if len(ids) >= self.ssh_count:
+                return RuleHit("brute_force", f"{name} sign-in for '{auth.user or '?'}' from {key} SUCCEEDED after "
+                                              f"{len(ids)} failed attempts: the password may have been guessed",
+                               related_event_ids=ids)
+            return RuleHit("benign", f"{name} sign-in for '{auth.user or '?'}' from {key}")
+        return RuleHit("benign", f"{name}: {auth.event or 'connection'}")
+
+    @staticmethod
+    def _network_alert(alert: NetworkAlert) -> RuleHit | None:
+        """A Suricata alert, mapped from its signature and classtype. None (Jev decides) for a serious
+        alert no word here explains."""
+        where = f"{'to' if alert.outbound else 'from'} {alert.remote_ip or 'unknown'}"
+        done = "; Suricata already dropped it" if alert.action == "blocked" else ""
+        text = f"{alert.signature} | {alert.category}"
+        for rx, category in SURICATA_CATEGORIES:
+            if rx.search(text):
+                return RuleHit(category, f"Suricata: {alert.signature} ({alert.category or 'no category'}, "
+                                         f"severity {alert.severity}) {where}{done}")
+        if (alert.severity or 0) >= 3 or SURICATA_LOW.search(alert.category) or SURICATA_LOW.search(alert.signature):
+            return RuleHit("benign", f"Suricata notice: {alert.signature} (severity {alert.severity}) {where}")
+        return None
+
+    @staticmethod
+    def _windows(event: dict[str, Any], p: dict[str, Any]) -> RuleHit | None:
+        """Windows events that are an incident on their own. None lets the text rules read the
+        rest (a 4688 command line can be a cleared log or a web server starting cmd.exe)."""
+        what, user = p.get("win_event"), event.get("user") or "?"
+        if what == "log_cleared":
+            return RuleHit("log_tampering", f"Windows {p.get('log') or p.get('channel') or 'event'} log was cleared "
+                                            f"(event {p.get('event_id')}) by '{user}'")
+        if what == "group_member_added":
+            group = str(p.get("group") or "")
+            if PRIVILEGED_GROUPS.match(group):
+                return RuleHit("privilege_escalation", f"'{p.get('member') or '?'}' was added to the Windows group "
+                                                       f"'{group}' by '{p.get('by') or '?'}': check this was planned")
+            return RuleHit("benign", f"account added to the Windows group '{group}'")
+        if what == "malware_detected":
+            return RuleHit("malware", f"Microsoft Defender found {p.get('threat') or 'a threat'} in "
+                                      f"{p.get('path') or '?'} (severity {p.get('severity') or '?'}, "
+                                      f"action {p.get('action') or '?'})")
+        if what == "malware_action":
+            return RuleHit("benign", f"Microsoft Defender acted on {p.get('threat') or 'a threat'}: {p.get('action') or '?'}")
+        if what == "service_installed":
+            image = str(p.get("image_path") or "")
+            if BAD_SERVICE.search(image):
+                return RuleHit("malware", f"new Windows service '{p.get('service_name') or '?'}' runs {image[:200]}: "
+                                          f"script hosts, encoded commands and temp folders are how attackers stay on a machine")
+            return RuleHit("benign", f"new Windows service '{p.get('service_name') or '?'}' ({image[:120]})")
+        if what == "account_created":
+            return RuleHit("benign", f"Windows account '{user}' created by '{p.get('by') or '?'}'")
+        return None
 
     # ------------------------------------------------------------------ sshd
     def _sshd(self, event: dict[str, Any], ssh: Any, now: float) -> RuleHit:

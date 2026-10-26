@@ -67,3 +67,19 @@ def test_protection_switch(fake_core):
 def test_machine_names_for_the_report_form(fake_core):
     assert {"web-01", "office-pc"} <= set(CoreClient(fake_core).machine_names())
     assert CoreClient("http://127.0.0.1:9", timeout=0.3).machine_names() == []  # no list: the form shows no picker
+
+
+def test_assign_and_resolve(fake_core):
+    c = CoreClient(fake_core)
+    requests.post(f"{fake_core}/dev/reset", timeout=3)
+    iid = requests.post(f"{fake_core}/dev/trigger/brute_force", timeout=3).json()["id"]
+    assert c.get_json(f"/incidents/{iid}")["owner"]
+    assert c.assign(iid, "Lee", "erick")["owner"] == "Lee"
+    try:
+        c.resolve(iid, "erick", "")
+    except CoreError as exc:
+        assert exc.status == 400
+    else:
+        raise AssertionError("resolving without a note must fail")
+    assert c.resolve(iid, "erick", "password reset")["status"] == "resolved"
+    assert [x["id"] for x in c.routing()["contacts"]][0] == "on_duty"

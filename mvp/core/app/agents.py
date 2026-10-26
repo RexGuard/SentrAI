@@ -71,6 +71,41 @@ EXPLAIN = {
                     "Staff reports, decide whether it is a security problem, and close it with a note.",
 }
 
+# What a person should do next, in everyday words (plan item 2). Shown in reports and the client summary.
+NEXT_STEPS = {
+    "brute_force": ["If you do not recognise the address, keep it blocked.",
+                    "Ask the account owner to change their password and turn on two-step sign-in.",
+                    "If the account belongs to a person, check with them that they can still sign in."],
+    "sql_injection": ["Keep the address blocked; nobody types this by accident.",
+                      "Ask your web developer to check the page that was targeted for unsafe database code.",
+                      "Check the database for changes you did not expect."],
+    "xss": ["Keep the address blocked.",
+            "Ask your web developer to check that the targeted page cleans what visitors type in."],
+    "port_scan": ["No action is usually needed: this is someone looking for a way in.",
+                  "Make sure only the services you need are open to the internet."],
+    "privilege_escalation": ["Treat this machine as possibly taken over: call your technical staff now.",
+                             "Do not switch the machine off; it keeps the evidence.",
+                             "Change the passwords used on this machine once it is checked."],
+    "data_exfiltration": ["Confirm with the account owner whether they meant to download this much data.",
+                          "If not, keep the account locked and check what was taken.",
+                          "You may have to tell affected customers: check your data-protection duties."],
+    "misconfiguration": ["Ask your technical staff to close the open setting (public access, open admin port or "
+                         "default password)."],
+    "log_tampering": ["Treat this machine as possibly taken over: call your technical staff now.",
+                      "SentrAI kept a copy of the record, so nothing is lost; ask for the evidence report."],
+    "prompt_injection": ["Keep the address blocked; this is a deliberate trick, not a mistake.",
+                         "No other action is needed: it was caught before any AI saw it."],
+    "malware": ["Ask your technical staff to look at the file and quarantine it if it is not yours.",
+                "Find out how it got there, and change the passwords used on this machine."],
+}
+
+
+def next_steps(incident: dict[str, Any]) -> list[str]:
+    steps = list(NEXT_STEPS.get(incident.get("category", ""), ["Ask your technical staff to take a look."]))
+    if incident.get("needs_review"):
+        steps.insert(0, "SentrAI is not sure this is an attack, so it did nothing on its own: please take a look.")
+    return steps
+
 
 @dataclass
 class Proposal:

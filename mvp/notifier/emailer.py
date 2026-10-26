@@ -27,7 +27,7 @@ from email.utils import make_msgid
 from typing import Callable
 
 from formatting import (BAND_COLORS, BAND_EMOJI, BRAND_BUTTON, BRAND_ON_DARK, BRAND_DARK, TAGLINE, alert_fields,
-                        button_specs, is_notice, notice_lines, risk_meter)
+                        button_specs, is_notice, LINK_TEXT, notice_lines, risk_meter)
 
 log = logging.getLogger("cactai.notifier.email")
 
@@ -89,8 +89,12 @@ def format_email(notification: dict, incident: dict | None = None, risk: dict | 
         icon, header, lines = notice_lines(notification)
         subject = f"[SentrAI] {lines[0] if lines else header}"
         text = "\n".join([f"{icon} {header}", *lines, "", f"-- SentrAI · {TAGLINE}"])
+        url = notification.get("report_url")
         body = "".join(f"<p style=\"margin:0 0 8px 0;font-family:{'monospace' if ln.startswith('SENTRAI-FP') else 'Arial,sans-serif'};"
-                       f"font-size:14px;word-break:break-all\">{html.escape(ln)}</p>" for ln in lines)
+                       f"font-size:14px;word-break:break-all\">"
+                       + (f"<a href=\"{html.escape(ln, quote=True)}\" style=\"color:{BRAND_BUTTON}\">"
+                          f"{html.escape(LINK_TEXT.get(notification.get('kind'), 'Open'))}</a>" if url and ln == url
+                          else html.escape(ln)) + "</p>" for ln in lines)
         html_body = (f"<div style=\"max-width:640px\"><div style=\"background:{BRAND_DARK};color:#fff;padding:12px 16px;"
                      f"font-family:Arial,sans-serif;font-weight:bold\">{icon} {html.escape(header)} · SentrAI</div>"
                      f"<div style=\"padding:16px\">{body}</div></div>")
@@ -190,12 +194,19 @@ def _email_html(f: dict, rows: list[tuple[str, str]], act: str, note: str, dashb
         "</table></div>")
 
 
+def recipients_for(cfg: EmailConfig, notification: dict) -> tuple[str, ...]:
+    """The routed people's emails (the core's routing contacts), else ALERT_EMAIL_TO."""
+    routed = tuple(dict.fromkeys(str(d.get("email")).strip() for d in notification.get("deliver_to") or []
+                                 if isinstance(d, dict) and str(d.get("email") or "").strip()))
+    return routed or cfg.recipients
+
+
 def build_message(cfg: EmailConfig, notification: dict, incident: dict | None, risk: dict | None) -> EmailMessage:
     subject, text, html_body = format_email(notification, incident, risk, cfg.dashboard_url)
     msg = EmailMessage()
     msg["Subject"] = subject
     msg["From"] = cfg.sender
-    msg["To"] = ", ".join(cfg.recipients)
+    msg["To"] = ", ".join(recipients_for(cfg, notification))
     msg["Message-ID"] = make_msgid(domain="cactai.local")
     msg.set_content(text)
     msg.add_alternative(html_body, subtype="html")
@@ -230,8 +241,9 @@ def email_sender(cfg: EmailConfig, **factories) -> Callable[[dict, "dict | None"
 
     def send(n: dict, incident: dict | None, risk: dict | None) -> str:
         counter["n"] += 1
-        msg_id = send_email(cfg, build_message(cfg, n, incident, risk), **factories)
-        log.info("delivered %s by email to %s (%s)", n.get("id"), ", ".join(cfg.recipients), msg_id)
+        msg = build_message(cfg, n, incident, risk)
+        msg_id = send_email(cfg, msg, **factories)
+        log.info("delivered %s by email to %s (%s)", n.get("id"), msg["To"], msg_id)
         return f"email-{int(time.time())}-{counter['n']}"
 
     return send

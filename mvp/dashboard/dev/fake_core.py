@@ -17,6 +17,7 @@ import hashlib
 import json
 import math
 import os
+import secrets
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -99,6 +100,7 @@ class State:
         self.threats: dict | None = None
         self.quarantine: list[dict] = []
         self.backups: list[dict] = []
+        self.jobs: list[dict] = []  # scans/backups asked of a machine; "done" a few seconds later
         self.pending: list[dict] = []  # Scout proposals; seed one with POST /_fake/scout-proposal
         # Machines joined to this (pretend) central panel: web-01 has the scripted incidents, office-pc is quiet.
         self.agents: dict[str, dict] = {
@@ -165,6 +167,9 @@ def open_incident(category: str, src_ip: str, user: str, conf: float, crit: floa
         "recommended_action": RECOMMEND[category].format(src_ip=src_ip, user=user),
         "explanation": f"{category.replace('_', ' ').capitalize()} activity from {src_ip} against '{user}' on web-01.",
         "actions": [], "event_ids": [f"evt-{int(time.time())}-{i:03d}" for i in range(3)],
+        "owner": ROUTING["contacts"][0]["name"], "owner_id": "on_duty", "backup": ROUTING["contacts"][1]["name"],
+        "backup_id": "team_lead", "assigned_by": "routing: High", "route": "High", "notify": [],
+        "escalation_level": 0, "escalations": [], "resolved_by": None, "resolution": None, "timeline": [],
     }
     S.incidents[iid] = inc
     audit("classification", "Jev" if by == "jev" else "Warden", incident=iid, category=category, confidence=conf)
@@ -342,6 +347,50 @@ def fleet_join_code(body: dict = Body(...)):
     return {"code": "K7QM-2XPA-9RTD", "expires_at": iso(now() + timedelta(hours=24)), "name": body.get("name") or None}
 
 
+FAKE_JOB_SCAN = {"files_checked": 214, "counts": {"critical": 1, "high": 0, "medium": 1}, "findings": [
+    {"path": "/var/www/html/uploads/img.php", "line": 1, "kind": "web_shell", "severity": "critical",
+     "label": "PHP web shell (eval of request data)"},
+    {"path": "/var/www/html/js/stats.js", "line": 40, "kind": "miner", "severity": "medium",
+     "label": "Browser crypto-miner pool address"}]}
+
+
+def _job_summary(j: dict) -> str:
+    if j["status"] != "done":
+        return "waiting for the machine to pick it up"
+    r = j["result"]
+    if j["kind"] == "threat_scan":
+        return f"{r['files_checked']} files checked, {len(r['findings'])} findings" + (
+            " (1 critical or high)" if r["findings"] else "")
+    return f"{r['id']}: {r['files']} files, {r['bytes'] / 1048576:.1f} MB"
+
+
+@app.get("/fleet/jobs")
+def fleet_jobs(host: str | None = None):
+    with lock:
+        for j in S.jobs:
+            if j["status"] == "queued" and (now() - datetime.fromisoformat(j["created_at"])).total_seconds() > 3:
+                clean = j["host"] != "web-01"
+                j.update(status="done", finished_at=iso(now()), result=(
+                    {"files_checked": 96, "counts": {}, "findings": []} if clean else FAKE_JOB_SCAN)
+                    if j["kind"] == "threat_scan" else
+                    {"id": f"b-{now():%Y%m%d-%H%M%S}", "files": 1342, "bytes": 48 * 1048576})
+        return [{**j, "summary": _job_summary(j)} for j in reversed(S.jobs) if host in (None, j["host"])]
+
+
+@app.post("/fleet/jobs")
+def fleet_queue_job(body: dict = Body(...)):
+    with lock:
+        if body.get("kind") not in ("threat_scan", "backup"):
+            raise HTTPException(400, "unknown job")
+        if any(j["host"] == body.get("host") and j["kind"] == body["kind"] and j["status"] == "queued" for j in S.jobs):
+            raise HTTPException(409, f"a {body['kind'].replace('_', ' ')} is already queued on {body.get('host')}")
+        j = {"id": f"j-{len(S.jobs) + 1:04x}", "host": body.get("host"), "kind": body["kind"], "status": "queued",
+             "requested_by": body.get("operator"), "created_at": iso(now()), "finished_at": None, "result": None}
+        S.jobs.append(j)
+        audit("machine_job_queued", "Warden", host=j["host"], kind=j["kind"], operator=j["requested_by"])
+        return {**j, "summary": _job_summary(j)}
+
+
 @app.post("/fleet/agents/{agent_id}/revoke")
 def fleet_revoke(agent_id: str, body: dict = Body(...)):
     with lock:
@@ -399,6 +448,75 @@ def rollback(iid: str, body: dict = Body(...)):
 @app.post("/incidents/{iid}/permanent")
 def permanent(iid: str, body: dict = Body(...)):
     return _close_actions(iid, body, "permanent", "permanent")
+
+
+ROUTING = {"source": "defaults", "contacts": [
+    {"id": "on_duty", "name": "John Doe (SEC-409) / Shift Bravo", "role": "on_duty", "email": "", "telegram": "", "backup": "team_lead"},
+    {"id": "team_lead", "name": "Team lead", "role": "team_lead", "email": "", "telegram": "", "backup": "it_manager"},
+    {"id": "it_manager", "name": "IT manager", "role": "it_manager", "email": "", "telegram": "", "backup": "cxo"},
+    {"id": "cxo", "name": "CXO", "role": "cxo", "email": "", "telegram": "", "backup": ""}],
+    "rules": [{"name": "Everything else", "match": {}, "owner": "on_duty", "notify": []}],
+    "follow_up": {"escalate_after_reminders": 2, "max_escalations": 3, "resolve_within_hours": 24}}
+
+
+@app.get("/routing")
+def routing():
+    return {**ROUTING, "contacts": [{**c, "telegram_linked": c["id"] in TG_LINKS} for c in ROUTING["contacts"]]}
+
+
+TG_LINKS: dict = {}  # contact id -> chat id
+
+
+@app.post("/telegram/link-codes")
+def telegram_link_code(body: dict = Body(...)):
+    contact = next((c for c in ROUTING["contacts"] if body.get("contact") in (c["id"], c["name"])), None)
+    if contact is None:
+        raise HTTPException(404, "no such contact")
+    code = "".join(secrets.choice("ABCDEFGHJKMNPQRSTUVWXYZ23456789") for _ in range(8))
+    return {"contact": contact["id"], "name": contact["name"], "code": code, "expires_at": iso(now() + timedelta(minutes=30)),
+            "valid_minutes": 30, "send": f"/link {code}"}
+
+
+@app.post("/telegram/unlink")
+def telegram_unlink(body: dict = Body(...)):
+    if TG_LINKS.pop(str(body.get("contact")), None) is None:
+        raise HTTPException(404, "not linked")
+    return {"contact": body.get("contact"), "unlinked": True}
+
+
+@app.get("/telegram/links")
+def telegram_links():
+    return [{"contact_id": k, "chat_id": v} for k, v in TG_LINKS.items()]
+
+
+@app.post("/incidents/{iid}/assign")
+def assign(iid: str, body: dict = Body(...)):
+    with lock:
+        inc = get_inc(iid)
+        if inc["status"] in ("resolved", "rejected"):
+            raise HTTPException(409, f"incident is {inc['status']}")
+        who = str(body.get("assignee") or "").strip()
+        if not who:
+            raise HTTPException(400, "assignee is required")
+        inc.update(owner=who, assigned_by=body.get("operator"), assigned_at=iso(now()))
+        inc.setdefault("timeline", []).append({"ts": iso(now()), "kind": "assigned",
+                                               "text": f"Assigned to {who} by {body.get('operator')}"})
+        audit("incident_assigned", "Warden", incident=iid, to=who, operator=body.get("operator"))
+        return inc
+
+
+@app.post("/incidents/{iid}/resolve")
+def resolve(iid: str, body: dict = Body(...)):
+    with lock:
+        inc = get_inc(iid)
+        if inc["status"] in ("resolved", "rejected"):
+            raise HTTPException(409, f"incident is {inc['status']}")
+        if not str(body.get("note") or "").strip():
+            raise HTTPException(400, "resolving requires a short note on what was done")
+        inc.update(status="resolved", resolved_by=body.get("operator"), resolution=body.get("note"),
+                   acked=True, acked_by=inc.get("acked_by") or body.get("operator"))
+        audit("incident_resolved", "Warden", incident=iid, operator=body.get("operator"), note=body.get("note"))
+        return inc
 
 
 @app.post("/incidents/{iid}/ack")
@@ -498,6 +616,43 @@ def ai_status():
 @app.post("/ai/reload")
 def ai_reload():
     return FAKE_AI
+
+
+FAKE_INTEGRATIONS = [
+    {"name": "cloudflare", "title": "Cloudflare", "kind": "Blocking", "configured": True, "testable": True,
+     "what": "Blocks attacking addresses at Cloudflare's edge, so they never reach your site. "
+             "Removed again when SentrAI's block ends.",
+     "detail": "IP Access rules, block on zone 0123abcd · 2 address(es) blocked now", "last_ok": "2026-10-26 10:02:11",
+     "settings": ["CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ZONE_ID"],
+     "docs": "https://developers.cloudflare.com/fundamentals/api/get-started/create-token/"},
+    {"name": "webhook", "title": "Any other system (webhook)", "kind": "Blocking", "configured": False, "testable": False,
+     "what": "Sends each block and its removal to a URL you choose: n8n, Zapier, a router, a SOAR.",
+     "detail": "Set a URL to hand blocks to another system.", "settings": ["CACTAI_RESPONDER_WEBHOOK_URL"], "docs": ""},
+    {"name": "abuseipdb", "title": "AbuseIPDB", "kind": "Lookups", "configured": True, "testable": True,
+     "what": "Shows how often other people have reported an attacking address, on each incident.",
+     "detail": "14 lookup(s) since start, answers kept 24 h", "settings": ["ABUSEIPDB_API_KEY"],
+     "docs": "https://www.abuseipdb.com/account/api"},
+    {"name": "slack", "title": "Slack", "kind": "Alerts", "configured": False, "testable": False,
+     "what": "Posts a copy of every alert to a Slack channel, next to Telegram and email.",
+     "detail": "Create an incoming webhook in Slack and paste its URL.", "settings": ["SLACK_WEBHOOK_URL"],
+     "docs": "https://api.slack.com/messaging/webhooks"},
+    {"name": "telegram", "title": "Telegram", "kind": "Alerts", "configured": True, "testable": False,
+     "what": "Sends alerts with Approve / Reject buttons to a Telegram chat.", "detail": "Handled by the notifier.",
+     "settings": ["TELEGRAM_BOT_TOKEN"], "docs": "https://core.telegram.org/bots/tutorial"},
+    {"name": "email", "title": "Email", "kind": "Alerts", "configured": False, "testable": False,
+     "what": "Emails alerts, as a backup to Telegram or always.", "detail": "Handled by the notifier.",
+     "settings": ["SMTP_HOST", "ALERT_EMAIL_TO"], "docs": ""},
+]
+
+
+@app.get("/integrations")
+def integrations():
+    return FAKE_INTEGRATIONS
+
+
+@app.post("/integrations/{name}/test")
+def test_integration(name: str):
+    return {"ok": False, "error": "the fake core does not call outside services; start the real core to test"}
 
 
 @app.post("/ai/test")

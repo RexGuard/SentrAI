@@ -589,6 +589,7 @@ if "page" not in st.session_state:  # land on what needs a person; a new machine
 
 PAGES = {  # key: (Material icon, label, menu group)
     "approvals": ("approval_delegation", "Approvals", "Decide"),
+    "incidents": ("assignment_ind", "Incidents", "Decide"),
     "staff": ("campaign", "Staff reports", "Decide"),
     "chat": ("forum", "Chat", "Decide"),
     "collector": ("input", "Collector", "Pipeline"),
@@ -600,6 +601,7 @@ PAGES = {  # key: (Material icon, label, menu group)
     "audit": ("link", "Audit trail", "Oversight"),
     "backups": ("backup", "Backups", "Oversight"),
     "team": ("group", "Team", "Oversight"),  # Owners and Admins, when people sign in
+    "integrations": ("hub", "Integrations", "Settings"),
     "config": ("tune", "Configuration", "Settings"),
 }
 
@@ -650,6 +652,7 @@ def menu() -> None:
         seen[page] = sh.head_seq(records)
     staff, _ = fetch("staff", {})
     bubbles = {**sh.unseen_counts(records, seen), "approvals": len(sh.pending_approvals(incidents or [])),
+               "incidents": sh.board_counts(incidents or [])["overdue"],
                "staff": int(((staff or {}).get("counts") or {}).get("new") or 0)}
 
     side_risk()
@@ -781,6 +784,12 @@ def incident_summary(inc: dict) -> None:
     )
     if inc.get("explanation"):
         st.markdown(f'<p class="explain">{html.escape(str(inc["explanation"]))}</p>', unsafe_allow_html=True)
+    rep = inc.get("reputation") or {}
+    if rep and not rep.get("error"):  # AbuseIPDB: context for the person deciding, not evidence
+        seen = f"reported {rep.get('reports', 0)} time(s) by others, {rep.get('score', 0)}% abuse confidence"
+        where = " · ".join(re.sub(r"[\[\]()*_`<>#|~\\$]", "", str(x)) for x in (rep.get("isp"), rep.get("country")) if x)
+        st.caption(f":material/travel_explore: AbuseIPDB: {seen}" + (f" · {where}" if where else "")
+                   + (" · Tor exit node" if rep.get("tor") else ""))
     st.markdown(f'<div class="reco">{icon("tips_and_updates")}<div><b>Recommended action</b>'
                 f'{html.escape(str(inc.get("recommended_action") or "-"))}</div></div>',
                 unsafe_allow_html=True)
@@ -1165,6 +1174,82 @@ def ai_connection(ai: dict[str, str]) -> None:
             st.caption(result["hint"])
 
 
+INTEGRATION_KINDS = (("Blocking", "block", "stop attackers outside this machine too"),
+                     ("Lookups", "travel_explore", "what the internet already knows about an address"),
+                     ("Alerts", "notifications", "where people hear about incidents"))
+NOT_SET = sh.UNKNOWN_COLOR
+
+
+def page_integrations() -> None:
+    show_flash()
+    if header("Integrations", "Outside services SentrAI works with · each stays off until its key is saved") is None:
+        return
+    rows, err = safe(client.integrations, [])
+    if err:
+        st.warning(f"Could not ask the core which services are connected: {err}")
+        return
+    on = [r for r in rows if r.get("configured")]
+    problems = [r for r in rows if r.get("last_error") or r.get("error")]
+    by_name = {r["name"]: r for r in rows}
+    stats(("Connected", f"{len(on)} of {len(rows)}", "services set up"),
+          ("Edge blocking", "On" if by_name.get("cloudflare", {}).get("configured") else "Off",
+           "Cloudflare blocks what SentrAI blocks"),
+          ("Problems", str(len(problems)), "last call failed" if problems else "none",
+           sh.BAND_COLORS["amber"] if problems else None))
+    results = st.session_state.setdefault("integration_tests", {})
+    for kind, ico, note in INTEGRATION_KINDS:
+        group = [r for r in rows if r.get("kind") == kind]
+        if not group:
+            continue
+        section(kind, note, ico)
+        cols = st.columns(2)
+        for n, r in enumerate(group):
+            with cols[n % 2], st.container(border=True):
+                integration_card(r, results)
+    st.caption("Keys and tokens are saved in the settings file on this machine (never in the code), "
+               "and the core reads them when it starts. After saving a key, restart SentrAI (stop, then run).")
+
+
+def integration_card(r: dict, results: dict) -> None:
+    trouble = r.get("error") or r.get("last_error")
+    if r.get("configured") and trouble:
+        chip = pill("Problem", sh.BAND_COLORS["amber"])
+    elif r.get("configured"):
+        chip = pill("Connected", sh.BAND_COLORS["green"])
+    else:
+        chip = pill("Not set up", NOT_SET)
+    st.markdown(f'<div class="sec-title">{html.escape(r.get("title") or r["name"])} {chip}</div>',
+                unsafe_allow_html=True)
+    st.write(r.get("what") or "")
+    st.caption(r.get("detail") or "")
+    if trouble:
+        st.caption(f":orange[:material/warning:] {trouble}")
+    in_config = any(f in cfg.FIELDS for f in r.get("settings") or [])
+    slots = iter(st.columns(3))  # buttons fill from the left, so a card without a test has no gap
+    b1 = next(slots) if r.get("testable") else None
+    b2 = next(slots) if in_config else None
+    b3 = next(slots) if r.get("docs") else None
+    if b1 is not None and b1.button("Test", key=f"test_{r['name']}", icon=":material/power:", width="stretch",
+                                       disabled=not can("configure"),
+                                       help="One harmless call to the service with the saved key"):
+        with st.spinner(f"Testing {r.get('title')}..."):
+            out, test_err = safe(lambda: client.test_integration(r["name"]))
+        results[r["name"]] = out if not test_err else {"ok": False, "error": test_err}
+    if b2 is not None and b2.button(
+            "Settings", key=f"set_{r['name']}", icon=":material/tune:", width="stretch"):
+        st.session_state.cfg_search = str(r.get("title") or r["name"]).split()[0].lower()
+        go("config")
+    if b3 is not None:
+        b3.link_button("How to set up", r["docs"], icon=":material/open_in_new:", width="stretch")
+    if not in_config:
+        st.caption("Set with environment variables: " + ", ".join(f"`{f}`" for f in r.get("settings") or []))
+    result = results.get(r["name"])
+    if result and result.get("ok"):
+        st.success(result.get("detail") or "Connected.")
+    elif result:
+        st.error(f"Test failed: {result.get('error')}")
+
+
 @st.fragment(run_every=AUTO)
 def page_approvals() -> None:
     show_flash()
@@ -1308,6 +1393,151 @@ def staff_report_detail(r: dict) -> None:
             rerun=False)
         _get.clear()  # the menu bubble and counts show the change at once
         st.rerun()
+
+
+def owner_controls(inc: dict, contacts: list[dict]) -> None:
+    """Who has the incident, its hand-over history, and the Assign / Mark resolved forms."""
+    inc_id, op = str(inc.get("id")), st.session_state.operator
+    owner, backup = inc.get("owner") or "Nobody yet", inc.get("backup")
+    level = int(inc.get("escalation_level") or 0)
+    st.markdown(
+        f'<div class="detail-grid">'
+        f'<div><span>Owner</span><b>{html.escape(str(owner))}</b></div>'
+        f'<div><span>Backup</span><b>{html.escape(str(backup or "-"))}</b></div>'
+        f'<div><span>Given by</span><b>{html.escape(str(inc.get("assigned_by") or "-"))}</b></div>'
+        f'<div><span>Escalations</span><b>{level}</b></div>'
+        '</div>', unsafe_allow_html=True)
+    history = sh.owner_history(inc)
+    if history:
+        st.caption("  \n".join(html.escape(h) for h in history[-6:]))
+    if inc.get("status") not in sh.OPEN_STATUSES:
+        if inc.get("resolution"):
+            st.caption(f"Resolved by {inc.get('resolved_by')}: {inc.get('resolution')}")
+        return
+    names = [str(c.get("name")) for c in contacts if c.get("name")]
+    a, b = st.columns(2)
+    with a, st.form(key=f"assign_{inc_id}", clear_on_submit=True, border=True):
+        me, other = f"Me ({op})", "Someone else"
+        choice = st.selectbox("Give it to", [me, *[n for n in names if n != owner], other], key=f"to_{inc_id}")
+        typed = st.text_input("Name, if someone else", key=f"toname_{inc_id}")
+        note = st.text_input("Note (optional)", key=f"tonote_{inc_id}", placeholder="e.g. You know this server best")
+        go_assign = st.form_submit_button("Assign", icon=":material/person_add:", width="stretch",
+                                          disabled=locked(), help=why_locked())
+    with b, st.form(key=f"resolve_{inc_id}", clear_on_submit=True, border=True):
+        done = st.text_area("What was done (required, written to the audit log)", key=f"done_{inc_id}", height=108,
+                            placeholder="e.g. Password reset for admin, attacker IP blocked at the router")
+        go_resolve = st.form_submit_button("Mark resolved", icon=":material/task_alt:", type="primary", width="stretch",
+                                           disabled=locked(), help=why_locked())
+    if go_assign:
+        who = op if choice == me else typed.strip() if choice == other else choice
+        if not who:
+            st.error("Type the name of the person to give it to.")
+        else:
+            run_action(f"{inc_id} given to {who}", lambda: client.assign(inc_id, who, op, note.strip()))
+    elif go_resolve:
+        if not done.strip():
+            st.error("Write a short note on what was done first. Nothing was changed.")
+        else:
+            run_action(f"Resolved {inc_id}", lambda: client.resolve(inc_id, op, done.strip()))
+
+
+def incident_card(inc: dict, contacts: list[dict]) -> None:
+    incident_summary(inc)
+    owner_controls(inc, contacts)
+    if sh.available_actions(inc)["decide"] or sh.available_actions(inc)["contain_controls"]:
+        decision_controls(inc)
+
+
+@st.fragment(run_every=AUTO)
+def page_incidents() -> None:
+    show_flash()
+    if header("Incidents", "who owns each incident, and what still needs a person") is None:
+        return
+    incidents, err = fetch("incidents", [])
+    if err:
+        st.warning(f"Could not load incidents: {err}")
+    incidents = incidents or []
+    routing, rerr = safe(client.routing, {})
+    contacts = (routing or {}).get("contacts") or []
+    me = st.session_state.operator
+    c = sh.board_counts(incidents, me)
+    stats(("Open", str(c["open"]), "not resolved yet"),
+          ("Needs attention", str(c["attention"]), f"{c['unassigned']} with no owner",
+           sh.BAND_COLORS["amber"] if c["attention"] else None),
+          ("Overdue", str(c["overdue"]), "past the SLA, nobody answered",
+           sh.BAND_COLORS["critical"] if c["overdue"] else None),
+          ("Escalated", str(c["escalated"]), "handed to a backup contact",
+           sh.BAND_COLORS["amber"] if c["escalated"] else None),
+          ("Yours", str(c["mine"]), f"owned by {me}"))
+
+    with st.container(border=True):
+        section("Needs attention", "most urgent first", "notification_important")
+        todo = sh.needs_attention(incidents)
+        if not todo:
+            empty("Nothing needs a person right now. Every open incident is in hand.", "check_circle", good=True)
+        for n, inc in enumerate(todo):
+            title = (f"{inc.get('id')} · {sh.category_label(inc.get('category'))} · {inc.get('owner') or 'no owner'}"
+                     f" · {'; '.join(sh.attention(inc))}")
+            with st.expander(title, expanded=n == 0):
+                incident_card(inc, contacts)
+
+    with st.container(border=True):
+        section("All incidents", "owner, backup and what each one still needs", "assignment_ind")
+        t1, t2 = st.columns(2)
+        closed = t1.toggle("Show resolved and rejected", key="board_closed")
+        mine = t2.toggle(f"Only mine ({me})", key="board_mine")
+        shown = [i for i in incidents if not mine or str(i.get("owner") or "").lower().lstrip("@") == me.lower().lstrip("@")]
+        table(sh.board_rows(shown, include_closed=closed), "No incidents. All quiet at the gate.")
+        ids = [str(i.get("id")) for i in shown if closed or i.get("status") in sh.OPEN_STATUSES]
+        if ids:
+            pick = st.selectbox("Open one to assign, resolve or decide", ["-", *ids], key="board_pick")
+            inc = next((i for i in shown if str(i.get("id")) == pick), None)
+            if inc is not None:
+                with st.container(border=True):
+                    incident_card(inc, contacts)
+
+    with st.container(border=True):
+        section("Who gets what", "routing rules: the first match owns the incident", "alt_route")
+        if rerr:
+            st.caption(f"Could not load the routing rules: {rerr}")
+        else:
+            st.caption(f"From {routing.get('source')}. Unanswered alerts go to the owner's backup after "
+                       f"{(routing.get('follow_up') or {}).get('escalate_after_reminders', '?')} reminders.")
+            table(sh.routing_rows(routing), "", )
+            table(sh.contact_rows(routing), "")
+            telegram_links(contacts)
+
+
+def telegram_links(contacts: list[dict]) -> None:
+    """Make a one-time code a person sends to the bot, so their alerts reach them in their own chat."""
+    if not contacts:
+        return
+    st.markdown("**Alerts in each person's own Telegram chat**")
+    st.caption("Make a code for a person and send it to them. They open a private chat with the SentrAI bot "
+               "and send `/link CODE` within 30 minutes. From then on, alerts for them arrive in that chat "
+               "with the buttons, and whatever they press is recorded under their name.")
+    by_name = {str(c.get("name")): c for c in contacts if c.get("name")}
+    a, b, c = st.columns([3, 1.4, 1.2], vertical_alignment="bottom")
+    who = a.selectbox("Person", list(by_name), key="tg_person")
+    contact = by_name.get(who) or {}
+    op = st.session_state.operator
+    if b.button("Make link code", icon=":material/key:", key="tg_code", width="stretch", disabled=locked(),
+                help=why_locked()):
+        made, err = safe(lambda: client.telegram_link_code(str(contact.get("id")), op), {})
+        if err:
+            st.warning(f"Could not make a code: {err}")
+        else:
+            st.session_state["tg_made"] = made
+    if contact.get("telegram_linked") and c.button("Unlink", icon=":material/link_off:", key="tg_unlink",
+                                                   width="stretch", disabled=locked(), help=why_locked()):
+        run_action(f"{who} unlinked from Telegram",
+                   lambda: client.telegram_unlink(str(contact.get("id")), op))
+    made = st.session_state.get("tg_made")
+    if made and made.get("name") == who:
+        st.success(f"Code for {made.get('name')}: **{made.get('code')}** "
+                   f"(works once, until {str(made.get('expires_at') or '')[11:16]}). "
+                   f"They send this to the bot in a private chat:")
+        st.code(made.get("send") or f"/link {made.get('code')}", language=None)
 
 
 CHAT_STARTERS = ("What is happening right now?", "Which incident should I deal with first?",
@@ -1920,6 +2150,23 @@ def page_machines() -> None:
                 st.warning(f"Could not load incidents: {ierr}")
             st.caption("Its incidents")
             table(sh.risk_breakdown(incs or []), f"All quiet on {pick}. No incidents.")
+            st.caption("Scans and backups on it (its agent picks them up within about 15 seconds and runs "
+                       "them on the folders set on that machine)")
+            b1, b2, _ = st.columns([3, 3, 4])
+            if b1.button("Scan for threats", icon=":material/policy:", key="job_scan", width="stretch"):
+                run_action(f"Asked {pick} to scan for threats",
+                           lambda: client.queue_job(pick, "threat_scan", st.session_state.operator))
+            if b2.button("Back up now", icon=":material/backup:", key="job_backup", width="stretch"):
+                run_action(f"Asked {pick} to back up",
+                           lambda: client.queue_job(pick, "backup", st.session_state.operator))
+            jobs, jerr = safe(lambda: client.machine_jobs(pick), [])
+            if jerr:
+                st.warning(f"Could not load jobs: {jerr}")
+            table(sh.job_rows(jobs or []), f"Nothing asked of {pick} yet.")
+            found_now = sh.job_findings(jobs or [])
+            if not found_now.empty:
+                st.caption("What its latest threat scan found (critical and high ones also open an incident)")
+                table(found_now, "")
     with right, st.container(border=True):
         section("Add machine", "a one-time join code, valid for 24 hours", "add_circle")
         if not panel:
@@ -1928,8 +2175,9 @@ def page_machines() -> None:
             name = st.text_input("Machine name (optional)", key="join_name", placeholder="web-01",
                                  help="Leave empty to use the new machine's own host name")
             url = st.text_input("Panel address the machine will use", key="join_url",
-                                value=os.environ.get("CACTAI_PUBLIC_URL") or st.session_state.core_url,
-                                help="Must be https:// from another machine")
+                                value=os.environ.get("CACTAI_PANEL_URL") or os.environ.get("CACTAI_PUBLIC_URL")
+                                or st.session_state.core_url,
+                                help="Must be https:// from another machine (install.sh --panel opens port 8443)")
             if st.button("Make join code", icon=":material/key:", type="primary", key="join_make",
                          disabled=locked("configure"), help=why_locked("configure")):
                 try:
@@ -1941,14 +2189,22 @@ def page_machines() -> None:
             if made:
                 st.markdown(f'Join code <b>{html.escape(str(made["code"]))}</b> · works once, until '
                             f'{html.escape(f"{ts:%d %b %H:%M}" if (ts := sh.parse_ts(made.get("expires_at"))) else "-")}', unsafe_allow_html=True)
-                cmds = sh.join_commands(url, made["code"], made.get("name"))
+                pin = made.get("pin") if url.startswith("https://") else None
+                cmds = sh.join_commands(url, made["code"], made.get("name"), pin)
                 st.caption("On a Linux server, from a SentrAI checkout:")
                 st.code(cmds["linux"], language="bash")
                 st.caption("On Windows, from a SentrAI checkout in an Administrator PowerShell:")
                 st.code(cmds["windows"], language="powershell")
+                if pin:
+                    st.caption("The --pin is this panel's certificate fingerprint: the machine will talk to this "
+                               "panel and nothing pretending to be it.")
                 if not url.startswith("https://"):
-                    st.warning("Other machines refuse a plain http:// panel. Put HTTPS in front of the core first.",
+                    st.warning("Other machines refuse a plain http:// panel. Install the panel with "
+                               "sudo ./deploy/install.sh --panel to open its HTTPS port for agents.",
                                icon=":material/lock_open:")
+                elif not pin:
+                    st.info("No certificate pin is known (CACTAI_PANEL_CERT is not set), so the machine checks the "
+                            "panel's certificate against the usual authorities.", icon=":material/lock:")
 
     if panel:
         agents, aerr = fetch("fleet", [])
@@ -1970,7 +2226,8 @@ def page_machines() -> None:
 
 @st.fragment(run_every=AUTO)
 def page_reports() -> None:
-    header("Reports", "one evidence report for every contained incident")
+    header("Reports", "a one-page summary for the client, and one evidence report for every incident")
+    client_summary()
     incidents, err = fetch("incidents", [])
     records, _, _ = audit_records()
     with_report = {str((r.get("data") or {}).get("incident")) for r in sh.records_of(records, "report_generated")}
@@ -2126,11 +2383,62 @@ def render_feed(feed: list[dict]) -> None:
                 unsafe_allow_html=True)
 
 
+SUMMARY_EVERY = {"daily": "Every day", "weekly": "Every week", "off": "Off"}
+WEEKDAYS = {"mon": "Monday", "tue": "Tuesday", "wed": "Wednesday", "thu": "Thursday", "fri": "Friday",
+            "sat": "Saturday", "sun": "Sunday"}
+
+
+def client_summary() -> None:
+    """The one-page client summary: how often it goes out (the client's choice) and today's or this week's page."""
+    sched, err = safe(client.summary_schedule)
+    if err or not isinstance(sched, dict):
+        return  # an older core without the summary
+    left, right = st.columns([4, 8])
+    with left, st.container(border=True):
+        nxt = str(sched.get("next_at") or "")[:16].replace("T", " ")
+        section("Client summary", f"next: {nxt}" if nxt else "not scheduled", "event_repeat")
+        with st.form("summary_schedule", border=False):
+            every = st.radio("Send it", list(SUMMARY_EVERY), format_func=SUMMARY_EVERY.get, horizontal=True,
+                             index=list(SUMMARY_EVERY).index(sched.get("every", "daily")))
+            c1, c2 = st.columns(2)
+            at = c1.text_input("At (local time)", sched.get("at", "08:00"), help="24-hour time, such as 08:00")
+            day = c2.selectbox("On (weekly)", list(WEEKDAYS), format_func=WEEKDAYS.get,
+                               index=list(WEEKDAYS).index(sched.get("day", "mon")))
+            to = st.text_input("Addressed to", sched.get("to", "Client"),
+                               help="The client's name, shown on the page. It goes out on the alert channels.")
+            if st.form_submit_button("Save", icon=":material/save:", type="primary", width="stretch"):
+                run_action("Summary schedule saved", lambda: client.set_summary_schedule(
+                    st.session_state.operator, every, at, day, to), rerun=False)
+                st.rerun()
+        if st.button("Send one now", icon=":material/send:", width="stretch",
+                     help="Sends the summary for the chosen period to the alert channels now"):
+            run_action("Summary sent to the alert channels", lambda: client.send_summary(st.session_state.operator),
+                       rerun=False)
+            st.rerun()
+    with right, st.container(border=True):
+        period = st.segmented_control("Period", ["daily", "weekly"], default="weekly" if sched.get("every") == "weekly"
+                                      else "daily", format_func=lambda p: "Last 24 hours" if p == "daily" else "Last 7 days",
+                                      key="summary_period") or "daily"
+        md, merr = safe(lambda: client.summary_md(period))
+        if merr or not md:
+            empty(f"The summary could not be made: {merr}", "error")
+            return
+        d0, d1 = st.columns(2)
+        pdf, perr = safe(lambda: client.summary_pdf(period))
+        if pdf and not perr:
+            d0.download_button("PDF (one page)", pdf, icon=":material/picture_as_pdf:", file_name=f"sentrai-{period}-summary.pdf",
+                               mime="application/pdf", type="primary", width="stretch", key=f"dl_sum_pdf_{period}")
+        d1.download_button("Markdown", md, icon=":material/download:", file_name=f"sentrai-{period}-summary.md",
+                           mime="text/markdown", width="stretch", key=f"dl_sum_md_{period}")
+        with st.container(height=420, border=True):
+            st.markdown(sh.demote_headings(md))
+
+
 def report_viewer(inc_id: str) -> None:
     section("Evidence report", inc_id, "verified")
     md, err = safe(lambda: client.report_md(inc_id))
     if err or not md:
-        empty("No report for this incident yet. Scribe writes one when autonomous containment fires.", "hourglass_empty")
+        empty("No report for this incident yet.", "hourglass_empty")
         return
     d0, d1, d2 = st.columns(3)
     pdf, perr = safe(lambda: client.report_pdf(inc_id))
@@ -2238,7 +2546,8 @@ def page_team() -> None:
 if not page_allowed(st.session_state.page):
     st.session_state.page = "config"
 {
-    "config": page_config, "approvals": page_approvals, "staff": page_staff, "chat": page_chat, "collector": page_collector, "classifier": page_classifier,
-    "responder": page_responder, "machines": page_machines, "review": page_review, "reports": page_reports, "audit": page_audit,
-    "backups": page_backups, "team": page_team,
+    "config": page_config, "approvals": page_approvals, "incidents": page_incidents, "staff": page_staff, "chat": page_chat,
+    "collector": page_collector, "classifier": page_classifier, "responder": page_responder, "machines": page_machines,
+    "review": page_review, "reports": page_reports, "audit": page_audit,
+    "backups": page_backups, "team": page_team, "integrations": page_integrations,
 }[st.session_state.page]()

@@ -157,6 +157,20 @@ class Settings:
         if x.strip()))
     responder_webhook_secret: str = field(default_factory=lambda: _secret("CACTAI_RESPONDER_WEBHOOK_SECRET"), repr=False)
     responder_webhook_timeout_s: float = field(default_factory=lambda: _f("CACTAI_RESPONDER_WEBHOOK_TIMEOUT_S", 3.0))
+    # Cloudflare (app/cloudflare.py): block_ip also blocks at Cloudflare's edge. Off while the token is blank.
+    cloudflare_api_token: str = field(default_factory=lambda: _secret("CLOUDFLARE_API_TOKEN"), repr=False)
+    cloudflare_zone_id: str = field(default_factory=lambda: os.getenv("CLOUDFLARE_ZONE_ID", "").strip())
+    cloudflare_account_id: str = field(default_factory=lambda: os.getenv("CLOUDFLARE_ACCOUNT_ID", "").strip())
+    cloudflare_list_id: str = field(default_factory=lambda: os.getenv("CLOUDFLARE_LIST_ID", "").strip())
+    cloudflare_method: str = field(default_factory=lambda: os.getenv("CLOUDFLARE_METHOD", "access_rule").strip().lower()
+                                   or "access_rule")
+    cloudflare_mode: str = field(default_factory=lambda: os.getenv("CLOUDFLARE_MODE", "block").strip().lower() or "block")
+    cloudflare_timeout_s: float = field(default_factory=lambda: _f("CLOUDFLARE_TIMEOUT_S", 5.0))
+    # AbuseIPDB (app/reputation.py): look up each attacking address. Off while the key is blank.
+    abuseipdb_api_key: str = field(default_factory=lambda: _secret("ABUSEIPDB_API_KEY"), repr=False)
+    abuseipdb_cache_hours: float = field(default_factory=lambda: _f("ABUSEIPDB_CACHE_HOURS", 24.0))
+    # Slack incoming webhook: the notifier posts a copy of every alert there; the core only tests it.
+    slack_webhook_url: str = field(default_factory=lambda: _secret("SLACK_WEBHOOK_URL"), repr=False)
     jev_budget_s: float = field(default_factory=lambda: _f("JEV_BUDGET_S", 2.0))
     # Protection switch override at start: "1"/"0", or unset to use the last choice saved in protection.json.
     monitor_only: str | None = field(default_factory=lambda: os.getenv("CACTAI_MONITOR_ONLY"))
@@ -185,3 +199,9 @@ class Settings:
         """Hours a temporary action of this type lasts, within the business limit."""
         hours = self.action_ttl_hours.get(action_type, self.ttl_hours)
         return max(0.0, min(hours, self.max_ttl_hours)) if self.max_ttl_hours > 0 else max(0.0, hours)
+    # One-page client summary (summary.py): daily | weekly | off, local time HH:MM, weekday for weekly,
+    # and the name it is addressed to. A choice saved from the dashboard (summary.json) wins over these.
+    summary_every: str = field(default_factory=lambda: os.getenv("CACTAI_SUMMARY", "daily"))
+    summary_at: str = field(default_factory=lambda: os.getenv("CACTAI_SUMMARY_AT", "08:00"))
+    summary_day: str = field(default_factory=lambda: os.getenv("CACTAI_SUMMARY_DAY", "mon"))
+    summary_to: str = field(default_factory=lambda: os.getenv("CACTAI_SUMMARY_TO", "Client"))

@@ -24,6 +24,10 @@ KIND_HEADERS = {
     "reminder": ("⏰", "Reminder: still unacknowledged"),
     "sla_breach": ("⏰", "SLA breached"),
     "escalation": ("📣", "Escalation"),
+    "escalated": ("📣", "Escalated to the backup contact"),
+    "assigned": ("🙋", "Assigned to you"),
+    "sla_reminder": ("⏰", "Reminder: still unacknowledged"),
+    "resolve_reminder": ("⏰", "Reminder: still not resolved"),
     "autonomous_action": ("🛡️", "Autonomous containment applied"),
     "containment": ("🛡️", "Containment applied"),
     "report": ("📄", "Evidence report ready"),
@@ -32,15 +36,18 @@ KIND_HEADERS = {
     "undo_failed": ("❗", "Undo failed: check by hand"),
     "backup_failed": ("💾", "Backup problem"),
     "backup_restored": ("💾", "Backup restored"),
+    "summary": ("📋", "Security summary"),
 }
 # Kinds that are not about one incident: shown as a short note (header, title, text), no risk or buttons.
-NOTICE_KINDS = ("audit_anchor", "backup_failed", "backup_restored")
+NOTICE_KINDS = ("audit_anchor", "backup_failed", "backup_restored", "summary")
+LINK_TEXT = {"summary": "Open the one-page summary (PDF)"}
 
 # Callback data: "<verb>:<incident_id>" (Telegram limits callback_data to 64 bytes).
 APPROVE = "approve"
 REJECT = "reject"
 ROLLBACK = "rollback"
 PERMANENT = "permanent"
+TAKE = "take"  # the person who presses it becomes the incident's owner
 
 
 def band_for(index: Any) -> str:
@@ -121,6 +128,16 @@ def alert_fields(notification: dict, incident: dict | None = None, risk: dict | 
     }
 
 
+def handles_of(notification: dict) -> list[str]:
+    """Telegram handles of the people this alert is for (from the core's routing contacts)."""
+    out = []
+    for d in notification.get("deliver_to") or []:
+        h = str((d or {}).get("telegram") or "").strip()
+        if h:
+            out.append(h if h.startswith("@") or h.lstrip("-").isdigit() else f"@{h}")
+    return [h for h in out if not h.lstrip("-").isdigit()]  # chat ids cannot be mentioned
+
+
 def witness_of(notification: dict) -> str:
     """The signed audit fingerprint the core put on this notification ("SENTRAI-FP v1 ..."), or ""."""
     w = str(notification.get("witness") or "").strip()
@@ -136,19 +153,26 @@ def notice_lines(notification: dict) -> tuple[str, str, list[str]]:
     icon, header = KIND_HEADERS.get(notification_kind(notification), ("ℹ️", "Notice"))
     lines = [str(notification.get("title") or "")]
     lines += str(notification.get("text") or "").splitlines()
+    url = notification.get("report_url")
+    if url and url not in lines:  # a signed link (the one-page summary), shown as a link where the channel can
+        lines.append(str(url))
     w = witness_of(notification)
     if w and not any(ln.startswith("SENTRAI-FP") for ln in lines):
         lines.append(w)
     return icon, header, [ln for ln in lines if ln]
 
 
-def format_telegram(notification: dict, incident: dict | None = None, risk: dict | None = None) -> str:
-    """Telegram message body in HTML parse mode."""
+def format_telegram(notification: dict, incident: dict | None = None, risk: dict | None = None,
+                    personal: bool = False) -> str:
+    """Telegram message body in HTML parse mode. `personal`: a direct message to one person, so no "For:" line."""
     e = html.escape
     if is_notice(notification):
         icon, header, lines = notice_lines(notification)
         # The last line of a fingerprint notice is the line to keep: monospace so it copies whole.
-        body = [e(ln) if not ln.startswith("SENTRAI-FP") else f"<code>{e(ln)}</code>" for ln in lines]
+        url = notification.get("report_url")
+        body = [f"<code>{e(ln)}</code>" if ln.startswith("SENTRAI-FP")
+                else f'<a href="{e(ln, quote=True)}">{e(LINK_TEXT.get(notification_kind(notification), "Open"))}</a>'
+                if url and ln == url else e(ln) for ln in lines]
         return "\n".join([f"{icon} <b>{e(header)}</b>  ·  <i>🛡️ {BRAND}</i>", *body])
     f = alert_fields(notification, incident, risk)
     risk_txt = f"{f['risk_index']}/100" if f["risk_index"] is not None else "-"
@@ -160,6 +184,9 @@ def format_telegram(notification: dict, incident: dict | None = None, risk: dict
     ]
     if f["text"]:
         lines.append(e(f["text"]))
+    handles = [] if personal else handles_of(notification)
+    if handles:
+        lines.append("For: " + " ".join(e(h) for h in handles))
     lines += [
         "",
         f"Severity: <b>{e(f['severity'])}</b> · AI confidence: {e(f['confidence'])} ({e(str(f['classified_by']))})",
@@ -190,12 +217,13 @@ def button_specs(notification: dict, incident: dict | None = None) -> list[tuple
         return [("↩️ Rollback", f"{ROLLBACK}:{iid}"), ("📌 Make Permanent", f"{PERMANENT}:{iid}")]
     if status in ("resolved", "rejected"):
         return []
-    return [("✅ Approve & Patch", f"{APPROVE}:{iid}"), ("⛔ Reject with Justification", f"{REJECT}:{iid}")]
+    return [("✅ Approve & Patch", f"{APPROVE}:{iid}"), ("⛔ Reject with Justification", f"{REJECT}:{iid}"),
+            ("🙋 Take it", f"{TAKE}:{iid}")]
 
 
 def parse_callback(data: str) -> tuple[str, str] | None:
     verb, sep, iid = (data or "").partition(":")
-    if not sep or not iid or verb not in (APPROVE, REJECT, ROLLBACK, PERMANENT):
+    if not sep or not iid or verb not in (APPROVE, REJECT, ROLLBACK, PERMANENT, TAKE):
         return None
     return verb, iid
 

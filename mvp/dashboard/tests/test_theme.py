@@ -18,6 +18,15 @@ def test_brand_text_and_button_text_stay_readable(theme, accent):
     assert th.contrast(p["brand"], p["bg"]) >= 4.5
     assert th.contrast(p["ink"], p["surface"]) >= 7
     assert th.contrast(p["on-brand"], p["brand-fill"]) >= 3  # bold button text
+    assert th.contrast(p["on-brand"], p["brand-fill-hover"]) >= 3  # same text while hovered
+    assert p["brand-fill-hover"] != p["brand-fill"]  # and the hover shows
+
+
+def test_every_primary_button_kind_uses_the_readable_text_colour():
+    css = (Path(__file__).resolve().parents[1] / "cactai_ui" / "console.css").read_text(encoding="utf-8")
+    for selector in ('.stButton button[kind="primary"]', '.stFormSubmitButton button[kind="primaryFormSubmit"]',
+                     '.stDownloadButton button[kind="primary"]', '.stLinkButton a[kind="primary"]'):
+        assert selector in css
 
 
 @pytest.mark.parametrize("theme", list(th.THEMES))

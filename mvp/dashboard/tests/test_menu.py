@@ -56,8 +56,8 @@ def test_risk_breakdown_counts_only_active_incidents():
 APP = str(Path(__file__).resolve().parents[1] / "app.py")
 
 
-@pytest.mark.parametrize("page", ["config", "approvals", "staff", "chat", "collector", "classifier", "responder", "machines",
-                                  "review", "reports", "audit", "backups"])
+@pytest.mark.parametrize("page", ["config", "approvals", "incidents", "staff", "chat", "collector", "classifier", "responder",
+                                  "machines", "review", "reports", "audit", "backups", "integrations"])
 def test_every_page_renders(fake_core, page, tmp_path, monkeypatch):
     from streamlit.testing.v1 import AppTest
 
@@ -372,3 +372,23 @@ def test_staff_reports_page_closes_a_report_with_a_note(fake_core, tmp_path, mon
     assert not at.exception, at.exception
     r = next(r for r in requests.get(f"{fake_core}/staff-reports", timeout=3).json()["reports"] if r["id"] == rid)
     assert r["status"] == "resolved" and r["notes"][-1]["text"] == "Scam pop-up; browser reset."
+
+
+def test_integrations_page_shows_each_service_and_its_test(fake_core, tmp_path, monkeypatch):
+    from streamlit.testing.v1 import AppTest
+
+    monkeypatch.setenv("CACTAI_CONFIG", str(tmp_path / "config.json"))
+    at = AppTest.from_file(APP, default_timeout=20)
+    at.session_state["core_url"] = fake_core
+    at.session_state["auto_refresh"] = False
+    at.session_state["page"] = "integrations"
+    at.run()
+    text = " ".join(m.value for m in at.markdown)
+    for name in ("Cloudflare", "AbuseIPDB", "Slack", "Telegram"):
+        assert name in text
+    test = next(b for b in at.button if b.key == "test_cloudflare")
+    test.click().run()
+    assert not at.exception, at.exception
+    assert any("fake core does not call outside services" in e.value for e in at.error)
+    next(b for b in at.button if b.key == "set_cloudflare").click().run()
+    assert at.session_state["page"] == "config" and at.session_state["cfg_search"] == "cloudflare"

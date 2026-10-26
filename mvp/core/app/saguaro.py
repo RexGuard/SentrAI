@@ -9,6 +9,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import logging
 import math
 import threading
 import time
@@ -30,9 +31,11 @@ from .agents import (
     Scribe,
     SpineNet,
     Watchdog,
+    next_steps,
 )
-from . import firewall
-from . import anchor, remote_copy
+from . import cloudflare, firewall, reputation
+from . import anchor, remote_copy, routing, telegram_links
+from . import summary as client_summary
 from .audit import AuditLog
 from .classifier import Classification, JevCache, default_chain
 from .clock import DemoClock, fmt_demo_hours
@@ -44,6 +47,8 @@ from .responders import BlocklistResponder, Responders, SimulatedResponder, Webh
 from .risk import SEVERITY, band, band_rank, inaction_penalty, risk_index
 from .rules import TRIPWIRE_REASONS, RulesEngine
 from .state import StateStore
+
+log = logging.getLogger("cactai.saguaro")
 
 RISK_STATUSES = ("open", "acknowledged")  # count toward raw score
 MERGE_STATUSES = ("open", "acknowledged", "contained")  # new events attach to these
@@ -238,6 +243,13 @@ class Saguaro(Agent):
 
     def __init__(self, settings: Settings | None = None) -> None:
         self.settings = s = settings or Settings()
+        # Who owns, hears about and backs up each incident (routing.py). Names in a routing file
+        # replace the four role names everywhere an alert goes to a role.
+        self.router = routing.from_settings(s)
+        # The private Telegram chat linked to each contact, so their alerts go to them directly.
+        self.tg_links = telegram_links.from_settings(s)
+        for role in ("on_duty", "team_lead", "it_manager", "cxo"):
+            setattr(s, role, self.router.by_role(role, getattr(s, role)))
         self.clock = DemoClock(s.demo_speed)
         self.audit = AuditLog(s.db_path)
         self.rules = RulesEngine(s.brute_force_count, s.brute_force_window_s, s.export_rows_threshold,
@@ -250,13 +262,27 @@ class Saguaro(Agent):
         # chain labels them, and the responders carry out approved containment.
         self.classifier, self.jev_step = default_chain(self.rules, self.jev, JevCache(s.jev_cache_size, s.jev_cache_ttl_s))
         self.blocklist_responder = firewall.from_settings(s.firewall, s.firewall_enforce, s.protected_ips)
-        self.responders = Responders(self.blocklist_responder, SimulatedResponder())
+        bl = self.blocklist_responder
+        # Cloudflare wraps the block_ip responder: the local block first, then the same address at the edge.
+        self.cloudflare, self.cloudflare_error = None, None
+        try:
+            self.cloudflare = cloudflare.from_settings(s, inner=bl)
+        except ValueError as exc:  # half-filled settings: run without it and say why on the Integrations page
+            self.cloudflare_error = str(exc)
+            log.warning("Cloudflare is off: %s", exc)
+        block_ip = self.cloudflare or bl
+        self.webhook_responder: WebhookResponder | None = None
         if s.responder_webhook_url:
-            # Registered last, so it takes the listed types; the blocklist still applies its own first.
-            bl = self.blocklist_responder
-            hook = WebhookResponder(s.responder_webhook_url, s.responder_webhook_actions, s.responder_webhook_secret,
-                                    s.responder_webhook_timeout_s, inner=lambda t: bl if t in bl.actions else None)
-            self.responders = Responders(self.blocklist_responder, SimulatedResponder(), hook)
+            # Registered last, so it takes the listed types; the blocklist (and Cloudflare) still apply first.
+            self.webhook_responder = WebhookResponder(
+                s.responder_webhook_url, s.responder_webhook_actions, s.responder_webhook_secret,
+                s.responder_webhook_timeout_s,
+                inner=lambda t: block_ip if t == "block_ip" else bl if t in bl.actions else None)
+        self.responders = Responders(bl, SimulatedResponder(),
+                                     *(r for r in (self.cloudflare, self.webhook_responder) if r is not None))
+        self.reputation = reputation.from_settings(s)
+        self._lookups = reputation.Lookups(self.reputation, self._on_reputation, s.protected_ips, s.background) \
+            if self.reputation else None
         self.root = Root(self.classifier)
         self.reservoir = Reservoir(self.classifier)
         self.spinenet = SpineNet(self.classifier)
@@ -276,6 +302,8 @@ class Saguaro(Agent):
         self.lock = threading.RLock()
         self._protection_file = s.db_path.parent / "protection.json"
         self._load_protection()
+        self._summary_file = s.db_path.parent / "summary.json"
+        self.summary_schedule = client_summary.load_schedule(self._summary_file, s, time.time())
         self.store = StateStore(self.audit)
         self._init_state()
         self._configure()
@@ -326,7 +354,7 @@ class Saguaro(Agent):
             "limits": self.limits(),
             "on_duty": s.on_duty,
             "jev": self.jev.status,
-            "block_ip_enforcement": self.blocklist_responder.enforcement,
+            "block_ip_enforcement": (self.cloudflare or self.blocklist_responder).enforcement,
         }
 
     def layer_agents(self) -> list[LayerAgent]:
@@ -494,6 +522,19 @@ class Saguaro(Agent):
             "notifications": [],
             "timeline": [],
             "decisions": [],
+            # Who handles it (routing.py): set by the first matching rule, changed by assign() and escalation.
+            "owner": None,
+            "owner_id": None,
+            "backup": None,
+            "backup_id": None,
+            "assigned_by": None,
+            "assigned_at": None,
+            "route": None,
+            "notify": [],
+            "escalation_level": 0,
+            "escalations": [],
+            "resolved_by": None,
+            "resolution": None,
             "_opened_ts": now,
             "_last_event_ts": now,
             "_acked_ts": None,
@@ -515,14 +556,28 @@ class Saguaro(Agent):
         self._timeline(inc, now, "detected",
                        f"{TITLES.get(inc['category'], inc['category'])} detected by {agent.name} "
                        f"({cls.classified_by}, confidence {cls.confidence})", inc["points"])
+        self._route_incident(inc, now)
         self.scribe.record(self.name, "incident_opened", {
             "incident": iid, **{k: inc[k] for k in (
                 "category", "severity", "base_points", "ai_confidence", "asset_criticality", "points",
                 "classified_by", "needs_review", "src_ip", "user", "host", "layer", "opened_at",
-                "recommended_action", "event_ids")},
+                "recommended_action", "event_ids", "owner", "backup", "route", "notify")},
             "analyst": agent.name,
         })
+        if self._lookups is not None:
+            self._lookups.request(inc.get("src_ip"))
         return inc
+
+    def _on_reputation(self, ip: str, rep: dict[str, Any]) -> None:
+        """An AbuseIPDB answer arrived: note it on every open incident from that address. Context only."""
+        with self.lock:
+            now = self.clock.now()
+            for inc in self.incidents.values():
+                if inc.get("src_ip") == ip and inc["status"] in MERGE_STATUSES and "reputation" not in inc:
+                    inc["reputation"] = rep
+                    self._timeline(inc, now, "reputation", reputation.summary(rep))
+            self.scribe.record(self.name, "reputation_lookup", {"ip": ip, **{k: v for k, v in rep.items()
+                                                                            if k in ("score", "reports", "country", "error")}})
 
     def _proposals(self, inc: dict[str, Any], agent: LayerAgent) -> list[Proposal]:
         """The containment steps for an incident. Cyanide overrides this with its own plan."""
@@ -532,6 +587,7 @@ class Saguaro(Agent):
         proposals = self._proposals(inc, agent)
         inc["recommended_action"] = agent.recommended_text(proposals, self.settings.ttl_hours)
         inc["explanation"] = agent.explain(inc)
+        inc["next_steps"] = next_steps(inc)
         if inc.get("needs_review"):
             inc["explanation"] += " The classifier is uncertain: needs human review (never auto-contained)."
 
@@ -624,6 +680,7 @@ class Saguaro(Agent):
             self._evaluate(now)
             self._record_history(now)
             self._send_fingerprint(now)
+            self._send_summary(now)
             findings = self.integrity.check()
             if self.remote is not None:
                 refused, notes = self.remote.take()
@@ -648,6 +705,70 @@ class Saguaro(Agent):
                             f"Fingerprint of audit records 1 to {fp.seq}. Keep this message: if the audit log on "
                             f"the server is ever rebuilt, this line proves it (python -m app.anchor verify).\n"
                             f"{fp.line()}", [])
+
+    # ------------------------------------------------------- client summary
+    def _summary_url(self, period: str, until: int, ext: str = "pdf") -> str:
+        """Signed like the report links, so the client opens it from Telegram or email without the API token."""
+        path = f"/summary/{period}.{ext}"
+        return f"{self.settings.public_url}{path}?until={until}&sig={sign(self.settings.api_token, f'{path}?until={until}')}"
+
+    def _send_summary(self, now: float, force: bool = False, operator: str | None = None) -> dict[str, Any] | None:
+        """At each due time of the client's schedule, queue the one-page summary for the alert channels."""
+        sched = self.summary_schedule
+        slot = sched.last_slot(now)
+        if not force and (slot is None or (sched.last_sent_ts is not None and slot <= sched.last_sent_ts)):
+            return None
+        period = sched.every if sched.every in client_summary.PERIODS else "daily"
+        until = now if force else slot
+        r = client_summary.build_summary(self, period, until)
+        sched.last_sent_ts = now if force else slot
+        client_summary.save_schedule(self._summary_file, sched)
+        num = r["numbers"]
+        link = self._summary_url(period, r["until_ts"])
+        n = self._notify(now, "summary", None, [sched.to], f"{r['title']}: {r['headline']}",
+                         f"{r['period_text']}. Threats found: {num['threats']}, stopped automatically: "
+                         f"{num['stopped_automatically']}, handled by staff: {num['handled_by_staff']}, "
+                         f"need attention: {num['need_attention']}.", [])
+        n["report_url"] = link  # the alert channels show it as a link to the one-page PDF
+        self.scribe.record(self.scribe.name, "summary_sent", {
+            "summary_id": r["summary_id"], "period": period, "from": r["from"], "until": r["until"],
+            "numbers": num, "notification": n["id"], "recipients": [sched.to], "requested_by": operator,
+            "chain_head_hash": self.audit.head_hash()})
+        self._save()
+        return {"summary": r, "notification": public(n), "link": link}
+
+    def send_summary_now(self, operator: str) -> dict[str, Any]:
+        with self.lock:
+            return self._send_summary(self.clock.now(), force=True, operator=operator)  # type: ignore[return-value]
+
+    def summary_settings(self) -> dict[str, Any]:
+        with self.lock:
+            return self.summary_schedule.public(self.clock.now())
+
+    def set_summary_settings(self, operator: str, every: str | None = None, at: str | None = None,
+                             day: str | None = None, to: str | None = None) -> dict[str, Any]:
+        """The client's preference: daily or weekly (or off), what time, which weekday and who it goes to."""
+        with self.lock:
+            sched = self.summary_schedule
+            if every is not None and every.strip().lower() not in client_summary.EVERY:
+                raise BadRequestError(f"every must be one of {', '.join(client_summary.EVERY)}")
+            if day is not None and day.strip().lower()[:3] not in client_summary.DAYS:
+                raise BadRequestError("day must be a weekday such as mon or friday")
+            if at is not None and client_summary.clock_time(at) is None:
+                raise BadRequestError("at must be a time of day such as 08:00")
+            before = {k: getattr(sched, k) for k in ("every", "at", "day", "to")}
+            for k, v in (("every", every), ("at", at), ("day", day), ("to", to)):
+                if v is not None:
+                    setattr(sched, k, v)
+            sched.checked()
+            now = self.clock.now()
+            sched.changed_by, sched.changed_at = operator, self.clock.iso(now)
+            # A new schedule starts from now: no catch-up summary for a time that has already passed.
+            sched.last_sent_ts = max(sched.last_sent_ts or 0.0, now)
+            client_summary.save_schedule(self._summary_file, sched)
+            self.scribe.record(self.name, "summary_schedule_changed", {
+                "operator": operator, "before": before, "after": {k: getattr(sched, k) for k in ("every", "at", "day", "to")}})
+            return sched.public(now)
 
     def _evaluate(self, now: float) -> None:
         self._expire_actions(now)
@@ -789,6 +910,9 @@ class Saguaro(Agent):
             "title": title,
             "text": text,
             "recipients": recipients,
+            # Each recipient's email / Telegram from the routing contacts, so the notifier can reach them.
+            "deliver_to": self._addresses(recipients),
+            "owner": self.incidents[incident_id].get("owner") if incident_id in self.incidents else None,
             "risk_index": r["risk_index"],
             "band": r["band"],
             "buttons": buttons,
@@ -825,9 +949,9 @@ class Saguaro(Agent):
                 kind = "needs_review" if inc["needs_review"] else "incident_opened"
                 extra = "\nClassifier uncertain: needs review, no automatic action will be taken." if inc["needs_review"] else ""
                 fp = anchor.fingerprint(self.audit, None).short()
-                self._notify(now, kind, inc["id"], [self.settings.on_duty], self._headline(inc, r),
+                self._notify(now, kind, inc["id"], self._recipients(inc), self._headline(inc, r),
                              f"{self._headline(inc, r)}\n{inc['explanation']}\nRecommended: {inc['recommended_action']}.{extra}"
-                             f"\nRecord fingerprint: {fp}",
+                             f"\n{self._owner_line(inc)}\nRecord fingerprint: {fp}",
                              BUTTONS_DECIDE)
 
     def _band_changes(self, now: float, r: dict[str, Any]) -> None:
@@ -852,9 +976,15 @@ class Saguaro(Agent):
         self._last_band = new
 
     def _sla_reminders(self, now: float, r: dict[str, Any]) -> None:
+        """Unanswered alerts: remind the owner every demo hour past the SLA, and after
+        escalate_after_reminders unanswered reminders hand the incident to the owner's backup.
+        Acknowledged but still unresolved incidents get a nudge every resolve_within_hours."""
         s = self.settings
         for inc in self.incidents.values():
-            if inc["acked"] or inc["status"] in CLOSED_STATUSES:
+            if inc["status"] in CLOSED_STATUSES:
+                continue
+            if inc["acked"]:
+                self._resolve_reminders(inc, now, r)
                 continue
             hours = self.clock.demo_hours(inc["_opened_ts"], now)
             if hours < s.sla_hours:
@@ -863,40 +993,111 @@ class Saguaro(Agent):
                 inc["_sla_flag"] = True
                 inc["sla_breached"] = True
                 self.scribe.record(self.name, "sla_breached", {"incident": inc["id"], "sla_hours": s.sla_hours,
-                                                               "responsible": s.on_duty})
+                                                               "responsible": inc.get("owner") or s.on_duty})
                 self._timeline(inc, now, "sla_breached", f"SLA of {s.sla_hours:g} h passed without acknowledgement")
             due = min(s.max_reminders, int(math.floor(hours - s.sla_hours)) + 1)
             while inc["_reminders"] < due:
                 inc["_reminders"] += 1
                 n = inc["_reminders"]
+                if self._escalate(inc, now, r, n, hours):
+                    continue
+                inc["_owner_reminders"] = inc.get("_owner_reminders", 0) + 1
                 overdue = fmt_demo_hours(max(0.0, hours - s.sla_hours))
-                self._notify(now, "sla_reminder", inc["id"], [s.on_duty, s.team_lead],
+                self._notify(now, "sla_reminder", inc["id"], self._recipients(inc, everyone=False),
                              f"Reminder {n}: {inc['id']} unacknowledged",
                              f"Reminder {n}: {self._headline(inc, r)} is still unacknowledged, "
                              f"overdue by {overdue} (Policy SLA: {s.sla_hours:g} hrs). "
-                             f"Inaction penalty so far: +{inc['inaction_penalty']:g}.\nRecommended: {inc['recommended_action']}.",
+                             f"Inaction penalty so far: +{inc['inaction_penalty']:g}.\nRecommended: {inc['recommended_action']}."
+                             f"\n{self._owner_line(inc)}",
                              BUTTONS_DECIDE)
+
+    def _resolve_reminders(self, inc: dict[str, Any], now: float, r: dict[str, Any]) -> None:
+        every = self.router.follow_up.resolve_within_hours
+        if every <= 0 or inc["_acked_ts"] is None:
+            return
+        hours = self.clock.demo_hours(inc["_acked_ts"], now)
+        due = min(3, int(hours // every))
+        while inc.get("_resolve_reminders", 0) < due:
+            inc["_resolve_reminders"] = inc.get("_resolve_reminders", 0) + 1
+            self._notify(now, "resolve_reminder", inc["id"], self._recipients(inc, everyone=False),
+                         f"{inc['id']} is still not resolved",
+                         f"{self._headline(inc, r)} was acknowledged {fmt_demo_hours(hours)} ago and is still "
+                         f"{inc['status']}. Resolve it with a short note, or hand it to someone else.\n"
+                         f"{self._owner_line(inc)}", [])
+
+    # ------------------------------------------------------------- ownership
+    def _recipients(self, inc: dict[str, Any], everyone: bool = True) -> list[str]:
+        """The owner first, then (for the first alert) the people its routing rule names."""
+        names = [inc.get("owner") or self.settings.on_duty]
+        if everyone:
+            names += [n for n in inc.get("notify") or [] if n not in names]
+        return names
+
+    def _owner_line(self, inc: dict[str, Any]) -> str:
+        backup = f" · backup: {inc['backup']}" if inc.get("backup") else ""
+        return f"Owner: {inc.get('owner') or 'nobody yet'}{backup}"
+
+    def _set_owner(self, inc: dict[str, Any], owner: routing.Contact, backup: routing.Contact | None,
+                   by: str, now: float) -> None:
+        inc.update(owner=owner.name, owner_id=owner.id or None, backup=backup.name if backup else None,
+                   backup_id=backup.id if backup else None, assigned_by=by, assigned_at=self.clock.iso(now),
+                   _owner_reminders=0)
+
+    def _route_incident(self, inc: dict[str, Any], now: float) -> None:
+        route = self.router.route(inc)
+        self._set_owner(inc, route.owner, self.router.backup_of(route.owner), f"routing: {route.rule}", now)
+        inc["route"] = route.rule
+        inc["notify"] = [c.name for c in route.notify]
+        cc = f"; also told: {', '.join(inc['notify'])}" if inc["notify"] else ""
+        self._timeline(inc, now, "assigned", f"Assigned to {inc['owner']} by rule \"{route.rule}\"{cc}")
+
+    def _escalate(self, inc: dict[str, Any], now: float, r: dict[str, Any], n: int, hours: float) -> bool:
+        """Hand an unanswered incident to the owner's backup. False when it is not time yet or nobody is left."""
+        fu = self.router.follow_up
+        if (fu.escalate_after_reminders <= 0 or inc.get("_owner_reminders", 0) < fu.escalate_after_reminders
+                or inc.get("escalation_level", 0) >= fu.max_escalations):
+            return False
+        new = self.router.contact(inc.get("backup_id"))
+        if new is None:
+            return False
+        old = inc.get("owner") or self.settings.on_duty
+        self._set_owner(inc, new, self.router.backup_of(new), "escalation", now)
+        inc["escalation_level"] = inc.get("escalation_level", 0) + 1
+        why = f"{old} did not answer {fu.escalate_after_reminders} reminder(s)"
+        inc.setdefault("escalations", []).append({"from": old, "to": new.name, "at": self.clock.iso(now),
+                                                  "level": inc["escalation_level"], "why": why})
+        self.scribe.record(self.name, "incident_escalated", {
+            "incident": inc["id"], "from": old, "to": new.name, "level": inc["escalation_level"], "why": why,
+            "hours_unacknowledged": round(hours, 2)})
+        self._timeline(inc, now, "escalated", f"Escalated to backup {new.name}: {why}")
+        self._notify(now, "escalated", inc["id"], [new.name, old],
+                     f"Escalated to you: {inc['id']} unanswered",
+                     f"{self._headline(inc, r)} has had no answer for {fmt_demo_hours(hours)}: {why}. "
+                     f"You are the backup contact, so it is yours now.\nRecommended: {inc['recommended_action']}."
+                     f"\n{self._owner_line(inc)}", BUTTONS_DECIDE)
+        return True
 
     def pending_notifications(self) -> list[dict[str, Any]]:
         with self.lock:
             return public([n for n in self.notifications if not n["delivered"]])
 
-    def mark_delivered(self, nid: str, channel: str, message_id: str | None) -> dict[str, Any]:
+    def mark_delivered(self, nid: str, channel: str, message_id: str | None, to: str | None = None) -> dict[str, Any]:
         with self.lock:
             n = next((x for x in self.notifications if x["id"] == nid), None)
             if n is None:
                 raise KeyError(nid)
             now = self.clock.now()
             ts = self.clock.iso(now)
-            n["deliveries"].append({"channel": channel, "message_id": message_id, "delivered_at": ts})
+            # `to`: the one person a private message went to (a direct Telegram message); None = the whole channel.
+            n["deliveries"].append({"channel": channel, "message_id": message_id, "delivered_at": ts, "to": to})
             if not n["delivered"]:
                 n.update(delivered=True, delivered_at=ts, channel=channel, message_id=message_id)
             self.scribe.record(self.scribe.name, "notification_delivered", {
                 "notification": nid, "incident": n["incident"], "channel": channel, "message_id": message_id,
-                "recipients": n["recipients"], "kind": n["kind"]})
+                "recipients": [to] if to else n["recipients"], "kind": n["kind"]})
             if n["incident"] in self.incidents:
                 self._timeline(self.incidents[n["incident"]], now, "delivered",
-                               f"{nid} delivered via {channel} (message_id {message_id})")
+                               f"{nid} delivered via {channel}{' to ' + to if to else ''} (message_id {message_id})")
             self._save()
             return public(n)
 
@@ -943,7 +1144,9 @@ class Saguaro(Agent):
     def _undo(self, a: dict[str, Any], attempt: int) -> None:
         try:
             ok = self.responders.revert(a)
-            error = None if ok is not False else (a.get("webhook_revert") or a.get("firewall_revert") or {}).get(
+            failed = [a[k] for k in ("webhook_revert", "cloudflare_revert", "firewall_revert")
+                      if isinstance(a.get(k), dict) and a[k].get("ok") is False]
+            error = None if ok is not False else (failed[0] if failed else {}).get(
                 "error", "the responder could not confirm the action was removed")
         except Exception as exc:  # a broken responder must not stop the rest of the rollback
             ok, error = False, f"{type(exc).__name__}: {exc}"[:200]
@@ -1228,6 +1431,14 @@ class Saguaro(Agent):
             for iid in sorted(saved["incidents"], key=lambda x: saved["incidents"][x]["_opened_ts"]):
                 inc = self._decode_incident(saved["incidents"][iid])
                 inc["actions"] = [by_id[x] for x in inc["actions"] if x in by_id]
+                if "owner_id" not in inc:  # saved before incidents had owners
+                    for k, v in (("owner", None), ("backup", None), ("backup_id", None), ("assigned_by", None),
+                                 ("assigned_at", None), ("route", None), ("notify", []), ("escalation_level", 0),
+                                 ("escalations", []), ("resolved_by", inc.get("resolved_by")), ("resolution", None)):
+                        inc.setdefault(k, v)
+                    inc["owner_id"] = None
+                    if inc["status"] not in CLOSED_STATUSES:
+                        self._route_incident(inc, self.clock.now())
                 self.incidents[iid] = inc
             # The responders start empty: put back everything still in force.
             in_force = [a for a in self.actions if a["status"] in ("active", "permanent")]
@@ -1277,6 +1488,133 @@ class Saguaro(Agent):
             self._evaluate(now)
             return self.incident_public(inc)
 
+    def assign(self, iid: str, assignee: str, operator: str, note: str | None = None) -> dict[str, Any]:
+        """Give the incident to someone: a routing contact (id, name, role or Telegram handle) or any name."""
+        assignee = (assignee or "").strip()
+        if not assignee:
+            raise BadRequestError("assignee is required")
+        with self.lock:
+            inc = self._get(iid)
+            now = self.clock.now()
+            if inc["status"] in CLOSED_STATUSES:
+                raise ConflictError(f"{iid} is already {inc['status']}")
+            who = self.router.person(assignee)
+            if who.name == inc.get("owner"):
+                return self.incident_public(inc)
+            old = inc.get("owner")
+            # Someone outside the contact book keeps the contact who had it as their backup.
+            backup = self.router.backup_of(who) if who.id else (self.router.contact(inc.get("owner_id"))
+                                                                 or self.router.contact(inc.get("backup_id")))
+            self._set_owner(inc, who, backup, operator, now)
+            took = operator.strip().lower().lstrip("@") == who.name.lower().lstrip("@") or \
+                (who.telegram and operator.strip().lower().lstrip("@") == who.telegram.lower().lstrip("@"))
+            self.scribe.record(self.name, "incident_assigned", {"incident": iid, "from": old, "to": who.name,
+                                                                "operator": operator, "note": note})
+            self._timeline(inc, now, "assigned", (f"Taken by {who.name}" if took else
+                                                  f"Assigned to {who.name} by {operator}") + (f": {note}" if note else ""))
+            if not took:
+                self._notify(now, "assigned", iid, [who.name], f"{iid} assigned to you",
+                             f"{operator} assigned {self._headline(inc, self._last_risk)} to you"
+                             + (f": {note}" if note else ".") + f"\nRecommended: {inc['recommended_action']}."
+                             f"\n{self._owner_line(inc)}",
+                             BUTTONS_DECIDE if inc["status"] != "contained" else BUTTONS_AFTER_ACTION)
+            self._save()
+            return self.incident_public(inc)
+
+    def resolve(self, iid: str, operator: str, note: str | None) -> dict[str, Any]:
+        """Close the incident: the owner (or anyone) says it is dealt with and how. Blocks in force stay
+        until they expire or are rolled back."""
+        note = (note or "").strip()
+        if not note:
+            raise BadRequestError("resolving requires a short note on what was done")
+        with self.lock:
+            inc = self._get(iid)
+            now = self.clock.now()
+            if inc["status"] in CLOSED_STATUSES:
+                raise ConflictError(f"{iid} is already {inc['status']}")
+            self._set_acked(inc, operator, "resolve", now)
+            inc["status"] = "resolved"
+            inc.update(resolved_by=operator, resolution=note, closed_at=self.clock.iso(now), _closed_ts=now)
+            inc["decisions"].append({"operator": operator, "decision": "resolve", "justification": note,
+                                     "at": inc["closed_at"]})
+            still = [a["action_id"] for a in self._active_actions(inc, now)]
+            self.scribe.record(self.name, "incident_resolved", {"incident": iid, "operator": operator, "note": note,
+                                                                "owner": inc.get("owner"), "actions_in_force": still})
+            left = f" {len(still)} block(s) stay until they expire or are rolled back." if still else ""
+            self._timeline(inc, now, "resolved", f"Resolved by {operator}: {note}.{left}", -inc["points"])
+            self._evaluate(now)
+            return self.incident_public(inc)
+
+    def routing_public(self) -> dict[str, Any]:
+        with self.lock:
+            out = self.router.public()
+            for c in out["contacts"]:
+                c["telegram_linked"] = bool(self.tg_links.chat_for(c["id"], c.get("telegram") or ""))
+            return out
+
+    # ---------------------------------------------------- personal Telegram alerts
+    def _addresses(self, recipients: list[str]) -> list[dict[str, str]]:
+        """Each recipient's email and Telegram, plus the private chat that reaches them if they linked one."""
+        out = self.router.addresses(recipients)
+        for a in out:
+            a["telegram_chat"] = self.tg_links.chat_for(a["id"], a.get("telegram") or "")
+        return out
+
+    def _contact(self, ref: str) -> routing.Contact:
+        c = self.router.contact(ref)
+        if c is None:
+            raise KeyError(ref)
+        return c
+
+    def telegram_link_code(self, contact: str, operator: str) -> dict[str, Any]:
+        """A one-time code the contact sends to the bot (/link CODE) to get their alerts in a private chat."""
+        with self.lock:
+            c = self._contact(contact)
+            code, expires = self.tg_links.new_code(c.id, operator)
+            self.scribe.record(self.name, "telegram_link_code", {"contact": c.id, "name": c.name, "operator": operator,
+                                                                 "expires_at": self.clock.iso(expires)})
+            return {"contact": c.id, "name": c.name, "code": code, "expires_at": self.clock.iso(expires),
+                    "valid_minutes": telegram_links.CODE_TTL_S // 60, "send": f"/link {code}"}
+
+    def telegram_link(self, code: str, chat_id: str, username: str = "") -> dict[str, Any]:
+        """The notifier passes on a /link CODE it received in a private chat."""
+        with self.lock:
+            now = self.clock.now()
+            link, replaced = self.tg_links.redeem(code, str(chat_id), username or "", self.clock.iso(now))
+            if link is None:
+                raise BadRequestError("That code is wrong, already used or expired. Ask for a new one.")
+            c = self._contact(link.contact_id)
+            self.scribe.record(self.name, "telegram_linked", {
+                "contact": c.id, "name": c.name, "chat_id": link.chat_id, "username": link.username,
+                "code_made_by": link.linked_by, "replaced_chat": replaced.chat_id if replaced else None})
+            return {**self._link_public(link), "replaced": bool(replaced)}
+
+    def telegram_unlink(self, contact: str | None, chat_id: str | None, operator: str) -> dict[str, Any]:
+        with self.lock:
+            link = self.tg_links.by_chat(chat_id) if chat_id else None
+            cid = link.contact_id if link else (self._contact(contact).id if contact else "")
+            gone = self.tg_links.unlink(cid) if cid else None
+            if gone is None:
+                raise KeyError(contact or chat_id or "")
+            self.scribe.record(self.name, "telegram_unlinked", {"contact": cid, "chat_id": gone.chat_id,
+                                                                "operator": operator})
+            return {"contact": cid, "unlinked": True}
+
+    def _link_public(self, link: telegram_links.Link) -> dict[str, Any]:
+        c = self.router.contact(link.contact_id)
+        return {**link.__dict__, "name": c.name if c else link.contact_id, "role": c.role if c else ""}
+
+    def telegram_links_public(self) -> list[dict[str, Any]]:
+        """Linked chats (by link code), then contacts whose routing entry is a chat id already."""
+        with self.lock:
+            out = [self._link_public(x) for x in self.tg_links.links.values()]
+            linked = {x["contact_id"] for x in out}
+            for c in self.router.contacts.values():
+                if c.id not in linked and telegram_links.is_chat_id(c.telegram):
+                    out.append({"contact_id": c.id, "chat_id": c.telegram, "username": "", "linked_at": "",
+                                "linked_by": "routing file", "name": c.name, "role": c.role})
+            return out
+
     def decision(self, iid: str, operator: str, decision: str, justification: str | None) -> dict[str, Any]:
         with self.lock:
             inc = self._get(iid)
@@ -1313,26 +1651,6 @@ class Saguaro(Agent):
                     self._contain(inc, "operator", operator, now, self._risk_of(inc), justification)
             else:
                 raise BadRequestError("decision must be 'approve' or 'reject'")
-            self._evaluate(now)
-            return self.incident_public(inc)
-
-    def resolve(self, iid: str, operator: str, justification: str) -> dict[str, Any]:
-        """Close an incident a person dealt with by hand (no hotpatch to keep), such as a staff report."""
-        with self.lock:
-            inc = self._get(iid)
-            now = self.clock.now()
-            if inc["status"] in CLOSED_STATUSES:
-                raise ConflictError(f"{iid} is already {inc['status']}")
-            if not (justification or "").strip():
-                raise BadRequestError("resolve requires a justification")
-            self._set_acked(inc, operator, "decision", now)
-            inc["status"] = "resolved"
-            inc["closed_at"] = self.clock.iso(now)
-            inc["decisions"].append({"operator": operator, "decision": "resolve", "justification": justification,
-                                     "at": inc["closed_at"]})
-            self.scribe.record(self.name, "decision", {"incident": iid, "operator": operator, "decision": "resolve",
-                                                       "justification": justification})
-            self._timeline(inc, now, "decision", f"Resolved by {operator}: {justification}", -inc["points"])
             self._evaluate(now)
             return self.incident_public(inc)
 
