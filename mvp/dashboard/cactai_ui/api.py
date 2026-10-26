@@ -123,6 +123,16 @@ class CoreClient:
     def revoke_agent(self, agent_id: str, operator: str) -> dict:
         return self.post_json(f"/fleet/agents/{quote(agent_id, safe='')}/revoke", {"operator": operator})
 
+    def machine_jobs(self, host: str) -> list[dict]:
+        return list(self.get_json(f"/fleet/jobs?host={quote(host, safe='')}") or [])
+
+    def queue_job(self, host: str, kind: str, operator: str) -> dict:
+        """Ask one joined machine's agent to run a threat scan or a backup there (core jobs.py)."""
+        return self.post_json("/fleet/jobs", {"host": host, "kind": kind, "operator": operator})
+
+    def cancel_job(self, job_id: str, operator: str) -> dict:
+        return self.post_json(f"/fleet/jobs/{quote(job_id, safe='')}/cancel", {"operator": operator})
+
     def report_md(self, incident_id: str) -> str:
         return self.get_text(f"/reports/{incident_id}.md")
 

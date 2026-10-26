@@ -1,10 +1,11 @@
 """The SentrAI agent: what runs on each machine that reports to a central SentrAI panel.
 
-It does two jobs and nothing else:
+It does these jobs and nothing else:
 
   * sends this machine's approved logs to the panel (the collector, with this machine's own key)
   * puts the panel's blocks for this machine into the local firewall, and takes them out again
   * once a minute, tells the panel which services listen here (names and ports only, services.py)
+  * runs the threat scans and backups the panel asks for, on folders set here (tasks.py)
 
 The panel does the scoring and decides; the agent only makes outgoing HTTPS calls, so no port is
 opened on the machine. If the panel cannot be reached, blocks already in place stay for
@@ -263,6 +264,9 @@ def run(data: dict[str, Any]) -> None:
     collector.session.verify = _verify(data)
     stop = threading.Event()
     threading.Thread(target=collector.run, name="collector", daemon=True).start()
+    from agent import tasks
+    threading.Thread(target=tasks.job_loop, args=(data, _verify(data), agent_file().parent, stop),
+                     name="jobs", daemon=True).start()
     try:
         enforce_loop(data, enforcer, stop)
     finally:

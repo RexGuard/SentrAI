@@ -267,6 +267,27 @@ Each machine's key only sends that machine's events and reads its own block list
 `POST /fleet/agents/<id>/revoke`. If the panel cannot be reached, blocks already in place stay for
 24 h (`CACTAI_AGENT_OFFLINE_HOLD_H`) and are then removed.
 
+### Threat scans and backups from the panel
+
+On the Machines page, pick a machine and press **Scan for threats** or **Back up now**. The panel
+only queues the job; the machine's agent picks it up on its next call out (within about 15 s), runs
+it there and sends back a short result. Critical and high scan findings open a malware incident on
+that machine. Backups stay on the machine (restoring one is done there, by a person); the panel gets
+the backup's id, size and checksum. A job nobody picks up in 24 h expires.
+
+What is read is set on each machine, never by the panel. Add these to `/etc/cactai/agent.env`
+(folders separated by `:`, or `;` on Windows) and restart the agent:
+
+```bash
+CACTAI_THREAT_PATHS=/var/www:/srv/minecraft/plugins
+CACTAI_BACKUP_PATHS=/srv/app/data
+CACTAI_BACKUP_KEEP=7                 # optional; backups go to /var/lib/cactai/agent/backups
+```
+
+The agent runs as its own user, so it can only scan and back up folders that user can read.
+API: `POST /fleet/jobs {host, kind: threat_scan|backup}`, `GET /fleet/jobs?host=`,
+`POST /fleet/jobs/<id>/cancel`.
+
 ## Not covered yet
 
 This makes SentrAI run properly as services. It does not yet make it understand or stop real

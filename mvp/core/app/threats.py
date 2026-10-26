@@ -105,7 +105,7 @@ class ThreatWatch:
         tmp.write_text(json.dumps(seen, indent=1), encoding="utf-8")
         os.replace(tmp, f)
 
-    def _raise_new(self, items: list[tuple[str, str]]) -> int:
+    def _raise_new(self, items: list[tuple[str, str]], host: str | None = None) -> int:
         """items: (fingerprint, event text). Ingests the ones not raised before; returns how many."""
         if not items:
             return 0
@@ -118,7 +118,7 @@ class ThreatWatch:
             if fresh:
                 self._save_seen(seen)
         if fresh:
-            self.core.ingest([threat_event(text) for _, text in fresh])
+            self.core.ingest([threat_event(text, host) for _, text in fresh])
         return len(fresh)
 
     # ---------------------------------------------------------------- scans
@@ -153,6 +153,19 @@ class ThreatWatch:
             "summary": f"{by} checked {result['files_checked']} files for threats: "
                        f"{len(result['findings'])} findings, {result['new_alerts']} new"})
         return self.public(result)
+
+    def raise_remote(self, host: str, findings: list[dict[str, Any]]) -> int:
+        """Findings from a scan another machine's agent ran (jobs.py): critical and high ones open a
+        malware incident on that machine, once per machine, file and sign."""
+        items = []
+        for f in findings:
+            if f.get("severity") not in RAISE:
+                continue
+            where = f"{host}:{f.get('path')}" + (f" ({f['entry']})" if f.get("entry") else "")
+            line = f" line {f['line']}" if f.get("line") else ""
+            items.append((_fingerprint(host, f.get("sha256"), f.get("key"), f.get("entry", "")),
+                          f"{f['severity']} {f.get('kind')}: {f.get('label')} in {where}{line}"))
+        return self._raise_new(items, host)
 
     def report_processes(self, threats: list[dict[str, Any]]) -> int:
         """Hostile-looking programs from the process scan; raised once per program and sign."""
