@@ -11,14 +11,15 @@ from typing import Any, Optional, Union
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse, Response
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from .config import Settings, sign
 from .reports import build_report, render_markdown, render_pdf
-from . import ai, anchor, webhook
+from . import ai, anchor, fleet, webhook
 from .chat import OperatorChat, default_chat_provider
 from .discovery import Discovery
 from .threats import ThreatWatch
+from .backups import BackupWatch
 from .cyanide import Cyanide, default_planner
 from .saguaro import BadRequestError, ConflictError, Saguaro
 
@@ -65,10 +66,6 @@ class ProtectionIn(BaseModel):
     reason: Optional[str] = None
 
 
-class AdvanceIn(BaseModel):
-    demo_hours: float = 1.0
-
-
 class ChatIn(BaseModel):
     operator: str
     message: str
@@ -93,6 +90,17 @@ class ThreatScanIn(BaseModel):
 class QuarantineIn(BaseModel):
     operator: str
     reason: str = ""
+
+
+class BackupIn(BaseModel):
+    operator: str = "operator"
+
+
+class RestoreIn(BaseModel):
+    operator: str
+    in_place: bool = False
+    confirm: str = ""      # the backup id, typed again, for an in-place restore
+    target: Optional[str] = None
 
 
 class PendingDecisionIn(BaseModel):
@@ -124,10 +132,40 @@ class HeartbeatIn(BaseModel):
     collector: str
 
 
+class JoinCodeIn(BaseModel):
+    operator: str = "operator"
+    name: Optional[str] = None  # fix the machine's name instead of letting the agent pick it
+
+
+class EnrolIn(BaseModel):
+    code: str
+    host: str
+
+
+class RevokeIn(BaseModel):
+    operator: str = "operator"
+
+
+class ServiceIn(BaseModel):
+    name: str = Field(max_length=64)
+    port: Optional[int] = Field(None, ge=0, le=65535)
+    proto: Optional[str] = Field(None, max_length=8)
+    process: Optional[str] = Field(None, max_length=64)
+
+
+class ServicesIn(BaseModel):
+    services: list[ServiceIn] = Field(default_factory=list, max_length=200)
+
+
+# What a machine's own agent key may do (fleet.py): send its events and heartbeat, read its block list.
+AGENT_ROUTES = frozenset({("POST", "/events"), ("POST", "/heartbeat"), ("GET", "/blocklist"), ("GET", "/fleet/me"),
+                           ("POST", "/fleet/services")})
+
+
 # Open without a token: the launchers' readiness check, and the list the fake portal enforces
 # (it holds no personal data). A report opens with the signed link from its alert (?sig=). Every other endpoint needs "Authorization: Bearer <token>" or
 # the X-CactAI-Token header; the token is CACTAI_API_TOKEN from the setup wizard.
-OPEN_PATHS = frozenset({"/health", "/blocklist", "/docs", "/openapi.json"})
+OPEN_PATHS = frozenset({"/health", "/blocklist", "/docs", "/openapi.json", "/fleet/enrol"})
 TOKEN_HEADER = "x-cactai-token"
 
 
@@ -157,14 +195,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 except Exception:
                     log.exception("threat scan failed")
 
+    async def backup_scheduler() -> None:
+        """Take a backup whenever backup.every_hours have passed since the last one (checked each minute)."""
+        while True:
+            await asyncio.sleep(60)
+            try:
+                if backups.due():
+                    await asyncio.to_thread(backups.make, "schedule", "schedule")
+            except Exception:
+                log.exception("scheduled backup failed")
+
     @contextlib.asynccontextmanager
     async def lifespan(_: FastAPI):
         task = asyncio.create_task(ticker()) if core.settings.background else None
         scanner = asyncio.create_task(threat_scanner()) if core.settings.background else None
+        backer = asyncio.create_task(backup_scheduler()) if core.settings.background else None
         if core.remote is not None and core.settings.background:
             core.remote.start()
         yield
-        for t in (task, scanner):
+        for t in (task, scanner, backer):
             if t:
                 t.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
@@ -176,20 +225,39 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Operator chat: read-only tools plus suggestion buttons; answers from the core's own
     # explanations when no AI key is set (or when the fixed-playbook engine runs).
     threats = ThreatWatch(core)
+    backups = BackupWatch(core)
     discovery = Discovery(core, threats)
-    chat = OperatorChat(core, default_chat_provider() if isinstance(core, Cyanide) else None, discovery, threats)
+    chat = OperatorChat(core, default_chat_provider() if isinstance(core, Cyanide) else None, discovery, threats,
+                        backups)
     chat.off_reason = core.ai_off_reason = ai.why_off()
+    machines = fleet.Fleet(core.settings.db_path.parent / "fleet.json")
 
     def require_token(request: Request) -> None:
         path = request.url.path
-        if path in OPEN_PATHS:
+        request.state.agent = None
+        auth = request.headers.get("authorization", "")
+        sent = auth[7:].strip() if auth[:7].lower() == "bearer " else request.headers.get(TOKEN_HEADER, "")
+        # One machine's block list (?host=) is only for that machine's agent or the operator,
+        # and an agent asking for the open list still gets only its own.
+        if path in OPEN_PATHS and not (path == "/blocklist" and ("host" in request.query_params
+                                                                 or sent.startswith(fleet.KEY_PREFIX))):
             return
         sig = request.query_params.get("sig", "")
         if sig and request.method == "GET" and path.startswith("/reports/") and path.endswith(".md") \
                 and hmac.compare_digest(sig, sign(core.settings.api_token, path)):
             return  # the signed report link from an alert
-        auth = request.headers.get("authorization", "")
-        sent = auth[7:].strip() if auth[:7].lower() == "bearer " else request.headers.get(TOKEN_HEADER, "")
+        if sent.startswith(fleet.KEY_PREFIX):
+            agent = machines.check(sent)
+            if agent is None:
+                raise HTTPException(status_code=401, detail="unknown or revoked machine key: join the panel again",
+                                    headers={"WWW-Authenticate": "Bearer"})
+            if (request.method, path) not in AGENT_ROUTES or \
+                    request.query_params.get("host", agent["host"]) != agent["host"]:
+                raise HTTPException(status_code=403, detail="a machine key only sends its own events and reads "
+                                                            "its own block list")
+            machines.seen(agent)
+            request.state.agent = agent
+            return
         if not (sent and hmac.compare_digest(sent.encode(), core.settings.api_token.encode())):
             raise HTTPException(status_code=401, detail="missing or wrong API token "
                                 "(python cactai_config.py token shows it)",
@@ -210,6 +278,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.chat = chat
     app.state.discovery = discovery
     app.state.threats = threats
+    app.state.backups = backups
+    app.state.fleet = machines
 
     def not_found(iid: str) -> HTTPException:
         return HTTPException(status_code=404, detail=f"incident {iid} not found")
@@ -219,9 +289,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"ok": True}
 
     @app.post("/events")
-    def post_events(payload: Union[list[EventIn], EventIn] = Body(...)) -> dict[str, Any]:
-        items = payload if isinstance(payload, list) else [payload]
-        return core.ingest([e.model_dump() for e in items])
+    def post_events(request: Request, payload: Union[list[EventIn], EventIn] = Body(...)) -> dict[str, Any]:
+        items = [e.model_dump() for e in (payload if isinstance(payload, list) else [payload])]
+        if request.state.agent is not None:
+            for e in items:  # an agent speaks for its own machine only, whatever its logs say
+                e["host"] = request.state.agent["host"]
+        return core.ingest(items)
 
     webhook_maps = webhook.load_maps()
 
@@ -236,12 +309,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {**core.ingest(events), "events": [e["event_id"] for e in events]}
 
     @app.get("/risk")
-    def get_risk(history: int = Query(600, ge=0, le=3600)) -> dict[str, Any]:
-        return core.risk(history=history)
+    def get_risk(history: int = Query(600, ge=0, le=3600), host: Optional[str] = Query(None)) -> dict[str, Any]:
+        """The headline index, or one machine's own with ?host= (see CACTAI_RISK_SCOPE)."""
+        return core.risk(history=history, host=host)
+
+    @app.get("/machines")
+    def get_machines() -> list[dict[str, Any]]:
+        return core.machines()
 
     @app.get("/incidents")
-    def get_incidents() -> list[dict[str, Any]]:
-        return core.list_incidents()
+    def get_incidents(host: Optional[str] = Query(None)) -> list[dict[str, Any]]:
+        return core.list_incidents(host=host)
 
     @app.get("/incidents/{iid}")
     def get_incident(iid: str) -> dict[str, Any]:
@@ -339,6 +417,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def get_protection() -> dict[str, Any]:
         return core.protection()
 
+    @app.get("/limits")
+    def get_limits() -> dict[str, Any]:
+        """Business limits on protective actions: what may run on its own, for how long, how often."""
+        with core.lock:
+            return core.limits()
+
     @app.post("/protection")
     def post_protection(body: ProtectionIn) -> dict[str, Any]:
         try:
@@ -347,8 +431,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc))
 
     @app.get("/blocklist")
-    def get_blocklist() -> dict[str, list[str]]:
-        return core.blocklist()
+    def get_blocklist(request: Request, host: Optional[str] = Query(None)) -> dict[str, list[str]]:
+        """With ?host= in host scope, only the blocks that machine must put in place (an agent always gets its own)."""
+        if request.state.agent is not None:
+            host = request.state.agent["host"]
+        return core.blocklist(host)
 
     @app.get("/notifications/pending")
     def get_pending() -> list[dict[str, Any]]:
@@ -437,6 +524,32 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as e:
             raise HTTPException(409, str(e))
 
+    # Backups: chosen folders plus SentrAI's own data, on a schedule. Restoring always needs a person;
+    # by default it unpacks into a new folder and changes nothing live.
+    @app.get("/backups")
+    def get_backups() -> dict[str, Any]:
+        return backups.status()
+
+    @app.post("/backups")
+    def post_backup(body: Optional[BackupIn] = None) -> dict[str, Any]:
+        return backups.make((body.operator if body else None) or "operator", "manual")
+
+    @app.post("/backups/{bid}/verify")
+    def verify_backup(bid: str, body: Optional[BackupIn] = None) -> dict[str, Any]:
+        try:
+            return backups.verify(bid, (body.operator if body else None) or "operator")
+        except KeyError as e:
+            raise HTTPException(404, str(e).strip("'\""))
+
+    @app.post("/backups/{bid}/restore")
+    def restore_backup(bid: str, body: RestoreIn) -> dict[str, Any]:
+        try:
+            return backups.restore(bid, body.operator, body.in_place, body.confirm, body.target)
+        except KeyError as e:
+            raise HTTPException(404, str(e).strip("'\""))
+        except ValueError as e:
+            raise HTTPException(409, str(e))
+
     @app.get("/log-sources")
     def get_log_sources() -> list[dict[str, Any]]:
         return discovery.sources()
@@ -477,18 +590,63 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return ai.test(core, chat, body.model_dump() if body else None)
 
     @app.post("/heartbeat")
-    def post_heartbeat(body: HeartbeatIn) -> dict[str, Any]:
-        core.ingest([{"source": "heartbeat", "host": body.collector, "layer": "os", "raw": "heartbeat"}])
+    def post_heartbeat(request: Request, body: HeartbeatIn) -> dict[str, Any]:
+        host = request.state.agent["host"] if request.state.agent is not None else body.collector
+        core.ingest([{"source": "heartbeat", "host": host, "layer": "os", "raw": "heartbeat"}])
         return {"ok": True}
 
-    @app.post("/demo/reset")
-    def demo_reset() -> dict[str, Any]:
-        chat.clear()
-        return core.reset()
+    # -- machines joining a central panel (fleet.py)
+    def fleet_error(exc: fleet.FleetError) -> HTTPException:
+        return HTTPException(status_code=exc.status, detail=str(exc))
 
-    @app.post("/demo/advance")
-    def demo_advance(body: AdvanceIn) -> dict[str, Any]:
-        return core.advance(body.demo_hours)
+    @app.post("/fleet/join-codes")
+    def post_join_code(body: JoinCodeIn) -> dict[str, Any]:
+        try:
+            out = machines.join_code(body.operator, body.name)
+        except fleet.FleetError as exc:
+            raise fleet_error(exc)
+        core.scribe.record(core.name, "join_code_created", {"operator": body.operator, "name": out["name"],
+                                                            "expires_at": out["expires_at"]})
+        return out
+
+    @app.post("/fleet/enrol")
+    def post_enrol(body: EnrolIn) -> dict[str, Any]:
+        try:
+            out = machines.enrol(body.code, body.host)
+        except fleet.FleetError as exc:
+            raise fleet_error(exc)
+        core.scribe.record(core.name, "machine_joined", {"agent_id": out["agent_id"], "host": out["host"]})
+        return {**out, "risk_scope": core.settings.risk_scope}
+
+    @app.get("/fleet/agents")
+    def get_fleet_agents() -> list[dict[str, Any]]:
+        return machines.agents()
+
+    @app.post("/fleet/agents/{agent_id}/revoke")
+    def post_revoke(agent_id: str, body: RevokeIn) -> dict[str, Any]:
+        try:
+            out = machines.revoke(agent_id, body.operator)
+        except fleet.FleetError as exc:
+            raise fleet_error(exc)
+        core.scribe.record(core.name, "machine_revoked", {"agent_id": agent_id, "host": out["host"],
+                                                          "operator": body.operator})
+        return out
+
+    @app.post("/fleet/services")
+    def post_services(request: Request, body: ServicesIn, host: Optional[str] = Query(None)) -> dict[str, Any]:
+        """What runs on a machine: its agent reports for itself; the operator token may name a host."""
+        if request.state.agent is not None:
+            host = request.state.agent["host"]
+        if not host:
+            raise HTTPException(status_code=400, detail="which machine? (?host=)")
+        return core.set_services(host, [x.model_dump() for x in body.services])
+
+    @app.get("/fleet/me")
+    def get_fleet_me(request: Request) -> dict[str, Any]:
+        a = request.state.agent
+        if a is None:
+            raise HTTPException(status_code=400, detail="only a machine's agent key has a /fleet/me")
+        return {"agent_id": a["agent_id"], "host": a["host"], "risk_scope": core.settings.risk_scope}
 
     return app
 

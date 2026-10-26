@@ -31,10 +31,17 @@ Tests:
 
 | Var | Default | Meaning |
 | --- | --- | --- |
-| `DEMO_SPEED` | `60` | Demo hours per real hour. At 60, 1 real minute is 1 demo hour. |
+| `DEMO_SPEED` | `1` | Timer hours per real hour. 1 is real time; for testing, 60 makes 1 real minute count as 1 hour. |
 | `RISK_THRESHOLD` | `80` | Risk index at which autonomous containment starts. |
-| `SLA_HOURS` | `2` | Acknowledgement SLA, in demo hours. |
-| `HOTPATCH_TTL_HOURS` | `2` | How long a hotpatch lasts, in demo hours. |
+| `SLA_HOURS` | `2` | Acknowledgement SLA, in hours. |
+| `HOTPATCH_TTL_HOURS` | `2` | How long a hotpatch lasts, in hours. |
+| `ACTION_TTL_HOURS` | unset | Per-type expiry, e.g. `lock_user=1,block_ip=4`. Types not listed use `HOTPATCH_TTL_HOURS`. |
+| `MAX_TTL_HOURS` | `24` | Business limit: no temporary action lasts longer than this (0 = no limit). |
+| `AUTO_ACTIONS` | `block_ip,rate_limit,waf_rule` | Action types SentrAI may take on its own. Anything else (lock an account, kill a process, revoke access) waits for a person to approve it. Making any action permanent always needs a person. |
+| `MAX_AUTO_ACTIONS_PER_HOUR` | `10` | Business limit on automatic actions in any rolling hour; past it a person decides (0 = never act alone). |
+| `CHECK_AFTER_MIN` | `10` | After-action check, this many minutes after an action starts: did the target still get through, and did everyone else's traffic, server errors or the health page get worse? Problems are alerted to the on-duty person. |
+| `CACTAI_HEALTH_URL` | unset | A page that should keep answering while SentrAI blocks things (probed when an action starts and at its check). |
+| `UNDO_RETRY_S`, `UNDO_RETRIES` | `60`, `3` | A failed undo (the firewall rule or webhook did not confirm removal) is retried this often, this many times, then left to a person. Every undo is recorded as `action_undone` or `action_undo_failed`. |
 | `ON_DUTY` | `John Doe (SEC-409) / Shift Bravo` | The responsible entity named in reports and notifications. |
 | `TEAM_LEAD`, `IT_MANAGER`, `CXO` | role names | Escalation recipients. |
 | `TYPESAFE_API_KEY` | unset | Turns on Jev (TypeSafe System One). Without it the fallback classifier is used. |
@@ -51,6 +58,7 @@ Tests:
 | `BRUTE_FORCE_COUNT` / `BRUTE_FORCE_WINDOW_S` | `5` / `60` | Brute-force rule: this many failed logins from the same IP within this many seconds. |
 | `EXPORT_ROWS_THRESHOLD` | `100` | `/export` with at least this many rows counts as data exfiltration. |
 | `SSH_BRUTE_FORCE_COUNT` / `SSH_BRUTE_FORCE_WINDOW_S` | `5` / `600` | SSH brute force: this many failed guesses (not log lines) from one IP within this many seconds. |
+| `SLOW_BRUTE_FORCE_COUNT` / `SSH_SLOW_BRUTE_FORCE_COUNT` / `SLOW_BRUTE_FORCE_WINDOW_S` | `20` / `10` / `86400` | Slow brute force: failed logins from one IP across web, Windows and SSH within this many seconds (SSH uses the lower count). `0` turns it off. |
 | `WEB_SCAN_4XX_COUNT` / `WEB_SCAN_WINDOW_S` | `10` / `120` | Web path scanning: this many 4xx replies to one IP within this many seconds (crawlers such as Googlebot, `favicon.ico`, `robots.txt` and ACME challenges do not count). |
 | `AUTO_CLOSE_QUIET_MIN` | `60` | Resolve an open scan or brute-force incident after this many real minutes with no new event and no containment in force. `0` turns it off. |
 | `AUTO_CLOSE_CATEGORIES` | `port_scan,brute_force` | Which categories auto-close. Other incidents always wait for an operator. |
@@ -97,7 +105,7 @@ python -m app.anchor show        # the current fingerprint
 or `GET /audit/verify?fingerprint=...`. The notifier keeps the newest witness it delivered
 (`notifier/data/last_witness.txt`), so `/verify` in the Telegram chat, or
 `python notifier.py --verify`, checks the live chain against it without pasting anything
-(`/verify <line>` checks an older one). After a demo reset the old chain is in `data/archive/`;
+(`/verify <line>` checks an older one). An archived chain in `data/archive/` can be checked too;
 pass it with `--db`.
 | `PROTECTED_IPS` | `127.0.0.1,::1,localhost` | Comma-separated IPs or networks that Countersign will never approve blocking. |
 | `PROTECTED_NETS` | private ranges | Networks Countersign will not block on its own (RFC 1918, 100.64.0.0/10, fc00::/7); an operator can still approve a block. `off` disables. |
@@ -144,12 +152,12 @@ Audit records: `cyanide_plan` (actions, reasons, dropped steps), `cyanide_hold` 
    - If P(malicious) is between 0.4 and 0.6, the incident gets `needs_review=true`. It is never auto-contained, and the operator is notified right away.
 3. **Aggregate**. Incidents are grouped by `(category, src_ip or user or host)`. IDs run `RSK-2026-081`, `RSK-2026-082`, and so on.
    - `points = base × confidence × asset_criticality`
-   - `raw` is the sum over incidents that are `open` or `acknowledged`, each counting its points plus its inaction penalty. The penalty is +5 per full demo hour unacknowledged, capped at +30. It freezes when the incident is acknowledged.
+   - `raw` is the sum over incidents that are `open` or `acknowledged`, each counting its points plus its inaction penalty. The penalty is +5 per full hour unacknowledged, capped at +30. It freezes when the incident is acknowledged.
    - Contained, resolved and rejected incidents no longer count.
 4. **Hotpatch**. When the risk index reaches the threshold, every incident that is open, unacknowledged and not flagged for review goes through these steps:
    1. Snapshot: sha256 of the blocklist state.
    2. Countersign review: the incident needs confidence of at least 0.6, and the action must be on the allowlist.
-   3. Garrison applies the playbook with a TTL of 2 demo hours.
+   3. Garrison applies the playbook with a TTL of 2 hours.
    4. Verify.
    5. Notify.
 
@@ -168,11 +176,10 @@ to the new ones (`LEGACY_AGENT_NAMES` in `app/saguaro.py`, `LEGACY_AGENTS` in th
 | Gatehouse, Vault, Watchtower | `Root`, `Reservoir`, `SpineNet` (`app/agents.py`) |
 | Garrison-Linux, Garrison-Win | `AreoleLinux`, `AreoleWin` |
 | Countersign | `Needle` (setting `NEEDLE_MIN_CONFIDENCE`, audit type `needle_review`) |
-| Tripwires | lab `target_app/spines.py`, `CACTAI_SPINES`, `--spines` (alias `--tripwires`) |
 
 ## Process scan (finding logs automatically)
 
-Scout follows a technician through the folders. The process scan (`app/procscan.py`, `app/discovery.py`) is the automatic half: it lists the programs running on this computer, recognises the known ones (IIS, nginx, Apache, Tomcat, MySQL, PostgreSQL, SQL Server, MongoDB, Redis, SSH, Docker, syslog, Node and Python apps, and the SentrAI lab portal) and looks for their log files in the usual places, next to the program, in options such as `--log-file`, and (on Linux) in the files each process has open.
+Scout follows a technician through the folders. The process scan (`app/procscan.py`, `app/discovery.py`) is the automatic half: it lists the programs running on this computer, recognises the known ones (IIS, nginx, Apache, Tomcat, MySQL, PostgreSQL, SQL Server, MongoDB, Redis, SSH, Docker, syslog, Node and Python apps) and looks for their log files in the usual places, next to the program, in options such as `--log-file`, and (on Linux) in the files each process has open.
 
 - **How.** Windows: PowerShell/CIM (`Win32_Process`, plus `Win32_Service` for the service account). Linux: `/proc`. macOS: `ps`. Standard library only, no admin rights needed; processes it cannot read are listed by name only.
 - **Read-only.** It never starts, stops or signals a process and never reads log contents. It only checks which files exist.
@@ -195,6 +202,20 @@ The process scan finds logs; the threat scan (`app/threatscan.py`, `app/threats.
 
 Audit records: `threat_scan`, `file_quarantined`, `file_restored`.
 
+## Backups (putting a system back)
+
+`app/backups.py` copies chosen folders, plus SentrAI's own data, on a schedule, so a defaced site or a wiped game server can be put back.
+
+- **What.** The folders in `"backup": {"paths": ["/var/www"], "every_hours": 24, "keep": 7}` in the system profile, or `CACTAI_BACKUP_PATHS`. SentrAI's own settings file, data folder (protection switch, signing key, threat state) and a consistent snapshot of the audit database are always included (`"include_sentrai": false` turns that off). `"exclude": ["*.log", "cache/*"]` skips files; `max_total_mb` (default 5120) refuses a backup that would fill the disk.
+- **Where.** One `.tar.gz` per backup in `backups/` next to the database (`CACTAI_BACKUP_DIR`), readable by SentrAI's account only, with a note beside it. `"copy_to": "/mnt/usb/sentrai"` (or `CACTAI_BACKUP_COPY_TO`) puts a second copy on another drive or share. The newest `keep` are kept.
+- **Proof.** Inside each archive, `manifest.json` lists every file with its SHA-256. The archive's own SHA-256 goes into the audit trail (`backup_made`), so **Check** (`POST /backups/{id}/verify`) catches a backup that was edited or swapped later.
+- **Alerts.** A failed backup (or a failed second copy) sends a `backup_failed` notice to the on-duty contact; a failed scheduled one is retried after an hour, not every minute.
+- **Restore needs a person**, and checks the backup first. By default files go into `restores/<id>-<time>/` next to the database and nothing live changes. Putting them back in place needs `in_place` and the backup id typed as `confirm`, and first takes a `before_restore` safety backup of the folders it will overwrite, so the restore can itself be undone. SentrAI's own data is never written over while the core runs; it is unpacked with a note on how to swap it in. The chat can show backups and offer a **Back up now** button, but cannot restore.
+- **On a hardened server** (`deploy/install.sh`), the core runs as its own account and may only write under `/var/lib/cactai/core`. Files it cannot read are skipped and listed on the backup. To restore in place there, add the folders to `ReadWritePaths=` in `cactai-core.service`, or restore into a new folder and copy back by hand.
+- **With the central panel** (planned agents on each machine), each agent runs this same code on its own machine and reports its backups to the panel.
+
+Audit records: `backup_made`, `backup_failed`, `backup_verified`, `backup_restored`, `backup_pruned`.
+
 ## Endpoints
 
 These follow the contract:
@@ -209,26 +230,26 @@ These follow the contract:
 - `/blocklist`
 - `/notifications/pending`
 - `/notifications/{id}/delivered`
-- `/demo/reset`
 
 Additions that do not change the contract:
 - `GET /incidents/{id}/why`: HelpDesk explanation.
 - `GET /helpdesk/why?target=<ip|user>`: "why was my IP blocked?"
 - `GET /agents`: status of each agent and of Jev.
+- `GET /limits`: the business limits on protective actions (what may run on its own, expiry per type, hourly cap and how much of it is used, after-action check delay).
 - `GET /notifications`: all notifications, including delivered ones.
 - `POST /heartbeat {"collector": "web-01"}`: collector heartbeat for Watchdog. An event with `"source": "heartbeat"` does the same.
 - `POST /system/scan {"operator": "erick"}` and `GET /system/scan` (latest): read-only process scan with suggested log files.
 - `POST /threats/scan {"operator": "erick"}`, `GET /threats`, `POST /threats/{id}/quarantine`, `GET /quarantine`, `POST /quarantine/{id}/restore`: threat scan and quarantine.
+- `GET /backups`, `POST /backups`, `POST /backups/{id}/verify`, `POST /backups/{id}/restore`: backups and restore.
 - `GET /log-sources` and `POST /log-sources {"operator", "file_id", "layer"?}`: extra log files the collector watches; a file is added only by its id from the latest scan.
-- `POST /demo/advance {"demo_hours": 3}`: fast-forwards the demo clock, for tests and to skip ahead during a take.
 
 ### Response shapes the contract leaves open
 
 - `/audit` returns `{"chain_valid", "first_invalid_seq", "count", "head_hash", "records": [{"seq","ts","type","data","prev_hash","hash"}]}`.
 - A notification has these fields: `id`, `incident`, `kind`, `title`, `text`, `recipients`, `risk_index`, `band`, `buttons`, `report_url`, `created_at`, `delivered`, `delivered_at`, `channel`, `message_id`, `deliveries`.
-  - `kind` is one of `incident_opened`, `needs_review`, `sla_reminder`, `escalation`, `autonomous_action`, `operator_action`, `needs_operator`, `action_expired` or `watchdog`.
+  - `kind` is one of `incident_opened`, `needs_review`, `sla_reminder`, `escalation`, `autonomous_action`, `operator_action`, `needs_operator`, `action_expired`, `action_check` (an action did not work or may be disrupting others), `undo_failed` (an action could not be confirmed removed) or `watchdog`.
   - `buttons` is a list of `[{label, action}]`, where `action` is one of `approve`, `reject`, `ack`, `rollback` or `permanent`.
-- Incidents have extra fields beyond the contract: `asset_criticality`, `malicious_probability`, `needs_review`, `contribution`, `time_unaddressed_hours`, `classification_reason`, `analyzed_by`, `notifications`, `timeline`, `decisions`, `ack_channel`. Actions also carry `verified`, `enforcement`, `applied_at`, `executed_by` and `proposed_by`.
+- Incidents have extra fields beyond the contract: `asset_criticality`, `malicious_probability`, `needs_review`, `contribution`, `time_unaddressed_hours`, `classification_reason`, `analyzed_by`, `notifications`, `timeline`, `decisions`, `ack_channel`. Actions also carry `verified`, `enforcement`, `applied_at`, `executed_by`, `proposed_by`, `check_at` and `check` (the after-action check: `worked`, `worked_note`, `disruption`, `disruption_note` and the counts behind them), and once they stop, `ended_at` and `undo` (`ok`, `at`, `attempts`, `error`).
 
 ### Operator verbs
 
@@ -239,7 +260,6 @@ Additions that do not change the contract:
 | `rollback` | Rolls back active actions. The incident becomes `acknowledged`, so its points count again but it will not be auto-contained. Returns 409 if nothing is active. |
 | `permanent` | Makes active or expired actions permanent (no expiry). The incident becomes `resolved`. |
 | `ack` | Records who acknowledged, when and on which channel. Freezes the inaction penalty. Idempotent. |
-| `/demo/reset` | Moves the audit DB to `data/archive/` (the old chain is kept, not destroyed), clears all state (the saved incident state lives in the same file), and starts a new chain. |
 
 ## Limitations
 

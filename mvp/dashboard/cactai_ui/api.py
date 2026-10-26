@@ -2,13 +2,15 @@
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import quote
 
 import requests
 
 DEFAULT_TIMEOUT = 2.5
 CHAT_TIMEOUT = 90.0  # the orchestrator may call its AI model several times per answer
 AI_TEST_TIMEOUT = 45.0  # one real request to the AI provider
-SCAN_TIMEOUT = 40.0  # PowerShell/CIM process listing can take a few seconds on Windows
+SCAN_TIMEOUT = 40.0
+BACKUP_TIMEOUT = 600.0  # a backup or restore copies whole folders  # PowerShell/CIM process listing can take a few seconds on Windows
 
 
 class CoreError(Exception):
@@ -20,6 +22,7 @@ class CoreError(Exception):
 
 
 READ_ONLY_POSTS = ("/chat",)  # asking the orchestrator a question changes nothing
+READ_ONLY_POST_ENDS = ("/verify",)  # checking a backup is intact changes nothing either
 READ_ONLY_MESSAGE = "Auditors can see everything but change nothing. Ask an Owner or Admin."
 
 
@@ -38,7 +41,8 @@ class CoreClient:
 
     def _request(self, method: str, path: str, body: Any | None = None,
                  timeout: float | None = None) -> requests.Response:
-        if self.read_only and method != "GET" and path not in READ_ONLY_POSTS:
+        if self.read_only and method != "GET" and path not in READ_ONLY_POSTS \
+                and not path.endswith(READ_ONLY_POST_ENDS):
             raise CoreError(READ_ONLY_MESSAGE, 403)
         try:
             resp = self.session.request(method, self._url(path), json=body, timeout=(0.8, timeout or self.timeout))
@@ -102,6 +106,22 @@ class CoreClient:
 
     def blocklist(self) -> dict:
         return self.get_json("/blocklist")
+
+    # ---- a central panel: machines that joined it (core fleet.py) ----
+    def machines(self) -> list[dict]:
+        return list(self.get_json("/machines") or [])
+
+    def machine_incidents(self, host: str) -> list[dict]:
+        return list(self.get_json(f"/incidents?host={quote(host, safe='')}") or [])
+
+    def fleet_agents(self) -> list[dict]:
+        return list(self.get_json("/fleet/agents") or [])
+
+    def join_code(self, operator: str, name: str | None = None) -> dict:
+        return self.post_json("/fleet/join-codes", {"operator": operator, "name": name or None})
+
+    def revoke_agent(self, agent_id: str, operator: str) -> dict:
+        return self.post_json(f"/fleet/agents/{quote(agent_id, safe='')}/revoke", {"operator": operator})
 
     def report_md(self, incident_id: str) -> str:
         return self.get_text(f"/reports/{incident_id}.md")
@@ -182,6 +202,30 @@ class CoreClient:
     def restore(self, quarantine_id: str, operator: str) -> dict:
         return self.post_json(f"/quarantine/{quarantine_id}/restore", {"operator": operator})
 
+    def backups(self) -> dict:
+        """Backup settings, the next one due and every backup kept (newest first)."""
+        return self.get_json("/backups")
+
+    def backup_now(self, operator: str) -> dict:
+        out = self.post_json("/backups", {"operator": operator}, timeout=BACKUP_TIMEOUT)
+        if not out.get("ok"):
+            raise CoreError(out.get("error") or out.get("note") or "backup failed")
+        return out
+
+    def verify_backup(self, backup_id: str, operator: str) -> dict:
+        out = self.post_json(f"/backups/{backup_id}/verify", {"operator": operator}, timeout=BACKUP_TIMEOUT)
+        if not out.get("ok"):
+            raise CoreError("; ".join(out.get("problems") or ["check failed"]))
+        return out
+
+    def restore_backup(self, backup_id: str, operator: str, in_place: bool = False, confirm: str = "") -> dict:
+        out = self.post_json(f"/backups/{backup_id}/restore",
+                             {"operator": operator, "in_place": in_place, "confirm": confirm}, timeout=BACKUP_TIMEOUT)
+        if not out.get("ok"):
+            raise CoreError(f"{out.get('files_restored', 0)} files restored, {len(out.get('failed') or [])} failed: "
+                            + "; ".join((out.get("failed") or [])[:3]))
+        return out
+
     def log_sources(self) -> list[dict]:
         """Extra log files the collector watches (approved from a scan, or by Scout)."""
         return list(self.get_json("/log-sources") or [])
@@ -196,6 +240,3 @@ class CoreClient:
     def decide_log_source(self, proposal_id: str, operator: str, approve: bool, reason: str = "") -> dict:
         return self.post_json(f"/log-sources/pending/{proposal_id}",
                               {"operator": operator, "approve": approve, "reason": reason})
-
-    def reset_demo(self) -> Any:
-        return self.post_json("/demo/reset", {})

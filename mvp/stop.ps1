@@ -1,0 +1,25 @@
+<#
+.SYNOPSIS
+  Stops only the SentrAI windows started by run.ps1 (PIDs from mvp\.run_pids.json).
+#>
+$Root = Split-Path -Parent $MyInvocation.MyCommand.Path
+$PidFile = Join-Path $Root ".run_pids.json"
+
+if (-not (Test-Path $PidFile)) {
+    Write-Host "SentrAI is not running (mvp\.run_pids.json not found)."
+    exit 0
+}
+
+$items = Get-Content $PidFile -Raw | ConvertFrom-Json
+foreach ($item in @($items)) {
+    $p = Get-Process -Id $item.pid -ErrorAction SilentlyContinue
+    if ($p) {
+        # /T stops the window and the Python process running inside it.
+        & taskkill.exe /PID $item.pid /T /F | Out-Null
+        Write-Host ("  stopped {0,-10} (pid {1})" -f $item.name, $item.pid)
+    } else {
+        Write-Host ("  {0,-10} was already stopped" -f $item.name)
+    }
+}
+Remove-Item $PidFile -Force
+Write-Host "SentrAI stopped."

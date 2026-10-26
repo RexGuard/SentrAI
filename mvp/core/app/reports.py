@@ -134,7 +134,8 @@ def build_report(core: "Saguaro", iid: str) -> dict[str, Any]:
             },
             "demo_clock": {
                 "demo_speed": s.demo_speed,
-                "note": f"Durations are in demo hours (DEMO_SPEED={s.demo_speed:g}: 1 real minute = {s.demo_speed / 60:g} demo hour(s)).",
+                "note": "Durations are in real hours." if s.demo_speed == 1 else
+                        f"Timers ran {s.demo_speed:g} times faster than real time, for testing (DEMO_SPEED={s.demo_speed:g}).",
             },
         }
         reported: set[str] = core.__dict__.setdefault("_reported", set())
@@ -185,7 +186,7 @@ def render_markdown(r: dict[str, Any]) -> str:
         "",
         "## Incident timeline",
         "",
-        "| Time | Demo time | Event | Points |",
+        "| Time | Elapsed | Event | Points |",
         "| --- | --- | --- | --- |",
     ]
     for t in r["timeline_of_inaction"]:
@@ -210,6 +211,8 @@ def render_markdown(r: dict[str, Any]) -> str:
         for a in r["forced_action"]["actions"]:
             lines.append(f"| {a['action_id']} | {a['type']} | {a['target']} | {a['mode']} | {a['approved_by']} | "
                          f"{a['status']} | {a['expires_at'] or 'never'} | `{a['snapshot_hash'][:12]}` |")
+        lines += ["", "### Did each action work, and could it be undone?", ""]
+        lines += [f"- {line}" for line in action_outcomes(r["forced_action"]["actions"])]
     else:
         lines.append("None.")
     lines += ["", "## Hash-chain proof", "", "| Seq | Time | Type | Agent | Hash |", "| --- | --- | --- | --- | --- |"]
@@ -296,7 +299,7 @@ def render_pdf(r: dict[str, Any]) -> bytes:
     for t in r["timeline_of_inaction"]:
         pts = "" if t["points"] is None else (f"+{t['points']:g}" if t["points"] >= 0 else f"{t['points']:g}")
         rows.append([_ts(t["ts"]), t["demo_time"], t["event"], pts])
-    doc.table([Column("Time", 1.2), Column("Demo time", 0.7), Column("Event", 3.75), Column("Points", 0.5)], rows)
+    doc.table([Column("Time", 1.2), Column("Elapsed", 0.7), Column("Event", 3.75), Column("Points", 0.5)], rows)
 
     doc.heading("Alerts and acknowledgement")
     if r["non_repudiation"]["deliveries"]:
@@ -321,6 +324,9 @@ def render_pdf(r: dict[str, Any]) -> bytes:
                    Column("Approved by", 0.8), Column("Status", 0.65), Column("Expires", 1.25), Column("Snapshot", 0.85, MONO)],
                   [[a["action_id"], a["type"], a["target"], a["mode"], a["approved_by"], a["status"],
                     _ts(a["expires_at"]) if a["expires_at"] else "never", a["snapshot_hash"][:10]] for a in acts], size=8)
+        doc.paragraph("Did each action work, and could it be undone?", size=9)
+        for line in action_outcomes(acts):
+            doc.bullet(line)
     else:
         doc.paragraph("None.")
 
@@ -335,3 +341,23 @@ def render_pdf(r: dict[str, Any]) -> bytes:
                   GREEN if chain_ok else RED)
     doc.paragraph(r["demo_clock"]["note"], size=8, color=MUTED)
     return doc.to_bytes()
+
+
+def action_outcomes(actions: list[dict[str, Any]]) -> list[str]:
+    """One plain sentence per action: the after-action check and the undo, from the action records."""
+    out = []
+    for a in actions:
+        chk, undo = a.get("check"), a.get("undo")
+        if isinstance(chk, dict):
+            worked = {True: "Worked.", False: "Did NOT work.", None: "SentrAI cannot see its effect."}[chk.get("worked")]
+            text = f"{worked} {chk.get('worked_note', '')} {chk.get('disruption_note') or ''}".strip()
+        elif a.get("status") in ("active", "permanent"):
+            text = f"Check due at {a.get('check_at') or 'the next check'}."
+        else:
+            text = "Not checked."
+        if isinstance(undo, dict):
+            text += (" Undo FAILED after " + str(undo.get("attempts", 1)) + " tries: " + str(undo.get("error", ""))
+                     if undo.get("ok") is False else f" Undone at {undo.get('at')}"
+                     + (" (confirmed)." if undo.get("ok") else " (not confirmed by the responder)."))
+        out.append(f"{a['action_id']} {a['type']} {a['target']}: {text}")
+    return out

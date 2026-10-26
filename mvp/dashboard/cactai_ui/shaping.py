@@ -4,8 +4,9 @@ Everything here is free of Streamlit so it can be unit tested.
 """
 from __future__ import annotations
 
+import html
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Iterable
 
 import pandas as pd
@@ -40,7 +41,7 @@ SURFACE = "#121a29"
 TEXT_PRIMARY = "#e7edf6"
 TEXT_SECONDARY = "#a5b2c6"
 TEXT_MUTED = "#6f7d93"
-FONT = "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif"
+FONT = "IBM Plex Sans, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif"
 GRID = "rgba(255,255,255,0.07)"
 
 
@@ -84,12 +85,13 @@ CATEGORY_LABELS = {
     "prompt_injection": "Prompt injection",
 }
 
-STATUS_ICONS = {
-    "open": "🔴 open",
-    "acknowledged": "🟡 acknowledged",
-    "contained": "🛡️ contained",
-    "resolved": "✅ resolved",
-    "rejected": "⛔ rejected",
+# Plain words, sentence case: emoji render differently on every OS and tables can't show icons.
+STATUS_LABELS = {
+    "open": "Open",
+    "acknowledged": "Acknowledged",
+    "contained": "Contained",
+    "resolved": "Resolved",
+    "rejected": "Rejected",
 }
 
 CLASSIFIER_LABELS = {"rules": "Rules", "jev": "Jev (AI)", "fallback": "Fallback"}
@@ -102,7 +104,7 @@ def category_label(category: str | None) -> str:
 
 
 def status_label(status: str | None) -> str:
-    return STATUS_ICONS.get(str(status or ""), str(status or "unknown"))
+    return STATUS_LABELS.get(str(status or ""), str(status or "unknown").replace("_", " ").capitalize())
 
 
 def parse_ts(value: Any) -> datetime | None:
@@ -224,6 +226,27 @@ def suggestion_state(inc: dict | None, decision: str) -> tuple[bool, str]:
     return True, ""
 
 
+def check_text(a: dict) -> str:
+    """The after-action check in a few words: did it work, did it hurt anything."""
+    chk = a.get("check")
+    if not isinstance(chk, dict):
+        return "pending" if a.get("status") in ("active", "permanent") else "-"
+    worked = {True: "worked", False: "did not work", None: "can't see"}.get(chk.get("worked"), "-")
+    if chk.get("disruption") is True:
+        return f"{worked}, possible disruption"
+    return worked + (", no harm seen" if chk.get("disruption") is False else "")
+
+
+def undo_text(a: dict) -> str:
+    """Whether taking the action out worked."""
+    undo = a.get("undo")
+    if not isinstance(undo, dict):
+        return "-"
+    if undo.get("ok") is False:
+        return f"FAILED ({undo.get('attempts', 1)} tries)"
+    return "done" if undo.get("ok") else "unconfirmed"
+
+
 def action_rows(inc: dict) -> pd.DataFrame:
     rows = [
         {
@@ -234,13 +257,16 @@ def action_rows(inc: dict) -> pd.DataFrame:
             "Approved by": agent_label(a.get("approved_by", "-")),
             "Status": a.get("status", "-"),
             "Expires": short_time(a.get("expires_at")),
+            "Checked": check_text(a),
+            "Undo": undo_text(a),
             "Snapshot": short_hash(a.get("snapshot_hash")),
         }
         for a in (inc.get("actions") or [])
         if isinstance(a, dict)
     ]
     return pd.DataFrame(
-        rows, columns=["Action", "Type", "Target", "Mode", "Approved by", "Status", "Expires", "Snapshot"]
+        rows, columns=["Action", "Type", "Target", "Mode", "Approved by", "Status", "Expires", "Checked", "Undo",
+                       "Snapshot"]
     )
 
 
@@ -293,21 +319,22 @@ def build_containment_rows(blocklist: dict | None, incidents: Iterable[dict]) ->
 
 # ---------------------------------------------------------------- audit / agents
 
+# Material Symbols name and colour per agent. Blues, violets, teals and greys only: green, amber and red mean risk.
 AGENTS = {
-    "Warden": ("🛡️", "#6fcf97"),
-    "Cyanide": ("🧪", "#6fcf97"),
-    "Planner": ("✳️", "#d97757"),
-    "Countersign": ("🔑", "#e0a526"),
-    "Scribe": ("📜", "#8fa7ff"),
-    "Gatehouse": ("🌐", "#4fb3d9"),
-    "Watchtower": ("📡", "#b88cf0"),
-    "Vault": ("🗄️", "#5bc0be"),
-    "Garrison-Linux": ("🐧", "#e88a5a"),
-    "Garrison-Win": ("🪟", "#e88a5a"),
-    "Watchdog": ("🐕", "#a0a39b"),
-    "Help Desk": ("💬", "#d98bb5"),
-    "Jev": ("🧠", "#c79bf2"),
-    "Operator": ("👤", "#e7edf6"),
+    "Warden": ("shield", "#7aa2ff"),
+    "Cyanide": ("science", "#5bc0be"),
+    "Planner": ("account_tree", "#e08bd0"),
+    "Countersign": ("key", "#9aa5b8"),
+    "Scribe": ("description", "#8fa7ff"),
+    "Gatehouse": ("public", "#4fb3d9"),
+    "Watchtower": ("cell_tower", "#b88cf0"),
+    "Vault": ("database", "#5bc0be"),
+    "Garrison-Linux": ("dns", "#a3b1c6"),
+    "Garrison-Win": ("desktop_windows", "#a3b1c6"),
+    "Watchdog": ("pets", "#a0a39b"),
+    "Help Desk": ("support_agent", "#d98bb5"),
+    "Jev": ("psychology", "#c79bf2"),
+    "Operator": ("person", "#e7edf6"),
 }
 
 _AGENT_BASE = {name: color for name, (_, color) in AGENTS.items()}
@@ -415,7 +442,7 @@ def build_activity_feed(records: list[dict], limit: int = 30) -> list[dict]:
     for rec in reversed(ordered[-limit:]):
         agent = agent_for(rec)
         base = agent.split(":", 1)[0]
-        icon, color = AGENTS.get(base, ("🤖", TEXT_SECONDARY))
+        icon, color = AGENTS.get(base, ("smart_toy", TEXT_SECONDARY))
         feed.append(
             {
                 "seq": rec.get("seq"),
@@ -442,47 +469,165 @@ def verify_chain_links(records: list[dict]) -> bool:
 
 # ---------------------------------------------------------------- charts
 
-def gauge_figure(risk_index: float | None, threshold: float = 80, band: str | None = None) -> go.Figure:
-    value = 0 if risk_index is None else max(0, min(100, float(risk_index)))
-    band = band or band_for(value)
-    color = band_color(band)
-    steps = [
-        {"range": [lo, hi + (1 if hi < 100 else 0)], "color": _fade(BAND_COLORS[name], 0.16)}
-        for name, lo, hi in BANDS
-    ]
-    fig = go.Figure(
-        go.Indicator(
-            mode="gauge+number",
-            value=value,
-            number={"font": {"size": 72, "color": color}, "valueformat": ".0f"},
-            gauge={
-                "shape": "angular",
-                "axis": {
-                    "range": [0, 100],
-                    "tickvals": [0, 30, 60, 80, 100],
-                    "tickcolor": TEXT_MUTED,
-                    "tickfont": {"color": TEXT_SECONDARY, "size": 12},
-                },
-                "bar": {"color": color, "thickness": 0.32},
-                "bgcolor": "rgba(0,0,0,0)",
-                "borderwidth": 0,
-                "steps": steps,
-                "threshold": {
-                    "line": {"color": TEXT_PRIMARY, "width": 4},
-                    "thickness": 0.9,
-                    "value": float(threshold),
-                },
-            },
-            domain={"x": [0, 1], "y": [0, 1]},
+# Short word for each band in the machine list (the right-hand label under the number).
+BAND_WORD: dict[str, str] = {"green": "Calm", "amber": "Elevated", "red": "High", "critical": "Critical"}
+
+
+def parse_peers(text: str | None) -> list[tuple[str, str]]:
+    """'Office PC=http://10.0.0.5:8000, Web=https://web:8000' -> [(name, url), ...].
+
+    A bare URL is named after itself. Blank or malformed entries are skipped."""
+    peers = []
+    for item in (text or "").split(","):
+        item = item.strip()
+        if not item:
+            continue
+        name, sep, url = item.partition("=")
+        if not sep:
+            name, url = item, item
+        name, url = name.strip(), url.strip()
+        if url.startswith(("http://", "https://")):
+            peers.append((name or url, url))
+    return peers
+
+
+def machine(name: str, place: str, risk: Any = None, error: str | None = None) -> dict:
+    """One SentrAI machine for the machine list, from its /risk payload (or the error reaching it)."""
+    if error or not isinstance(risk, dict):
+        return {"name": name, "place": place, "online": False, "index": None, "band": "unknown",
+                "threshold": None, "monitor_only": False}
+    idx = risk.get("risk_index")
+    return {"name": name, "place": place, "online": True,
+            "index": None if idx is None else max(0.0, min(100.0, float(idx))),
+            "band": resolve_band(risk), "threshold": float(risk.get("threshold") or 80),
+            "monitor_only": bool(risk.get("monitor_only"))}
+
+
+AGENT_STALE_S = 60.0  # an agent that has not called in for this long shows as offline
+
+
+def panel_machines(found: Iterable[dict], agents: Iterable[dict], risk: dict | None,
+                   now: datetime | None = None) -> list[dict]:
+    """The machine list on a central panel: every machine the core scores (GET /machines) plus joined
+    agents that have sent nothing yet, in the same shape as machine(), worst first."""
+    now = now or datetime.now(timezone.utc)
+    risk = risk or {}
+    threshold = float(risk.get("threshold") or 80)
+    live = {str(a.get("host")): a for a in agents or [] if isinstance(a, dict) and not a.get("revoked_at")}
+    rows, seen = [], set()
+    for m in found or []:
+        if not isinstance(m, dict) or not m.get("host"):
+            continue
+        host = str(m["host"])
+        seen.add(host)
+        agent = live.get(host)
+        last = parse_ts((agent or {}).get("last_seen") or m.get("last_seen"))
+        if last is not None and last.tzinfo is None:
+            last = last.astimezone(timezone.utc)  # a naive time is this computer's local time
+        stale = bool(agent) and (last is None or (now - last).total_seconds() > AGENT_STALE_S)
+        idx = m.get("risk_index")
+        rows.append({"name": host, "place": "Agent" if agent else "Seen in logs", "host": host,
+                     "online": not (m.get("silent") or stale),
+                     "index": None if idx is None else max(0.0, min(100.0, float(idx))),
+                     "band": m.get("band") or band_for(idx), "threshold": threshold,
+                     "monitor_only": bool(risk.get("monitor_only")),
+                     "open": int(m.get("open_incidents") or 0), "contained": int(m.get("contained_incidents") or 0),
+                     "blocked": int(m.get("blocked") or 0), "last_seen": last,
+                     "agent_id": (agent or {}).get("agent_id"),
+                     "services": [x for x in m.get("services") or [] if isinstance(x, dict)]})
+    for host, agent in live.items():
+        if host not in seen:
+            rows.append({"name": host, "place": "Agent", "host": host, "online": False, "waiting": True,
+                         "index": None, "band": "unknown", "threshold": threshold, "monitor_only": False,
+                         "open": 0, "contained": 0, "blocked": 0, "last_seen": None, "agent_id": agent.get("agent_id")})
+    rows.sort(key=lambda r: (-(r["index"] or 0), r["name"]))
+    return rows
+
+
+def services_text(services: Iterable[dict], limit: int = 4) -> str:
+    """'nginx :443, sshd :22 (1 open), +2 more' for a machine row; a service under attack goes first."""
+    svcs = sorted((x for x in services or [] if isinstance(x, dict) and x.get("name")),
+                  key=lambda x: (-int(x.get("open_incidents") or 0), x.get("port") or 0))
+    parts = []
+    for x in svcs[:limit]:
+        port = f" :{x['port']}" if x.get("port") else ""
+        hit = f" ({x['open_incidents']} open)" if x.get("open_incidents") else ""
+        parts.append(f"{x['name']}{port}{hit}")
+    if len(svcs) > limit:
+        parts.append(f"+{len(svcs) - limit} more")
+    return ", ".join(parts)
+
+
+def service_rows(services: Iterable[dict]) -> pd.DataFrame:
+    """One machine's services for the Machines page (like the servers on a node)."""
+    rows = [{"Service": x.get("name"), "Port": x.get("port"), "Protocol": (x.get("proto") or "").upper() or "-",
+             "Process": x.get("process") or "-", "Open incidents": int(x.get("open_incidents") or 0)}
+            for x in services or [] if isinstance(x, dict) and x.get("name")]
+    rows.sort(key=lambda r: (-r["Open incidents"], r["Port"] if r["Port"] is not None else 1 << 17))
+    return pd.DataFrame(rows, columns=["Service", "Port", "Protocol", "Process", "Open incidents"])
+
+
+def agent_rows(agents: Iterable[dict]) -> pd.DataFrame:
+    """Joined machines for the Machines page table (revoked ones last)."""
+    rows = []
+    for a in agents or []:
+        if not isinstance(a, dict):
+            continue
+        rows.append({"Machine": a.get("host"), "Id": a.get("agent_id"), "Joined": short_time(a.get("joined_at")),
+                     "Invited by": a.get("invited_by") or "", "Last seen": short_time(a.get("last_seen")) or "never",
+                     "Status": f"Revoked by {a.get('revoked_by') or '?'}" if a.get("revoked_at") else "Active"})
+    rows.sort(key=lambda r: (r["Status"] != "Active", str(r["Machine"])))
+    return pd.DataFrame(rows, columns=["Machine", "Id", "Joined", "Invited by", "Last seen", "Status"])
+
+
+def join_commands(panel_url: str, code: str, name: str | None = None) -> dict[str, str]:
+    """What to paste on the new machine, for Linux (installer) and for Windows or a laptop (from a checkout)."""
+    url = panel_url.rstrip("/")
+    named = f" --name {name}" if name else ""
+    return {
+        "linux": f"sudo ./mvp/deploy/install-agent.sh --panel {url} --code {code}{named}",
+        "windows": f"cd mvp\\lab\npython -m agent join --panel {url} --code {code}{named}\npython -m agent run",
+    }
+
+
+def machine_rows_html(machines: list[dict]) -> str:
+    """The machine list: one row per SentrAI program, like a game's server-status screen.
+
+    Status shield on the left (protecting, protection off, or offline), the machine's name with a small
+    risk bar under it, and the risk number with its band word on the right. Styled by .machines in
+    console.css; only the data-driven widths and colours are inline."""
+    rows = []
+    for m in machines:
+        name, place = html.escape(str(m["name"])), html.escape(str(m["place"]))
+        if m.get("waiting"):
+            icon, state, tone = "hourglass_empty", "Joined", UNKNOWN_COLOR
+            num, word, color, width = "-", "Waiting", UNKNOWN_COLOR, 0.0
+            place = f"{place} · waiting for its first data"
+        elif not m["online"]:
+            icon, state, tone = "cancel", "Offline", BAND_COLORS["critical"]
+            num, word, color, width = "0", "Offline", UNKNOWN_COLOR, 0.0
+        else:
+            color = band_color(m["band"])
+            if m["monitor_only"]:
+                icon, state, tone = "remove_moderator", "Protection off", BAND_COLORS["amber"]
+            else:
+                icon, state, tone = "verified_user", "Protecting", BAND_COLORS["green"]
+            num = "-" if m["index"] is None else f"{m['index']:.0f}"
+            word, width = BAND_WORD.get(m["band"], "Unknown"), m["index"] or 0.0
+            place = f"{place} · threshold {m['threshold']:.0f}"
+            if m.get("services"):
+                place = f"{place} · {services_text(m['services'])}"
+        rows.append(
+            f'<li class="machine">'
+            f'<span class="m-icon mi" style="color:{tone}" aria-hidden="true">{icon}</span>'
+            f'<span class="m-main"><span class="m-name">{name}</span>'
+            f'<span class="m-sub"><span class="m-bar" aria-hidden="true"><i style="width:{width:.0f}%;background:{color}"></i></span>'
+            f'<span class="sr">{state}. </span>{place}</span></span>'
+            f'<span class="m-risk"><span class="m-num"{" style=color:var(--ink-muted)" if not m["online"] else ""}>{num}</span>'
+            f'<span class="m-word" style="color:{color}">{word}</span></span>'
+            f'</li>'
         )
-    )
-    fig.update_layout(
-        height=290,
-        margin={"l": 28, "r": 28, "t": 18, "b": 0},
-        paper_bgcolor="rgba(0,0,0,0)",
-        font={"color": TEXT_PRIMARY, "family": FONT},
-    )
-    return fig
+    return f'<ul class="machines" aria-label="SentrAI machines">{"".join(rows)}</ul>'
 
 
 def history_frame(history: Iterable[dict] | None) -> pd.DataFrame:
@@ -526,16 +671,16 @@ def history_figure(df: pd.DataFrame, threshold: float = 80) -> go.Figure:
     fig.add_hline(
         y=float(threshold), line={"color": TEXT_PRIMARY, "width": 1.5, "dash": "dash"},
         annotation_text=f"Autonomous threshold {threshold:.0f}", annotation_position="top left",
-        annotation_font={"color": TEXT_SECONDARY, "size": 11},
+        annotation_font={"color": TEXT_SECONDARY, "size": 12},
     )
     fig.update_layout(
-        height=290,
+        height=230,
         margin={"l": 8, "r": 8, "t": 10, "b": 8},
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         showlegend=False,
         hovermode="x unified",
-        font={"color": TEXT_SECONDARY, "family": FONT, "size": 11},
+        font={"color": TEXT_SECONDARY, "family": FONT, "size": 12},
         xaxis={"showgrid": False, "linecolor": GRID, "tickformat": "%H:%M:%S"},
         yaxis={"range": [0, 100], "gridcolor": GRID, "tickvals": [0, 30, 60, 80, 100], "zeroline": False},
     )
@@ -570,7 +715,7 @@ def head_seq(records: list[dict]) -> int:
 def unseen_counts(records: list[dict], seen: dict[str, int]) -> dict[str, int]:
     """Alert records newer than the last audit seq each page was viewed at.
 
-    A demo reset restarts the chain, so a remembered seq beyond the head counts as 0.
+    A fresh audit chain starts again at 1, so a remembered seq beyond the head counts as 0.
     """
     head = head_seq(records)
     counts = {}
@@ -616,16 +761,16 @@ def risk_breakdown(incidents: Iterable[dict]) -> pd.DataFrame:
             "Status": status_label(inc.get("status")),
             "Base": inc.get("base_points"),
             "Confidence": inc.get("ai_confidence"),
-            "Criticality": inc.get("asset_criticality"),
+            "Criticality": "-" if inc.get("asset_criticality") is None else str(inc["asset_criticality"]),
             "Points": round(float(inc.get("points") or 0), 1),
             "Inaction penalty": round(float(inc.get("inaction_penalty") or 0), 1),
-            "Unaddressed (demo h)": round(float(inc.get("time_unaddressed_hours") or 0), 1),
+            "Unaddressed (h)": round(float(inc.get("time_unaddressed_hours") or 0), 1),
             "Counts now": incident_contribution(inc) if inc.get("status") in ACTIVE_STATUSES else 0.0,
         }
         for inc in incidents or []
     ]
     df = pd.DataFrame(rows, columns=["Incident", "Category", "Status", "Base", "Confidence", "Criticality",
-                                     "Points", "Inaction penalty", "Unaddressed (demo h)", "Counts now"])
+                                     "Points", "Inaction penalty", "Unaddressed (h)", "Counts now"])
     return df.sort_values("Counts now", ascending=False).reset_index(drop=True) if not df.empty else df
 
 
@@ -636,6 +781,11 @@ def all_action_rows(incidents: Iterable[dict]) -> pd.DataFrame:
         return pd.DataFrame(columns=["Incident", *action_rows({}).columns])
     df = pd.concat(frames, ignore_index=True)
     return df[["Incident", *[c for c in df.columns if c != "Incident"]]]
+
+
+def start_page(incidents: Iterable[dict] | None) -> str:
+    """Where the console opens: Approvals when something waits on a person, otherwise Review."""
+    return "approvals" if pending_approvals(incidents or []) else "review"
 
 
 def pending_approvals(incidents: Iterable[dict]) -> list[dict]:

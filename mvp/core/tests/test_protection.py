@@ -35,7 +35,7 @@ def test_monitor_only_scores_but_never_contains(client):
     assert len(incs) == 2 and all(i["status"] == "open" and i["actions"] == [] for i in incs)
     assert client.get("/blocklist").json() == {"ips": [], "users": []}
     # Each skipped containment is recorded once, even as ticks keep running.
-    client.post("/demo/advance", json={"demo_hours": 0.5})
+    client.core.advance(0.5)
     types = [r["type"] for r in client.get("/audit").json()["records"]]
     assert types.count("protection_changed") == 1
     assert types.count("containment_skipped") == 2
@@ -86,7 +86,7 @@ def test_actions_in_force_stay_and_can_be_rolled_back(client):
 def test_expired_hotpatch_cannot_be_made_permanent_while_off(client):
     brute_force(client)
     client.post("/incidents/RSK-2026-081/decision", json={"operator": "erick", "decision": "approve"})
-    client.post("/demo/advance", json={"demo_hours": 2.1})
+    client.core.advance(2.1)
     turn_off(client)
     r = client.post("/incidents/RSK-2026-081/permanent", json={"operator": "erick", "justification": "keep"})
     assert r.status_code == 409
@@ -97,7 +97,7 @@ def test_switch_survives_reset_and_restart(tmp_path):
     s = Settings(db_path=tmp_path / "p.db", background=False)
     with TestClient(create_app(s), headers=AUTH) as c:
         turn_off(c)
-        c.post("/demo/reset")
+        c.app.state.core.reset()
         assert c.get("/protection").json()["monitor_only"] is True
     with TestClient(create_app(Settings(db_path=tmp_path / "p.db", background=False)), headers=AUTH) as c:
         p = c.get("/protection").json()

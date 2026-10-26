@@ -50,14 +50,14 @@ def test_brute_force_creates_incident(client):
 
 def test_inaction_penalty_and_sla(client):
     brute_force(client)
-    client.post("/demo/advance", json={"demo_hours": 3})
+    client.core.advance(3)
     inc = client.get("/incidents/RSK-2026-081").json()
     assert inc["inaction_penalty"] == 15
     assert inc["sla_breached"] is True
     kinds = [n["kind"] for n in client.get("/notifications/pending").json()]
     assert "sla_reminder" in kinds
     assert client.get("/risk").json()["raw_score"] == 60.0
-    client.post("/demo/advance", json={"demo_hours": 20})
+    client.core.advance(20)
     assert client.get("/incidents/RSK-2026-081").json()["inaction_penalty"] == 30  # capped
 
 
@@ -90,7 +90,7 @@ def test_threshold_triggers_autonomous_block(client):
     assert auto and "CXO" in auto[0]["recipients"]
     assert any(n["kind"] == "escalation" and "CXO" in n["recipients"] for n in pending)
     # TTL: 2 demo hours later the temporary block drops out of /blocklist.
-    client.post("/demo/advance", json={"demo_hours": 2.1})
+    client.core.advance(2.1)
     assert client.get("/blocklist").json() == {"ips": [], "users": []}
     assert client.get("/incidents/RSK-2026-081").json()["actions"][0]["status"] == "expired"
 
@@ -122,7 +122,7 @@ def test_operator_verbs(client):
     client.post(f"/incidents/{iid}/decision", json={"operator": "erick", "decision": "approve"})
     inc = client.post(f"/incidents/{iid}/permanent", json={"operator": "erick", "justification": "known bad"}).json()
     assert inc["status"] == "resolved" and all(a["status"] == "permanent" for a in inc["actions"])
-    client.post("/demo/advance", json={"demo_hours": 5})
+    client.core.advance(5)
     assert "198.51.100.7" in client.get("/blocklist").json()["ips"]
     # reject closes with justification
     client.post("/events", json=ev(30, "shell spawned by www-data: /bin/sh", ip="192.0.2.9", layer="os", source="os_process"))
@@ -173,7 +173,7 @@ def test_audit_chain_valid_and_detects_tampering(client):
 
 def test_evidence_report(client):
     brute_force(client)
-    client.post("/demo/advance", json={"demo_hours": 3})
+    client.core.advance(3)
     pending = client.get("/notifications/pending").json()
     first = [n for n in pending if n["incident"] == "RSK-2026-081"][0]
     d = client.post(f"/notifications/{first['id']}/delivered", json={"channel": "telegram", "message_id": 4242}).json()
@@ -223,10 +223,10 @@ def test_watchdog_flags_silent_collector(client):
     assert any(r["type"] == "collector_silent" for r in client.get("/audit").json()["records"])
 
 
-def test_demo_reset(client):
+def test_reset(client):
     brute_force(client)
     client.post("/events", json=ev(10, "GET /search?q=' OR 1=1 -- 200"))
-    out = client.post("/demo/reset").json()
+    out = client.core.reset()
     assert out["ok"] is True
     assert client.get("/incidents").json() == []
     assert client.get("/blocklist").json() == {"ips": [], "users": []}

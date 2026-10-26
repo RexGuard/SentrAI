@@ -42,13 +42,13 @@ attackers); there is no real log data in it.
 Every line of an attack session carries that attack's category, including lines that cannot show
 it alone (the first guesses before a threshold, `pam_unix(sshd:auth): check pass; user unknown`,
 which names no address). Those count as misses, so per-line recall understates detection. The
-per-source table ("attackers flagged: 25 of 28", "flagged from line") is the better measure.
+per-source table ("attackers flagged: 26 of 28", "flagged from line") is the better measure.
 
 ## Known misses
 
 - The slow brute force (one guess every 5 minutes) stays under the 5-guesses-in-10-minutes
-  threshold. Raise `SSH_BRUTE_FORCE_WINDOW_S` to catch it, at the cost of flagging people who
-  mistype their password a few times over an afternoon.
+  threshold. The per-day rule (`SSH_SLOW_BRUTE_FORCE_COUNT`, 10 failed SSH guesses from one address
+  in `SLOW_BRUTE_FORCE_WINDOW_S`, 24 h) catches it from its 10th guess.
 - Banner grabbers that connect only once or twice are not flagged (threshold 3), because uptime
   monitors that only check port 22 look the same.
 

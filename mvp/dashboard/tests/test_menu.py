@@ -25,7 +25,7 @@ def test_bubbles_count_alerts_since_each_page_was_opened():
     assert sh.unseen_counts(RECORDS, {"collector": 3, "classifier": 5}) == {"collector": 1, "classifier": 0, "responder": 1}
 
 
-def test_bubbles_come_back_after_a_demo_reset():
+def test_bubbles_come_back_after_a_fresh_chain():
     # seen seq 99 is beyond the restarted chain, so everything counts again
     assert sh.unseen_counts(RECORDS, {"collector": 99})["collector"] == 2
 
@@ -56,8 +56,8 @@ def test_risk_breakdown_counts_only_active_incidents():
 APP = str(Path(__file__).resolve().parents[1] / "app.py")
 
 
-@pytest.mark.parametrize("page", ["config", "approvals", "chat", "collector", "classifier", "responder", "review",
-                                  "reports", "audit"])
+@pytest.mark.parametrize("page", ["config", "approvals", "chat", "collector", "classifier", "responder", "machines",
+                                  "review", "reports", "audit", "backups"])
 def test_every_page_renders(fake_core, page, tmp_path, monkeypatch):
     from streamlit.testing.v1 import AppTest
 
@@ -85,7 +85,7 @@ def test_chat_asks_and_the_suggestion_goes_through_the_normal_decision(fake_core
     from streamlit.testing.v1 import AppTest
 
     monkeypatch.setenv("CACTAI_CONFIG", str(tmp_path / "config.json"))
-    requests.post(f"{fake_core}/demo/reset", timeout=3)
+    requests.post(f"{fake_core}/dev/reset", timeout=3)
     requests.post(f"{fake_core}/dev/trigger/brute_force", timeout=3)
     import streamlit as st
     st.cache_data.clear()  # earlier tests cached the incidents from before the reset
@@ -170,7 +170,7 @@ def test_collector_page_scans_and_watches_a_log(fake_core, tmp_path, monkeypatch
     from streamlit.testing.v1 import AppTest
 
     monkeypatch.setenv("CACTAI_CONFIG", str(tmp_path / "config.json"))
-    requests.post(f"{fake_core}/demo/reset", timeout=3)
+    requests.post(f"{fake_core}/dev/reset", timeout=3)
     import streamlit as st
     st.cache_data.clear()
     at = AppTest.from_file(APP, default_timeout=20)
@@ -196,7 +196,7 @@ def test_scout_proposals_are_approved_or_dismissed_on_the_collector_page(fake_co
     from streamlit.testing.v1 import AppTest
 
     monkeypatch.setenv("CACTAI_CONFIG", str(tmp_path / "config.json"))
-    requests.post(f"{fake_core}/demo/reset", timeout=3)
+    requests.post(f"{fake_core}/dev/reset", timeout=3)
     for name in ("auth.log", "syslog"):
         requests.post(f"{fake_core}/_fake/scout-proposal", json={"name": name, "path": f"/var/log/{name}"}, timeout=3)
     st.cache_data.clear()
@@ -265,3 +265,34 @@ def test_threat_paths_are_shown_escaped(fake_core, tmp_path, monkeypatch):
     assert not at.exception, at.exception
     shown = [m.value for m in at.markdown if "img.php" in m.value]
     assert shown and all("<code>/var/lib/pterodactyl/volumes/a1b2/plugins/web/upload/img.php</code>" in v for v in shown)
+
+
+def test_start_page_is_approvals_only_when_something_waits():
+    assert sh.start_page([{"id": "A", "status": "open"}]) == "approvals"
+    assert sh.start_page([{"id": "A", "status": "contained"}]) == "approvals"
+    assert sh.start_page([{"id": "A", "status": "resolved"}]) == "review"
+    assert sh.start_page(None) == "review"
+
+
+def test_status_labels_are_plain_words():
+    assert sh.status_label("contained") == "Contained"
+    assert sh.status_label("needs_review") == "Needs review"
+
+
+def test_console_opens_on_what_needs_a_decision(fake_core, tmp_path, monkeypatch):
+    from streamlit.testing.v1 import AppTest
+
+    conf = tmp_path / "config.json"
+    conf.write_text('{"setup_done": "dashboard"}', encoding="utf-8")
+    monkeypatch.setenv("CACTAI_CONFIG", str(conf))
+    monkeypatch.setenv("CACTAI_CORE_URL", fake_core)
+    requests.post(f"{fake_core}/dev/trigger/brute_force", params={"src_ip": "203.0.113.77", "user": "landing"},
+                  timeout=3)
+    import streamlit as st
+    st.cache_data.clear()  # an earlier test's incident list may still be cached
+    at = AppTest.from_file(APP, default_timeout=20)
+    at.session_state["core_url"] = fake_core
+    at.session_state["auto_refresh"] = False
+    at.run()
+    assert not at.exception, at.exception
+    assert at.session_state["page"] == "approvals"

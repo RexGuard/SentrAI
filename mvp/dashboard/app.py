@@ -1,8 +1,8 @@
 """SentrAI operator dashboard (Streamlit, http://127.0.0.1:8501).
 
-The sidebar is the menu: Configuration (the home page), Approvals, Chat (talk with the
-orchestrator), one page per part of the pipeline (Collector, Classifier, Action taker), Review,
-Reports and Audit trail. A part's
+The sidebar is the menu: Approvals, Chat (talk with the orchestrator), one page per part of the
+pipeline (Collector, Classifier, Action taker), Review, Reports, Audit trail and Configuration. The
+console opens on Approvals when something waits on a person, otherwise on Review. A part's
 menu button shows a bubble with the malicious activity that arrived since it was last opened.
 
 Run from this folder:  .venv\\Scripts\\streamlit run app.py
@@ -23,7 +23,7 @@ import streamlit as st
 from cactai_ui import shaping as sh
 from cactai_ui import signin
 from cactai_ui import theme as th
-from cactai_ui.api import CoreClient, CoreError
+from cactai_ui.api import READ_ONLY_MESSAGE, CoreClient, CoreError
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 import cactai_accounts as acc  # noqa: E402
@@ -34,6 +34,10 @@ cfg.load()
 
 DEFAULT_CORE = os.environ.get("CACTAI_CORE_URL", "http://127.0.0.1:8000")
 DEFAULT_OPERATOR = os.environ.get("CACTAI_OPERATOR", "operator")
+# The machine list on Review: this computer first, then any other SentrAI cores listed in CACTAI_PEERS
+# ("Office PC=http://10.0.0.5:8000, Web server=https://web:8000"). They share this console's API token.
+NODE_NAME = os.environ.get("CACTAI_NODE_NAME") or "This computer"
+PEERS = sh.parse_peers(os.environ.get("CACTAI_PEERS"))
 REFRESH_SECONDS = 2
 
 # Look: Black or White theme plus an accent, picked under Configuration > Appearance and saved with the settings.
@@ -57,9 +61,9 @@ BRAND = ('<div class="brand"><div class="brand-mark">' + _logo_svg("mark.svg") +
 _FAVICON = Path(__file__).resolve().parents[2] / "assets" / "brand" / "favicon-32.png"
 PAGE_ICON = str(_FAVICON) if _FAVICON.exists() else "🛡️"
 st.set_page_config(page_title="SentrAI · Risk Console", page_icon=PAGE_ICON, layout="wide",
-                   initial_sidebar_state="expanded")
+                   initial_sidebar_state="auto")  # collapsed on a phone, so the page shows first
 CSS = (Path(__file__).parent / "cactai_ui" / "console.css").read_text(encoding="utf-8")
-st.markdown(f"<style>{th.css(THEME, ACCENT)}{CSS}</style>", unsafe_allow_html=True)
+st.markdown(f"<style>{th.font_css()}{th.css(THEME, ACCENT)}{CSS}</style>", unsafe_allow_html=True)
 
 
 def _apply_streamlit_theme() -> bool:
@@ -324,6 +328,15 @@ ROLE = ME["role"] if ME else "owner"  # sign-in off: a local demo console, so ev
 
 def can(permission: str) -> bool:
     return acc.can(ROLE, permission)
+
+
+def locked(permission: str = "act") -> bool:
+    """True when the signed-in role may not do this: the button shows greyed out with the reason."""
+    return not can(permission)
+
+
+def why_locked(permission: str = "act", otherwise: str | None = None) -> str | None:
+    return READ_ONLY_MESSAGE if locked(permission) else otherwise
     _, mid, _ = st.columns([1, 1.2, 1])
     brand = BRAND
     if not account["hash"] and not account["plain"]:
@@ -362,23 +375,39 @@ def icon(name: str) -> str:
 
 
 def pill(text: str, color: str, pulse: bool = False) -> str:
-    return (f'<span class="chip" style="color:{color};border-color:{color}55;background:{color}14">'
+    # Text leans a fifth toward the ink, so a tinted chip still reads at AA on both themes.
+    return (f'<span class="chip" style="color:color-mix(in srgb, {color} 78%, var(--ink));'
+            f'border-color:{color}55;background:{color}14">'
             f'<span class="dot{" pulse" if pulse else ""}" style="background:{color}"></span>{html.escape(text)}</span>')
 
 
-def kpi(label: str, value: str, sub: str = "", color: str | None = None, ico: str = "") -> None:
-    accent = f"--accent:{color};" if color else ""
-    st.markdown(
-        f'<div class="kpi" style="{accent}"><div class="kpi-label">{icon(ico) if ico else ""}{html.escape(label)}</div>'
-        f'<div class="kpi-value" style="color:{color or "var(--ink)"}">{html.escape(value)}</div>'
-        f'<div class="kpi-sub">{html.escape(sub) or "&nbsp;"}</div></div>',
-        unsafe_allow_html=True,
-    )
+def stats(*items: tuple) -> None:
+    """One strip of headline numbers: (label, value, note[, colour]). A colour only when the number needs attention."""
+    cells = []
+    for label, value, sub, *rest in items:
+        color = rest[0] if rest else None
+        style = f' style="color:{color}"' if color else ""
+        cells.append(f'<div class="stat"><div class="stat-label">{html.escape(label)}</div>'
+                     f'<div class="stat-value"{style}>{html.escape(value)}</div>'
+                     f'<div class="stat-sub">{html.escape(sub) or "&nbsp;"}</div></div>')
+    st.markdown(f'<div class="stats" style="--n:{len(cells)}">{"".join(cells)}</div>', unsafe_allow_html=True)
+
+
+def status(text: str, color: str, pulse: bool = False) -> str:
+    """A quiet status line for the page header: a coloured dot and plain text."""
+    return (f'<span class="status"><span class="dot{" pulse" if pulse else ""}" style="background:{color}"></span>'
+            f'{html.escape(text)}</span>')
 
 
 def section(title: str, note: str = "", ico: str = "") -> None:
     st.markdown(f'<div class="sec-title">{icon(ico) if ico else ""}{title} <small>{html.escape(note)}</small></div>',
                 unsafe_allow_html=True)
+
+
+def short_path(path) -> str:
+    """A path with the home folder as ~, so screenshots don't show whose computer it is."""
+    path, home = str(path), str(Path.home())
+    return "~" + path[len(home):] if path.startswith(home) else path
 
 
 def code(text) -> str:
@@ -389,6 +418,9 @@ def code(text) -> str:
 def empty(text: str, ico: str = "inbox", good: bool = False) -> None:
     st.markdown(f'<div class="empty{" good" if good else ""}">{icon(ico)}<span>{html.escape(text)}</span></div>',
                 unsafe_allow_html=True)
+
+
+OK_ICON, WARN_ICON = ":material/check_circle:", ":material/warning:"
 
 
 def safe(fn, default: Any = None) -> tuple[Any, str | None]:
@@ -402,9 +434,9 @@ def run_action(label: str, fn, rerun: bool = True) -> None:
     """Run an operator action, flash the result, and refresh the live fragment immediately."""
     try:
         fn()
-        st.session_state["flash"] = (f"{label}", "✅")
+        st.session_state["flash"] = (f"{label}", OK_ICON)
     except CoreError as exc:
-        st.session_state["flash"] = (f"{label} failed: {exc}", "⚠️")
+        st.session_state["flash"] = (f"{label} failed: {exc}", WARN_ICON)
     if rerun:
         st.rerun(scope="fragment")
 
@@ -424,7 +456,6 @@ st.session_state.setdefault("operator", DEFAULT_OPERATOR)
 if ME:  # approvals and scans are recorded under the account that made them
     st.session_state.operator = ME["name"]
 st.session_state.setdefault("auto_refresh", True)
-st.session_state.setdefault("page", "config" if cfg.setup_done() else "chat")  # new machine: guided setup
 st.session_state.setdefault("seen", {})
 TOKEN = cfg.api_token()
 client = CoreClient(st.session_state.core_url, token=TOKEN, read_only=not can("act"))
@@ -436,7 +467,7 @@ AUDIT_WINDOW = 500  # latest records the dashboard reads; the core still verifie
 def _get(base_url: str, what: str) -> Any:
     c = CoreClient(base_url, token=TOKEN)
     return {"risk": c.risk, "incidents": c.incidents, "blocklist": c.blocklist, "agents": c.agents,
-            "audit": lambda: c.audit(AUDIT_WINDOW)}[what]()
+            "machines": c.machines, "fleet": c.fleet_agents, "audit": lambda: c.audit(AUDIT_WINDOW)}[what]()
 
 
 def fetch(what: str, default: Any = None) -> tuple[Any, str | None]:
@@ -457,19 +488,45 @@ def audit_records() -> tuple[list[dict], bool | None, str | None]:
     return records, valid, err
 
 
+def panel_mode(risk: Any) -> bool:
+    """This core is a central panel: it scores each joined machine on its own (CACTAI_RISK_SCOPE=host)."""
+    return isinstance(risk, dict) and risk.get("risk_scope") == "host"
+
+
+def machines() -> list[dict]:
+    """Every SentrAI machine this console watches: on a central panel, the machines that joined it;
+    otherwise this computer first, then the cores listed in CACTAI_PEERS."""
+    risk, err = fetch("risk")
+    if panel_mode(risk):
+        found, _ = fetch("machines", [])
+        agents, _ = fetch("fleet", [])
+        return sh.panel_machines(found or [], agents or [], risk)
+    found = [sh.machine(NODE_NAME, "Local", risk, err)]
+    for name, url in PEERS:
+        peer, perr = safe(lambda url=url: _get(url, "risk"))
+        found.append(sh.machine(name, "Remote", peer, perr))
+    return found
+
+
+if "page" not in st.session_state:  # land on what needs a person; a new machine starts with guided setup
+    st.session_state.page = sh.start_page(fetch("incidents", [])[0]) if cfg.setup_done() else "chat"
+
+
 # ------------------------------------------------------------------ menu
 
 PAGES = {  # key: (Material icon, label, menu group)
-    "config": ("tune", "Configuration", ""),
     "approvals": ("approval_delegation", "Approvals", "Decide"),
     "chat": ("forum", "Chat", "Decide"),
     "collector": ("input", "Collector", "Pipeline"),
     "classifier": ("category", "Classifier", "Pipeline"),
     "responder": ("shield", "Action taker", "Pipeline"),
+    "machines": ("dns", "Machines", "Oversight"),
     "review": ("speed", "Review", "Oversight"),
     "reports": ("description", "Reports", "Oversight"),
     "audit": ("link", "Audit trail", "Oversight"),
+    "backups": ("backup", "Backups", "Oversight"),
     "team": ("group", "Team", "Oversight"),  # Owners and Admins, when people sign in
+    "config": ("tune", "Configuration", "Settings"),
 }
 
 
@@ -494,7 +551,7 @@ def side_risk() -> None:
     band, idx = sh.resolve_band(risk), risk.get("risk_index")
     color, threshold = sh.band_color(band), float(risk.get("threshold") or 80)
     _, valid, _ = audit_records()
-    chain = ("chain valid", sh.BAND_COLORS["green"]) if valid else ("chain broken", sh.BAND_COLORS["critical"]) \
+    chain = ("chain intact", sh.BAND_COLORS["green"]) if valid else ("chain broken", sh.BAND_COLORS["critical"]) \
         if valid is False else ("chain unknown", sh.UNKNOWN_COLOR)
     pct = max(0.0, min(100.0, float(idx or 0)))
     st.markdown(
@@ -542,10 +599,6 @@ with st.sidebar:
     menu()
     st.markdown('<div class="side-sep"></div>', unsafe_allow_html=True)
     st.toggle(f"Auto-refresh every {REFRESH_SECONDS} s", key="auto_refresh")
-    if can("act") and st.button("Reset demo", icon=":material/restart_alt:", width="stretch",
-                                help="POST /demo/reset: clears state for a fresh take"):
-        run_action("Demo reset", lambda: client.reset_demo(), rerun=False)
-        st.session_state.seen = {}
     if ME:
         st.caption(f"{ME['name']} · {acc.ROLE_LABEL[ME['role']]}")
         if st.button("Sign out", icon=":material/logout:", width="stretch", help=f"Signed in as {ME['email']}"):
@@ -558,30 +611,27 @@ with st.sidebar:
 # ------------------------------------------------------------------ shared page parts
 
 def header(title: str, note: str = "") -> dict | None:
-    """Page title plus the live status chips. Returns /risk, or None when the core is offline."""
+    """Page title plus the live status chips. Returns /risk, or None when the core is offline.
+
+    The risk number lives in the sidebar card only, so each screen says it once."""
     risk, err = fetch("risk")
     now_s = datetime.now().strftime("%H:%M:%S")
     ico, _, group = PAGES[st.session_state.page]
     if err or not isinstance(risk, dict):
-        chips = pill("Core offline", sh.BAND_COLORS["critical"])
+        chips = status("Core offline", sh.BAND_COLORS["critical"])
     else:
-        band = sh.resolve_band(risk)
         _, valid, _ = audit_records()
-        label = sh.BAND_LABELS.get(band, band)
-        if risk.get("monitor_only") and band == "critical":
-            label = "CRITICAL · nothing applied (monitor only)"
-        chips = (pill(f"Risk {risk.get('risk_index', '-')} · {label}", sh.band_color(band))
-                 + (pill("Chain valid", sh.BAND_COLORS["green"]) if valid
-                    else pill("Chain broken", sh.BAND_COLORS["critical"]) if valid is False
-                    else pill("Chain unknown", sh.UNKNOWN_COLOR)))
+        chips = ((status("Log chain intact", sh.BAND_COLORS["green"]) if valid
+                    else status("Log chain broken", sh.BAND_COLORS["critical"]) if valid is False
+                    else status("Log chain unknown", sh.UNKNOWN_COLOR)))
         if risk.get("monitor_only"):
-            chips = pill("Protection off", sh.BAND_COLORS["amber"]) + chips
-    chips += pill(f"Live · {now_s}" if AUTO else f"Paused · {now_s}", sh.BAND_COLORS["green"] if AUTO else sh.UNKNOWN_COLOR,
-                  pulse=bool(AUTO))
+            chips = status("Protection off", sh.BAND_COLORS["amber"]) + chips
+    chips += status(f"Live {now_s}" if AUTO else f"Paused {now_s}", sh.BAND_COLORS["green"] if AUTO else sh.UNKNOWN_COLOR,
+                    pulse=bool(AUTO))
     st.markdown(
-        f'<div class="page-head"><div class="page-title"><div class="page-icon">{icon(ico)}</div><div>'
-        f'<div class="eyebrow">{html.escape(group or "Settings")}</div><h1>{html.escape(title)}</h1>'
-        f'<div class="page-note">{html.escape(note)}</div></div></div>'
+        f'<div class="page-head"><div class="page-title">'
+        f'<div class="eyebrow">{icon(ico)} {html.escape(group)}</div><h1>{html.escape(title)}</h1>'
+        f'<div class="page-note">{html.escape(note)}</div></div>'
         f'<div class="chips">{chips}</div></div>',
         unsafe_allow_html=True,
     )
@@ -631,11 +681,11 @@ def incident_summary(inc: dict) -> None:
     st.markdown(
         f'<div class="inc-head">'
         f'<span class="inc-id">{html.escape(inc_id)}</span>'
-        f'{pill(str(inc.get("severity", "?")).upper(), sev_color)}'
+        f'{pill(str(inc.get("severity", "unknown")).capitalize() + " severity", sev_color)}'
         f'{pill(sh.status_label(inc.get("status")), sh.TEXT_SECONDARY)}'
-        + (pill("SLA BREACHED", sh.BAND_COLORS["critical"]) if inc.get("sla_breached") else "")
-        + (pill(f"ACK · {inc.get('acked_by')}", sh.BAND_COLORS["green"]) if inc.get("acked")
-           else pill("ACK · NONE", sh.BAND_COLORS["amber"]))
+        + (pill("SLA breached", sh.BAND_COLORS["critical"]) if inc.get("sla_breached") else "")
+        + (pill(f"Seen by {inc.get('acked_by')}", sh.BAND_COLORS["green"]) if inc.get("acked")
+           else pill("Not acknowledged", sh.BAND_COLORS["amber"]))
         + "</div>",
         unsafe_allow_html=True,
     )
@@ -663,6 +713,9 @@ def incident_summary(inc: dict) -> None:
 
 def decision_controls(inc: dict) -> None:
     """Approve / reject an open incident, or keep / roll back a contained one."""
+    if locked():
+        st.caption(f":material/visibility: {READ_ONLY_MESSAGE}")
+        return
     inc_id = str(inc.get("id"))
     op = st.session_state.operator
     can = sh.available_actions(inc)
@@ -700,12 +753,16 @@ def decision_controls(inc: dict) -> None:
         with st.form(key=f"contain_{inc_id}", clear_on_submit=True, border=True):
             just = st.text_area("Justification (written to the audit log)", key=f"cjust_{inc_id}", height=70,
                                 placeholder="e.g. Verified attacker; keep the block")
+            sure = st.checkbox("Keep this block forever. It will no longer expire on its own.", key=f"sure_{inc_id}")
             c1, c2 = st.columns(2)
-            rb = c1.form_submit_button("Rollback", icon=":material/undo:", width="stretch")
-            perm = c2.form_submit_button("Make Permanent", icon=":material/push_pin:", type="primary", width="stretch")
+            # Rollback is the safe default, so it gets the filled style; the permanent choice needs the tick above.
+            rb = c1.form_submit_button("Roll back", icon=":material/undo:", type="primary", width="stretch")
+            perm = c2.form_submit_button("Make permanent", icon=":material/push_pin:", width="stretch")
         if rb:
             run_action(f"Rolled back {inc_id}",
                        lambda: client.rollback(inc_id, op, just.strip() or "Rolled back by operator from dashboard"))
+        elif perm and not sure:
+            st.error("Tick \"Keep this block forever\" first. Nothing was changed.")
         elif perm:
             run_action(f"Made permanent {inc_id}",
                        lambda: client.permanent(inc_id, op, just.strip() or "Made permanent by operator from dashboard"))
@@ -742,7 +799,7 @@ APPEARANCE_WORDS = "appearance look theme colour color accent black white dark l
 
 
 def page_config() -> None:
-    header("Configuration", f"Saved to {cfg.config_path()} · read by every part when it starts")
+    header("Configuration", f"Saved to {short_path(cfg.config_path())} · read by every part when it starts")
     o1, o2 = st.columns([4, 1], vertical_alignment="center")
     query = o1.text_input("Search settings", key="cfg_search", icon=":material/search:", label_visibility="collapsed",
                           placeholder="Search settings: telegram, threshold, password, theme...").strip()
@@ -829,10 +886,10 @@ def page_config() -> None:
             cfg.mark_setup_done("dashboard")
             ai, err = safe(client.ai_reload)
             if err:
-                st.success(f"Saved to {path}. Start the demo (run_demo.ps1) so the core picks them up.")
+                st.success(f"Saved to {path}. Start SentrAI (run.ps1 or run.sh) so the core picks them up.")
             else:
                 st.success(f"Saved to {path}. Cyanide switched to the new AI settings ({ai.get('chat')}). "
-                           "Restart the demo (stop_demo.ps1, then run_demo.ps1) for the other settings.")
+                           "Restart SentrAI (stop, then run) for the other settings.")
 
 
 def _save_look() -> None:
@@ -865,7 +922,7 @@ def appearance_settings() -> None:
         f'<div class="preview"><div class="brand-mark" style="width:2rem;height:2rem">{_logo_svg("mark.svg")}</div>'
         f'<span class="btn">Approve block</span><span class="soft">Selected</span>'
         f'<span class="lnk">A link</span>'
-        f'<span style="margin-left:auto;font-size:.76rem;color:var(--ink-muted)">accent {p["brand-fill"]} · '
+        f'<span style="margin-left:auto;font-size:.8rem;color:var(--ink-muted)">accent {p["brand-fill"]} · '
         f'risk colours stay green / amber / red</span></div>', unsafe_allow_html=True)
     if warn:
         st.caption(f"This colour looks like the {warn} risk colour, so buttons may read as alerts. "
@@ -884,9 +941,9 @@ def protection_switch() -> None:
     def switch(on: bool, reason: str = "") -> None:
         try:
             client.set_protection(on, op, reason)
-            st.session_state["flash"] = ("Protection is on" if on else "Protection is off: monitor-only mode", "✅")
+            st.session_state["flash"] = ("Protection is on" if on else "Protection is off: monitor-only mode", OK_ICON)
         except CoreError as exc:
-            st.session_state["flash"] = (f"Could not switch protection: {exc}", "⚠️")
+            st.session_state["flash"] = (f"Could not switch protection: {exc}", WARN_ICON)
         _get.clear()
         st.rerun()
 
@@ -894,8 +951,8 @@ def protection_switch() -> None:
         c1, c2 = st.columns([3, 1], vertical_alignment="center")
         c1.markdown(f'{pill("Protection off", sh.BAND_COLORS["amber"])} Monitor only: incidents are scored '
                     f'and alerted, nothing is blocked.', unsafe_allow_html=True)
-        if c2.button("Turn protection on", icon=":material/shield:", type="primary", width="stretch",
-                     help="Incidents already over the threshold are contained right away."):
+        if c2.button("Turn protection on", icon=":material/shield:", type="primary", width="stretch", disabled=locked(),
+                     help=why_locked(otherwise="Incidents already over the threshold are contained right away.")):
             switch(True)
         return
     c1, c2 = st.columns([3, 1], vertical_alignment="bottom")
@@ -903,7 +960,7 @@ def protection_switch() -> None:
                            key="protect_reason", placeholder="Reason, recorded in the audit trail (required)",
                            help="POST /protection. SentrAI keeps collecting, classifying and scoring, but applies "
                                 "no containment, autonomous or approved, until it is turned back on.")
-    if c2.button("Turn protection off", icon=":material/remove_moderator:", width="stretch"):
+    if c2.button("Turn protection off", icon=":material/remove_moderator:", width="stretch", disabled=locked(), help=why_locked()):
         if not reason.strip():
             st.error("Write why protection is being turned off; it goes into the audit trail.")
         else:
@@ -1004,15 +1061,15 @@ def ai_connection(ai: dict[str, str]) -> None:
     now, err = safe(client.ai_status)
     t1, t2 = st.columns([3, 1], vertical_alignment="center")
     if err:
-        t1.caption("Cyanide: core not running, so this can't show what it uses. Start the demo to test through it.")
+        t1.caption("Cyanide: core not running, so this can't show what it uses. Start SentrAI (run.sh or run.ps1) to test through it.")
     elif now.get("online"):
-        t1.caption(f"Cyanide now: 🟢 online · {now.get('provider')} · {now.get('model')}"
+        t1.caption(f"Cyanide now: :green[:material/radio_button_checked: online] · {now.get('provider')} · {now.get('model')}"
                    f" · key from {now.get('key_source') or 'unknown'}")
     else:
-        t1.caption(f"Cyanide now: 🔴 offline · {now.get('off_reason') or now.get('chat')}")
+        t1.caption(f"Cyanide now: :red[:material/radio_button_unchecked: offline] · {now.get('off_reason') or now.get('chat')}")
     body = {"provider": ai["CACTAI_LLM_PROVIDER"], "api_key": ai["CACTAI_LLM_API_KEY"],
             "base_url": ai["CACTAI_LLM_BASE_URL"], "model": ai[cfg.MODEL_ENV]}
-    if t2.button("🔌 Test connection", width="stretch", disabled=bool(err),
+    if t2.button("Test connection", icon=":material/power:", width="stretch", disabled=bool(err),
                  help="Send one short request to the provider with the settings above (saved or not), "
                       "through the same code Cyanide uses"):
         with st.spinner("Sending a test request to the provider..."):
@@ -1117,7 +1174,7 @@ def page_chat() -> None:
         with st.spinner(f"{assistant} is looking into it…"):
             _, err = safe(lambda: client.chat(st.session_state.operator, prompt, about or None))
         if err:
-            st.session_state["flash"] = (f"Chat failed: {err}", "⚠️")
+            st.session_state["flash"] = (f"Chat failed: {err}", WARN_ICON)
         st.rerun()
 
 
@@ -1144,12 +1201,13 @@ def setup_conversation() -> None:
     with st.container(height=540, border=True):
         for m in sc.messages:
             mine = m["role"] == "user"
-            with st.chat_message("user" if mine else "assistant", avatar="👤" if mine else "🧪"):
+            with st.chat_message("user" if mine else "assistant", avatar=":material/person:" if mine else ":material/science:"):
                 st.markdown(m["text"].replace("\n", "  \n") if mine else m["text"])
     answer = None
     options = sc.options()
     if options:
-        cols = st.columns(min(len(options), 4))
+        per_row = 2 if any(len(label) > 26 for _, label in options) else 4  # long labels are never cut off
+        cols = st.columns(min(len(options), per_row))
         for n, (value, label) in enumerate(options):
             if cols[n % len(cols)].button(label, key=f"setup_{len(sc.messages)}_{value}", width="stretch",
                                           type="primary" if n == 0 and sc.state == "review" else "secondary"):
@@ -1192,27 +1250,35 @@ def save_setup(sc: "setup_chat.SetupChat") -> None:
         return
     path = cfg.save(values)
     cfg.mark_setup_done("chat")
+    try:
+        watched = setup_chat.save_log_sources(sc, f"guided setup ({values.get('CACTAI_OPERATOR') or 'operator'})")
+    except OSError as e:
+        watched = []
+        sc.messages.append({"role": "assistant", "text": f"I couldn't add the log files to the collector's list ({e}). "
+                            "Add them on the Collector page instead."})
     for key in [k for k in st.session_state if str(k).startswith("cfg_")]:  # Configuration shows the new values
         del st.session_state[key]
     st.session_state.operator = values.get("CACTAI_OPERATOR") or st.session_state.operator
     ai, err = safe(client.ai_reload)
     note = f"Saved to {path}. "
-    note += ("The core isn't running, so start SentrAI (run_demo) and every part will use these settings."
+    if watched:
+        note += f"The collector now watches {', '.join(watched)}. "
+    note += ("The core isn't running, so start SentrAI (run.ps1 or run.sh) and every part will use these settings."
              if err else f"I've switched to the new AI settings ({ai.get('chat')}). Restart SentrAI "
-                         "(stop_demo, then run_demo) so the other parts pick up the rest.")
+                         "(stop, then run) so the other parts pick up the rest.")
     deploy = setup_chat.deploy_command(sc)
     if deploy:
         note += ("\n\nWho can open the dashboard is a firewall setting, which needs admin rights. On a Linux "
                  f"server, run this once from the `mvp` folder to apply it:\n\n```\n{deploy}\n```\n\n"
-                 "It keeps everything you saved here. On Windows or a demo machine the dashboard stays on this "
-                 "computer" + (f"; start run_demo with `--dashboard-port {sc.notes['port']}` (Windows: `-DashboardPort {sc.notes['port']}`)" if sc.notes.get("port", "8501") != "8501" else "") + ".")
+                 "It keeps everything you saved here. On Windows or a laptop the dashboard stays on this "
+                 "computer" + (f"; start run.sh with `--dashboard-port {sc.notes['port']}` (Windows: run.ps1 `-DashboardPort {sc.notes['port']}`)" if sc.notes.get("port", "8501") != "8501" else "") + ".")
     sc.saved(note + "\n\nYou can change anything later here or on the Configuration page.")
 
 
 def chat_message(m: dict, assistant: str, by_id: dict[str, dict]) -> None:
     mine = m.get("role") == "operator"
     who = m.get("operator") or st.session_state.operator if mine else assistant
-    with st.chat_message("user" if mine else "assistant", avatar="👤" if mine else "🧪"):
+    with st.chat_message("user" if mine else "assistant", avatar=":material/person:" if mine else ":material/science:"):
         meta = f"**{who}** · {sh.short_time(m.get('ts'))}"
         if m.get("incident"):
             meta += f" · about {m['incident']}"
@@ -1234,18 +1300,22 @@ def chat_suggestion(mid: Any, n: int, s: dict, inc: dict | None) -> None:
     if s.get("kind") == "quarantine_file":
         quarantine_suggestion(mid, n, s)
         return
+    if s.get("kind") == "backup_now":
+        backup_suggestion(mid, n, s)
+        return
     inc_id, decision = str(s.get("incident")), str(s.get("decision"))
     ok, why_not = sh.suggestion_state(inc, decision)
     label = str(s.get("label") or f"{decision} {inc_id}")
     if not ok:
-        st.caption(f"💡 Suggested: {label} · {why_not}")
+        st.caption(f":material/lightbulb: Suggested: {label} · {why_not}")
         return
     op = st.session_state.operator
     with st.form(key=f"sugg_{mid}_{n}", border=True):
-        st.markdown(f"💡 **Suggested: {html.escape(label)}**")
+        st.markdown(f":material/lightbulb: **Suggested: {html.escape(label)}**")
         just = st.text_input("Justification (written to the audit log)", value=str(s.get("reason") or ""),
                              key=f"sugg_just_{mid}_{n}")
-        go_ = st.form_submit_button(f"Confirm: {label}", type="primary" if decision != "reject" else "secondary")
+        go_ = st.form_submit_button(f"Confirm: {label}", type="primary" if decision != "reject" else "secondary",
+                                    disabled=locked(), help=why_locked())
     if not go_:
         return
     just = just.strip()
@@ -1276,10 +1346,10 @@ def watch_suggestion(mid: Any, n: int, s: dict) -> None:
     """A log file Cyanide found in a process scan. Pressing Watch adds it to the collector."""
     label = str(s.get("label") or "Watch log")
     with st.container(border=True):
-        st.markdown(f"💡 **Suggested: {html.escape(label)}**")
+        st.markdown(f":material/lightbulb: **Suggested: {html.escape(label)}**")
         if s.get("reason"):
             st.caption(str(s["reason"]))
-        if st.button(f"Confirm: {label}", key=f"sugg_{mid}_{n}", type="primary"):
+        if st.button(f"Confirm: {label}", key=f"sugg_{mid}_{n}", type="primary, disabled=locked(), help=why_locked()):
             run_action(label, lambda: client.watch_log(str(s.get("file_id")), st.session_state.operator), rerun=False)
             st.rerun()
 
@@ -1288,19 +1358,31 @@ def quarantine_suggestion(mid: Any, n: int, s: dict) -> None:
     """A file Cyanide thinks is hostile. Pressing it moves the file into quarantine (it can be restored)."""
     label = str(s.get("label") or "Quarantine file")
     with st.container(border=True):
-        st.markdown(f"💡 **Suggested: {html.escape(label)}**")
+        st.markdown(f":material/lightbulb: **Suggested: {html.escape(label)}**")
         if s.get("reason"):
             st.caption(str(s["reason"]))
-        if st.button(f"Confirm: {label}", key=f"sugg_{mid}_{n}", type="primary"):
+        if st.button(f"Confirm: {label}", key=f"sugg_{mid}_{n}", type="primary, disabled=locked(), help=why_locked()):
             run_action(label, lambda: client.quarantine(str(s.get("finding_id")), st.session_state.operator,
                                                         str(s.get("reason") or "")), rerun=False)
+            st.rerun()
+
+
+def backup_suggestion(mid: Any, n: int, s: dict) -> None:
+    """Cyanide thinks a fresh backup is a good idea. Pressing it takes one now."""
+    with st.container(border=True):
+        st.markdown(":material/lightbulb: **Suggested: Back up now**")
+        if s.get("reason"):
+            st.caption(str(s["reason"]))
+        if st.button("Confirm: Back up now", key=f"sugg_{mid}_{n}", type="primary, disabled=locked(), help=why_locked()):
+            with st.spinner("Backing up…"):
+                run_action("Backup made", lambda: client.backup_now(st.session_state.operator), rerun=False)
             st.rerun()
 
 
 @st.fragment(run_every=AUTO)
 def page_collector() -> None:
     show_flash()
-    if header("Collector", "part 1 · turns raw logs into events and ships them to the core") is None:
+    if header("Collector", "Step 1 of 3 · reads your logs and turns each line into an event") is None:
         return
     records, _, _ = audit_records()
     agents, _ = fetch("agents", [])
@@ -1311,18 +1393,12 @@ def page_collector() -> None:
     malicious = sh.records_of(records, "event_classified")
     silent = sh.records_of(records, "collector_silent")
 
-    k1, k2, k3, k4 = st.columns(4)
-    with k1:
-        kpi("Events analysed", str(sum(int(a.get("analyzed") or 0) for a in layer)), "by the layer agents")
-    with k2:
-        kpi("Malicious events", str(len(malicious)), "attached to incidents",
-            sh.BAND_COLORS["critical"] if malicious else None)
-    with k3:
-        kpi("Collectors", str(len(collectors)), "sending heartbeats")
-    with k4:
-        kpi("Silent alerts", str(len(silent)), "collector stopped reporting",
-            sh.BAND_COLORS["amber"] if silent else None)
-    st.write("")
+    stats(("Events analysed", str(sum(int(a.get("analyzed") or 0) for a in layer)), "by the layer agents"),
+          ("Malicious events", str(len(malicious)), "attached to incidents",
+           sh.BAND_COLORS["critical"] if malicious else None),
+          ("Collectors", str(len(collectors)), "sending heartbeats"),
+          ("Silent alerts", str(len(silent)), "a collector stopped reporting",
+           sh.BAND_COLORS["amber"] if silent else None))
 
     left, right = st.columns(2)
     with left, st.container(border=True):
@@ -1341,7 +1417,7 @@ def page_collector() -> None:
         table(sh.pd.DataFrame(rows), "")
     with right, st.container(border=True):
         section("Heartbeats", "Watchdog flags a collector that goes quiet", "monitor_heart")
-        table(sh.pd.DataFrame([{"Collector": c.get("collector", "-"), "State": "⚠️ silent" if c.get("silent") else "✅ alive",
+        table(sh.pd.DataFrame([{"Collector": c.get("collector", "-"), "State": "Silent" if c.get("silent") else "Alive",
                                 "Last seen": datetime.fromtimestamp(float(c["last_seen_ts"])).strftime("%H:%M:%S")
                                 if c.get("last_seen_ts") else "-"} for c in collectors]),
               "No heartbeat received yet. Start the collector.")
@@ -1373,7 +1449,7 @@ def scout_proposals() -> None:
             pid = p.get("id")
             for col, approve, label in ((c2, True, "Watch"), (c3, False, "Dismiss")):
                 if col.button(label, key=f"scout_{'yes' if approve else 'no'}_{pid}",
-                              icon=":material/visibility:" if approve else ":material/close:"):
+                              icon=":material/visibility:" if approve else ":material/close:", disabled=locked(), help=why_locked()):
                     run_action(f"Collector now watches {p.get('name')}" if approve else f"Dismissed {p.get('name')}",
                                lambda a=approve: client.decide_log_source(pid, st.session_state.operator, a),
                                rerun=False)
@@ -1385,7 +1461,8 @@ def log_discovery() -> None:
     with st.container(border=True):
         section("Find logs on this computer", "read-only scan of running programs · nothing is watched until you "
                                               "press Watch", "travel_explore")
-        if st.button("Scan running programs", icon=":material/radar:", key="scan_system"):
+        if st.button("Scan running programs", icon=":material/radar:", key="scan_system",
+                     disabled=locked(), help=why_locked()):
             with st.spinner("Scanning running programs…"):
                 run_action("Scan finished", lambda: client.scan_system(st.session_state.operator), rerun=False)
         latest, err = safe(client.latest_scan, None)
@@ -1398,7 +1475,7 @@ def log_discovery() -> None:
         if latest.get("error"):
             st.warning(f"The scan hit a problem: {latest['error']}")
         for t in latest.get("threats") or []:
-            st.error(f"{SEVERITY_ICON.get(str(t.get('severity')), '⚪')} Suspicious program: {t.get('label')} · "
+            st.error(f"{SEVERITY_ICON.get(str(t.get('severity')), OTHER_SEVERITY)} Suspicious program: {t.get('label')} · "
                      f"{t.get('name')} (pid {t.get('pid')}, account {t.get('account') or 'unknown'})")
         found = latest.get("suggestions") or []
         known = [s for s in found if s.get("recognised", True)]
@@ -1412,10 +1489,12 @@ def log_discovery() -> None:
                 for s in other[:10]:
                     scan_suggestion(s)
         for note in latest.get("notes") or []:
-            st.caption(f"ℹ️ {note}")
+            st.caption(f":material/info: {note}")
 
 
-SEVERITY_ICON = {"critical": "🔴", "high": "🟠", "medium": "🟡"}
+SEVERITY_ICON = {"critical": ":red[:material/error:]", "high": ":orange[:material/warning:]",
+                 "medium": ":orange[:material/info:]"}  # Streamlit markdown icons: the same on every OS
+OTHER_SEVERITY = ":gray[:material/help:]"
 
 
 def threat_panel() -> None:
@@ -1423,7 +1502,8 @@ def threat_panel() -> None:
     with st.container(border=True):
         section("Check for threats", "read-only look inside your chosen folders · files move to quarantine only "
                                      "when you press it", "bug_report")
-        if st.button("Scan for threats", icon=":material/policy:", key="scan_threats"):
+        if st.button("Scan for threats", icon=":material/policy:", key="scan_threats",
+                     disabled=locked(), help=why_locked()):
             with st.spinner("Checking files…"):
                 run_action("Threat scan finished", lambda: client.scan_threats(st.session_state.operator), rerun=False)
         latest, err = safe(client.latest_threats, None)
@@ -1454,7 +1534,7 @@ def threat_panel() -> None:
                     c1, c2 = st.columns([5, 1])
                     c1.caption(f"{q.get('name')} · from `{q.get('original')}` · {(q.get('finding') or {}).get('label')} · "
                                f"by {q.get('operator')} {sh.short_time(q.get('at'))}")
-                    if c2.button("Restore", key=f"restore_{q.get('id')}", icon=":material/undo:"):
+                    if c2.button("Restore", key=f"restore_{q.get('id')}", icon=":material/undo:", disabled=locked(), help=why_locked()):
                         run_action(f"Restored {q.get('name')}",
                                    lambda qid=q.get("id"): client.restore(qid, st.session_state.operator), rerun=False)
                         st.rerun()
@@ -1464,11 +1544,11 @@ def threat_row(f: dict) -> None:
     where = code(f.get('path')) + (f" → {code(f.get('entry'))}" if f.get("entry") else "") + \
         (f" line {html.escape(str(f.get('line')))}" if f.get("line") else "")
     c1, c2 = st.columns([5, 1])
-    c1.markdown(f"{SEVERITY_ICON.get(str(f.get('severity')), '⚪')} **{html.escape(str(f.get('label')))}** · "
+    c1.markdown(f"{SEVERITY_ICON.get(str(f.get('severity')), OTHER_SEVERITY)} **{html.escape(str(f.get('label')))}** · "
                 f"{html.escape(str(f.get('kind', '')).replace('_', ' '))} · {where}", unsafe_allow_html=True)
     if f.get("snippet"):
         c1.code(str(f["snippet"]), language=None)
-    if c2.button("Quarantine", key=f"quar_{f.get('id')}", icon=":material/block:"):
+    if c2.button("Quarantine", key=f"quar_{f.get('id')}", icon=":material/block:", disabled=locked(), help=why_locked()):
         run_action(f"Quarantined {f.get('path')}",
                    lambda fid=f.get("id"): client.quarantine(fid, st.session_state.operator), rerun=False)
         st.rerun()
@@ -1477,7 +1557,7 @@ def threat_row(f: dict) -> None:
 def scan_suggestion(s: dict) -> None:
     """One place the scan found logs, with a Watch button per file not yet watched."""
     files = s.get("files") or []
-    state = "✅ already watched" if s.get("already_watched") else f"{len(files)} log file(s)"
+    state = ":material/check: already watched" if s.get("already_watched") else f"{len(files)} log file(s)"
     st.markdown(f"**{html.escape(str(s.get('program')))}** · {code(s.get('path'))} · {html.escape(str(s.get('layer')))} · {state}  \n"
                 f"<span style='opacity:.7'>{html.escape(', '.join(s.get('reasons') or []))}</span>",
                 unsafe_allow_html=True)
@@ -1487,7 +1567,7 @@ def scan_suggestion(s: dict) -> None:
                    f"{sh.short_time(f.get('modified'))}")
         if f.get("watched"):
             c2.caption("watched")
-        elif c2.button("Watch", key=f"watch_{f.get('id')}", icon=":material/visibility:"):
+        elif c2.button("Watch", key=f"watch_{f.get('id')}", icon=":material/visibility:", disabled=locked(), help=why_locked()):
             run_action(f"Collector now watches {f.get('name')}",
                        lambda fid=f.get("id"): client.watch_log(fid, st.session_state.operator), rerun=False)
             st.rerun()
@@ -1495,7 +1575,7 @@ def scan_suggestion(s: dict) -> None:
 
 @st.fragment(run_every=AUTO)
 def page_classifier() -> None:
-    if header("Classifier", "part 2 · rules, then Jev (AI), then fallback keywords; first answer wins") is None:
+    if header("Classifier", "Step 2 of 3 · decides which events are attacks: rules first, then AI, then keywords") is None:
         return
     records, _, _ = audit_records()
     agents, _ = fetch("agents", [])
@@ -1503,18 +1583,12 @@ def page_classifier() -> None:
     rows = sh.classification_rows(records)
     opened = sh.records_of(records, "incident_opened")
 
-    k1, k2, k3, k4 = st.columns(4)
-    with k1:
-        kpi("Attacks identified", str(len(opened)), "incidents opened", sh.BAND_COLORS["critical"] if opened else None)
-    with k2:
-        kpi("Malicious events", str(len(rows)), "classified as an attack")
-    with k3:
-        by_rules = int((rows["Classified by"] == "Rules").sum()) if not rows.empty else 0
-        kpi("Settled by rules", str(by_rules), "confidence 1.0")
-    with k4:
-        status = str(jev.get("status") or "unknown")
-        kpi("Jev (AI)", "off" if status.startswith("disabled") else "on", status.split("(")[0][:48])
-    st.write("")
+    by_rules = int((rows["Classified by"] == "Rules").sum()) if not rows.empty else 0
+    jev_status = str(jev.get("status") or "unknown")
+    stats(("Attacks identified", str(len(opened)), "incidents opened", sh.BAND_COLORS["critical"] if opened else None),
+          ("Malicious events", str(len(rows)), "classified as an attack"),
+          ("Settled by rules", str(by_rules), "certain, no AI needed"),
+          ("AI classifier", "off" if jev_status.startswith("disabled") else "on", jev_status.split("(")[0][:48]))
 
     with st.container(border=True):
         section("Rules in use", "change them on the Configuration page", "rule")
@@ -1526,7 +1600,7 @@ def page_classifier() -> None:
             f"- Bulk exfiltration: **{os.environ.get('EXPORT_ROWS_THRESHOLD', '100')}** rows or more in one export\n"
             "- Signatures: SQL injection, XSS, privilege escalation, port scans, misconfiguration, log tampering")
     with st.container(border=True):
-        section("Classifications", "newest first · 0.4-0.6 malicious means needs review, never auto-contained", "label")
+        section("Classifications", "newest first · 40-60% sure goes to a person and is never blocked on its own", "label")
         table(rows, "No malicious classifications yet.", column_config={
             "Confidence": st.column_config.ProgressColumn("Confidence", min_value=0, max_value=1, format="%.2f"),
             "Malicious": st.column_config.ProgressColumn("Malicious", min_value=0, max_value=1, format="%.2f")})
@@ -1535,7 +1609,7 @@ def page_classifier() -> None:
 @st.fragment(run_every=AUTO)
 def page_responder() -> None:
     show_flash()
-    if header("Action taker", "part 3 · temporary, reversible fixes enforced by the app blocklist") is None:
+    if header("Action taker", "Step 3 of 3 · temporary blocks that undo themselves unless a person keeps them") is None:
         return
     records, _, _ = audit_records()
     incidents, _ = fetch("incidents", [])
@@ -1543,19 +1617,13 @@ def page_responder() -> None:
     containment = sh.build_containment_rows(blocklist, incidents or [])
     history = sh.all_action_rows(incidents or [])
 
-    k1, k2, k3, k4 = st.columns(4)
-    with k1:
-        kpi("Active containment", str(len(containment)), "in force now", sh.BAND_COLORS["amber"] if len(containment) else None)
-    with k2:
-        kpi("Blocked IPs", str(len((blocklist or {}).get("ips") or [])), "via GET /blocklist")
-    with k3:
-        kpi("Locked accounts", str(len((blocklist or {}).get("users") or [])), "via GET /blocklist")
-    with k4:
-        kpi("Actions taken", str(len(history)), f"expire after {os.environ.get('HOTPATCH_TTL_HOURS', '2')} demo h")
-    st.write("")
+    stats(("Active containment", str(len(containment)), "in force now", sh.BAND_COLORS["amber"] if len(containment) else None),
+          ("Blocked IPs", str(len((blocklist or {}).get("ips") or [])), "blocked right now"),
+          ("Locked accounts", str(len((blocklist or {}).get("users") or [])), "locked right now"),
+          ("Actions taken", str(len(history)), f"each expires after {os.environ.get('HOTPATCH_TTL_HOURS', '2')} h"))
 
     with st.container(border=True):
-        section("Active containment", "enforced via /blocklist", "block")
+        section("Active containment", "blocked or locked right now", "block")
         if bl_err:
             st.warning(f"Could not load blocklist: {bl_err}")
         table(containment, "Nothing contained right now.")
@@ -1571,49 +1639,45 @@ def page_responder() -> None:
 
 @st.fragment(run_every=AUTO)
 def page_review() -> None:
-    risk = header("Review", "threshold level and the risk accumulated so far")
+    risk = header("Review", "how close SentrAI is to acting on its own, and why")
     if risk is None:
         return
     incidents, inc_err = fetch("incidents", [])
     incidents = incidents or []
-    idx, band = risk.get("risk_index"), sh.resolve_band(risk)
-    color, threshold = sh.band_color(band), float(risk.get("threshold") or 80)
+    idx = risk.get("risk_index")
+    threshold = float(risk.get("threshold") or 80)
     active = [i for i in incidents if i.get("status") in sh.ACTIVE_STATUSES]
+    waiting = sh.pending_approvals(incidents)
     penalty = sum(float(i.get("inaction_penalty") or 0) for i in active)
+    hist = sh.history_frame(risk.get("history"))
+    peak = max(float(hist["risk_index"].max()), float(idx or 0)) if not hist.empty else idx
 
-    k1, k2, k3, k4, k5 = st.columns(5)
-    with k1:
-        kpi("Risk index", f"{idx if idx is not None else '-'} / 100", f"raw score {risk.get('raw_score', '-')}", color)
-    with k2:
-        kpi("Threshold", f"{threshold:.0f}", "autonomous containment above this")
-    with k3:
-        gap = threshold - float(idx or 0)
-        kpi("Headroom", f"{gap:.0f}" if gap > 0 else "over", "points until the threshold",
-            sh.BAND_COLORS["critical"] if gap <= 0 else None)
-    with k4:
-        kpi("Open incidents", str(len(active)), f"{len(incidents)} total")
-    with k5:
-        kpi("Inaction penalty", f"+{penalty:.0f}", "+5 per demo-hour unacknowledged",
-            sh.BAND_COLORS["amber"] if penalty else None)
-    st.write("")
+    # Each machine's own number and band are in the machine list; these add what it doesn't say.
+    stats(("Peak so far", f"{peak:.0f}" if peak is not None else "-", "on this computer",
+           sh.band_color(sh.band_for(peak)) if peak is not None and peak >= threshold else None),
+          ("Waiting on you", str(len(waiting)), f"{len(waiting) - len(active)} contained · {len(active)} open",
+           sh.BAND_COLORS["amber"] if waiting else None),
+          ("Inaction penalty", f"+{penalty:.0f}", "+5 per hour nobody responds",
+           sh.BAND_COLORS["amber"] if penalty else None),
+          ("Raw score", f"{float(risk.get('raw_score') or 0):.1f}", "points before scaling to 0-100"))
 
     g, h = st.columns([5, 7])
     with g, st.container(border=True):
-        section("Risk gauge", f"threshold {threshold:.0f} · the bold tick", "speed")
-        st.plotly_chart(sh.gauge_figure(idx, threshold, band), width="stretch", config={"displayModeBar": False}, key="gauge")
-        st.markdown(f'<div style="text-align:center;margin-top:-.4rem">{pill(sh.BAND_LABELS.get(band, band), color)}</div>',
-                    unsafe_allow_html=True)
+        found = machines()
+        online = sum(m["online"] for m in found)
+        section("Machines", f"{online} of {len(found)} online · SentrAI acts on its own above the threshold", "dns")
+        st.markdown(sh.machine_rows_html(found), unsafe_allow_html=True)
     with h, st.container(border=True):
-        section("Risk over time", "step line · bands green / amber / red / critical", "show_chart")
-        hist = sh.history_frame(risk.get("history"))
+        section("Risk over time", "dashed line is the threshold", "show_chart")
         if hist.empty:
             empty("No history yet. The core adds a point on every risk change.", "show_chart")
         else:
             st.plotly_chart(sh.history_figure(hist, threshold), width="stretch", config={"displayModeBar": False}, key="history")
 
     with st.container(border=True):
-        section("Risk accumulated", "points = base × confidence × criticality, plus the inaction penalty; "
-                "index = 100·(1−e^(−raw/60))", "calculate")
+        section("What adds to the score", "one row per incident", "calculate")
+        st.caption("Each incident adds base points × AI confidence × how critical the target is, plus 5 for every "
+                   "hour nobody responds. The 0-100 index is 100 × (1 − e^(−raw ÷ 60)), so it slows down near the top.")
         if inc_err:
             st.warning(f"Could not load incidents: {inc_err}")
         table(sh.risk_breakdown(incidents), "All quiet at the gate. No incidents.", column_config={
@@ -1622,8 +1686,92 @@ def page_review() -> None:
 
 
 @st.fragment(run_every=AUTO)
+def page_machines() -> None:
+    show_flash()
+    risk = header("Machines", "every computer that reports to this panel, and adding a new one")
+    if risk is None:
+        return
+    found = machines()
+    panel = panel_mode(risk)
+    online = sum(1 for m in found if m["online"])
+    attacked = [m for m in found if m.get("open") or m["band"] in ("red", "critical")]
+    stats(("Machines", str(len(found)), "joined this panel" if panel else "this computer and CACTAI_PEERS"),
+          ("Online", str(online), f"{len(found) - online} offline or waiting",
+           sh.BAND_COLORS["amber"] if online < len(found) else None),
+          ("Need a look", str(len(attacked)), "open incidents or red and above",
+           sh.BAND_COLORS["red"] if attacked else None),
+          ("Blocks in force", str(sum(m.get("blocked", 0) for m in found)), "each on its own machine"))
+    if not panel:
+        st.info("This core adds every machine into one score. To run it as a central panel, set "
+                "CACTAI_RISK_SCOPE=host (and CACTAI_FIREWALL=off) on it and restart the core: each machine is then "
+                "scored and blocked on its own.", icon=":material/info:")
+
+    left, right = st.columns([7, 5])
+    with left, st.container(border=True):
+        section("Machine list", "worst first · SentrAI acts on a machine when its own score passes the threshold", "dns")
+        st.markdown(sh.machine_rows_html(found), unsafe_allow_html=True)
+        hosts = [m["host"] for m in found if m.get("host") and not m.get("waiting")]
+        if panel and hosts:
+            pick = st.selectbox("Look at one machine", hosts, key="machine_pick")
+            chosen = next((m for m in found if m.get("host") == pick), {})
+            st.caption("Services running on it (its agent reports them every minute)")
+            table(sh.service_rows(chosen.get("services")), "No services reported yet.")
+            incs, ierr = safe(lambda: client.machine_incidents(pick), [])
+            if ierr:
+                st.warning(f"Could not load incidents: {ierr}")
+            st.caption("Its incidents")
+            table(sh.risk_breakdown(incs or []), f"All quiet on {pick}. No incidents.")
+    with right, st.container(border=True):
+        section("Add machine", "a one-time join code, valid for 24 hours", "add_circle")
+        if not panel:
+            empty("Turn on central panel mode first (see the note above).", "info")
+        else:
+            name = st.text_input("Machine name (optional)", key="join_name", placeholder="web-01",
+                                 help="Leave empty to use the new machine's own host name")
+            url = st.text_input("Panel address the machine will use", key="join_url",
+                                value=os.environ.get("CACTAI_PUBLIC_URL") or st.session_state.core_url,
+                                help="Must be https:// from another machine")
+            if st.button("Make join code", icon=":material/key:", type="primary", key="join_make",
+                         disabled=locked("configure"), help=why_locked("configure")):
+                try:
+                    st.session_state["join_made"] = client.join_code(st.session_state.operator, name.strip() or None)
+                except CoreError as exc:
+                    st.session_state["flash"] = (f"Could not make a join code: {exc}", WARN_ICON)
+                    st.rerun(scope="fragment")
+            made = st.session_state.get("join_made")
+            if made:
+                st.markdown(f'Join code <b>{html.escape(str(made["code"]))}</b> · works once, until '
+                            f'{html.escape(f"{ts:%d %b %H:%M}" if (ts := sh.parse_ts(made.get("expires_at"))) else "-")}', unsafe_allow_html=True)
+                cmds = sh.join_commands(url, made["code"], made.get("name"))
+                st.caption("On a Linux server, from a SentrAI checkout:")
+                st.code(cmds["linux"], language="bash")
+                st.caption("On Windows or a laptop, from a SentrAI checkout:")
+                st.code(cmds["windows"], language="powershell")
+                if not url.startswith("https://"):
+                    st.warning("Other machines refuse a plain http:// panel. Put HTTPS in front of the core first.",
+                               icon=":material/lock_open:")
+
+    if panel:
+        agents, aerr = fetch("fleet", [])
+        with st.container(border=True):
+            section("Joined machines", "each has its own key; revoking one never touches the others", "key")
+            if aerr:
+                st.warning(f"Could not load joined machines: {aerr}")
+            table(sh.agent_rows(agents or []), "No machine has joined yet. Make a join code above.")
+            active = {f"{a['host']} ({a['agent_id']})": a["agent_id"] for a in agents or []
+                      if isinstance(a, dict) and not a.get("revoked_at")}
+            if active:
+                c1, c2, c3 = st.columns([4, 3, 2])
+                which = c1.selectbox("Revoke a machine", list(active), key="revoke_pick", label_visibility="collapsed")
+                sure = c2.checkbox("Yes, stop accepting its key", key="revoke_sure")
+                if c3.button("Revoke", icon=":material/block:", disabled=not sure or locked("configure"),
+                             help=why_locked("configure"), key="revoke_go", width="stretch"):
+                    run_action(f"Revoked {which}", lambda: client.revoke_agent(active[which], st.session_state.operator))
+
+
+@st.fragment(run_every=AUTO)
 def page_reports() -> None:
-    header("Reports", "one evidence report per contained incident · GET /reports/{id}")
+    header("Reports", "one evidence report for every contained incident")
     incidents, err = fetch("incidents", [])
     records, _, _ = audit_records()
     with_report = {str((r.get("data") or {}).get("incident")) for r in sh.records_of(records, "report_generated")}
@@ -1634,7 +1782,7 @@ def page_reports() -> None:
     newest = sorted(by_id, key=lambda i: str(by_id[i].get("opened_at") or ""), reverse=True)
     ids = sorted(newest, key=lambda i: i not in with_report)  # ready reports first
     rows = [{"Incident": i, "Category": sh.category_label(by_id[i].get("category")),
-             "Report": "✅ ready" if i in with_report else "-"} for i in ids]
+             "Report": "Ready" if i in with_report else "-"} for i in ids]
     left, right = st.columns([4, 8])
     with left, st.container(border=True):
         section("All incidents", f"{len(with_report & set(by_id))} reports ready", "inventory_2")
@@ -1652,10 +1800,8 @@ def page_audit() -> None:
     agents, _ = fetch("agents", [])
     left, right = st.columns([7, 5])
     with left, st.container(border=True):
-        badge = (pill("Chain valid", sh.BAND_COLORS["green"]) if valid
-                 else pill("Chain broken", sh.BAND_COLORS["critical"]) if valid is False
-                 else pill("Chain unknown", sh.UNKNOWN_COLOR))
-        section(f"Agent activity &nbsp;{badge}", f"latest {len(records)} hash-chained records", "timeline")
+        state = "intact" if valid else "broken" if valid is False else "not checked"
+        section("Agent activity", f"latest {len(records)} records · chain {state}", "timeline")
         if err:
             st.warning(f"Could not load audit log: {err}")
         render_feed(sh.build_activity_feed(records, limit=60))
@@ -1664,6 +1810,101 @@ def page_audit() -> None:
         table(sh.pd.DataFrame([{"Agent": a.get("name"), "Role": a.get("role"),
                                 "Can act": "yes" if a.get("can_execute") else "no"} for a in agents or []]),
               "Agent list unavailable.")
+
+
+def when(value: Any) -> str:
+    """Day and time: backups are days apart, so the clock time alone is not enough."""
+    ts = sh.parse_ts(value)
+    return ts.strftime("%d %b %H:%M") if ts else (str(value) if value else "-")
+
+
+BACKUP_REASON = {"schedule": "on schedule", "manual": "by hand", "before_restore": "safety copy before a restore"}
+
+
+def page_backups() -> None:
+    show_flash()
+    if header("Backups", "copies of your folders and SentrAI's own records, ready to put back") is None:
+        return
+    data, err = safe(client.backups, None)
+    if err or not data:
+        st.warning(f"Backups are not available on this core. {err or ''}")
+        return
+    kept = data.get("backups") or []
+    last = next((b for b in kept if b.get("reason") != "before_restore"), None)
+    check = (last or {}).get("verified") or {}
+    stats(("Last backup", when(last.get("created")) if last else "Never",
+           f"{last.get('files', 0)} files · {last.get('bytes', 0) / 1048576:.1f} MB" if last else "take one below",
+           sh.BAND_COLORS["amber"] if not last or data.get("overdue") else None),
+          ("Next due", "Off" if not data.get("every_hours") else
+           ("Now" if data.get("next_due") == "now" else when(data.get("next_due"))),
+           f"every {data['every_hours']:g} h" if data.get("every_hours") else "no schedule"),
+          ("Kept", f"{len(kept)} of {data.get('keep')}", "oldest removed first"),
+          ("Last check", "Intact" if check.get("ok") else "Problem" if check.get("ok") is False else "Not checked",
+           when(check.get("at")) if check.get("at") else "press Check on a backup",
+           sh.BAND_COLORS["red"] if check.get("ok") is False else None))
+    if data.get("last_error"):
+        st.error(f"The last backup failed ({when(data['last_error'].get('at'))}): "
+                 f"{data['last_error'].get('error')}")
+    elif data.get("overdue"):
+        st.warning("The last backup is more than two schedule periods old. Is SentrAI's core running?")
+
+    with st.container(border=True):
+        section("What is backed up", "change it under backup in the system profile, or CACTAI_BACKUP_PATHS", "folder_copy")
+        folders = data.get("folders") or []
+        st.markdown(("Folders: " + ", ".join(code(f) for f in folders) if folders else
+                     "No folders chosen yet, so only SentrAI's own data is copied.")
+                    + ("  \nSentrAI's own settings, signing key and audit records: always included."
+                       if data.get("include_sentrai") else "")
+                    + f"  \nStored in {code(data.get('stored_in'))}"
+                    + (f", with a second copy in {code(data['copy_to'])}" if data.get("copy_to") else ""),
+                    unsafe_allow_html=True)
+        if st.button("Back up now", icon=":material/backup:", type="primary", key="backup_now",
+                     disabled=locked(), help=why_locked()):
+            with st.spinner("Backing up…"):
+                run_action("Backup made", lambda: client.backup_now(st.session_state.operator), rerun=False)
+            st.rerun()
+
+    with st.container(border=True):
+        section("Backups kept", "newest first · a restore always checks the backup first", "inventory_2")
+        if not kept:
+            empty("No backups yet.", "backup")
+        for b in kept:
+            backup_row(b)
+
+
+def backup_row(b: dict) -> None:
+    bid = str(b.get("id"))
+    v = b.get("verified") or {}
+    state = (":green[:material/verified:] intact" if v.get("ok") else
+             ":red[:material/error:] problem" if v.get("ok") is False else ":gray[:material/help:] not checked")
+    c1, c2 = st.columns([5, 1])
+    c1.markdown(f"**{html.escape(bid)}** · {when(b.get('created'))} · "
+                f"{html.escape(BACKUP_REASON.get(str(b.get('reason')), str(b.get('reason'))))} by "
+                f"{html.escape(str(b.get('by')))} · {b.get('files', 0)} files, {b.get('bytes', 0) / 1048576:.1f} MB · "
+                f"{state}", unsafe_allow_html=True)
+    if v.get("ok") is False:
+        c1.caption("; ".join(v.get("problems") or []))
+    if c2.button("Check", key=f"bk_check_{bid}", icon=":material/fact_check:"):
+        run_action(f"Backup {bid} is intact", lambda: client.verify_backup(bid, st.session_state.operator),
+                   rerun=False)
+        st.rerun()
+    with st.expander(f"Restore from {bid}"):
+        with st.form(key=f"bk_restore_{bid}", border=False):
+            where = st.radio("Where to put the files", ["new", "in_place"], horizontal=True, key=f"bk_where_{bid}",
+                             format_func=lambda w: "Into a new folder (nothing live changes)" if w == "new"
+                             else "Back where they came from (overwrites live files)")
+            confirm = st.text_input(f"For 'back where they came from', type {bid} to confirm", key=f"bk_conf_{bid}")
+            st.caption("Back in place first takes a safety backup of the current files, so it can be undone. "
+                       "SentrAI's own data is only ever restored into a new folder.")
+            go_ = st.form_submit_button("Restore", icon=":material/settings_backup_restore:",
+                                        disabled=locked("configure"), help=why_locked("configure"))
+        if go_:
+            in_place = where == "in_place"
+            with st.spinner("Restoring…"):
+                run_action(f"Restored {bid}" + (" in place" if in_place else " into a new folder"),
+                           lambda: client.restore_backup(bid, st.session_state.operator, in_place, confirm.strip()),
+                           rerun=False)
+            st.rerun()
 
 
 def render_feed(feed: list[dict]) -> None:
@@ -1676,16 +1917,18 @@ def render_feed(feed: list[dict]) -> None:
             f'<div class="feed-row"><div class="feed-time">{html.escape(e["time"])}<br>'
             f'<span class="feed-hash">#{e["seq"] if e["seq"] is not None else "-"}</span></div>'
             f'<div class="feed-rail"><i style="background:{e["color"]}"></i></div>'
-            f'<div class="feed-body"><span class="agent" style="color:{e["color"]}">{e["icon"]} {html.escape(e["agent"])}</span>'
+            f'<div class="feed-body"><span class="agent" style="color:{e["color"]}">{icon(e["icon"])} {html.escape(e["agent"])}</span>'
             f' · <span class="feed-type">{html.escape(e["type"])}</span><br>'
             f'<span class="feed-sum">{html.escape(e["summary"])}</span> '
             f'<span class="feed-hash">{html.escape(e["hash"])}</span></div></div>'
         )
-    st.markdown(f'<div class="feed">{"".join(rows)}</div>', unsafe_allow_html=True)
+    # Focusable, so keyboard users can scroll the feed too.
+    st.markdown(f'<div class="feed" tabindex="0" role="region" aria-label="Agent activity">{"".join(rows)}</div>',
+                unsafe_allow_html=True)
 
 
 def report_viewer(inc_id: str) -> None:
-    section("Evidence report", f"GET /reports/{inc_id}.md", "verified")
+    section("Evidence report", inc_id, "verified")
     md, err = safe(lambda: client.report_md(inc_id))
     if err or not md:
         empty("No report for this incident yet. Scribe writes one when autonomous containment fires.", "hourglass_empty")
@@ -1797,6 +2040,6 @@ if not page_allowed(st.session_state.page):
     st.session_state.page = "config"
 {
     "config": page_config, "approvals": page_approvals, "chat": page_chat, "collector": page_collector, "classifier": page_classifier,
-    "responder": page_responder, "review": page_review, "reports": page_reports, "audit": page_audit,
-    "team": page_team,
+    "responder": page_responder, "machines": page_machines, "review": page_review, "reports": page_reports, "audit": page_audit,
+    "backups": page_backups, "team": page_team,
 }[st.session_state.page]()

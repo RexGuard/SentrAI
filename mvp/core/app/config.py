@@ -53,11 +53,33 @@ def _i(name: str, default: int) -> int:
         return default
 
 
+def _set(name: str, default: str) -> set[str]:
+    return {x.strip() for x in os.getenv(name, default).split(",") if x.strip()}
+
+
+def _type_hours(text: str) -> dict[str, float]:
+    """'lock_user=1, block_ip=4' -> {'lock_user': 1.0, 'block_ip': 4.0}; bad entries are skipped."""
+    out: dict[str, float] = {}
+    for part in text.split(","):
+        key, _, value = part.partition("=")
+        try:
+            if key.strip():
+                out[key.strip()] = float(value)
+        except ValueError:
+            pass
+    return out
+
+
 @dataclass
 class Settings:
-    demo_speed: float = field(default_factory=lambda: _f("DEMO_SPEED", 60.0))
+    demo_speed: float = field(default_factory=lambda: _f("DEMO_SPEED", 1.0))  # real time; above 1 speeds the timers up for testing
     threshold: int = field(default_factory=lambda: _i("RISK_THRESHOLD", 80))
     sla_hours: float = field(default_factory=lambda: _f("SLA_HOURS", 2.0))
+    # How the risk index is kept: "fleet" (default) adds every machine's incidents into one score, as on a
+    # single server; "host" scores each machine on its own, so a central panel never blocks a quiet machine
+    # because another one is under attack. The headline index is then the worst machine's.
+    risk_scope: str = field(default_factory=lambda: "host" if os.getenv("CACTAI_RISK_SCOPE", "fleet").strip().lower()
+                            in ("host", "machine", "per-host") else "fleet")
     ttl_hours: float = field(default_factory=lambda: _f("HOTPATCH_TTL_HOURS", 2.0))
     penalty_per_hour: float = 5.0
     penalty_cap: float = 30.0
@@ -73,6 +95,10 @@ class Settings:
     # Real public-server traffic: SSH guesses are slower than the demo's web brute force.
     ssh_brute_force_count: int = field(default_factory=lambda: _i("SSH_BRUTE_FORCE_COUNT", 5))
     ssh_brute_force_window_s: float = field(default_factory=lambda: _f("SSH_BRUTE_FORCE_WINDOW_S", 600.0))
+    # Slow brute force: failed logins from one IP (web, Windows and SSH together) over a long window.
+    slow_brute_force_count: int = field(default_factory=lambda: _i("SLOW_BRUTE_FORCE_COUNT", 20))
+    slow_brute_force_window_s: float = field(default_factory=lambda: _f("SLOW_BRUTE_FORCE_WINDOW_S", 86400.0))
+    ssh_slow_brute_force_count: int = field(default_factory=lambda: _i("SSH_SLOW_BRUTE_FORCE_COUNT", 10))
     web_scan_4xx_count: int = field(default_factory=lambda: _i("WEB_SCAN_4XX_COUNT", 10))
     web_scan_window_s: float = field(default_factory=lambda: _f("WEB_SCAN_WINDOW_S", 120.0))
     # Close scan / brute-force incidents that have had no new event for this many real minutes (0 = never).
@@ -138,3 +164,24 @@ class Settings:
     background: bool = field(default_factory=lambda: os.getenv("CACTAI_BACKGROUND", "1") != "0")
     # Every endpoint but /health and /blocklist needs it (see main.py). Made and saved on first use.
     api_token: str = field(default_factory=cactai_config.api_token, repr=False)
+    # Business limits on protective actions (Countersign and Warden apply them).
+    # Action types SentrAI may take on its own; any other type waits for a person to approve it.
+    auto_actions: set[str] = field(default_factory=lambda: _set("AUTO_ACTIONS", "block_ip,rate_limit,waf_rule"))
+    # Longest any temporary action may last, in hours; HOTPATCH_TTL_HOURS and ACTION_TTL_HOURS are capped to it.
+    max_ttl_hours: float = field(default_factory=lambda: _f("MAX_TTL_HOURS", 24.0))
+    # Per-type expiry, e.g. "lock_user=1,block_ip=4" (hours). Types not listed use HOTPATCH_TTL_HOURS.
+    action_ttl_hours: dict[str, float] = field(default_factory=lambda: _type_hours(os.getenv("ACTION_TTL_HOURS", "")))
+    # At most this many automatic actions in any rolling hour (0 = none on its own); past it a person decides.
+    max_auto_actions_per_hour: int = field(default_factory=lambda: _i("MAX_AUTO_ACTIONS_PER_HOUR", 10))
+    # After-action check: this many timer minutes after an action starts, check it worked and did no harm.
+    check_after_min: float = field(default_factory=lambda: _f("CHECK_AFTER_MIN", 10.0))
+    # A page that should keep answering while SentrAI blocks things (your site's home page), blank = not probed.
+    health_url: str = field(default_factory=lambda: os.getenv("CACTAI_HEALTH_URL", "").strip())
+    # A failed undo is retried this often (real seconds), up to this many times, then left to a person.
+    undo_retry_s: float = field(default_factory=lambda: _f("UNDO_RETRY_S", 60.0))
+    undo_retries: int = field(default_factory=lambda: _i("UNDO_RETRIES", 3))
+
+    def ttl_for(self, action_type: str) -> float:
+        """Hours a temporary action of this type lasts, within the business limit."""
+        hours = self.action_ttl_hours.get(action_type, self.ttl_hours)
+        return max(0.0, min(hours, self.max_ttl_hours)) if self.max_ttl_hours > 0 else max(0.0, hours)

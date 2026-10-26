@@ -30,7 +30,6 @@ def test_health_and_blocklist_are_open(anon):
     ("post", "/incidents/INC-1/permanent"),
     ("post", "/ai/reload"),
     ("post", "/log-sources"),
-    ("post", "/demo/reset"),
     ("get", "/incidents"),
     ("get", "/audit"),
     ("get", "/chat"),
@@ -49,7 +48,7 @@ def test_wrong_token_is_refused(anon):
 def test_bearer_or_header_token_is_accepted(anon):
     assert anon.get("/incidents", headers={"Authorization": "Bearer s3cret"}).status_code == 200
     assert anon.get("/incidents", headers={"X-CactAI-Token": "s3cret"}).status_code == 200
-    assert anon.post("/demo/reset", headers={"Authorization": "bearer s3cret"}).status_code == 200
+    assert anon.post("/chat/clear", headers={"Authorization": "bearer s3cret"}).status_code == 200
 
 
 

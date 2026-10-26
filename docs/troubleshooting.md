@@ -1,0 +1,92 @@
+---
+title: Troubleshooting
+nav: docs
+description: Fixes for the most common SentrAI install problems.
+---
+
+# Troubleshooting
+
+## A port is already taken
+
+Another program is using 8000 or 8501. Pick other ports:
+
+```bash
+./run.sh --core-port 8100 --dashboard-port 8601                  # Linux, macOS
+sudo ./deploy/install.sh --core-port 8100 --dashboard-port 8601       # server
+```
+
+```powershell
+.\run.ps1 -CorePort 8100 -DashboardPort 8601
+```
+
+## "No module named venv" or "ensurepip is not available"
+
+Python is missing its `venv` module. On Debian and Ubuntu:
+
+```bash
+sudo apt install python3-venv
+```
+
+Then delete the half-made `.venv` folders and start again:
+
+```bash
+rm -rf core/.venv lab/.venv dashboard/.venv notifier/.venv
+```
+
+## PowerShell says running scripts is disabled
+
+Start SentrAI with the policy switch shown in [Run on a laptop](laptop.html#on-windows):
+`powershell -ExecutionPolicy Bypass -File .\run.ps1`. It applies to that run only.
+
+## "python" is not found on Windows
+
+Install Python 3.12 from [python.org](https://www.python.org/downloads/) and tick **Add python.exe
+to PATH** on the first screen of the installer. Close and reopen PowerShell afterwards.
+
+## The dashboard does not open from my computer
+
+Work through these in order:
+
+1. **Is it running?** On the server: `systemctl status cactai-dashboard`.
+2. **Is your IP allowed?** Your public IP may have changed. Check it, then
+   `sudo ./deploy/install.sh --dashboard-allow <your IP>`.
+3. **Are you using https?** A server dashboard opened to other computers only answers on
+   `https://`, not `http://`.
+4. **Does the cloud provider block the port?** Some hosts have their own firewall in their web
+   console (security groups, firewall rules). Allow port 8501 from your IP there too.
+5. **The service will not start without a firewall tool.** When it is open to other computers,
+   the dashboard refuses to run without `nft` or `iptables` rather than run open. Install one, or
+   use `--dashboard-local` and an [SSH tunnel](server.html#keep-the-dashboard-on-the-server).
+
+## I forgot the dashboard password
+
+Make a new one; it is printed once:
+
+```bash
+python cactai_config.py admin --reset     # laptop
+sudo cactai-admin --reset                  # server
+```
+
+## "Too many tries"
+
+After five wrong passwords from one address, that address waits five minutes. Wait, then try
+again, or reset the password as above.
+
+## No alerts arrive in Telegram
+
+Without a bot token, alerts go to the notifier's window (Windows) or `.run_logs/notifier.log`
+(Linux, macOS), or `journalctl -u cactai-notifier` on a server. Check the token and chat ID under
+**Configuration**, section **4. Notifications**, and make sure you sent your bot a message first.
+
+## Nothing shows up on the dashboard
+
+- Check that the collector is watching something: **Collector** on the dashboard lists the logs
+  it reads. Approve some first (see [Run on a laptop](laptop.html#give-it-logs-to-watch)).
+- Make sure SentrAI is still running. Each part writes its output to `.run_logs/` on Linux and
+  macOS, or to its own window on Windows.
+- The timers run in real time. Use `--speed 60` (`-Speed 60`) to see escalations within minutes.
+
+## Still stuck?
+
+Open an [issue on GitHub](https://github.com/RexGuard/SentrAI/issues) with what you ran and what it
+printed. Remove your IP addresses, passwords and keys before you paste anything.

@@ -124,7 +124,6 @@ def test_invite_link_lets_an_auditor_join_who_can_change_nothing(app, fake_core)
     add_authenticator(app, "hozen@example.com")
     assert signed_in(app)
     assert not any("Team" in b.label for b in app.sidebar.button)  # Owners and Admins only
-    assert not any(b.label == "Reset demo" for b in app.sidebar.button)
     app.session_state["page"] = "config"
     app.run()
     assert button(app, "Save settings").disabled
@@ -157,4 +156,4 @@ def test_an_auditor_client_refuses_changes_before_they_reach_the_core(fake_core)
     ro = CoreClient(fake_core, read_only=True)
     assert isinstance(ro.incidents(), list)  # reading works
     with pytest.raises(CoreError, match="Auditors"):
-        ro.reset_demo()
+        ro.set_protection(False, "hozen@example.com")

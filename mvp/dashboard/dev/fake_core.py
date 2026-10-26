@@ -8,8 +8,8 @@ NOT the real core. In-memory, single process, plays a scripted demo scenario:
 Run:  .venv\\Scripts\\python dev\\fake_core.py   (serves http://127.0.0.1:8900)
 Env:  FAKE_CORE_PORT (8900, so it never collides with the real core on 8000), FAKE_DEMO_SPEED (120 = 30 real s per demo hour),
       FAKE_TTL_SECONDS (300 real s before containment expires),
-      FAKE_AUTOPLAY (1), FAKE_THRESHOLD (80)
-Extra dev-only endpoint: POST /dev/trigger/{category}?src_ip=..&user=..
+      FAKE_AUTOPLAY (1), FAKE_THRESHOLD (80), FAKE_RISK_SCOPE (host: a central panel with two joined machines; fleet)
+Extra dev-only endpoints: POST /dev/trigger/{category}?src_ip=..&user=.., POST /dev/reset
 """
 from __future__ import annotations
 
@@ -32,6 +32,7 @@ AUTOPLAY = os.environ.get("FAKE_AUTOPLAY", "1") != "0"
 SLA_HOURS = 2.0
 TTL_SECONDS = float(os.environ.get("FAKE_TTL_SECONDS", "300"))
 BASELINE_RAW = 5.0
+RISK_SCOPE = "fleet" if os.environ.get("FAKE_RISK_SCOPE", "host") == "fleet" else "host"
 
 SEVERITY = {
     "brute_force": ("high", 30), "sql_injection": ("high", 40), "xss": ("medium", 20),
@@ -95,7 +96,15 @@ class State:
         self.log_sources: list[dict] = []
         self.threats: dict | None = None
         self.quarantine: list[dict] = []
+        self.backups: list[dict] = []
         self.pending: list[dict] = []  # Scout proposals; seed one with POST /_fake/scout-proposal
+        # Machines joined to this (pretend) central panel: web-01 has the scripted incidents, office-pc is quiet.
+        self.agents: dict[str, dict] = {
+            "a1b2c3": {"agent_id": "a1b2c3", "host": "web-01", "joined_at": iso(now()), "invited_by": "erick",
+                       "last_seen": iso(now()), "revoked_at": None, "revoked_by": None},
+            "d4e5f6": {"agent_id": "d4e5f6", "host": "office-pc", "joined_at": iso(now()), "invited_by": "erick",
+                       "last_seen": iso(now()), "revoked_at": None, "revoked_by": None},
+        }
 
 
 S = State()
@@ -278,13 +287,67 @@ def risk():
         idx = risk_index()
         return {"risk_index": idx, "band": band(idx), "raw_score": round(raw_score(), 1), "threshold": THRESHOLD,
                 "open_incidents": [i for i, v in S.incidents.items() if v["status"] in ("open", "acknowledged")],
-                "monitor_only": S.protection["monitor_only"], "history": S.history}
+                "monitor_only": S.protection["monitor_only"], "history": S.history, "risk_scope": RISK_SCOPE}
 
 
 @app.get("/incidents")
-def incidents():
+def incidents(host: str | None = None):
     with lock:
-        return list(S.incidents.values())
+        return [i for i in S.incidents.values() if host is None or i["host"] == host]
+
+
+@app.get("/machines")
+def machines():
+    with lock:
+        idx = risk_index()
+        for a in S.agents.values():
+            if not a["revoked_at"]:
+                a["last_seen"] = iso(now())
+        out = []
+        for h in sorted({"web-01", *(a["host"] for a in S.agents.values() if not a["revoked_at"])}):
+            incs = [i for i in S.incidents.values() if i["host"] == h]
+            hi = idx if h == "web-01" else 0
+            out.append({"host": h, "risk_index": hi, "band": band(hi), "raw_score": 0.0,
+                        "open_incidents": sum(i["status"] in ("open", "acknowledged") for i in incs),
+                        "contained_incidents": sum(i["status"] == "contained" for i in incs),
+                        "blocked": len(blocklist()["ips"]) if h == "web-01" else 0,
+                        "last_seen": iso(now()), "silent": False,
+                        "services": FAKE_SERVICES.get(h, []) if h != "web-01" else [
+                            {**x, "open_incidents": sum(1 for i in incs if i["status"] in ("open", "acknowledged"))
+                             if x["name"] == "web" else 0} for x in FAKE_SERVICES["web-01"]]})
+        return sorted(out, key=lambda m: -m["risk_index"])
+
+
+FAKE_SERVICES = {
+    "web-01": [{"name": "sshd", "port": 22, "proto": "tcp", "process": "sshd"},
+               {"name": "web", "port": 443, "proto": "tcp", "process": "nginx"},
+               {"name": "mysql", "port": 3306, "proto": "tcp", "process": "mysqld"}],
+    "office-pc": [{"name": "rdp", "port": 3389, "proto": "tcp", "process": "svchost.exe"}],
+}
+
+
+@app.get("/fleet/agents")
+def fleet_agents():
+    with lock:
+        return list(S.agents.values())
+
+
+@app.post("/fleet/join-codes")
+def fleet_join_code(body: dict = Body(...)):
+    with lock:
+        audit("join_code_created", "Warden", operator=body.get("operator"), name=body.get("name"))
+    return {"code": "K7QM-2XPA-9RTD", "expires_at": iso(now() + timedelta(hours=24)), "name": body.get("name") or None}
+
+
+@app.post("/fleet/agents/{agent_id}/revoke")
+def fleet_revoke(agent_id: str, body: dict = Body(...)):
+    with lock:
+        a = S.agents.get(agent_id)
+        if a is None:
+            raise HTTPException(404, f"no machine with id {agent_id}")
+        a.update(revoked_at=iso(now()), revoked_by=body.get("operator"))
+        audit("machine_revoked", "Warden", agent_id=agent_id, host=a["host"])
+        return a
 
 
 @app.get("/incidents/{iid}")
@@ -577,6 +640,57 @@ def post_restore(qid: str, body: dict = Body(...)):
         return {"ok": True, "file": q["original"]}
 
 
+def _fake_backup(by: str, reason: str) -> dict:
+    stamp = now()
+    b = {"id": f"b-{stamp.strftime('%Y%m%d-%H%M%S')}-{len(S.backups) + 1}", "created": iso(stamp),
+         "created_ts": stamp.timestamp(), "by": by, "reason": reason, "folders": ["/var/www/portal"],
+         "missing": [], "sentrai": True, "files": 1834, "bytes": 48_234_112, "archive_bytes": 21_004_800,
+         "sha256": "3" * 64, "manifest_sha256": "4" * 64, "skipped": [], "copy": None, "verified": None}
+    S.backups.insert(0, b)
+    del S.backups[7:]
+    return b
+
+
+@app.get("/backups")
+def get_backups():
+    return {"enabled": True, "every_hours": 24, "keep": 7, "folders": ["/var/www/portal"], "include_sentrai": True,
+            "copy_to": None, "stored_in": "/opt/sentrai/mvp/core/data/backups",
+            "next_due": iso(now() + timedelta(hours=24)) if S.backups else "now", "overdue": False,
+            "last_error": None, "backups": S.backups}
+
+
+@app.post("/backups")
+def post_backup(body: dict = Body(None)):
+    with lock:
+        b = _fake_backup((body or {}).get("operator") or "operator", "manual")
+        audit("backup_made", "Warden", backup=b["id"], summary=f"Backed up {b['files']} files as {b['id']}")
+        return {"ok": True, **b, "pruned": []}
+
+
+@app.post("/backups/{bid}/verify")
+def post_verify_backup(bid: str, body: dict = Body(None)):
+    with lock:
+        b = next((b for b in S.backups if b["id"] == bid), None)
+        if b is None:
+            raise HTTPException(404, f"{bid} is not a backup")
+        b["verified"] = {"ok": True, "at": iso(now()), "problems": []}
+        return {"ok": True, "backup": bid, "files_checked": b["files"], "problems": []}
+
+
+@app.post("/backups/{bid}/restore")
+def post_restore_backup(bid: str, body: dict = Body(...)):
+    with lock:
+        if not any(b["id"] == bid for b in S.backups):
+            raise HTTPException(404, f"{bid} is not a backup")
+        in_place = bool(body.get("in_place"))
+        if in_place and body.get("confirm") != bid:
+            raise HTTPException(409, f"type the backup id ({bid}) as confirmation")
+        safety = _fake_backup(body.get("operator") or "operator", "before_restore")["id"] if in_place else None
+        return {"ok": True, "backup": bid, "in_place": in_place, "files_restored": 1834, "failed": [],
+                "restored_to": "in place" if in_place else f"/opt/sentrai/mvp/core/data/restores/{bid}",
+                "safety_backup": safety, "note": ""}
+
+
 @app.get("/log-sources")
 def get_log_sources():
     return S.log_sources
@@ -637,12 +751,13 @@ def clear_chat():
     return {"ok": True}
 
 
-@app.post("/demo/reset")
+@app.post("/dev/reset")
 def reset():
+    """Test helper: start the fake scenario again from an empty state."""
     global S
     with lock:
         S = State()
-        audit("demo_reset", "Warden", summary="Demo state cleared")
+        audit("dev_reset", "Warden", summary="Fake core state cleared")
     return {"ok": True}
 
 

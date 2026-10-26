@@ -208,14 +208,15 @@ description: SentrAI watches your systems, scores risk from 0 to 100, applies te
   <section id="demo">
     <div class="wrap">
       <p class="eyebrow">Working prototype</p>
-      <h2 class="section-title">A fictional student portal gets attacked. SentrAI handles it.</h2>
-      <p class="lede">The MVP runs on one Windows laptop: attack scripts hit the demo portal, SentrAI scores the risk, alerts the operator, blocks the attackers when the score crosses 80, and writes a hash-chained evidence report. One script starts everything, and automated tests cover the full story end to end.</p>
+      <h2 class="section-title">Point it at your logs. SentrAI handles the attacks.</h2>
+      <p class="lede">The MVP runs on one laptop or a Linux server: SentrAI reads the logs you approve, scores the risk, alerts the operator, blocks the attackers when the score crosses 80, and writes a hash-chained evidence report. One script starts everything, and automated tests cover every part.</p>
       <div class="figure">
         <img src="{{ '/mvp/pitch/architecture.svg' | relative_url }}" alt="SentrAI architecture: collector, classifier and responder around the risk engine, with the agents, dashboard and notifier" loading="lazy" width="1400" height="900">
       </div>
       <p class="figcap">Architecture: collector, classifier and responder around a deterministic risk engine.</p>
       <div class="cta" style="margin-top:24px">
-        <a class="btn btn-primary" href="https://github.com/RexGuard/SentrAI/tree/main/mvp">MVP code and how to run it</a>
+        <a class="btn btn-primary" href="{{ '/docs/' | relative_url }}">Install guide</a>
+        <a class="btn btn-ghost" href="https://github.com/RexGuard/SentrAI/tree/main/mvp">MVP code</a>
         <a class="btn btn-ghost" href="https://github.com/RexGuard/SentrAI/blob/main/mvp/pitch/VIDEO_SCRIPT.md">Video script</a>
         <a class="btn btn-ghost" href="https://github.com/RexGuard/SentrAI/blob/main/mvp/research/SOURCES.md">Sources</a>
       </div>

@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import ipaddress
 import re
+import shutil
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -26,7 +28,7 @@ Option = tuple[str, str]  # (value, button label)
 Interpret = Callable[[str, list[Option], str], "dict | None"]
 
 HIDDEN = "••••••"
-DEMO_LOGS = cfg.FIELDS["CACTAI_LAB_LOGS"].default
+OWN_LOGS = cfg.FIELDS["CACTAI_LAB_LOGS"].default  # where apps write SentrAI's own JSON-lines logs
 YES = {"yes", "y", "ok", "okay", "sure", "yep", "yeah", "sounds good", "go ahead", "do it", "fine", "correct"}
 NO = {"no", "n", "none", "nope", "nothing", "skip", "no one", "nobody", "not now", "-"}
 FILLER = {"and", "the", "is", "are", "our", "my", "a", "an", "account", "accounts", "user", "users", "please"}
@@ -154,7 +156,7 @@ class SetupChat:
         v = self.value
         lines = [f"**Security preset:** {cfg.preset_label(v(cfg.PRESET_ENV))} ("
                  + "; ".join(t for t, _ in cfg.describe(self.values())) + ")",
-                 f"**Logs watched:** {'the demo lab logs' if v('CACTAI_LAB_LOGS') == DEMO_LOGS else v('CACTAI_LAB_LOGS')}",
+                 f"**Logs watched:** {logs_summary(self)}",
                  f"**Never blocked:** {v('PROTECTED_IPS') or 'nothing'}",
                  f"**Never locked:** {v('PROTECTED_USERS') or 'no accounts'}",
                  f"**Your name:** {v('CACTAI_OPERATOR')}"]
@@ -240,17 +242,101 @@ def _preset(s: SetupChat, choice: str) -> str:
 
 
 # 2. Logs
+# The usual web and login logs of a Linux server, as the collector's --add-system-logs finds them.
+NGINX_LOGS = (("/var/log/nginx/access.log", "web", "nginx", "nginx web server log"),
+              ("/var/log/nginx/error.log", "web", "nginx", "nginx web server log"))
+AUTH_LOGS = ("/var/log/auth.log", "/var/log/secure")  # Debian/Ubuntu, RHEL/Fedora
+
+
+def system_logs(root: Path = Path("/"), has_journalctl: bool | None = None) -> list[dict]:
+    """This computer's nginx and SSH login logs, as entries for the collector's approved list."""
+    def here(p: str) -> Path:
+        return root / p.lstrip("/")
+
+    found = [{"path": str(here(p)), "layer": layer, "format": fmt, "why": why}
+             for p, layer, fmt, why in NGINX_LOGS if here(p).is_file()]
+    auth = next((here(p) for p in AUTH_LOGS if here(p).is_file()), None)
+    if auth is not None:
+        found.append({"path": str(auth), "layer": "os", "format": "syslog", "why": "SSH logins (sshd)"})
+    elif has_journalctl if has_journalctl is not None else shutil.which("journalctl"):
+        found.append({"path": "journald:sshd", "layer": "os", "format": "journald",
+                      "why": "SSH logins (sshd) from the systemd journal"})
+    return found
+
+
+LOG_WORDS = ("access", "error", "auth", "secure", "ssh", "login")  # web and login logs inside a typed folder
+
+
+def _log_file(path: Path) -> dict:
+    """A log file typed by hand: login logs go to the OS layer, everything else to the web layer."""
+    login = any(w in path.name.lower() for w in ("auth", "secure", "login", "ssh"))
+    return {"path": str(path), "layer": "os" if login else "web", "format": "auto",
+            "why": "chosen in guided setup"}
+
+
+def _logs_question(s: SetupChat) -> str:
+    found = s.notes.setdefault("found_logs", system_logs())
+    if found:
+        listed = "\n".join(f"- `{e['path']}` ({e['why']})" for e in found)
+        return ("Which logs should I watch? I found these on this computer:\n\n" + listed
+                + "\n\nShall I watch them? You can also type the path to another log file or folder.")
+    return ("Which logs should I watch? Type the path to your web or login log file, or to a folder "
+            "of them. If your apps write SentrAI's own log format, I can use its log folder.")
+
+
+def _logs_options(s: SetupChat) -> list[Option]:
+    opts = [("found", "Watch the logs I found")] if s.notes.get("found_logs") else []
+    if s.current.get("CACTAI_LAB_LOGS") not in ("", OWN_LOGS):
+        opts.append(("keep", "Keep the current folder"))
+    return opts + [("own", "SentrAI's own log folder")]
+
+
 def _logs(s: SetupChat, answer: str) -> str:
-    if answer == "demo":
-        s.set(CACTAI_LAB_LOGS=DEMO_LOGS)
-        return "I'll watch the demo lab logs."
+    if answer == "found":
+        s.notes["log_sources"] = list(s.notes.get("found_logs", []))
+        return f"I'll watch {len(s.notes['log_sources'])} log(s) from this computer."
     if answer == "keep":
         return "I'll keep watching the same folder."
+    if answer == "own":
+        s.set(CACTAI_LAB_LOGS=OWN_LOGS)
+        return "I'll watch SentrAI's own log folder."
     path = Path(answer.strip().strip('"').strip("'")).expanduser()
+    if path.is_file():
+        s.notes["log_sources"] = [_log_file(path.resolve())]
+        return f"I'll watch {path.resolve()}."
     if not path.is_dir():
-        raise Retry(f"I can't find a folder at {path} on this computer. Check the path, or use the demo logs.")
+        raise Retry(f"I can't find a file or folder at {path} on this computer. Check the path and try again.")
     s.set(CACTAI_LAB_LOGS=str(path.resolve()))
+    found = [_log_file(f.resolve()) for f in sorted(path.iterdir())
+             if f.is_file() and f.suffix not in (".jsonl", ".gz") and any(w in f.name.lower() for w in LOG_WORDS)][:10]
+    if found:
+        s.notes["log_sources"] = found
+        return f"I'll watch {path.resolve()} and the {len(found)} log file(s) in it."
     return f"I'll watch {path.resolve()}."
+
+
+def logs_summary(s: SetupChat) -> str:
+    extra = [e["path"] for e in s.notes.get("log_sources", [])]
+    folder = s.value("CACTAI_LAB_LOGS")
+    own = "SentrAI's own log folder" if folder == OWN_LOGS else folder
+    return ", ".join(extra) + f" (plus {own})" if extra else own
+
+
+def save_log_sources(s: SetupChat, confirmed_by: str) -> list[str]:
+    """Add the log files picked in setup to the collector's approved list (scout/sources.json).
+
+    A running collector picks them up by itself. Returns the paths added."""
+    entries = s.notes.get("log_sources", [])
+    if not entries:
+        return []
+    lab = str(Path(__file__).resolve().parent / "lab")
+    if lab not in sys.path:
+        sys.path.append(lab)
+    from scout import sources  # stdlib only
+
+    for e in entries:
+        sources.add(e, confirmed_by)
+    return [e["path"] for e in entries]
 
 
 # 3-4. What SentrAI must never touch
@@ -281,7 +367,7 @@ def _operator(s: SetupChat, answer: str) -> str:
         return ""
     name = _nonblank(answer, "your name")[:60]
     s.set(CACTAI_OPERATOR=name)
-    if s.value("ON_DUTY") == cfg.FIELDS["ON_DUTY"].default:  # still the demo's made-up responder
+    if s.value("ON_DUTY") == cfg.FIELDS["ON_DUTY"].default:  # still the placeholder responder
         s.set(ON_DUTY=name)
     return f"Nice to meet you, {name}."
 
@@ -499,11 +585,8 @@ STEPS: tuple[Step, ...] = (
                              "unsure": {"dunno", "don't know", "not sure", "idk"}}),
     Step("preset", _preset_question, _preset, _preset_options, typed=False,
          words={"yes": YES, **{n: {n} for n in cfg.PRESETS}}),
-    Step("logs", lambda s: "Which logs should I watch? Type the folder where your web and login logs are, "
-                           "or use the demo lab logs.", _logs,
-         lambda s: [("demo", "Use the demo lab logs")] + (
-             [("keep", "Keep the current folder")] if s.current.get("CACTAI_LAB_LOGS") != DEMO_LOGS else []),
-         words={"demo": {"demo", "lab", "default"}}),
+    Step("logs", _logs_question, _logs, _logs_options,
+         words={"found": YES | {"found", "those", "them"}, "own": {"own", "default", "sentrai"}}),
     Step("ips", lambda s: "Is there an IP address SentrAI must never block, like your own admin computer? "
                           "This computer is always protected.", _ips,
          lambda s: [("none", "No, just this computer")], words={"none": NO}),

@@ -1,7 +1,7 @@
 """Warden (class Saguaro): lead orchestrator. Owns incidents, the risk index, notifications and the hotpatch workflow.
 
 Incidents, actions (blocks) and notifications are saved to SQLite next to the audit chain after
-every change and restored on startup (state.py), so a restart keeps them. POST /demo/reset clears both.
+every change and restored on startup (state.py), so a restart keeps them. reset() clears both.
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ import threading
 import time
 import uuid
 from collections import deque
+from collections.abc import Callable
 from typing import Any
 
 from .agents import (
@@ -73,6 +74,99 @@ BUTTONS_AFTER_ACTION = [
 ]
 
 
+def _http_probe(url: str, timeout_s: float = 3.0) -> dict[str, Any]:
+    """GET the health URL: ok when it answers below 500."""
+    import httpx
+
+    started = time.monotonic()
+    try:
+        status = httpx.get(url, timeout=timeout_s, follow_redirects=True).status_code
+    except Exception as exc:
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"[:200]}
+    return {"ok": status < 500, "status": status, "ms": round((time.monotonic() - started) * 1000)}
+
+
+def _succeeded(ev: dict[str, Any]) -> bool | None:
+    """Did this request or login get through? None when the line does not say."""
+    p = ev.get("parsed") or {}
+    status = p.get("status")
+    if isinstance(status, int):
+        return status < 400
+    if p.get("ssh_event") == "accepted" or p.get("outcome") == "success":
+        return True
+    if p.get("outcome") == "failure" or p.get("ssh_event") in ("failed_auth", "invalid_user", "max_auth_exceeded"):
+        return False
+    return None
+
+
+def _between(events: Any, start: float, end: float) -> list[dict[str, Any]]:
+    return [e for e in events if start < e.get("_rx", 0.0) <= end and e.get("source") != "heartbeat"]
+
+
+def _matches(a: dict[str, Any], ev: dict[str, Any]) -> bool:
+    if a["type"] == "block_ip":
+        return str(ev.get("src_ip") or "") == str(a["target"])
+    if a["type"] == "lock_user":
+        return str(ev.get("user") or "").lower() == str(a["target"]).lower()
+    return False
+
+
+def _did_it_work(a: dict[str, Any], events: Any, start: float, end: float) -> dict[str, Any]:
+    """Blocks and locks: after the action, did the target still get anything through?"""
+    if a["type"] not in ("block_ip", "lock_user"):
+        return {"worked": None, "worked_note": f"SentrAI cannot see a {a['type'].replace('_', ' ')} take effect "
+                                               f"itself; check it in the system that carries it out."}
+    after = [e for e in _between(events, start, end) if _matches(a, e)]
+    got_in = [e for e in after if _succeeded(e)]
+    who = "requests from" if a["type"] == "block_ip" else "logins by"
+    if got_in:
+        return {"worked": False, "seen_after": len(after), "got_through": len(got_in),
+                "worked_note": f"{len(got_in)} of {len(after)} {who} {a['target']} still got through after it started."}
+    if after:
+        return {"worked": True, "seen_after": len(after), "got_through": 0,
+                "worked_note": f"{len(after)} later attempt(s) from {a['target']}, none got through."}
+    return {"worked": True, "seen_after": 0, "got_through": 0,
+            "worked_note": f"Nothing from {a['target']} has reached the logs since it started."}
+
+
+def _disruption(a: dict[str, Any], events: Any, start: float, end: float, health: dict[str, Any] | None) -> dict[str, Any]:
+    """Compare everyone else's traffic in the same length of time before and after the action, and
+    probe the health page: fewer successful requests or more server errors may mean collateral damage."""
+    span = max(end - start, 1.0)
+    others_before = [e for e in _between(events, start - span, start) if not _matches(a, e)]
+    others_after = [e for e in _between(events, start, end) if not _matches(a, e)]
+    ok_before = sum(1 for e in others_before if _succeeded(e))
+    ok_after = sum(1 for e in others_after if _succeeded(e))
+
+    def errors(evs: list[dict[str, Any]]) -> tuple[int, int]:
+        statuses = [(e.get("parsed") or {}).get("status") for e in evs]
+        statuses = [x for x in statuses if isinstance(x, int)]
+        return sum(1 for x in statuses if x >= 500), len(statuses)
+
+    (err_b, web_b), (err_a, web_a) = errors(others_before), errors(others_after)
+    problems: list[str] = []
+    if ok_before >= 20 and ok_after < ok_before * 0.3:
+        problems.append(f"successful requests from everyone else fell from {ok_before} to {ok_after}")
+    if web_a >= 5 and err_a / web_a - (err_b / web_b if web_b else 0.0) >= 0.2:
+        problems.append(f"server errors rose to {err_a} of {web_a} requests (from {err_b} of {web_b})")
+    before = a.get("health_before")
+    if health is not None and not health.get("ok"):
+        if before is None or before.get("ok"):
+            problems.append(f"the health page stopped answering ({health.get('status') or health.get('error')})")
+    out: dict[str, Any] = {"others_ok_before": ok_before, "others_ok_after": ok_after,
+                           "server_errors_before": err_b, "server_errors_after": err_a}
+    if health is not None:
+        out["health_after"] = health
+    if problems:
+        return {**out, "disruption": True, "disruption_note": "Possible disruption: " + "; ".join(problems) + "."}
+    if not others_before and not others_after and health is None:
+        return {**out, "disruption": None, "disruption_note": "No other traffic to compare and no health page set."}
+    note = "Other users' traffic and server errors look the same as before."
+    if health is not None:
+        note += " Health page " + ("answers." if health.get("ok") else "was already failing before the action.")
+    return {**out, "disruption": False, "disruption_note": note}
+
+
 class ConflictError(Exception):
     pass
 
@@ -98,6 +192,11 @@ LEGACY_AGENT_NAMES = {"Saguaro": "Warden", "Root": "Gatehouse", "Reservoir": "Va
 AUDIT_RAW_CHARS = 200
 
 
+def _signal(ev: dict[str, Any], cls: Classification) -> str:
+    """One independent piece of evidence: which classifier said so, about which log source."""
+    return f"{cls.classified_by or '?'}:{ev.get('source') or ev.get('layer') or '?'}"
+
+
 def raw_summary(raw: Any) -> dict[str, Any]:
     """What the audit chain keeps of a log line: a short printable excerpt, its length and its SHA-256.
     The chain only needs enough to prove which line it was, and must not keep a permanent copy of the
@@ -106,6 +205,30 @@ def raw_summary(raw: Any) -> dict[str, Any]:
     excerpt = "".join(ch if ch.isprintable() else " " for ch in text[:AUDIT_RAW_CHARS])
     return {"raw": excerpt + ("..." if len(text) > AUDIT_RAW_CHARS else ""), "raw_len": len(text),
             "raw_sha256": hashlib.sha256(text.encode("utf-8", "replace")).hexdigest()}
+
+
+def _host(obj: dict[str, Any]) -> str:
+    """The machine an event or incident belongs to."""
+    return str(obj.get("host") or "unknown")
+
+
+def service_of(ev: dict[str, Any]) -> str | None:
+    """Which service on the machine an event is about (nginx, sshd, ...), for the panel's per-service view."""
+    if ev.get("service"):
+        return str(ev["service"])
+    parsed = ev.get("parsed") if isinstance(ev.get("parsed"), dict) else {}
+    fmt, program = str(parsed.get("format") or ""), str(parsed.get("program") or "")
+    if fmt.startswith("nginx"):
+        return "nginx"
+    if program:
+        return "sshd" if program.startswith("sshd") else program
+    return str(ev.get("source") or "") or None
+
+
+def _score(raw: float) -> dict[str, Any]:
+    raw = round(raw, 1)
+    idx = risk_index(raw)
+    return {"risk_index": idx, "band": band(idx), "raw_score": raw}
 
 
 class Saguaro(Agent):
@@ -118,7 +241,9 @@ class Saguaro(Agent):
         self.audit = AuditLog(s.db_path)
         self.rules = RulesEngine(s.brute_force_count, s.brute_force_window_s, s.export_rows_threshold,
                                  ssh_count=s.ssh_brute_force_count, ssh_window_s=s.ssh_brute_force_window_s,
-                                 scan_4xx_count=s.web_scan_4xx_count, scan_window_s=s.web_scan_window_s)
+                                 scan_4xx_count=s.web_scan_4xx_count, scan_window_s=s.web_scan_window_s,
+                                 slow_count=s.slow_brute_force_count, slow_window_s=s.slow_brute_force_window_s,
+                                 ssh_slow_count=s.ssh_slow_brute_force_count)
         self.jev = JevClient(s.jev_timeout_s)
         # The three parts: events arrive from collectors via POST /events, the classifier
         # chain labels them, and the responders carry out approved containment.
@@ -137,7 +262,8 @@ class Saguaro(Agent):
         self.areole_linux = AreoleLinux(self.classifier, self.responders)
         self.areole_win = AreoleWin(self.classifier, self.responders)
         self.needle = Needle(s.needle_min_confidence, self.responders.allowlist, s.protected_ips, s.protected_users,
-                             s.protected_nets, s.contain_min_severity, s.contain_min_points)
+                             s.protected_nets, s.contain_min_severity, s.contain_min_points,
+                             auto_actions=s.auto_actions, max_auto_per_hour=s.max_auto_actions_per_hour)
         self.watchdog = Watchdog(s.watchdog_silence_s)
         self.scribe = Scribe(self.audit, self.clock)
         self.integrity = IntegrityGuard(self.audit, s.integrity_check_s, s.clock_jump_s)
@@ -172,6 +298,10 @@ class Saguaro(Agent):
         self._above_threshold = False
         self._started_ts = self.clock.now()
         self._last_risk: dict[str, Any] = {"risk_index": 0, "band": "green", "raw_score": 0.0}
+        self._host_risk: dict[str, dict[str, Any]] = {}  # per machine, from _compute
+        self._host_seen: dict[str, float] = {}  # machine name -> clock time of its last event or heartbeat
+        self._host_history: dict[str, deque[dict[str, Any]]] = {}
+        self._host_services: dict[str, dict[str, Any]] = {}  # machine -> {"services": [...], "at": iso} from its agent
         self._reported: set[str] = set()
 
     def _next_incident_from_audit(self) -> int:
@@ -189,8 +319,10 @@ class Saguaro(Agent):
         return {
             "demo_speed": s.demo_speed,
             "threshold": s.threshold,
+            "risk_scope": s.risk_scope,
             "sla_hours": s.sla_hours,
             "ttl_hours": s.ttl_hours,
+            "limits": self.limits(),
             "on_duty": s.on_duty,
             "jev": self.jev.status,
             "block_ip_enforcement": self.blocklist_responder.enforcement,
@@ -244,7 +376,8 @@ class Saguaro(Agent):
                     tampering.append(broken)
                 if self.remote is not None:
                     self.remote.add_line(raw_ev)  # off the box as it arrives
-                self.events[ev["event_id"]] = {**ev, "category": None}
+                self.events[ev["event_id"]] = {**ev, "category": None, "_rx": now}
+                self._host_seen[str(ev["host"])] = now
                 recovered = self.watchdog.observe(str(ev["host"]), now, heartbeat)
                 if recovered:
                     self.scribe.record(self.watchdog.name, "collector_recovered", recovered)
@@ -287,6 +420,7 @@ class Saguaro(Agent):
             return
         needs_review = 0.4 <= cls.malicious <= 0.6
         key = ev.get("src_ip") or ev.get("user") or ev.get("host")
+        per_host = self.settings.risk_scope == "host"  # the same attacker on two machines is two incidents
         inc = next(
             (
                 i
@@ -294,11 +428,13 @@ class Saguaro(Agent):
                 if i["category"] == cls.category
                 and i["status"] in MERGE_STATUSES
                 and (i.get("src_ip") or i.get("user") or i.get("host")) == key
+                and (not per_host or _host(i) == _host(ev))
             ),
             None,
         )
         if inc is None:
             inc = self._open_incident(ev, cls, agent, needs_review, now)
+            inc.setdefault("service", service_of(ev))
         else:
             self._attach(inc, ev, cls, needs_review, now)
         self.scribe.record(
@@ -364,6 +500,10 @@ class Saguaro(Agent):
             "_sla_flag": False,
             "_notified_open": False,
             "_autonomous_denied": False,
+            # Evidence Countersign weighs before acting alone: a deterministic rule or tripwire is strong;
+            # an AI or keyword guess is weak and needs a second, independent one (another source or classifier).
+            "strong_signal": cls.classified_by == "rules",
+            "signals": [_signal(ev, cls)],
         }
         self._describe(inc, agent)
         self.incidents[iid] = inc
@@ -402,6 +542,13 @@ class Saguaro(Agent):
             if eid in self.events:
                 self.events[eid]["incident"] = inc["id"]
         changed = False
+        sig = _signal(ev, cls)
+        if sig not in inc.setdefault("signals", []):
+            inc["signals"].append(sig)
+            changed = True
+        if cls.classified_by == "rules" and not inc.get("strong_signal", True):
+            inc["strong_signal"] = True
+            changed = True
         if cls.confidence > inc["ai_confidence"]:
             inc["ai_confidence"] = cls.confidence
             changed = True
@@ -435,14 +582,33 @@ class Saguaro(Agent):
     def _compute(self, now: float) -> dict[str, Any]:
         for inc in self.incidents.values():
             self._refresh_incident(inc, now)
-        raw = round(sum(i["contribution"] for i in self.incidents.values()), 1)
-        idx = risk_index(raw)
-        self._last_risk = {"risk_index": idx, "band": band(idx), "raw_score": raw}
+        by_host: dict[str, float] = {}
+        for inc in self.incidents.values():
+            by_host[_host(inc)] = by_host.get(_host(inc), 0.0) + inc["contribution"]
+        self._host_risk = {h: _score(v) for h, v in by_host.items()}
+        if self.settings.risk_scope == "host":
+            # Each machine on its own: the headline is the worst machine, not the sum of all of them.
+            raw = max(by_host.values(), default=0.0)
+        else:
+            raw = sum(by_host.values())
+        self._last_risk = _score(raw)
         return self._last_risk
+
+    def _risk_of(self, inc: dict[str, Any]) -> int:
+        """The index containment compares with the threshold: the incident's own machine in host scope."""
+        if self.settings.risk_scope == "host":
+            return self._host_risk.get(_host(inc), _score(0.0))["risk_index"]
+        return self._last_risk["risk_index"]
 
     def _record_history(self, now: float) -> None:
         r = self._last_risk
-        self.history.append({"t": self.clock.iso(now), "risk_index": r["risk_index"], "raw": r["raw_score"], "band": r["band"]})
+        t = self.clock.iso(now)
+        self.history.append({"t": t, "risk_index": r["risk_index"], "raw": r["raw_score"], "band": r["band"]})
+        for h in {*self._host_risk, *self._host_seen}:
+            hr = self._host_risk.get(h) or _score(0.0)
+            if h not in self._host_history:
+                self._host_history[h] = deque(maxlen=self.settings.history_len)
+            self._host_history[h].append({"t": t, "risk_index": hr["risk_index"], "raw": hr["raw_score"], "band": hr["band"]})
 
     def tick(self) -> None:
         """Background step (every TICK_S real seconds)."""
@@ -484,6 +650,7 @@ class Saguaro(Agent):
 
     def _evaluate(self, now: float) -> None:
         self._expire_actions(now)
+        self._check_actions(now)
         self._auto_close_quiet(now)
         r = self._compute(now)
         self._sla_reminders(now, r)
@@ -505,6 +672,7 @@ class Saguaro(Agent):
                 i for i in self.incidents.values()
                 if i["status"] == "open" and not i["acked"] and not i["needs_review"]
                 and not i["_autonomous_denied"] and not self._active_actions(i, now)
+                and self._risk_of(i) >= self.settings.threshold
             ]
             if self.monitor_only:
                 for inc in candidates:
@@ -518,7 +686,7 @@ class Saguaro(Agent):
                                                              f"({inc['recommended_action']}), nothing applied")
                 candidates = []
             for inc in candidates:
-                self._contain(inc, "autonomous", self.needle.name, now, r["risk_index"])
+                self._contain(inc, "autonomous", self.needle.name, now, self._risk_of(inc))
             if candidates:
                 r = self._compute(now)
                 self._band_changes(now, r)
@@ -738,15 +906,70 @@ class Saguaro(Agent):
     def _active_actions(self, inc: dict[str, Any], now: float) -> list[dict[str, Any]]:
         return [a for a in inc["actions"] if self._is_active(a, now)]
 
-    def blocklist(self) -> dict[str, list[str]]:
+    def blocklist(self, host: str | None = None) -> dict[str, list[str]]:
+        """Everything blocked; with a host in host scope, only what that machine's agent must enforce.
+        In fleet scope every machine guards against every block, so the host makes no difference."""
         with self.lock:
-            return self.blocklist_responder.blocklist()
+            if host is None or self.settings.risk_scope != "host":
+                return self.blocklist_responder.blocklist()
+            now = self.clock.now()
+            ips: set[str] = set()
+            users: set[str] = set()
+            for a in self.actions:
+                if not (self._is_active(a, now) and a.get("verified")) or self._action_host(a) != host:
+                    continue
+                if a["type"] == "block_ip":
+                    ips.add(str(a["target"]))
+                elif a["type"] == "lock_user":
+                    users.add(str(a["target"]))
+            return {"ips": sorted(ips), "users": sorted(users)}
+
+    def _action_host(self, a: dict[str, Any]) -> str:
+        if a.get("host"):
+            return str(a["host"])
+        return _host(self.incidents.get(a["incident"]) or {})  # actions saved before they named a host
 
     def _end_action(self, a: dict[str, Any], status: str) -> None:
-        """Every way an action stops (expired, rolled back) goes through here, so the responder undoes it."""
-        if a["status"] in ("active", "permanent"):  # still in force: undo it
-            self.responders.revert(a)
+        """Every way an action stops (expired, rolled back) goes through here, so the responder undoes it
+        and whether the undo worked is recorded (a failed undo is retried by _check_actions)."""
+        in_force = a["status"] in ("active", "permanent")
         a["status"] = status
+        if in_force:
+            a["ended_at"] = self.clock.iso(self.clock.now())
+            a["_ended_ts"] = self.clock.now()
+            self._undo(a, attempt=1)
+
+    def _undo(self, a: dict[str, Any], attempt: int) -> None:
+        try:
+            ok = self.responders.revert(a)
+            error = None if ok is not False else (a.get("webhook_revert") or a.get("firewall_revert") or {}).get(
+                "error", "the responder could not confirm the action was removed")
+        except Exception as exc:  # a broken responder must not stop the rest of the rollback
+            ok, error = False, f"{type(exc).__name__}: {exc}"[:200]
+        now = self.clock.now()
+        a["undo"] = {"ok": ok, "at": self.clock.iso(now), "attempts": attempt, **({"error": error} if error else {})}
+        a["_undo_next"] = time.monotonic() + self.settings.undo_retry_s if ok is False else None
+        self.scribe.record(self.name, "action_undone" if ok is not False else "action_undo_failed", {
+            "incident": a["incident"], "action_id": a["action_id"], "type": a["type"], "target": a["target"],
+            "ended_as": a["status"], "ok": ok, "attempt": attempt, **({"error": error} if error else {})})
+        inc = self.incidents.get(a["incident"])
+        if inc is None:
+            return
+        what = f"{a['type']} {a['target']} ({a['action_id']})"
+        if ok is False:
+            last = attempt > self.settings.undo_retries
+            self._timeline(inc, now, "undo_failed", f"Undo of {what} failed (attempt {attempt}): {error}"
+                                                    + ("; a person must remove it by hand" if last else "; retrying"))
+            if attempt == 1 or last:
+                self._notify(now, "undo_failed", inc["id"], [self.settings.on_duty, self.settings.team_lead],
+                             f"{inc['id']}: undo of {a['type']} {a['target']} failed",
+                             f"SentrAI tried to remove {what} but could not confirm it is gone: {error}.\n"
+                             + ("It gave up after several tries. Please remove it by hand and check the target "
+                                "can connect again." if last else
+                                f"It will retry {self.settings.undo_retries} more time(s). Check the target can connect."),
+                             [])
+        elif attempt > 1:
+            self._timeline(inc, now, "undo_ok", f"Undo of {what} succeeded on attempt {attempt}")
 
     def _state_for_snapshot(self, now: float) -> dict[str, Any]:
         bl = self.blocklist()
@@ -764,7 +987,7 @@ class Saguaro(Agent):
         self.scribe.record(executor.name, "snapshot", {"incident": inc["id"], "snapshot_hash": snap, "state": pre})
         # 2. Review (two-key rule)
         if mode == "autonomous":
-            review = self.needle.review(inc, proposals, risk_idx, s.threshold)
+            review = self.needle.review(inc, proposals, risk_idx, s.threshold, self._auto_last_hour(now))
             self.scribe.record(self.needle.name, "needle_review", {
                 "incident": inc["id"], "approved": review.approved, "reasoning": review.reasoning,
                 "proposals": [p.__dict__ for p in proposals], "denied": review.denied})
@@ -792,7 +1015,9 @@ class Saguaro(Agent):
         for p in approved:
             aid = f"act-{self._next_action:04d}"
             self._next_action += 1
-            a = executor.apply(p, inc["id"], aid, mode, approver, now, self.clock, s.ttl_hours, snap)
+            a = executor.apply(p, inc["id"], aid, mode, approver, now, self.clock, s.ttl_for(p.type), snap,
+                               s.check_after_min / 60.0)
+            a["host"] = inc.get("host")  # the machine whose agent puts this block in place
             self.actions.append(a)
             inc["actions"].append(a)
             new_actions.append(a)
@@ -806,22 +1031,27 @@ class Saguaro(Agent):
                 self._end_action(a, "rolled_back")
                 self.scribe.record(executor.name, "auto_rollback", {"incident": inc["id"], "action_id": a["action_id"],
                                                                     "snapshot_hash": snap, "why": "verification failed"})
+        if s.health_url:
+            before = self._probe_health()
+            for a in new_actions:
+                a["health_before"] = before
         inc["status"] = "contained"
         inc["contained_at"] = self.clock.iso(now)
         summary = "; ".join(f"{a['type']} {a['target']}" for a in new_actions)
+        ttl = "/".join(f"{t:g}" for t in sorted({a["ttl_hours"] for a in new_actions}))
         self._timeline(inc, now, "action", f"{'Autonomous override' if mode == 'autonomous' else 'Operator-approved hotpatch'}"
-                                           f" ({approver}): {summary}; TTL {s.ttl_hours:g} h; snapshot {snap[:12]}", -inc["points"])
+                                           f" ({approver}): {summary}; TTL {ttl} h; snapshot {snap[:12]}", -inc["points"])
         # 5. Notify
         if mode == "autonomous":
             self._notify(now, "autonomous_action", inc["id"], [s.on_duty, s.it_manager, s.cxo],
                          f"{inc['id']}: autonomous containment engaged",
                          f"\U0001f335 SentrAI autonomous override on {inc['id']} (risk {risk_idx}/100 >= {s.threshold}, "
-                         f"no acknowledgement). Approved by Countersign. Applied for {s.ttl_hours:g} h: {summary}.\n"
+                         f"no acknowledgement). Approved by Countersign. Applied for {ttl} h: {summary}.\n"
                          f"Evidence report: {s.public_url}/reports/{inc['id']}.md", BUTTONS_AFTER_ACTION)
         else:
             self._notify(now, "operator_action", inc["id"], [s.on_duty],
                          f"{inc['id']}: hotpatch applied by {approver}",
-                         f"{approver} approved the hotpatch for {inc['id']}. Applied for {s.ttl_hours:g} h: {summary}.",
+                         f"{approver} approved the hotpatch for {inc['id']}. Applied for {ttl} h: {summary}.",
                          BUTTONS_AFTER_ACTION)
         return True
 
@@ -842,6 +1072,87 @@ class Saguaro(Agent):
                                      f"{inc['id']}: temporary hotpatch expired",
                                      f"The temporary hotpatch for {inc['id']} expired after {a['ttl_hours']:g} h. "
                                      f"Make it permanent or leave it expired.", BUTTONS_AFTER_ACTION)
+
+    # ------------------------------------------------- business limits / checks
+    def limits(self) -> dict[str, Any]:
+        """The business limits on protective actions, as in force now."""
+        s = self.settings
+        return {
+            "auto_actions": sorted(s.auto_actions & self.responders.allowlist),
+            "needs_a_person": sorted(self.responders.allowlist - s.auto_actions),
+            "ttl_hours": {t: s.ttl_for(t) for t in sorted(self.responders.allowlist)},
+            "max_ttl_hours": s.max_ttl_hours,
+            "max_auto_actions_per_hour": s.max_auto_actions_per_hour,
+            "auto_actions_last_hour": self._auto_last_hour(self.clock.now()),
+            "permanent_needs_a_person": True,
+            "check_after_min": s.check_after_min,
+            "health_url_set": bool(s.health_url),
+        }
+
+    def _auto_last_hour(self, now: float) -> int:
+        """Automatic actions started in the last timer hour (the MAX_AUTO_ACTIONS_PER_HOUR budget)."""
+        since = now - self.clock.real_seconds(1.0)
+        return sum(1 for a in self.actions if a["mode"] == "autonomous" and a.get("_applied_ts", 0.0) > since)
+
+    health_probe: Callable[[str], dict[str, Any]] = staticmethod(lambda url: _http_probe(url))
+
+    def _probe_health(self) -> dict[str, Any] | None:
+        if not self.settings.health_url:
+            return None
+        try:
+            return self.health_probe(self.settings.health_url)
+        except Exception as exc:
+            return {"ok": False, "error": f"{type(exc).__name__}: {exc}"[:200]}
+
+    def _check_actions(self, now: float) -> None:
+        """Retries failed undos, and runs the after-action check on each action once it is due:
+        did it work, and did it disrupt anything."""
+        for a in self.actions:
+            u = a.get("undo")
+            if u and u.get("ok") is False and u["attempts"] <= self.settings.undo_retries \
+                    and time.monotonic() >= (a.get("_undo_next") or 0.0):
+                self._undo(a, u["attempts"] + 1)
+            if a.get("check") is not None or a.get("_check_ts") is None:
+                continue
+            ended = a["status"] not in ("active", "permanent")
+            if a["_check_ts"] > now and not ended:
+                continue
+            self._after_action_check(a, now)
+
+    def _after_action_check(self, a: dict[str, Any], now: float) -> None:
+        start = a.get("_applied_ts", a["_check_ts"])
+        end = min(now, a.get("_ended_ts", now), max(a["_check_ts"], start))
+        if a.get("verified") is False:
+            check = {"worked": False, "worked_note": "never went in force: the responder could not verify it, "
+                                                     "so it was rolled back at once", "disruption": None}
+        else:
+            check = {**_did_it_work(a, self.events.values(), start, end),
+                     **_disruption(a, self.events.values(), start, end, self._probe_health())}
+        check["at"] = self.clock.iso(now)
+        check["window_min"] = round(self.clock.demo_hours(start, max(end, start)) * 60, 1)
+        if end < a["_check_ts"] and check.get("worked") is True:
+            check["worked_note"] += f" (it ended after {check['window_min']:g} min, before the full check window)"
+        a["check"] = check
+        self.scribe.record(self.name, "action_checked", {"incident": a["incident"], "action_id": a["action_id"],
+                                                         "type": a["type"], "target": a["target"], **check})
+        inc = self.incidents.get(a["incident"])
+        if inc is None:
+            return
+        verdict = {True: "worked", False: "did NOT work", None: "could not be checked"}[check["worked"]]
+        harm = {True: "possible disruption", False: "no disruption seen", None: "disruption not measurable"}[check["disruption"]]
+        self._timeline(inc, now, "action_checked", f"After-action check of {a['type']} {a['target']} "
+                                                   f"({a['action_id']}): {verdict}; {harm}. {check['worked_note']}"
+                                                   + (f" {check['disruption_note']}" if check.get("disruption_note") else ""))
+        if check["worked"] is False or check["disruption"] is True:
+            buttons = BUTTONS_AFTER_ACTION if a["status"] in ("active", "permanent") else []
+            self._notify(now, "action_check", inc["id"], [self.settings.on_duty],
+                         f"{inc['id']}: {a['type']} {a['target']} {verdict}" + (", possible disruption"
+                                                                                if check["disruption"] else ""),
+                         f"After-action check of {a['action_id']} ({a['type']} {a['target']}):\n"
+                         f"Did it work? {check['worked_note']}\n"
+                         f"Side effects? {check.get('disruption_note') or harm}\n"
+                         "Roll it back if it is hurting real users, or check the enforcement path if it did not work.",
+                         buttons)
 
     def _auto_close_quiet(self, now: float) -> None:
         """Resolve scan / brute-force incidents that went quiet, so a public server's background noise
@@ -921,6 +1232,11 @@ class Saguaro(Agent):
             in_force = [a for a in self.actions if a["status"] in ("active", "permanent")]
             for a in in_force:
                 self.responders.apply(a)
+            # Undos that had failed: track them again, so the retry in _check_actions can take them out.
+            for a in self.actions:
+                if (a.get("undo") or {}).get("ok") is False:
+                    self.responders.apply(dict(a))
+                    a["_undo_next"] = 0.0
             now = self.clock.now()
             expiring = [a["action_id"] for a in in_force if a["status"] == "active" and a["_expires_ts"] <= now]
             self.scribe.record(self.name, "state_restored", {
@@ -993,7 +1309,7 @@ class Saguaro(Agent):
                 if self._active_actions(inc, now):
                     self._timeline(inc, now, "decision", "Containment already active; operator endorsed it")
                 else:
-                    self._contain(inc, "operator", operator, now, self._last_risk["risk_index"], justification)
+                    self._contain(inc, "operator", operator, now, self._risk_of(inc), justification)
             else:
                 raise BadRequestError("decision must be 'approve' or 'reject'")
             self._evaluate(now)
@@ -1062,11 +1378,11 @@ class Saguaro(Agent):
     def incident_public(self, inc: dict[str, Any]) -> dict[str, Any]:
         return public(inc)
 
-    def list_incidents(self) -> list[dict[str, Any]]:
+    def list_incidents(self, host: str | None = None) -> list[dict[str, Any]]:
         with self.lock:
             now = self.clock.now()
             self._compute(now)
-            return [public(i) for i in self.incidents.values()]
+            return [public(i) for i in self.incidents.values() if host is None or _host(i) == host]
 
     def get_incident(self, iid: str) -> dict[str, Any]:
         with self.lock:
@@ -1074,25 +1390,87 @@ class Saguaro(Agent):
             self._refresh_incident(inc, self.clock.now())
             return public(inc)
 
-    def risk(self, history: int = 600) -> dict[str, Any]:
+    def risk(self, history: int = 600, host: str | None = None) -> dict[str, Any]:
+        """The risk index. With a host: that one machine's own score, incidents and history."""
         with self.lock:
             now = self.clock.now()
             r = self._compute(now)
-            hist = list(self.history)[-history:] if history > 0 else []
-            return {
+            source = self.history
+            incs = list(self.incidents.values())
+            if host is not None:
+                r = self._host_risk.get(host) or _score(0.0)
+                source = self._host_history.get(host) or deque()
+                incs = [i for i in incs if _host(i) == host]
+            hist = list(source)[-history:] if history > 0 else []
+            out = {
                 "risk_index": r["risk_index"],
                 "band": r["band"],
                 "raw_score": r["raw_score"],
                 "threshold": self.settings.threshold,
-                "open_incidents": [i["id"] for i in self.incidents.values() if i["status"] in RISK_STATUSES],
-                "needs_review": [i["id"] for i in self.incidents.values() if i["needs_review"] and i["status"] in RISK_STATUSES],
-                "contained_incidents": [i["id"] for i in self.incidents.values() if i["status"] == "contained"],
+                "risk_scope": self.settings.risk_scope,
+                "open_incidents": [i["id"] for i in incs if i["status"] in RISK_STATUSES],
+                "needs_review": [i["id"] for i in incs if i["needs_review"] and i["status"] in RISK_STATUSES],
+                "contained_incidents": [i["id"] for i in incs if i["status"] == "contained"],
                 "monitor_only": self.monitor_only,
                 "demo_speed": self.settings.demo_speed,
                 "demo_hours_elapsed": round(self.clock.demo_hours(self._started_ts, now), 2),
                 "timestamp": self.clock.iso(now),
                 "history": hist,
             }
+            if host is not None:
+                out["host"] = host
+            return out
+
+    def set_services(self, host: str, services: list[dict[str, Any]]) -> dict[str, Any]:
+        """What runs on a machine (its agent reports it every minute): name, port, protocol, process."""
+        with self.lock:
+            self._host_seen.setdefault(host, self.clock.now())
+            self._host_services[host] = {"services": services[:200], "at": self.clock.iso(self.clock.now())}
+            return {"ok": True, "services": len(self._host_services[host]["services"])}
+
+    def _services_with_incidents(self, host: str, incs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """The machine's services, each with its open incidents; a service named only by an incident is listed too."""
+        out = [dict(x) for x in (self._host_services.get(host) or {}).get("services", [])]
+        for svc in out:
+            svc["open_incidents"] = 0
+        for inc in incs:
+            name = inc.get("service")
+            if not name or inc["status"] not in RISK_STATUSES:
+                continue
+            svc = next((x for x in out if x.get("name") == name), None)
+            if svc is None:
+                svc = {"name": name, "port": None, "proto": None, "process": None, "open_incidents": 0}
+                out.append(svc)
+            svc["open_incidents"] += 1
+        return out
+
+    def machines(self) -> list[dict[str, Any]]:
+        """Every machine SentrAI has heard from or opened an incident for, worst first."""
+        with self.lock:
+            now = self.clock.now()
+            self._compute(now)
+            silent = {c["collector"] for c in self.watchdog.collectors.values() if c["silent"]}
+            names = {*self._host_seen, *(_host(i) for i in self.incidents.values())}
+            out = []
+            for h in names:
+                r = self._host_risk.get(h) or _score(0.0)
+                incs = [i for i in self.incidents.values() if _host(i) == h]
+                seen = self._host_seen.get(h)
+                out.append({
+                    "host": h,
+                    "risk_index": r["risk_index"],
+                    "band": r["band"],
+                    "raw_score": r["raw_score"],
+                    "open_incidents": sum(1 for i in incs if i["status"] in RISK_STATUSES),
+                    "contained_incidents": sum(1 for i in incs if i["status"] == "contained"),
+                    "blocked": len(self.blocklist(h)["ips"]),
+                    "last_seen": self.clock.iso(seen) if seen is not None else None,
+                    "silent": h in silent,
+                    "services": self._services_with_incidents(h, incs),
+                    "services_at": (self._host_services.get(h) or {}).get("at"),
+                })
+            out.sort(key=lambda m: (-m["risk_index"], m["host"]))
+            return out
 
     def why(self, iid: str) -> str:
         with self.lock:

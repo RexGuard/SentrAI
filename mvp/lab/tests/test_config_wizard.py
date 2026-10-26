@@ -6,7 +6,7 @@ import os
 
 import pytest
 
-from target_app import paths
+from collector import paths
 
 cfg = paths.cactai_config
 

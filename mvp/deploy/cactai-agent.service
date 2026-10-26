@@ -1,0 +1,44 @@
+[Unit]
+Description=SentrAI agent (sends this machine's logs to the central panel, applies its blocks here)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=@PREFIX@/mvp/lab
+ExecStart=@PREFIX@/mvp/lab/.venv/bin/python -m agent run
+User=@USER@
+Group=@USER@
+EnvironmentFile=/etc/cactai/agent.env
+Environment=HOME=/var/lib/cactai/agent PYTHONUNBUFFERED=1 PYTHONUTF8=1 PYTHONIOENCODING=utf-8
+Restart=on-failure
+RestartSec=10
+# Least privilege: reads logs through the log groups, changes only the firewall (CAP_NET_ADMIN)
+# and writes only its own folder (the machine key, read positions, blocks in force).
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+UMask=0077
+SupplementaryGroups=@LOGGROUPS@
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+ReadWritePaths=/var/lib/cactai/agent -/run/xtables.lock
+
+[Install]
+WantedBy=multi-user.target

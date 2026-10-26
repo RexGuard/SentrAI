@@ -5,92 +5,70 @@ A working prototype of SentrAI that runs natively on one Windows laptop or Linux
 | Component | Folder | What it does | URL |
 | --- | --- | --- | --- |
 | Core | `core/` | FastAPI risk engine, rules + Jev classifier, agents (Warden, Gatehouse, Vault, Garrison, Countersign, Watchdog, Scribe, HelpDesk), TTL hotpatches, hash-chained audit log, evidence reports (Markdown/JSON/PDF) | http://127.0.0.1:8000 |
-| Target app | `lab/target_app/` | Fictional "Aegis Academy Student Portal" that writes logs and enforces SentrAI's blocklist (HTTP 403) | http://127.0.0.1:5000 |
-| Collector | `lab/collector/` | Tails the portal's web, DB and OS logs and sends normalized events to core | |
-| Attacks / replay | `lab/attacks/`, `lab/replay/` | Localhost-only attack scripts and a scripted replay for backup recordings | |
+| Collector | `lab/collector/` | Tails the logs you approve (nginx, sshd, journald, or JSON-lines app logs) and sends normalized events to core | |
+| Scout | `lab/scout/` | Finds the security logs on a new system | |
 | Dashboard | `dashboard/` | Streamlit console with a sidebar menu: Configuration (home), Approvals, Collector, Classifier, Action taker, Review (gauge, threshold, risk accumulated), Reports, Audit trail. Menu bubbles flag new malicious activity per part | http://127.0.0.1:8501 |
 | Notifier | `notifier/` | Telegram bot with Approve / Reject buttons, or console mode without a token | |
 
 The interface between components is defined in [`CONTRACT.md`](CONTRACT.md).
 
-## Run the demo
+## Run SentrAI
 
 Requirements (Windows): Windows 10/11, Python 3.12 on PATH. Each component gets its own `.venv`, created automatically on first run.
 
 ```powershell
 cd mvp
-powershell -ExecutionPolicy Bypass -File .\run_demo.ps1 -DemoSpeed 600
+powershell -ExecutionPolicy Bypass -File .\run.ps1
 ```
 
-Then, in another terminal:
+Stop everything with `.\stop.ps1`.
 
-```powershell
-cd mvp\lab
-.\.venv\Scripts\python.exe scenario.py            # full narrated story
-```
-
-Or step by step:
-
-```powershell
-.\.venv\Scripts\python.exe -m attacks.benign
-.\.venv\Scripts\python.exe -m attacks.brute_force --count 8 --delay 0.3
-# wait ~40 s at DemoSpeed 600 while the inaction penalty climbs
-.\.venv\Scripts\python.exe -m attacks.sqli --count 3
-```
-
-Stop everything with `.\stop_demo.ps1`.
+The timers (SLA, inaction penalty, block expiry) run in real time. For a quicker test,
+`.\run.ps1 -Speed 60` makes 1 real minute count as 1 hour.
 
 ### On Linux (or macOS)
 
 Requirements: Python 3.11+ with the `venv` module (Debian/Ubuntu: `sudo apt install python3-venv`).
-`run_demo.sh` does the same as `run_demo.ps1`, but runs each component in the background and
-writes its output to `mvp/.demo_logs/<name>.log` instead of opening a window.
+`run.sh` does the same as `run.ps1`, but runs each component in the background and
+writes its output to `mvp/.run_logs/<name>.log` instead of opening a window.
 
 ```bash
 cd mvp
-./run_demo.sh --demo-speed 600          # also: --mode replay, --no-dashboard, --no-browser
-cd lab && .venv/bin/python scenario.py  # in another terminal
-tail -f ../.demo_logs/core.log          # to watch a component
-cd .. && ./stop_demo.sh
+./run.sh                                # also: --speed 60, --no-dashboard, --no-browser
+tail -f .run_logs/core.log              # to watch a component
+./stop.sh
 ```
 
-The attack commands above work the same with `.venv/bin/python` in place of `.\.venv\Scripts\python.exe`.
+If port 8000 or 8501 is taken, pick others: `./run.sh --core-port 8100 --dashboard-port 8601`
+(`.\run.ps1 -CorePort 8100 -DashboardPort 8601` on Windows, or set `CACTAI_CORE_PORT` /
+`CACTAI_DASHBOARD_PORT`).
 
-If port 8000 or 8501 is taken, pick others: `./run_demo.sh --core-port 8100 --dashboard-port 8601`
-(`.\run_demo.ps1 -CorePort 8100 -DashboardPort 8601` on Windows, or set `CACTAI_CORE_PORT` /
-`CACTAI_DASHBOARD_PORT`). The portal stays on 5000, the only port the attack scripts accept.
+### Point it at real logs
+
+SentrAI only sees the logs you approve. On a Linux server, `cd lab && .venv/bin/python -m collector.collector --add-system-logs`
+approves nginx and SSH logs; anywhere else, use Scout or the dashboard's **Collector** page
+(process scan, Scout proposals). See [lab/README.md](lab/README.md).
+
+Blocking an IP only takes effect outside SentrAI when `CACTAI_FIREWALL` is on (or a responder
+webhook is set): without it, blocks are recorded on SentrAI's own blocklist (`/blocklist`)
+for your app or proxy to enforce. Add your own IP to `PROTECTED_IPS` first.
 
 ### On a server (systemd services)
 
-To keep SentrAI running on a Linux server, install it as services instead of running the demo:
+To keep SentrAI running on a Linux server, install it as services instead of using `run.sh`:
 `sudo ./deploy/install.sh --protect <your admin IP>`. It opens the dashboard over HTTPS to that IP
 only and prints the address and the sign-in. See [deploy/README.md](deploy/README.md).
-
-### What you should see
-
-The dashboard opens on Configuration. Open **Review** for the gauge; the Collector, Classifier and Action taker buttons show a red bubble when new malicious activity reaches that part.
-
-1. Benign traffic: no incidents, gauge green.
-2. Brute force from `203.0.113.45`: incident `RSK-2026-081`, risk about 39 (amber), operator alert (Telegram or the notifier window).
-3. Nobody acknowledges: +5 per demo hour, SLA reminders, escalation to the team lead at red.
-4. SQL injection from `198.51.100.23`: risk crosses 80, Countersign approves, both attackers are blocked and `admin` is locked for 2 demo hours. The portal returns "Blocked by SentrAI" (403) to them. Your own machine (127.0.0.1) is never blocked.
-5. The report (dashboard **Reports** page, or `http://127.0.0.1:8000/reports/RSK-2026-081.md`) shows the timeline of inaction, "Ack: none" and the audit chain hash.
-6. Roll back or make the fix permanent from the dashboard **Approvals** page.
-
-### Demo speed
-
-`DEMO_SPEED` sets how many demo hours pass per real hour. The default 60 means 1 real minute = 1 demo hour, so the penalty takes about 6 minutes to max out. `-DemoSpeed 600` (1 real minute = 10 demo hours) fits a video; note that the 2-hour hotpatch TTL then lasts only 12 real seconds.
 
 ## Configuration
 
 ### First-run setup
 
-On a new machine, `run_demo.ps1` (and the collector when started on its own) first runs a
+On a new machine, `run.ps1` / `run.sh` (and the collector when started on its own) first runs a
 short setup wizard. It starts with a **security preset** (Strict, Moderate or Balanced), which
 sets the detection and response values, or **Advanced** to set each of them yourself. Then one section per part: **collector** (logs directory and log file names),
 **classifier** (brute-force and bulk-export thresholds, TypeSafe key), **responder** (risk
 threshold, block expiry, SLA, IPs and accounts never to touch) and **notifications**
-(Telegram). Press Enter at every question to keep the demo defaults.
+(Telegram). Press Enter at every question to keep the defaults.
 
 The answers are saved to `%USERPROFILE%\.cactai\config.json` (or the path in `CACTAI_CONFIG`)
 and every component reads that file on start. A variable set in the environment still wins.
@@ -101,8 +79,7 @@ python cactai_config.py setup      # change them
 ```
 
 The file holds the TypeSafe key and Telegram token in plain text, so keep it in your own
-user folder. `run_demo.ps1` only clears old `.jsonl` logs when the logs directory is inside
-`mvp\lab`, so pointing it at real logs never deletes them.
+user folder. `run.ps1` / `run.sh` never delete logs.
 
 ### Set up with Cyanide (no Configuration page)
 
@@ -148,13 +125,18 @@ behind an arrow.
 | `RISK_THRESHOLD` | 80 | core |
 | `SLA_HOURS` / `HOTPATCH_TTL_HOURS` | 2 / 2 | core |
 | `ON_DUTY`, `TEAM_LEAD`, `IT_MANAGER`, `CXO` | sample names | core (reports, escalation) |
-| `PROTECTED_IPS` | `127.0.0.1,::1,localhost` | core: never auto-blocked (portal or firewall); add your admin IP here before enabling `CACTAI_FIREWALL` |
+| `PROTECTED_IPS` | `127.0.0.1,::1,localhost` | core: never auto-blocked (blocklist or firewall); add your admin IP here before enabling `CACTAI_FIREWALL` |
 | `PROTECTED_USERS` | empty | core: more accounts never auto-locked; admin and service accounts (root, admin, administrator, www-data, nginx, postgres, ...) are always protected |
 | `PROTECTED_NETS` | private ranges | core: networks Countersign never blocks on its own (an operator still can); `10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,100.64.0.0/10,fc00::/7` by default, `off` for a lab whose attackers sit on a private network |
 | `INFRA_ALLOWLIST` | empty | core: gateways, DNS, monitoring and other infrastructure never blocked (addresses or networks). This machine's DNS servers and default gateway are added automatically (`INFRA_AUTODETECT=0` turns that off) |
 | `CONTAIN_MIN_SEVERITY` / `CONTAIN_MIN_POINTS` | `high` / `20` | core: an incident is only contained without a person when its own severity and points reach these, whatever the overall risk index |
-| `CACTAI_FIREWALL` | `off` | core: also block IPs in the host firewall (`auto`, `nftables`, `iptables`, `netsh`); `off` keeps portal-only blocking |
+| `CACTAI_FIREWALL` | `off` | core: also block IPs in the host firewall (`auto`, `nftables`, `iptables`, `netsh`); `off` keeps blocks on SentrAI's own blocklist only |
 | `CACTAI_FIREWALL_ENFORCE` | `0` | core: `0` is a dry run that only logs the firewall command; `1` really runs it (needs admin/root) |
+| `CACTAI_BACKUP_PATHS` | (none) | core: folders to back up, separated by `:` (Linux) or `;` (Windows), when the system profile's `backup.paths` names none. SentrAI's own data is always backed up |
+| `CACTAI_BACKUP_EVERY_HOURS` | `24` | core: hours between scheduled backups; `0` turns the schedule off (Back up now still works) |
+| `CACTAI_BACKUP_KEEP` | `7` | core: how many backups to keep; the oldest go first |
+| `CACTAI_BACKUP_DIR` | `backups` next to `CACTAI_DB` | core: where backups are stored |
+| `CACTAI_BACKUP_COPY_TO` | (none) | core: a second folder (another drive or a network share) that gets a copy of each backup |
 | `TYPESAFE_API_KEY` | unset | core: enables Jev (TypeSafe System One); otherwise rules + fallback heuristic |
 | `JEV_TIMEOUT_S` / `JEV_BUDGET_S` | 3 / 2 | core: per-call timeout and per-request time budget for Jev |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | unset | notifier: console mode when unset |
@@ -164,7 +146,9 @@ behind an arrow.
 | `CACTAI_EMAIL_MODE` | `backup` | notifier: `backup` emails only when Telegram fails; `always` emails every alert too |
 | `CACTAI_DASHBOARD_URL` | `http://127.0.0.1:8501` | notifier: link in email alerts |
 | `CACTAI_CORE_URL` | `http://127.0.0.1:8000` | lab, dashboard, notifier |
-| `CACTAI_LAB_LOGS` | `mvp\lab\logs` | lab: portal writes and collector tails logs here |
+| `CACTAI_NODE_NAME` | `This computer` | dashboard: this machine's name in the Machines list on Review |
+| `CACTAI_PEERS` | unset | dashboard: other SentrAI cores to show in the Machines list, as `Name=URL, Name=URL`; they must accept this console's API token |
+| `CACTAI_LAB_LOGS` | `mvp\lab\logs` | lab: the collector tails JSON-lines logs here |
 | `CACTAI_LOG_ACCESS`, `_AUTH`, `_DB`, `_OS` | `access.jsonl`, `auth.jsonl`, `db.jsonl`, `os.jsonl` | lab: log file names |
 | `BRUTE_FORCE_COUNT` / `BRUTE_FORCE_WINDOW_S` | 5 / 60 | core: failed logins that count as brute force |
 | `EXPORT_ROWS_THRESHOLD` | 100 | core: rows in one export that count as exfiltration |
@@ -178,10 +162,9 @@ behind an arrow.
 
 ### Access
 
-The core API refuses every request without its token, except `/health` and `/blocklist` (the
-fake portal reads that one). The token is generated on first run, saved in the settings file,
-and passed to the collector, dashboard and Telegram bot by `run_demo.ps1` / `run_demo.sh`, so
-nothing changes when you record. The report link in a Telegram alert is signed for that one report,
+The core API refuses every request without its token, except `/health` and `/blocklist` (so an
+app or proxy can enforce blocks). The token is generated on first run, saved in the settings file,
+and passed to the collector, dashboard and Telegram bot by `run.ps1` / `run.sh`. The report link in a Telegram alert is signed for that one report,
 so it opens in a browser without the token. To call the API by hand:
 
 ```powershell
@@ -190,7 +173,7 @@ Invoke-RestMethod http://127.0.0.1:8000/incidents -Headers @{ Authorization = "B
 ```
 
 Everyone signs in to the dashboard with their own account: email, password, then a 6-digit
-code from an authenticator app. On a new machine `run_demo` (or `python cactai_config.py admin`)
+code from an authenticator app. On a new machine `run.sh` / `run.ps1` (or `python cactai_config.py admin`)
 prints a one-time **setup code**; the dashboard opens on "Create your Owner account", which takes
 that code (it works once, for 24 hours). The Owner then scans a QR code with any authenticator app
 and saves 8 recovery codes. There is no open sign-up: Owners and Admins invite people from the
@@ -214,7 +197,7 @@ python cactai_config.py admin --reset --email you@example.com   # the same for a
 ```
 
 A forgotten password or lost phone is also reset by another Owner or Admin on the Team page. For a
-recording where you do not want to sign in on camera, start the demo with `CACTAI_DASHBOARD_LOGIN=off`
+recording where you do not want to sign in on camera, start SentrAI with `CACTAI_DASHBOARD_LOGIN=off`
 (`$env:CACTAI_DASHBOARD_LOGIN = "off"` in PowerShell). A machine set up before accounts existed
 keeps its sign-in: that email and password become the Owner, who adds an authenticator at the
 next sign-in.
@@ -223,7 +206,7 @@ next sign-in.
 
 1. In Telegram, message **@BotFather**, send `/newbot`, and copy the token.
 2. Send any message to your new bot, then open `https://api.telegram.org/bot<TOKEN>/getUpdates` and copy `chat.id`.
-3. Enter both in `python cactai_config.py setup`, or before `run_demo.ps1`: `$env:TELEGRAM_BOT_TOKEN = "<token>"; $env:TELEGRAM_CHAT_ID = "<chat id>"`.
+3. Enter both in `python cactai_config.py setup`, or before `run.ps1`: `$env:TELEGRAM_BOT_TOKEN = "<token>"; $env:TELEGRAM_CHAT_ID = "<chat id>"`.
 
 Only the configured chat can press the buttons.
 
@@ -277,18 +260,15 @@ GitHub Actions (`.github/workflows/tests.yml`) runs the core, lab, dashboard and
 | Lab | `.venv\Scripts\python -m pytest -q` | 36 passed |
 | Dashboard | `.venv\Scripts\python -m pytest -q` | 25 passed |
 | Notifier | `.venv\Scripts\python -m pytest -q` | 8 passed |
-| End-to-end (real core + portal + collector + attacks) | from `integration`: `..\lab\.venv\Scripts\python -m pytest -q test_e2e.py` | 1 passed |
 
 ## Safety
 
-- Attack scripts refuse any host other than localhost and any port other than 5000.
-- `/admin/run` never executes anything; it only logs a simulated "shell spawned" event.
-- Containment only changes SentrAI's own blocklist, which the portal enforces. No firewall, OS or network settings are touched.
-- All member data is synthetic.
+- Containment only changes SentrAI's own blocklist unless `CACTAI_FIREWALL` is on. Your own machine (127.0.0.1) and `PROTECTED_IPS` are never blocked.
+- Admin and service accounts are never auto-locked, and private networks are never auto-blocked (`PROTECTED_NETS`).
 
 ## Known limits
 
-- Incidents, blocks and notifications are saved in SQLite next to the audit chain and restored when the core restarts. Blocks keep their original TTL; any that expired while the core was down are rolled back and audited on start. `run_demo` still starts clean (it calls `/demo/reset`) unless you pass `--keep-state` / `-KeepState`.
+- Incidents, blocks and notifications are saved in SQLite next to the audit chain and restored when the core restarts. Blocks keep their original TTL; any that expired while the core was down are rolled back and audited on start.
 - Only IP blocks and account locks have a real effect. Rate limit, WAF rule, kill process and revoke ACL are recorded as simulated.
 - Jev has not been called against the live TypeSafe API yet (no API key); without a key the fallback heuristic classifies what the rules cannot.
 - Telegram mode has not been tested with a real bot.

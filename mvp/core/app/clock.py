@@ -8,14 +8,14 @@ from datetime import datetime
 
 class DemoClock:
     def __init__(self, demo_speed: float) -> None:
-        self.demo_speed = demo_speed if demo_speed > 0 else 60.0
+        self.demo_speed = demo_speed if demo_speed > 0 else 1.0
         self._offset = 0.0
 
     def now(self) -> float:
         return time.time() + self._offset
 
     def advance_demo_hours(self, hours: float) -> None:
-        """Fast-forward the clock (used by tests and the /demo/advance helper)."""
+        """Fast-forward the clock (used by tests)."""
         self._offset += hours * 3600.0 / self.demo_speed
 
     def demo_hours(self, start_ts: float, end_ts: float | None = None) -> float:

@@ -12,6 +12,11 @@ Scores each classifier step on its own and the chain as it runs in core:
 Events are fed in file order with their own timestamps, so the brute-force threshold
 (5 failed logins from one source within 60 s) behaves as it does live.
 
+Scores are per log line. Two extra rows look at what an operator sees: "attack lines in an
+incident" also counts the earlier lines a later hit attaches to its incident (the first four
+tries of a brute force), and "attackers caught" counts each attacker (label + source address)
+once if any of its lines was flagged.
+
     python eval/evaluate.py            # writes eval/results/classifier_eval.{md,json,csv}
     python eval/evaluate.py --no-write # print only
 """
@@ -55,37 +60,46 @@ def _ts(ev: dict[str, Any]) -> float:
     return datetime.fromisoformat(ev["timestamp"]).timestamp()
 
 
+def _out(c: Any) -> tuple[str, list[str]]:
+    """(category, earlier event ids the hit attaches to its incident) for one classification."""
+    if c is None:
+        return NONE, []
+    related = c.related_event_ids if c.category not in ("benign", NONE) else []
+    return c.category, list(related)
+
+
 def predictors(jev: JevClient | None) -> dict[str, Callable[[], Callable[[dict], str]]]:
     """name -> factory giving a fresh predict(event) (fresh rules state per run)."""
 
     def rules_only():
         r = RulesClassifier(RulesEngine())
-        return lambda ev: (c.category if (c := r.classify(ev, _ts(ev))) else NONE)
+        return lambda ev: _out(r.classify(ev, _ts(ev)))
 
     def fallback_only():
         f = FallbackClassifier()
-        return lambda ev: f.classify(ev).category
+        return lambda ev: _out(f.classify(ev))
 
     def chain():
         ch = ClassifierChain(RulesClassifier(RulesEngine()), FallbackClassifier())
-        return lambda ev: ch.classify(ev, _ts(ev)).category
+        return lambda ev: _out(ch.classify(ev, _ts(ev)))
 
     out = {"rules": rules_only, "fallback": fallback_only, "chain": chain}
     if jev is not None:
         def jev_only():
             j = JevClassifier(jev)
-            return lambda ev: (c.category if (c := j.classify(ev, _ts(ev))) else NONE)
+            return lambda ev: _out(j.classify(ev, _ts(ev)))
 
         def chain_jev():
             ch = ClassifierChain(RulesClassifier(RulesEngine()), JevClassifier(jev), FallbackClassifier())
-            return lambda ev: ch.classify(ev, _ts(ev)).category
+            return lambda ev: _out(ch.classify(ev, _ts(ev)))
 
         out["jev"] = jev_only
         out["chain+jev"] = chain_jev
     return out
 
 
-def score(labels: list[str], preds: list[str]) -> dict[str, Any]:
+def score(labels: list[str], preds: list[str], attached: set[int] | None = None,
+          attackers: list[str] | None = None) -> dict[str, Any]:
     per: dict[str, dict[str, float]] = {}
     for cat in CATEGORIES:
         tp = sum(1 for y, p in zip(labels, preds) if y == cat and p == cat)
@@ -108,6 +122,13 @@ def score(labels: list[str], preds: list[str]) -> dict[str, Any]:
         # Benign events given an attack label.
         "false_alarm_rate": sum(flagged(preds[i]) for i in benign) / len(benign) if benign else 0.0,
         "no_answer": sum(p == NONE for p in preds),
+        # Attack lines flagged themselves or attached to an incident by a later hit.
+        "incident_rate": (sum(flagged(preds[i]) or i in (attached or set()) for i in attacks) / len(attacks)
+                          if attacks else 0.0),
+        "incident_false_alarm_rate": (sum(flagged(preds[i]) or i in (attached or set()) for i in benign) / len(benign)
+                                      if benign else 0.0),
+        "attackers": len(set(attackers[i] for i in attacks)) if attackers else 0,
+        "attackers_caught": len({attackers[i] for i in attacks if flagged(preds[i])}) if attackers else 0,
     }
 
 
@@ -117,9 +138,13 @@ def evaluate(events: list[dict[str, Any]], jev: JevClient | None = None) -> dict
     for name, make in predictors(jev).items():
         predict = make()
         t = time.perf_counter()
-        preds = [predict(ev) for ev in events]
+        outs = [predict(ev) for ev in events]
         elapsed = time.perf_counter() - t
-        runs[name] = {**score(labels, preds), "ms_per_event": 1000 * elapsed / len(events),
+        preds = [p for p, _ in outs]
+        index = {ev["event_id"]: i for i, ev in enumerate(events)}
+        attached = {index[eid] for _, rel in outs for eid in rel if eid in index}
+        attackers = [f"{ev['label']}|{ev.get('src_ip') or ev.get('user') or ev['event_id']}" for ev in events]
+        runs[name] = {**score(labels, preds, attached, attackers), "ms_per_event": 1000 * elapsed / len(events),
                       "mistakes": [{"event_id": ev["event_id"], "origin": ev["origin"], "raw": ev["raw"],
                                     "label": y, "predicted": p}
                                    for ev, y, p in zip(events, labels, preds) if y != p]}
@@ -153,6 +178,12 @@ def to_markdown(res: dict[str, Any]) -> str:
     for key, title in [("macro_f1", "Macro F1"), ("accuracy", "Accuracy"),
                        ("detection_rate", "Attacks flagged"), ("false_alarm_rate", "False alarms on benign")]:
         lines.append(f"| {title} | " + " | ".join(_pct(runs[c][key]) if c in runs else "not run" for c in cols) + " |")
+    lines.append("| Attack lines in an incident | " + " | ".join(
+        _pct(runs[c]["incident_rate"]) if c in runs else "not run" for c in cols) + " |")
+    lines.append("| Benign lines in an incident | " + " | ".join(
+        _pct(runs[c]["incident_false_alarm_rate"]) if c in runs else "not run" for c in cols) + " |")
+    lines.append("| Attackers caught | " + " | ".join(
+        f"{runs[c]['attackers_caught']} of {runs[c]['attackers']}" if c in runs else "not run" for c in cols) + " |")
     lines.append("| No answer | " + " | ".join(str(runs[c]["no_answer"]) if c in runs else "not run" for c in cols) + " |")
     lines += ["", "## F1 per category", "",
               "Precision / recall / F1. Support is the number of events with that label.", "",
@@ -179,7 +210,9 @@ def to_markdown(res: dict[str, Any]) -> str:
             raw = m["raw"].replace("|", "\\|")
             lines.append(f"| {m['event_id']} ({m['origin']}) | {m['label']} | {m['predicted']} | `{raw[:90]}` |")
     lines += ["", "\"Attacks flagged\" counts any attack label on an attack event, even the wrong one. "
-              "Rules \"no answer\" means the event was passed on to Jev or the fallback.", ""]
+              "Rules \"no answer\" means the event was passed on to Jev or the fallback. "
+              "\"Attack lines in an incident\" also counts lines a later hit attaches to its incident, such as the "
+              "first four tries of a brute force. \"Attackers caught\" counts each label and source address once.", ""]
     return "\n".join(lines)
 
 

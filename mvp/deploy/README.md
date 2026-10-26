@@ -1,7 +1,7 @@
 # Running SentrAI as server services
 
-`run_demo.sh` is for recording the demo: everything stops when you run `stop_demo.sh`, and the
-clock runs fast. On a real Linux server, install SentrAI as systemd services instead.
+`run.sh` is for trying SentrAI on a laptop: everything stops when you run `stop.sh`. On a real
+Linux server, install SentrAI as systemd services instead.
 
 ```bash
 git clone https://github.com/RexGuard/SentrAI && cd SentrAI/mvp
@@ -195,6 +195,45 @@ sudo systemctl restart cactai.target
 sudo ./deploy/uninstall.sh            # keeps /etc/cactai and /var/lib/cactai; --purge removes them
                                       # (also removes the dashboard firewall rule)
 ```
+
+## One panel, many machines (`install-agent.sh`)
+
+One SentrAI install can be the central panel for other machines. Each other machine runs only
+the agent: it sends that machine's logs to the panel and puts the panel's blocks for that machine
+into its own firewall. The panel does the scoring; the agent only makes outgoing HTTPS calls.
+
+On the panel, score each machine on its own and keep the panel's own firewall out of it, in
+`/etc/cactai/cactai.env`:
+
+```bash
+CACTAI_RISK_SCOPE=host
+CACTAI_FIREWALL=off
+```
+
+Make the core reachable by the agents over HTTPS (for example nginx in front of port 8000 with a
+certificate), then make a one-time join code (valid 24 h) and install the agent on the new machine:
+
+```bash
+# on the panel (TOKEN is the core's API token: python cactai_config.py token, with the service settings)
+curl -s -X POST https://panel.example.com:8000/fleet/join-codes \
+     -H "Authorization: Bearer TOKEN" \
+     -H 'content-type: application/json' -d '{"operator": "erick"}'
+# on the new machine
+sudo ./deploy/install-agent.sh --panel https://panel.example.com:8000 --code ABCD-EFGH-JKLM --name web-01
+sudo ./deploy/install-agent.sh --enforce          # later: really change the firewall (default is a dry run)
+```
+
+Without systemd (Windows, a laptop) the same agent runs from a checkout:
+
+```bash
+cd mvp/lab
+python -m agent join --panel https://panel.example.com:8000 --code ABCD-EFGH-JKLM
+python -m agent run         # CACTAI_FIREWALL=netsh CACTAI_FIREWALL_ENFORCE=1 to block on Windows
+```
+
+Each machine's key only sends that machine's events and reads its own block list; revoke one with
+`POST /fleet/agents/<id>/revoke`. If the panel cannot be reached, blocks already in place stay for
+24 h (`CACTAI_AGENT_OFFLINE_HOLD_H`) and are then removed.
 
 ## Not covered yet
 

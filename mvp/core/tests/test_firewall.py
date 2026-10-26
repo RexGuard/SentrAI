@@ -103,7 +103,7 @@ def test_enforced_iptables_adds_verifies_and_removes_once_per_address():
     r.revert(a1)
     assert runner.verbs("iptables") == ["-C", "-I", "-C"]  # still blocked by the second incident
     r.revert(a2)
-    assert runner.verbs("iptables") == ["-C", "-I", "-C", "-D"]
+    assert runner.verbs("iptables") == ["-C", "-I", "-C", "-D", "-C"]  # removed, then checked gone
     assert runner.rules == set()
     assert r.status()["blocked"] == []
 
@@ -201,8 +201,8 @@ def test_approval_ttl_and_rollback_drive_the_firewall(fw_client):
         assert act["enforcement"] == "blocklist + firewall (iptables)" and act["verified"]
         assert runner.verbs("iptables") == ["-C", "-I", "-C"]
         assert IP in c.get("/blocklist").json()["ips"]
-        c.post("/demo/advance", json={"demo_hours": 2.1})  # TTL expiry
-        assert runner.verbs("iptables") == ["-C", "-I", "-C", "-D"]
+        c.app.state.core.advance(2.1)  # TTL expiry
+        assert runner.verbs("iptables") == ["-C", "-I", "-C", "-D", "-C"]
         assert c.get("/blocklist").json()["ips"] == []
         audit = c.get("/audit").json()["records"]
         applied = [x for x in audit if x["type"] == "action_applied" and x["data"]["type"] == "block_ip"]
