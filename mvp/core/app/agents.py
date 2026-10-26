@@ -179,10 +179,12 @@ class Areole(LayerAgent):
         self.executed = 0
 
     def apply(self, proposal: Proposal, incident_id: str, action_id: str, mode: str, approved_by: str,
-              now: float, clock: DemoClock, ttl_hours: float, snapshot_hash: str) -> dict[str, Any]:
+              now: float, clock: DemoClock, ttl_hours: float, snapshot_hash: str,
+              check_after_hours: float = 0.0) -> dict[str, Any]:
         responder = self.responders.for_type(proposal.type)  # raises if nothing handles it
         self.executed += 1
         expires_ts = now + clock.real_seconds(ttl_hours)
+        check_ts = now + clock.real_seconds(check_after_hours)
         action = {
             "action_id": action_id,
             "incident": incident_id,
@@ -200,6 +202,11 @@ class Areole(LayerAgent):
             "enforcement": responder.enforcement,
             "verified": None,
             "_expires_ts": expires_ts,
+            "_applied_ts": now,
+            # After-action check (Warden._check_actions): did it work, did it hurt anything.
+            "check_at": clock.iso(check_ts),
+            "check": None,
+            "_check_ts": check_ts,
         }
         action["verified"] = responder.apply(action)
         return action
@@ -219,7 +226,8 @@ class Needle(Agent):
 
     def __init__(self, min_confidence: float, allowlist: set[str], protected_ips: set[str],
                  protected_users: set[str] | None = None, protected_nets: set[str] | None = None,
-                 min_severity: str = "high", min_points: float = 0.0) -> None:
+                 min_severity: str = "high", min_points: float = 0.0, auto_actions: set[str] | None = None,
+                 max_auto_per_hour: int | None = None) -> None:
         self.min_confidence = min_confidence
         self.allowlist = allowlist
         self.protected_ips = protected_ips
@@ -227,6 +235,10 @@ class Needle(Agent):
         self.protected_nets = protected_nets or set()
         self.min_severity = min_severity
         self.min_points = min_points
+        # Business limits: action types allowed without a person (None = every allowlisted type) and
+        # how many automatic actions any rolling hour may hold (None = no cap).
+        self.auto_actions = auto_actions
+        self.max_auto_per_hour = max_auto_per_hour
 
     def below_bar(self, incident: dict[str, Any]) -> str | None:
         """Why this incident on its own is not serious enough for autonomous containment, or None."""
@@ -240,7 +252,8 @@ class Needle(Agent):
 
     def screen(self, proposals: list[Proposal], autonomous: bool = False) -> tuple[list[Proposal], list[dict[str, str]]]:
         """Splits proposals into (allowed, denied): allowlisted type and not a protected target.
-        Private networks are protected from autonomous blocks only: an operator may still approve one."""
+        Private networks, and action types the business has not allowed to run on their own (AUTO_ACTIONS),
+        are held back from autonomous actions only: an operator may still approve them."""
         ok: list[Proposal] = []
         denied: list[dict[str, str]] = []
         for p in proposals:
@@ -249,6 +262,8 @@ class Needle(Agent):
                    else "private network: a person decides" if autonomous and p.type == "block_ip"
                    and protect.matches(p.target, self.protected_nets)
                    else "protected account" if p.type == "lock_user" and protect.user_matches(p.target, self.protected_users)
+                   else "major action: a person must approve it" if autonomous and self.auto_actions is not None
+                   and p.type not in self.auto_actions
                    else None)
             if why:
                 denied.append({"type": p.type, "target": p.target, "why": why})
@@ -256,7 +271,8 @@ class Needle(Agent):
                 ok.append(p)
         return ok, denied
 
-    def review(self, incident: dict[str, Any], proposals: list[Proposal], risk_index: int, threshold: int) -> Review:
+    def review(self, incident: dict[str, Any], proposals: list[Proposal], risk_index: int, threshold: int,
+               auto_last_hour: int = 0) -> Review:
         conf = incident["ai_confidence"]
         if incident.get("needs_review"):
             return Review(False, f"DENY: {incident['id']} is flagged 'needs review' (uncertain classification, "
@@ -274,6 +290,14 @@ class Needle(Agent):
         ok, denied = self.screen(proposals, autonomous=True)
         if not ok:
             return Review(False, "DENY: no allowlisted action remains after review.", [], denied)
+        if self.max_auto_per_hour is not None:
+            room = max(0, self.max_auto_per_hour - auto_last_hour)
+            denied += [{"type": p.type, "target": p.target, "why": "hourly limit on automatic actions reached"}
+                       for p in ok[room:]]
+            ok = ok[:room]
+            if not ok:
+                return Review(False, f"DENY: {auto_last_hour} automatic action(s) in the last hour already reach the "
+                                     f"business limit of {self.max_auto_per_hour}; a person must decide.", [], denied)
         reasoning = (
             f"APPROVE: risk {risk_index} >= threshold {threshold}; confidence {conf} >= {self.min_confidence}; "
             f"classified by {incident['classified_by']}; operator has not acknowledged; "

@@ -417,6 +417,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def get_protection() -> dict[str, Any]:
         return core.protection()
 
+    @app.get("/limits")
+    def get_limits() -> dict[str, Any]:
+        """Business limits on protective actions: what may run on its own, for how long, how often."""
+        with core.lock:
+            return core.limits()
+
     @app.post("/protection")
     def post_protection(body: ProtectionIn) -> dict[str, Any]:
         try:

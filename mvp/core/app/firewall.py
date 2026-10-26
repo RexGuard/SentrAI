@@ -210,16 +210,26 @@ class FirewallResponder(BlocklistResponder):
         self._record(action, {"commands": [" ".join(h["cmd"]) for h in self.history[start:]], "ok": ok})
         return in_blocklist and ok
 
-    def revert(self, action: Action) -> None:
-        super().revert(action)
+    def revert(self, action: Action) -> bool | None:
+        ok = super().revert(action)
         target = str(action["target"])
         if action["type"] == "block_ip" and target in self._in_firewall and ("block_ip", target) not in self._active:
-            self._remove(target)
+            start = len(self.history)
+            removed = self._remove(target)
+            action["firewall_revert"] = {"backend": self.backend, "dry_run": not self.enforce, "ok": removed,
+                                         "commands": [" ".join(h["cmd"]) for h in self.history[start:]]}
+            return bool(ok) and removed
+        return ok
 
-    def _remove(self, target: str) -> None:
-        _, _, remove = block_commands(self.backend, target)
+    def _remove(self, target: str) -> bool:
+        """Take the rule out and check it is gone. A rule that is still there stays tracked, so a retry
+        (or the next reset) tries again."""
+        _, check, remove = block_commands(self.backend, target)
         self._run(remove)
-        self._in_firewall.discard(target)
+        gone = not self.enforce or self._run(check, probe=True)[0] != 0
+        if gone:
+            self._in_firewall.discard(target)
+        return gone
 
     def reset(self) -> None:
         for target in sorted(self._in_firewall):
