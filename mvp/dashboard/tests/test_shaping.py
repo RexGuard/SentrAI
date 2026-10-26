@@ -320,6 +320,8 @@ def test_expiry_says_how_long_is_left():
     assert sh.expires_label((now + timedelta(seconds=20)).isoformat(), now=now).endswith("(in under 1 min)")
     assert sh.expires_label((now - timedelta(minutes=1)).isoformat(), now=now).endswith("(expired)")
     assert sh.expires_label(None) == "-"
+
+
 def test_approvals_headline_answers_first():
     from datetime import datetime, timedelta, timezone
     now = datetime(2026, 10, 26, 18, 0, tzinfo=timezone.utc)
