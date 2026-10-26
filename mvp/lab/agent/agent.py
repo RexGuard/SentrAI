@@ -220,13 +220,13 @@ class Enforcer:
         target = self.panel | set(local)
         # On the first pass put every block back: the saved list may come from a dry run, or from before a
         # reboot that emptied the firewall. _add skips the ones already in place.
-        pending = target if not self._checked else target - self.applied
+        first = not self._checked
         self._checked = True
-        added = [ip for ip in sorted(pending) if self._add(ip)]
+        added = [ip for ip in sorted(target if first else target - self.applied) if self._add(ip)]
         removed = sorted(self.applied - target)
         for ip in removed:
             self._remove(ip)
-        self.applied = (self.applied | set(added)) - set(removed)
+        self.applied = ((set() if first else self.applied) | set(added)) - set(removed)  # a failed re-add is tried again
         return {"added": added, "removed": removed}
 
 

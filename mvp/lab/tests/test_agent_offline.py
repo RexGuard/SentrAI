@@ -163,6 +163,18 @@ def test_enforcer_puts_saved_blocks_back_after_a_restart():
     assert e.sync({"203.0.113.1"}) == {"added": [], "removed": []} and calls == []  # later passes: no work
 
 
+def test_enforcer_retries_a_saved_block_it_could_not_put_back():
+    fail = [True]
+
+    def run(args):
+        return (1, "nft not ready") if fail[0] else (0, "")
+
+    e = agent.Enforcer("nftables", True, set(), runner=run, applied=["203.0.113.1"], panel=["203.0.113.1"])
+    assert e.sync({"203.0.113.1"})["added"] == [] and e.applied == set()
+    fail[0] = False
+    assert e.sync({"203.0.113.1"})["added"] == ["203.0.113.1"]
+
+
 class FakeSession:
     """A panel that can be switched off; records what the agent posts."""
 
