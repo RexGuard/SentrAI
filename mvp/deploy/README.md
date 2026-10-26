@@ -229,7 +229,15 @@ curl -s -X POST http://127.0.0.1:8000/fleet/join-codes \
 # on the new machine
 sudo ./deploy/install-agent.sh --panel https://panel.example.com:8443 --code ABCD-EFGH-JKLM --pin sha256:... --name web-01
 sudo ./deploy/install-agent.sh --enforce          # later: really change the firewall (default is a dry run)
+sudo ./deploy/install-agent.sh --dry-run          # back to only logging the commands
+sudo ./deploy/uninstall-agent.sh                  # remove it and its blocks (--purge also deletes the key)
 ```
+
+Running `install-agent.sh` again from a newer checkout upgrades the agent and keeps the machine
+joined, its `--protect` addresses, enforcing or dry run, and anything added to
+`/etc/cactai/agent.env` by hand. The CI job "Linux install" runs this whole path (panel with
+`--panel`, agent with the pin, a real attack, nftables and iptables blocks, uninstall) on Ubuntu
+22.04 and 24.04 for every pull request.
 
 ### Windows machines (`install-agent.ps1`)
 

@@ -191,7 +191,7 @@ for g in adm systemd-journal; do
     fi
 done
 install -d -o "$SVC_USER" -g "$SVC_USER" -m 0750 "$STATE" "$STATE/scout" "$STATE/scout/trails" "$STATE/lab-logs"
-install -d -o "$SVC_USER" -g "$SVC_USER" -m 0700 "$STATE/core" "$STATE/collector"
+install -d -o "$SVC_USER" -g "$SVC_USER" -m 0700 "$STATE/core" "$STATE/collector" "$STATE/notifier"
 install -d -o root -g "$SVC_USER" -m 0750 /etc/cactai
 
 # --- settings (ports, addresses, paths) ------------------------------------
@@ -225,6 +225,8 @@ fi
 chown root:"$SVC_USER" "$ENV_FILE"
 chmod 0640 "$ENV_FILE"
 for k in "${!SET[@]}"; do set_env "$k" "${SET[$k]}"; done
+# The notifier keeps the last audit fingerprint it delivered here (its code folder is read-only to it).
+[ -n "$(get_env NOTIFIER_WITNESS_FILE)" ] || set_env NOTIFIER_WITNESS_FILE "$STATE/notifier/last_witness.txt"
 if [ "${#PROTECT[@]}" -gt 0 ]; then
     ips="$(get_env PROTECTED_IPS)"
     for ip in "${PROTECT[@]}"; do
@@ -398,6 +400,11 @@ else
     SIGN_IN="$(/usr/local/bin/cactai-admin "${admin_args[@]}" </dev/null)" || die "could not set up the dashboard sign-in"
 fi
 unset ADMIN_PASSWORD
+# The API token every service sends to the core. Make it now: the core, collector and notifier may
+# not write the settings file (their sandbox), so none of them could save a new one.
+(set -a && . "$ENV_FILE" && set +a && cd "$MVP" && \
+    runuser -u "$SVC_USER" -- env HOME="$STATE" "$MVP/lab/.venv/bin/python" cactai_config.py token >/dev/null) \
+    || die "could not make the API token"
 
 # --- dashboard HTTPS and firewall rule -------------------------------------
 install -m 0755 "$SRC/deploy/dashboard-firewall.sh" /usr/local/sbin/cactai-dashboard-firewall
@@ -405,7 +412,8 @@ TLS=/etc/cactai/tls
 if [ -n "$DASH_ALLOW" ]; then
     if [ ! -f "$TLS/cert.pem" ] && command -v openssl >/dev/null 2>&1; then
         install -d -o root -g "$SVC_USER" -m 0750 "$TLS"
-        openssl req -x509 -newkey rsa:2048 -nodes -days 825 -subj "/CN=$(hostname -f 2>/dev/null || hostname)" \
+        cn="$(hostname -f 2>/dev/null || hostname)"; cn="${cn:0:64}"  # a certificate name holds at most 64 characters
+        openssl req -x509 -newkey rsa:2048 -nodes -days 825 -subj "/CN=$cn" \
             -keyout "$TLS/key.pem" -out "$TLS/cert.pem" >/dev/null 2>&1 || rm -f "$TLS/key.pem" "$TLS/cert.pem"
         chown root:"$SVC_USER" "$TLS"/*.pem 2>/dev/null || true
         chmod 0640 "$TLS"/*.pem 2>/dev/null || true
@@ -457,8 +465,13 @@ elif [ -n "$PANEL" ]; then
     command -v openssl >/dev/null 2>&1 || die "openssl is needed for the panel's HTTPS port"
     install -d -o root -g "$SVC_USER" -m 0750 "$TLS"
     if [ ! -f "$TLS/panel-cert.pem" ]; then
-        name="$(hostname -f 2>/dev/null || hostname)"
-        openssl req -x509 -newkey rsa:2048 -nodes -days 1825 -subj "/CN=$name" -addext "subjectAltName=DNS:$name" \
+        # Named after the address agents use (--panel-url), else this server's name. Agents check the pin,
+        # not the name, but a matching name lets a browser or curl check it too.
+        name="$("$PYTHON" -c 'import sys, urllib.parse; print(urllib.parse.urlsplit(sys.argv[1]).hostname or "")' "$PANEL_URL")"
+        [ -n "$name" ] || name="$(hostname -f 2>/dev/null || hostname)"
+        if "$PYTHON" -c 'import ipaddress, sys; ipaddress.ip_address(sys.argv[1])' "$name" 2>/dev/null; then san="IP:$name"
+        else san="DNS:$name"; fi
+        openssl req -x509 -newkey rsa:2048 -nodes -days 1825 -subj "/CN=${name:0:64}" -addext "subjectAltName=$san" \
             -keyout "$TLS/panel-key.pem" -out "$TLS/panel-cert.pem" >/dev/null 2>&1 \
             || die "could not make the panel's certificate"
     fi

@@ -100,3 +100,29 @@ jobs:
 
       - name: Install, enforce, uninstall
         run: ..\.github\scripts\windows-agent-smoke.ps1
+
+  linux-install:
+    # Installs the panel (install.sh) and the agent (install-agent.sh) as real systemd services on
+    # Ubuntu, sends an attack through a web log, checks the real nftables and iptables blocks, and
+    # uninstalls both again.
+    name: Linux install (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-22.04]
+    defaults:
+      run:
+        working-directory: mvp
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      # The system Python, as on a fresh server (Ubuntu 22.04 ships 3.10, 24.04 ships 3.12).
+      - name: Server packages
+        run: sudo apt-get update -q && sudo apt-get install -yq python3-venv nftables iptables
+
+      - name: Install, attack, block, uninstall
+        run: sudo PYTHON=/usr/bin/python3 ../.github/scripts/linux-smoke.sh

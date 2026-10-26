@@ -188,6 +188,22 @@ def test_service_logs_are_found_at_their_usual_places(tmp_path):
         ("postgresql-16-main.log", "db", "postgres"), ("mongod.log", "db", "mongodb")]
 
 
+def test_a_log_folder_this_account_may_not_open_is_skipped(tmp_path, monkeypatch):
+    # Ubuntu keeps /var/log/mysql as mysql:adm 2750; outside the adm group stat() fails there.
+    (tmp_path / "var/log/nginx").mkdir(parents=True)
+    (tmp_path / "var/log/nginx/access.log").write_text("")
+    real = Path.is_file
+
+    def is_file(self):
+        if "mysql" in self.parts:
+            raise PermissionError(13, "Permission denied", str(self))
+        return real(self)
+
+    monkeypatch.setattr(Path, "is_file", is_file)
+    got = collector.system_log_entries(tmp_path, has_journalctl=False, windows=False)
+    assert [Path(e["path"]).name for e in got] == ["access.log"]
+
+
 def test_windows_gets_its_event_logs(tmp_path):
     got = collector.system_log_entries(tmp_path, windows=True)
     assert [e["path"] for e in got] == ["winevent:Security", "winevent:System", "winevent:Application",

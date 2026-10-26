@@ -17,6 +17,7 @@
 #   --ca FILE         the panel's certificate file, instead of a pin
 #   --allow-http      accept a plain http:// panel (private test networks only)
 #   --enforce         really change the firewall (default: dry run, the commands are only logged)
+#   --dry-run         back to only logging the commands (an upgrade keeps the last choice)
 #   --protect IP      never block this IP or network here (repeatable; the panel's own address is always kept)
 #   --prefix DIR      where the code goes (default /opt/cactai)
 #   --user NAME       system account the agent runs as (default cactai)
@@ -27,7 +28,7 @@
 #   /var/lib/cactai/agent/             machine key, read positions, blocks in force (cactai 0700)
 #   /etc/systemd/system/cactai-agent.service
 # The agent also approves this machine's nginx, SSH login, Suricata and database logs (collector --add-system-logs).
-# Remove it with: systemctl disable --now cactai-agent && rm /etc/systemd/system/cactai-agent.service
+# Remove it with: sudo ./deploy/uninstall-agent.sh  (--purge also deletes the machine key)
 set -euo pipefail
 
 PREFIX=/opt/cactai
@@ -38,7 +39,7 @@ NAME=""
 CA=""
 PIN=""
 ALLOW_HTTP=0
-ENFORCE=0
+ENFORCE=""  # empty: keep what the last install set (a first install is a dry run)
 START=1
 PROTECT=()
 while [ $# -gt 0 ]; do
@@ -50,6 +51,7 @@ while [ $# -gt 0 ]; do
         --ca) CA="$2"; shift 2 ;;
         --allow-http) ALLOW_HTTP=1; shift ;;
         --enforce) ENFORCE=1; shift ;;
+        --dry-run) ENFORCE=0; shift ;;
         --protect) PROTECT+=("$2"); shift 2 ;;
         --prefix) PREFIX="$2"; shift 2 ;;
         --user) SVC_USER="$2"; shift 2 ;;
@@ -85,7 +87,7 @@ LOG_GROUPS=()
 for g in adm systemd-journal; do
     getent group "$g" >/dev/null && LOG_GROUPS+=("$g")
 done
-install -d -m 0755 /var/lib/cactai
+[ -d /var/lib/cactai ] || install -d -m 0755 /var/lib/cactai  # a panel on this machine keeps its own mode
 install -d -o "$SVC_USER" -g "$SVC_USER" -m 0700 "$STATE" "$STATE/logs"
 install -d -m 0750 -o root -g "$SVC_USER" /etc/cactai
 
@@ -107,35 +109,52 @@ fi
 "$MVP/lab/.venv/bin/python" -m pip install -q -r "$MVP/lab/requirements.txt"
 
 # --- settings ---------------------------------------------------------------
-protected="127.0.0.1,::1,localhost"
-for ip in "${PROTECT[@]}"; do protected+=",$ip"; done
-if [ ! -f "$ENV_FILE" ] || [ ${#PROTECT[@]} -gt 0 ] || [ "$ENFORCE" = 1 ]; then
-    cat > "$ENV_FILE" <<EOF
+# An upgrade keeps what an earlier run set: the addresses never to block, enforcing or dry run, and
+# the firewall choice. --protect adds addresses; --enforce / --dry-run switch blocking.
+saved() { if [ -f "$ENV_FILE" ]; then sed -n "s/^$1=//p" "$ENV_FILE" | tail -1; fi; }
+protected="$(saved PROTECTED_IPS)"; protected="${protected:-127.0.0.1,::1,localhost}"
+for ip in "${PROTECT[@]}"; do
+    case ",$protected," in *",$ip,"*) ;; *) protected+=",$ip" ;; esac
+done
+[ -n "$ENFORCE" ] || ENFORCE="$(saved CACTAI_FIREWALL_ENFORCE)"
+ENFORCE="${ENFORCE:-0}"
+FIREWALL="$(saved CACTAI_FIREWALL)"; FIREWALL="${FIREWALL:-auto}"
+{
+    cat <<EOF
 # SentrAI agent settings (install-agent.sh). Restart after a change: systemctl restart cactai-agent
 CACTAI_AGENT_FILE=$STATE/agent.json
 CACTAI_CONFIG=$STATE/config.json
 CACTAI_COLLECTOR_STATE=$STATE/collector-state.json
 CACTAI_SCOUT_SOURCES=$STATE/sources.json
 CACTAI_LAB_LOGS=$STATE/logs
-CACTAI_FIREWALL=auto
+CACTAI_FIREWALL=$FIREWALL
 CACTAI_FIREWALL_ENFORCE=$ENFORCE
 PROTECTED_IPS=$protected
-# While the panel cannot be reached: block clear attacks here for this long, at most this many an hour.
-CACTAI_AGENT_LOCAL_RULES=on
-CACTAI_AGENT_LOCAL_TTL_MIN=60
-CACTAI_AGENT_LOCAL_MAX_PER_HOUR=10
 EOF
-    chown root:"$SVC_USER" "$ENV_FILE"
-    chmod 0640 "$ENV_FILE"
-fi
+    # settings changed or added by hand stay
+    if [ -f "$ENV_FILE" ]; then
+        grep -v -E '^(#|$|CACTAI_AGENT_FILE=|CACTAI_CONFIG=|CACTAI_COLLECTOR_STATE=|CACTAI_SCOUT_SOURCES=|CACTAI_LAB_LOGS=|CACTAI_FIREWALL=|CACTAI_FIREWALL_ENFORCE=|PROTECTED_IPS=)' "$ENV_FILE" || true
+    fi
+    if [ -z "$(saved CACTAI_AGENT_LOCAL_RULES)" ]; then
+        echo "# While the panel cannot be reached: block clear attacks here for this long, at most this many an hour."
+        echo "CACTAI_AGENT_LOCAL_RULES=on"
+        echo "CACTAI_AGENT_LOCAL_TTL_MIN=60"
+        echo "CACTAI_AGENT_LOCAL_MAX_PER_HOUR=10"
+    fi
+} > "$ENV_FILE.new"
+mv "$ENV_FILE.new" "$ENV_FILE"
+chown root:"$SVC_USER" "$ENV_FILE"
+chmod 0640 "$ENV_FILE"
 if [ -n "$CA" ]; then
     install -o root -g "$SVC_USER" -m 0640 "$CA" /etc/cactai/panel-ca.pem
     CA=/etc/cactai/panel-ca.pem
 fi
 
+# The service reads logs through these groups (SupplementaryGroups=), so finding them here needs them too.
+if [ ${#LOG_GROUPS[@]} -gt 0 ]; then GROUPS_ARG=(--groups "$(IFS=,; echo "${LOG_GROUPS[*]}")"); else GROUPS_ARG=(--clear-groups); fi
 as_agent() {  # run as the service account with the agent's settings
     (cd "$MVP/lab" && set -a && . "$ENV_FILE" && set +a && \
-        setpriv --reuid="$SVC_USER" --regid="$SVC_USER" --init-groups \
+        setpriv --reuid="$SVC_USER" --regid="$SVC_USER" "${GROUPS_ARG[@]}" \
         env HOME=/var/lib/cactai "$MVP/lab/.venv/bin/python" "$@")
 }
 
