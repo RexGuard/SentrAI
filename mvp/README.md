@@ -141,6 +141,7 @@ behind an arrow.
 | `TYPESAFE_API_KEY` | unset | core: enables Jev (TypeSafe System One); otherwise rules + fallback heuristic |
 | `JEV_TIMEOUT_S` / `JEV_BUDGET_S` | 3 / 2 | core: per-call timeout and per-request time budget for Jev |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | unset | notifier: console mode when unset |
+| `TELEGRAM_GROUP_COPY` | `fallback` | notifier: when the team group also gets an alert that went to people's own chats: `fallback` (only for people who have not linked a chat), `always`, `off` |
 | `SMTP_HOST`, `ALERT_EMAIL_TO` | unset | notifier: email alerts off when either is unset |
 | `SMTP_PORT` / `SMTP_SECURITY` | 587 / `starttls` | notifier: `starttls`, `ssl` (port 465) or `none` |
 | `SMTP_USER`, `SMTP_PASSWORD`, `ALERT_EMAIL_FROM` | unset | notifier: SMTP login and sender (sender defaults to the login) |
@@ -196,7 +197,11 @@ dashboard password keep working; the file then keeps only its hash.
 2. Send any message to your new bot, then open `https://api.telegram.org/bot<TOKEN>/getUpdates` and copy `chat.id`.
 3. Enter both in `python cactai_config.py setup`, or before `run.ps1`: `$env:TELEGRAM_BOT_TOKEN = "<token>"; $env:TELEGRAM_CHAT_ID = "<chat id>"`.
 
-Only the configured chat can press the buttons.
+Only the configured chat, and people's linked private chats, can press the buttons.
+
+4. Optional, so each person gets their own alerts instead of the group: on the dashboard's Incidents page, press
+   **Make link code** for a person; they send `/link CODE` to the bot in a private chat. See
+   "Alerts in each person's own Telegram chat" in `core/README.md`.
 
 ### Email alerts (optional backup)
 

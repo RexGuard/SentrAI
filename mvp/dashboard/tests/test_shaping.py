@@ -165,6 +165,8 @@ def test_routing_tables_use_names():
     rules = sh.routing_rows(routing)
     assert list(rules["When"]) == ["severity is high", "anything else"] and list(rules["Also told"]) == ["Lee", "-"]
     assert list(sh.contact_rows(routing)["Backup"]) == ["Lee", "-"]
+    routing["contacts"][0]["telegram_linked"] = True
+    assert list(sh.contact_rows(routing)["Alerts in Telegram"]) == ["Own chat", "Team group"]
 
 
 def test_panel_machines_merge_scores_and_joined_agents():

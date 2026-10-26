@@ -70,6 +70,24 @@ class ResolveIn(BaseModel):
 class DeliveredIn(BaseModel):
     channel: str
     message_id: Optional[Union[str, int]] = None
+    to: Optional[str] = None  # the person a private message reached (direct Telegram message)
+
+
+class LinkCodeIn(BaseModel):
+    operator: str
+    contact: str
+
+
+class TelegramLinkIn(BaseModel):
+    code: str
+    chat_id: Union[str, int]
+    username: Optional[str] = ""
+
+
+class TelegramUnlinkIn(BaseModel):
+    operator: str
+    contact: Optional[str] = None
+    chat_id: Optional[Union[str, int]] = None
 
 
 class ProtectionIn(BaseModel):
@@ -393,6 +411,35 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def get_routing() -> dict[str, Any]:
         return core.routing_public()
 
+    # Personal Telegram alerts (telegram_links.py): a contact links their private chat with a one-time code.
+    @app.post("/telegram/link-codes")
+    def post_link_code(body: LinkCodeIn) -> dict[str, Any]:
+        try:
+            return core.telegram_link_code(body.contact, body.operator)
+        except KeyError:
+            raise HTTPException(status_code=404, detail=f"no contact called {body.contact!r} in the routing file")
+
+    @app.post("/telegram/link")
+    def post_telegram_link(body: TelegramLinkIn) -> dict[str, Any]:
+        try:
+            return core.telegram_link(body.code, str(body.chat_id), body.username or "")
+        except BadRequestError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except KeyError:
+            raise HTTPException(status_code=404, detail="that contact is no longer in the routing file")
+
+    @app.post("/telegram/unlink")
+    def post_telegram_unlink(body: TelegramUnlinkIn) -> dict[str, Any]:
+        try:
+            return core.telegram_unlink(body.contact, None if body.chat_id is None else str(body.chat_id),
+                                        body.operator)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="no linked Telegram chat for that contact")
+
+    @app.get("/telegram/links")
+    def get_telegram_links() -> list[dict[str, Any]]:
+        return core.telegram_links_public()
+
     @app.post("/incidents/{iid}/ack")
     def post_ack(iid: str, body: AckIn) -> dict[str, Any]:
         return _verb(core.ack, iid, body.operator, body.channel or "dashboard")
@@ -525,7 +572,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def post_delivered(nid: str, body: DeliveredIn) -> dict[str, Any]:
         try:
             mid = None if body.message_id is None else str(body.message_id)
-            return core.mark_delivered(nid, body.channel, mid)
+            return core.mark_delivered(nid, body.channel, mid, body.to)
         except KeyError:
             raise HTTPException(status_code=404, detail=f"notification {nid} not found")
 

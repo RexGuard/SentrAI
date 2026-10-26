@@ -161,8 +161,9 @@ def notice_lines(notification: dict) -> tuple[str, str, list[str]]:
     return icon, header, [ln for ln in lines if ln]
 
 
-def format_telegram(notification: dict, incident: dict | None = None, risk: dict | None = None) -> str:
-    """Telegram message body in HTML parse mode."""
+def format_telegram(notification: dict, incident: dict | None = None, risk: dict | None = None,
+                    personal: bool = False) -> str:
+    """Telegram message body in HTML parse mode. `personal`: a direct message to one person, so no "For:" line."""
     e = html.escape
     if is_notice(notification):
         icon, header, lines = notice_lines(notification)
@@ -182,7 +183,7 @@ def format_telegram(notification: dict, incident: dict | None = None, risk: dict
     ]
     if f["text"]:
         lines.append(e(f["text"]))
-    handles = handles_of(notification)
+    handles = [] if personal else handles_of(notification)
     if handles:
         lines.append("For: " + " ".join(e(h) for h in handles))
     lines += [

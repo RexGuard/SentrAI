@@ -986,6 +986,38 @@ def page_incidents() -> None:
                        f"{(routing.get('follow_up') or {}).get('escalate_after_reminders', '?')} reminders.")
             table(sh.routing_rows(routing), "", )
             table(sh.contact_rows(routing), "")
+            telegram_links(contacts)
+
+
+def telegram_links(contacts: list[dict]) -> None:
+    """Make a one-time code a person sends to the bot, so their alerts reach them in their own chat."""
+    if not contacts:
+        return
+    st.markdown("**Alerts in each person's own Telegram chat**")
+    st.caption("Make a code for a person and send it to them. They open a private chat with the SentrAI bot "
+               "and send `/link CODE` within 30 minutes. From then on, alerts for them arrive in that chat "
+               "with the buttons, and whatever they press is recorded under their name.")
+    by_name = {str(c.get("name")): c for c in contacts if c.get("name")}
+    a, b, c = st.columns([3, 1.4, 1.2], vertical_alignment="bottom")
+    who = a.selectbox("Person", list(by_name), key="tg_person")
+    contact = by_name.get(who) or {}
+    op = st.session_state.operator
+    if b.button("Make link code", icon=":material/key:", key="tg_code", width="stretch"):
+        made, err = safe(lambda: client.telegram_link_code(str(contact.get("id")), op), {})
+        if err:
+            st.warning(f"Could not make a code: {err}")
+        else:
+            st.session_state["tg_made"] = made
+    if contact.get("telegram_linked") and c.button("Unlink", icon=":material/link_off:", key="tg_unlink",
+                                                   width="stretch"):
+        run_action(f"{who} unlinked from Telegram",
+                   lambda: client.telegram_unlink(str(contact.get("id")), op))
+    made = st.session_state.get("tg_made")
+    if made and made.get("name") == who:
+        st.success(f"Code for {made.get('name')}: **{made.get('code')}** "
+                   f"(works once, until {str(made.get('expires_at') or '')[11:16]}). "
+                   f"They send this to the bot in a private chat:")
+        st.code(made.get("send") or f"/link {made.get('code')}", language=None)
 
 
 CHAT_STARTERS = ("What is happening right now?", "Which incident should I deal with first?",

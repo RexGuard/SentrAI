@@ -92,8 +92,31 @@ unanswered reminders, the incident is handed to the owner's backup (`escalated` 
 that is still not resolved after `resolve_within_hours` gets a `resolve_reminder` to its owner (up to 3).
 
 Each notification carries `deliver_to` (the recipients' email and Telegram from the contacts): the notifier
-emails those addresses instead of `ALERT_EMAIL_TO` and names the Telegram handles in the alert. The Telegram
-**Take it** button makes whoever pressed it the owner.
+emails those addresses instead of `ALERT_EMAIL_TO`. The Telegram **Take it** button makes whoever pressed it the owner.
+
+### Alerts in each person's own Telegram chat
+
+A Telegram bot can only message someone who has opened a private chat with it, so each contact links their
+chat once (`app/telegram_links.py`):
+
+1. On the dashboard's Incidents page (Who gets what), pick the person and press **Make link code**
+   (or `POST /telegram/link-codes {"operator", "contact"}`). The code works once, for 30 minutes.
+2. The person sends `/link CODE` to the bot in a private chat (`/start CODE` from a `t.me/<bot>?start=CODE` link works too).
+3. The notifier passes the code and the chat on to `POST /telegram/link`. Links are kept in `telegram_links.json`
+   next to the database (`CACTAI_TELEGRAM_LINKS` to move it). A contact whose `telegram` in the routing file is a
+   numeric chat id counts as linked already. `/unlink` in that chat, or the dashboard's Unlink button, stops it.
+
+From then on `deliver_to` carries each person's `telegram_chat`, and the notifier sends the alert, with its buttons,
+to each of them directly. A button pressed there is recorded under the contact's name. The team group
+(`TELEGRAM_CHAT_ID`) still gets notices that are for nobody in particular, and alerts for anyone who has not
+linked a chat yet (they are @mentioned there); `TELEGRAM_GROUP_COPY=always` gives the group a copy of everything,
+`off` keeps it quiet unless nobody could be reached. A direct message that fails (the person blocked the bot) goes
+to the group instead. Each delivery is recorded per person (`deliveries[].to`), and linking, codes and unlinking
+are audited (`telegram_link_code`, `telegram_linked`, `telegram_unlinked`).
+
+The evidence report has a **Who handled it** section: the owner and backup, the routing rule, every hand-over,
+escalation and the resolution from the audit records (each step with its record number), and who was reached in
+their own chat. The plain-words summary tells the same story in a few sentences.
 
 ### Off-box copy
 
@@ -272,7 +295,10 @@ Additions that do not change the contract:
 - `POST /threats/scan {"operator": "erick"}`, `GET /threats`, `POST /threats/{id}/quarantine`, `GET /quarantine`, `POST /quarantine/{id}/restore`: threat scan and quarantine.
 - `POST /incidents/{id}/assign {"operator", "assignee", "note"?}`: give the incident to a contact (id, name, role or Telegram handle) or anyone by name.
 - `POST /incidents/{id}/resolve {"operator", "note"}`: close it with a note on what was done (400 without one). Blocks in force stay until they expire or are rolled back.
-- `GET /routing`: the contacts, rules and follow-up policy in use.
+- `GET /routing`: the contacts, rules and follow-up policy in use; each contact has `telegram_linked`.
+- `POST /telegram/link-codes {"operator", "contact"}`, `POST /telegram/link {"code", "chat_id", "username"}`,
+  `POST /telegram/unlink {"operator", "contact" | "chat_id"}`, `GET /telegram/links`: personal Telegram chats (see above).
+- `POST /notifications/{id}/delivered` takes an optional `"to"`: the one person a direct message reached.
 - `GET /backups`, `POST /backups`, `POST /backups/{id}/verify`, `POST /backups/{id}/restore`: backups and restore.
 - `GET /log-sources` and `POST /log-sources {"operator", "file_id", "layer"?}`: extra log files the collector watches; a file is added only by its id from the latest scan.
 

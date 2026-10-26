@@ -899,8 +899,10 @@ def contact_rows(routing: dict | None) -> pd.DataFrame:
     names = {c.get("id"): c.get("name") for c in contacts}
     rows = [{"Contact": c.get("name"), "Role": str(c.get("role") or "-").replace("_", " "),
              "Email": c.get("email") or "-", "Telegram": c.get("telegram") or "-",
+             # Linked: alerts go to the person's own chat; otherwise they are mentioned in the team group.
+             "Alerts in Telegram": "Own chat" if c.get("telegram_linked") else "Team group",
              "Backup": names.get(c.get("backup"), "-") if c.get("backup") else "-"} for c in contacts]
-    return pd.DataFrame(rows, columns=["Contact", "Role", "Email", "Telegram", "Backup"])
+    return pd.DataFrame(rows, columns=["Contact", "Role", "Email", "Telegram", "Alerts in Telegram", "Backup"])
 
 
 def pending_approvals(incidents: Iterable[dict]) -> list[dict]:

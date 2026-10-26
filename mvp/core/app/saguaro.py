@@ -33,7 +33,7 @@ from .agents import (
     next_steps,
 )
 from . import firewall
-from . import anchor, remote_copy, routing
+from . import anchor, remote_copy, routing, telegram_links
 from . import summary as client_summary
 from .audit import AuditLog
 from .classifier import Classification, JevCache, default_chain
@@ -242,6 +242,8 @@ class Saguaro(Agent):
         # Who owns, hears about and backs up each incident (routing.py). Names in a routing file
         # replace the four role names everywhere an alert goes to a role.
         self.router = routing.from_settings(s)
+        # The private Telegram chat linked to each contact, so their alerts go to them directly.
+        self.tg_links = telegram_links.from_settings(s)
         for role in ("on_duty", "team_lead", "it_manager", "cxo"):
             setattr(s, role, self.router.by_role(role, getattr(s, role)))
         self.clock = DemoClock(s.demo_speed)
@@ -878,7 +880,7 @@ class Saguaro(Agent):
             "text": text,
             "recipients": recipients,
             # Each recipient's email / Telegram from the routing contacts, so the notifier can reach them.
-            "deliver_to": self.router.addresses(recipients),
+            "deliver_to": self._addresses(recipients),
             "owner": self.incidents[incident_id].get("owner") if incident_id in self.incidents else None,
             "risk_index": r["risk_index"],
             "band": r["band"],
@@ -1048,22 +1050,23 @@ class Saguaro(Agent):
         with self.lock:
             return public([n for n in self.notifications if not n["delivered"]])
 
-    def mark_delivered(self, nid: str, channel: str, message_id: str | None) -> dict[str, Any]:
+    def mark_delivered(self, nid: str, channel: str, message_id: str | None, to: str | None = None) -> dict[str, Any]:
         with self.lock:
             n = next((x for x in self.notifications if x["id"] == nid), None)
             if n is None:
                 raise KeyError(nid)
             now = self.clock.now()
             ts = self.clock.iso(now)
-            n["deliveries"].append({"channel": channel, "message_id": message_id, "delivered_at": ts})
+            # `to`: the one person a private message went to (a direct Telegram message); None = the whole channel.
+            n["deliveries"].append({"channel": channel, "message_id": message_id, "delivered_at": ts, "to": to})
             if not n["delivered"]:
                 n.update(delivered=True, delivered_at=ts, channel=channel, message_id=message_id)
             self.scribe.record(self.scribe.name, "notification_delivered", {
                 "notification": nid, "incident": n["incident"], "channel": channel, "message_id": message_id,
-                "recipients": n["recipients"], "kind": n["kind"]})
+                "recipients": [to] if to else n["recipients"], "kind": n["kind"]})
             if n["incident"] in self.incidents:
                 self._timeline(self.incidents[n["incident"]], now, "delivered",
-                               f"{nid} delivered via {channel} (message_id {message_id})")
+                               f"{nid} delivered via {channel}{' to ' + to if to else ''} (message_id {message_id})")
             self._save()
             return public(n)
 
@@ -1510,7 +1513,74 @@ class Saguaro(Agent):
             return self.incident_public(inc)
 
     def routing_public(self) -> dict[str, Any]:
-        return self.router.public()
+        with self.lock:
+            out = self.router.public()
+            for c in out["contacts"]:
+                c["telegram_linked"] = bool(self.tg_links.chat_for(c["id"], c.get("telegram") or ""))
+            return out
+
+    # ---------------------------------------------------- personal Telegram alerts
+    def _addresses(self, recipients: list[str]) -> list[dict[str, str]]:
+        """Each recipient's email and Telegram, plus the private chat that reaches them if they linked one."""
+        out = self.router.addresses(recipients)
+        for a in out:
+            a["telegram_chat"] = self.tg_links.chat_for(a["id"], a.get("telegram") or "")
+        return out
+
+    def _contact(self, ref: str) -> routing.Contact:
+        c = self.router.contact(ref)
+        if c is None:
+            raise KeyError(ref)
+        return c
+
+    def telegram_link_code(self, contact: str, operator: str) -> dict[str, Any]:
+        """A one-time code the contact sends to the bot (/link CODE) to get their alerts in a private chat."""
+        with self.lock:
+            c = self._contact(contact)
+            code, expires = self.tg_links.new_code(c.id, operator)
+            self.scribe.record(self.name, "telegram_link_code", {"contact": c.id, "name": c.name, "operator": operator,
+                                                                 "expires_at": self.clock.iso(expires)})
+            return {"contact": c.id, "name": c.name, "code": code, "expires_at": self.clock.iso(expires),
+                    "valid_minutes": telegram_links.CODE_TTL_S // 60, "send": f"/link {code}"}
+
+    def telegram_link(self, code: str, chat_id: str, username: str = "") -> dict[str, Any]:
+        """The notifier passes on a /link CODE it received in a private chat."""
+        with self.lock:
+            now = self.clock.now()
+            link, replaced = self.tg_links.redeem(code, str(chat_id), username or "", self.clock.iso(now))
+            if link is None:
+                raise BadRequestError("That code is wrong, already used or expired. Ask for a new one.")
+            c = self._contact(link.contact_id)
+            self.scribe.record(self.name, "telegram_linked", {
+                "contact": c.id, "name": c.name, "chat_id": link.chat_id, "username": link.username,
+                "code_made_by": link.linked_by, "replaced_chat": replaced.chat_id if replaced else None})
+            return {**self._link_public(link), "replaced": bool(replaced)}
+
+    def telegram_unlink(self, contact: str | None, chat_id: str | None, operator: str) -> dict[str, Any]:
+        with self.lock:
+            link = self.tg_links.by_chat(chat_id) if chat_id else None
+            cid = link.contact_id if link else (self._contact(contact).id if contact else "")
+            gone = self.tg_links.unlink(cid) if cid else None
+            if gone is None:
+                raise KeyError(contact or chat_id or "")
+            self.scribe.record(self.name, "telegram_unlinked", {"contact": cid, "chat_id": gone.chat_id,
+                                                                "operator": operator})
+            return {"contact": cid, "unlinked": True}
+
+    def _link_public(self, link: telegram_links.Link) -> dict[str, Any]:
+        c = self.router.contact(link.contact_id)
+        return {**link.__dict__, "name": c.name if c else link.contact_id, "role": c.role if c else ""}
+
+    def telegram_links_public(self) -> list[dict[str, Any]]:
+        """Linked chats (by link code), then contacts whose routing entry is a chat id already."""
+        with self.lock:
+            out = [self._link_public(x) for x in self.tg_links.links.values()]
+            linked = {x["contact_id"] for x in out}
+            for c in self.router.contacts.values():
+                if c.id not in linked and telegram_links.is_chat_id(c.telegram):
+                    out.append({"contact_id": c.id, "chat_id": c.telegram, "username": "", "linked_at": "",
+                                "linked_by": "routing file", "name": c.name, "role": c.role})
+            return out
 
     def decision(self, iid: str, operator: str, decision: str, justification: str | None) -> dict[str, Any]:
         with self.lock:

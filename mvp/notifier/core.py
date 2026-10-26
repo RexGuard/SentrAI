@@ -7,7 +7,9 @@ import requests
 
 
 class CoreError(Exception):
-    pass
+    def __init__(self, message: str, detail: str = "") -> None:
+        super().__init__(message)
+        self.detail = detail  # the core's own explanation ("detail" of an HTTP error), if it gave one
 
 
 class Core:
@@ -24,7 +26,11 @@ class Core:
         except requests.RequestException as exc:
             raise CoreError(f"core unreachable at {self.base_url}: {exc.__class__.__name__}") from exc
         if r.status_code >= 400:
-            raise CoreError(f"{method} {path} -> HTTP {r.status_code}: {r.text[:200]}")
+            try:
+                detail = str((r.json() or {}).get("detail") or "")
+            except (ValueError, AttributeError):
+                detail = ""
+            raise CoreError(f"{method} {path} -> HTTP {r.status_code}: {r.text[:200]}", detail)
         try:
             return r.json()
         except ValueError:
@@ -47,9 +53,25 @@ class Core:
             data = data.get("notifications") or data.get("pending") or []
         return [n for n in (data or []) if isinstance(n, dict)]
 
-    def delivered(self, notification_id: str, channel: str, message_id: str) -> Any:
-        return self._req("POST", f"/notifications/{notification_id}/delivered",
-                         {"channel": channel, "message_id": str(message_id)})
+    def delivered(self, notification_id: str, channel: str, message_id: str, to: str | None = None) -> Any:
+        body = {"channel": channel, "message_id": str(message_id)}
+        if to:  # a direct message to one person
+            body["to"] = to
+        return self._req("POST", f"/notifications/{notification_id}/delivered", body)
+
+    def telegram_links(self) -> list[dict]:
+        """Private chats linked to routing contacts; [] when the core is older or unreachable."""
+        try:
+            data = self._req("GET", "/telegram/links")
+        except CoreError:
+            return []
+        return [x for x in data or [] if isinstance(x, dict)]
+
+    def telegram_link(self, code: str, chat_id: str, username: str) -> dict:
+        return self._req("POST", "/telegram/link", {"code": code, "chat_id": str(chat_id), "username": username})
+
+    def telegram_unlink(self, chat_id: str, operator: str) -> Any:
+        return self._req("POST", "/telegram/unlink", {"chat_id": str(chat_id), "operator": operator})
 
     def incident(self, incident_id: str) -> dict | None:
         try:

@@ -156,6 +156,12 @@ class CoreClient:
     def routing(self) -> dict:
         return self.get_json("/routing")
 
+    def telegram_link_code(self, contact: str, operator: str) -> dict:
+        return self.post_json("/telegram/link-codes", {"contact": contact, "operator": operator})
+
+    def telegram_unlink(self, contact: str, operator: str) -> Any:
+        return self.post_json("/telegram/unlink", {"contact": contact, "operator": operator})
+
     def rollback(self, incident_id: str, operator: str, justification: str) -> Any:
         return self.post_json(
             f"/incidents/{incident_id}/rollback", {"operator": operator, "justification": justification}
