@@ -320,3 +320,18 @@ def test_expiry_says_how_long_is_left():
     assert sh.expires_label((now + timedelta(seconds=20)).isoformat(), now=now).endswith("(in under 1 min)")
     assert sh.expires_label((now - timedelta(minutes=1)).isoformat(), now=now).endswith("(expired)")
     assert sh.expires_label(None) == "-"
+
+
+def test_approvals_headline_answers_first():
+    from datetime import datetime, timedelta, timezone
+    now = datetime(2026, 10, 26, 18, 0, tzinfo=timezone.utc)
+    soon = (now + timedelta(minutes=90)).isoformat()
+    later = (now + timedelta(minutes=110)).isoformat()
+    contained = [{"id": "a", "status": "contained", "actions": [{"status": "active", "expires_at": later}]},
+                 {"id": "b", "status": "contained", "actions": [{"status": "active", "expires_at": soon}]}]
+    text = sh.approvals_headline(contained, now=now)
+    assert text.startswith("2 waiting on you: 2 blocks to keep or roll back.")
+    assert "(in 1 h 30 min)" in text  # the earliest block, not the first row
+    opened = [{"id": "c", "status": "open", "actions": []}]
+    assert sh.approvals_headline(opened, now=now) == "1 waiting on you: 1 to approve or reject."
+    assert sh.approvals_headline([], now=now) == ""

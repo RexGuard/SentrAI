@@ -1101,6 +1101,22 @@ def routing_dot(routing: dict | None, colors: dict[str, str] | None = None) -> s
     return "\n".join(out)
 
 
+def approvals_headline(waiting: list[dict], now: datetime | None = None) -> str:
+    """The answer first: how many decisions wait, of which kind, and when the first block undoes itself."""
+    if not waiting:
+        return ""
+    decide = sum(1 for i in waiting if available_actions(i)["decide"])
+    keep = len(waiting) - decide
+    parts = [f"{decide} to approve or reject" if decide else "", f"{keep} block{'s' if keep != 1 else ''} to keep or roll back" if keep else ""]
+    text = f"{len(waiting)} waiting on you: " + " and ".join(p for p in parts if p) + "."
+    ends = [t for i in waiting for a in i.get("actions") or []
+            if isinstance(a, dict) and a.get("status") == "active" and (t := parse_ts(a.get("expires_at")))]
+    if ends:
+        first = min(ends)
+        text += f" The first block undoes itself at {expires_label(first, now)} unless someone keeps it."
+    return text
+
+
 def pending_approvals(incidents: Iterable[dict]) -> list[dict]:
     """Incidents waiting on a person: open ones to approve or reject, contained ones to keep or roll back."""
     waiting = [i for i in incidents or [] if (a := available_actions(i))["decide"] or a["contain_controls"]]
