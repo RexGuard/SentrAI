@@ -215,3 +215,5 @@ div[data-testid="stButtonGroup"] button[aria-checked="true"] { background: var(-
         color: var(--on-brand) !important; border-color: var(--brand-fill) !important; font-weight: 600; }
 div[data-testid="stButtonGroup"] button[aria-checked="true"] * { color: var(--on-brand); }
 .stCheckbox label:has(input[role="switch"])[data-selected="true"] > div:first-of-type > div { background: var(--on-brand); }
+/* Inline code in captions (setting names): Streamlit's green code ink at 0.75em failed AA contrast and the 12 px floor. */
+[data-testid="stCaptionContainer"] code { color: inherit; opacity: 1; font-size: 1em; }
