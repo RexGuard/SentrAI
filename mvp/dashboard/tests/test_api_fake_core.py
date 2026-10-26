@@ -62,3 +62,19 @@ def test_protection_switch(fake_core):
     assert c.protection()["protection"] == "on"
     assert any(r["type"] == "protection_changed" for r in c.audit()["records"])
     requests.post(f"{fake_core}/dev/reset", timeout=3)
+
+
+def test_assign_and_resolve(fake_core):
+    c = CoreClient(fake_core)
+    requests.post(f"{fake_core}/dev/reset", timeout=3)
+    iid = requests.post(f"{fake_core}/dev/trigger/brute_force", timeout=3).json()["id"]
+    assert c.get_json(f"/incidents/{iid}")["owner"]
+    assert c.assign(iid, "Lee", "erick")["owner"] == "Lee"
+    try:
+        c.resolve(iid, "erick", "")
+    except CoreError as exc:
+        assert exc.status == 400
+    else:
+        raise AssertionError("resolving without a note must fail")
+    assert c.resolve(iid, "erick", "password reset")["status"] == "resolved"
+    assert [x["id"] for x in c.routing()["contacts"]][0] == "on_duty"

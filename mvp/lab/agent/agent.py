@@ -335,7 +335,7 @@ def run(data: dict[str, Any]) -> None:
             if len(self.pending) > start:
                 guard.observe(self.pending[start:], held=enforcer.panel)
 
-    collector = WatchedCollector(data["panel"], paths.logs_dir(), token=data["key"])
+    collector = WatchedCollector(data["panel"], paths.logs_dir(), token=data["key"], host=data["host"])
     collector.session = panel_session(data)
     stop = threading.Event()
     threading.Thread(target=collector.run, name="collector", daemon=True).start()

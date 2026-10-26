@@ -641,8 +641,12 @@ class Collector:
 
     def __init__(self, core_url: str, logs_dir: Path,
                  flush_interval: float = 1.0, heartbeat_interval: float = 10.0,
-                 sources: list[Source] | None = None, token: str = "", poll_interval: float = POLL_S):
+                 sources: list[Source] | None = None, token: str = "", poll_interval: float = POLL_S,
+                 host: str | None = None):
         self.core_url = core_url.rstrip("/")
+        # A machine's agent names every event after the machine it joined as, before sealing it, so
+        # the panel's own host stamp matches the seal (otherwise every line reads as altered).
+        self.host = host
         self.headers = {"Authorization": f"Bearer {token}"} if token else {}
         self.logs_dir = logs_dir
         self.flush_interval = flush_interval
@@ -687,7 +691,10 @@ class Collector:
         if self.watch_sources:
             self.refresh_discovered()
         for source in self.sources:
-            self.pending.extend(self.chain.seal(ev) for ev in source.poll())
+            for ev in source.poll():
+                if self.host:
+                    ev["host"] = self.host
+                self.pending.append(self.chain.seal(ev))
 
     def flush(self) -> bool:
         """POST pending events. Keep them buffered if core is down."""
