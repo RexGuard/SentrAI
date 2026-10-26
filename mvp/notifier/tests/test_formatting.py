@@ -27,7 +27,7 @@ def test_telegram_message_without_incident_uses_risk_fallback():
 
 def test_buttons_depend_on_state():
     labels = [l for l, _ in button_specs(NOTIF, INC)]
-    assert labels == ["✅ Approve & Patch", "⛔ Reject with Justification"]
+    assert labels == ["✅ Approve & Patch", "⛔ Reject with Justification", "🙋 Take it"]
     assert button_specs(NOTIF, INC)[0][1] == "approve:RSK-2026-081"
     contained = button_specs({**NOTIF, "kind": "autonomous_action"}, {**INC, "status": "contained"})
     assert [d.split(":")[0] for _, d in contained] == ["rollback", "permanent"]
@@ -58,3 +58,10 @@ def test_alert_links_the_signed_report():
     msg = format_telegram({**NOTIF, "report_url": url}, INC)
     assert '<a href="http://127.0.0.1:8000/reports/RSK-2026-081.md?sig=abc&amp;x=1">Open the report</a>' in msg
     assert "Open the report" not in format_telegram(NOTIF, INC)  # alerts without an incident have no report
+
+
+def test_take_it_and_who_the_alert_is_for():
+    assert parse_callback("take:RSK-1") == ("take", "RSK-1")
+    text = format_telegram({**NOTIF, "deliver_to": [{"name": "Amir", "telegram": "amir"},
+                                                    {"name": "Lee", "telegram": "-100123"}]}, INC)
+    assert "For: @amir" in text and "-100123" not in text

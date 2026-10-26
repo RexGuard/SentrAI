@@ -361,8 +361,8 @@ def test_system_log_entries(tmp_path):
     (tmp_path / "var/log/nginx").mkdir(parents=True)
     (tmp_path / "var/log/nginx/access.log").write_text("")
     (tmp_path / "var/log/secure").write_text("")
-    got = collector.system_log_entries(tmp_path, has_journalctl=True)
+    got = collector.system_log_entries(tmp_path, has_journalctl=True, windows=False)
     assert [(Path(e["path"]).name, e["format"]) for e in got] == [("access.log", "nginx"), ("secure", "syslog")]
     (tmp_path / "var/log/secure").unlink()
-    assert collector.system_log_entries(tmp_path, has_journalctl=True)[-1]["path"] == "journald:sshd"
-    assert [e["format"] for e in collector.system_log_entries(tmp_path, has_journalctl=False)] == ["nginx"]
+    assert collector.system_log_entries(tmp_path, has_journalctl=True, windows=False)[-1]["path"] == "journald:sshd"
+    assert [e["format"] for e in collector.system_log_entries(tmp_path, has_journalctl=False, windows=False)] == ["nginx"]

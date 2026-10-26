@@ -138,6 +138,35 @@ def test_demote_headings():
     assert out.splitlines() == ["### Title", "#### Sub", "not # a heading"]
 
 
+def test_board_says_who_owns_what_and_what_needs_a_person():
+    incs = [
+        {"id": "A", "status": "open", "severity": "high", "owner": "Amir", "sla_breached": True, "acked": False,
+         "escalation_level": 1, "category": "brute_force", "opened_at": "2026-10-26T10:00:00+08:00"},
+        {"id": "B", "status": "acknowledged", "severity": "medium", "owner": "Lee", "acked": True, "category": "xss"},
+        {"id": "C", "status": "open", "severity": "critical", "owner": None, "acked": False, "category": "malware"},
+        {"id": "D", "status": "resolved", "severity": "high", "owner": "Lee", "resolved_by": "Lee"},
+    ]
+    assert sh.attention(incs[1]) == []  # acknowledged and owned: in hand
+    assert sh.attention(incs[0])[:2] == ["Overdue, nobody answered", "Escalated to Amir"]
+    assert sh.attention(incs[2])[0] == "No owner"
+    assert [i["id"] for i in sh.needs_attention(incs)] == ["C", "A"]
+    c = sh.board_counts(incs, me="lee")
+    assert (c["open"], c["attention"], c["overdue"], c["escalated"], c["unassigned"], c["mine"]) == (3, 2, 1, 1, 1, 1)
+    df = sh.board_rows(incs)
+    assert list(df["Incident"]) == ["C", "A", "B"] and list(df["Owner"]) == ["Nobody", "Amir", "Lee"]
+    assert list(df[df["Incident"] == "B"]["Needs"]) == ["In hand"]
+    assert "D" in list(sh.board_rows(incs, include_closed=True)["Incident"])
+
+
+def test_routing_tables_use_names():
+    routing = {"contacts": [{"id": "a", "name": "Amir", "role": "on_duty", "backup": "b"}, {"id": "b", "name": "Lee"}],
+               "rules": [{"name": "High", "match": {"severity": ["high"]}, "owner": "a", "notify": ["b"]},
+                         {"name": "Everything else", "match": {}, "owner": "a", "notify": []}]}
+    rules = sh.routing_rows(routing)
+    assert list(rules["When"]) == ["severity is high", "anything else"] and list(rules["Also told"]) == ["Lee", "-"]
+    assert list(sh.contact_rows(routing)["Backup"]) == ["Lee", "-"]
+
+
 def test_panel_machines_merge_scores_and_joined_agents():
     from datetime import datetime, timezone
 
@@ -169,9 +198,16 @@ def test_agent_rows_and_join_commands():
     cmds = sh.join_commands("https://panel.example.com:8000/", "K7QM-2XPA-9RTD", "web-01")
     assert cmds["linux"] == ("sudo ./mvp/deploy/install-agent.sh --panel https://panel.example.com:8000 "
                              "--code K7QM-2XPA-9RTD --name web-01")
-    assert cmds["windows"].splitlines() == ["cd mvp\\lab",
-                                            "python -m agent join --panel https://panel.example.com:8000 --code K7QM-2XPA-9RTD --name web-01",
-                                            "python -m agent run"]
+    assert cmds["windows"] == ("powershell -ExecutionPolicy Bypass -File .\\mvp\\deploy\\install-agent.ps1 "
+                               "-Panel https://panel.example.com:8000 -Code K7QM-2XPA-9RTD -Name web-01")
+    assert "-Name" not in sh.join_commands("https://p.example.com", "K7QM-2XPA-9RTD")["windows"]
+    pin = "sha256:" + "ab" * 32
+    pinned = sh.join_commands("https://panel.example.com:8443", "K7QM-2XPA-9RTD", None, pin)
+    assert pinned["linux"].endswith(f"--code K7QM-2XPA-9RTD --pin {pin}") and pinned["windows"].endswith(f"-Pin {pin}")
+    off = sh.agent_rows([{"agent_id": "a", "host": "web-01", "offline": {"from": "2026-10-26T10:00:00+00:00",
+                                                                         "to": "2026-10-26T10:40:00+00:00",
+                                                                         "local_blocks": 2}}])
+    assert off["Last time offline"][0].startswith("2 local blocks")
 
 
 def test_services_on_a_machine():
@@ -183,3 +219,16 @@ def test_services_on_a_machine():
     assert list(df["Service"])[:2] == ["nginx", "a"] and df.iloc[0]["Protocol"] == "TCP"
     row = sh.panel_machines([{"host": "web-01", "risk_index": 10, "services": svcs}], [], {})[0]
     assert "nginx :443 (2 open)" in sh.machine_rows_html([row])
+
+
+def test_job_rows_and_latest_findings():
+    jobs = [{"kind": "threat_scan", "status": "done", "requested_by": "erick", "created_at": "2026-10-26T10:00:00+00:00",
+             "finished_at": "2026-10-26T10:00:20+00:00", "summary": "3 files checked, 1 findings",
+             "result": {"findings": [{"severity": "critical", "label": "PHP web shell", "kind": "web_shell",
+                                      "path": "/var/www/x.php", "line": 2}]}},
+            {"kind": "backup", "status": "queued", "requested_by": "erick", "created_at": "2026-10-26T10:01:00+00:00"}]
+    rows = sh.job_rows(jobs)
+    assert list(rows["Job"]) == ["Threat scan", "Backup"] and list(rows["Status"]) == ["Done", "Waiting"]
+    found = sh.job_findings(jobs)
+    assert list(found["File"]) == ["/var/www/x.php"] and found["Severity"][0] == "critical"
+    assert sh.job_findings([]).empty and sh.job_rows(None).empty

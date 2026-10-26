@@ -1,37 +1,71 @@
 ---
 title: Signing in
 nav: docs
-description: Sign in to the SentrAI dashboard, find or reset the sign-in, and what changes when team accounts arrive.
+description: Create the Owner account, invite your team, pick roles, and reset a sign-in.
 ---
 
 # Signing in
 
-The dashboard asks for an email and a password on every new browser session. Only a salted hash
-of the password is saved, never the password itself.
+Everyone signs in to the dashboard with their own account: an email, a password and a 6-digit
+code from an authenticator app. Every approval, block and scan is recorded under that person's
+name. There is no open sign-up; people join by invite.
 
-## Your first sign-in
+## Create the Owner account
 
-The first start makes the sign-in for you:
+1. **Get a setup code.** On a new machine, `run.ps1` / `run.sh` prints a one-time **setup code**.
+   You can also make one with `python cactai_config.py admin` (laptop) or `sudo cactai-admin`
+   (server). A setup code works once, for 24 hours.
+2. **Open the dashboard** (`http://127.0.0.1:8501` on a laptop, `https://<server>:8501` on a
+   server). It opens on *Create your Owner account*. Type the setup code, your name, email and a
+   password of at least 12 characters.
+3. **Add an authenticator app.** Scan the QR code with any authenticator app (Google
+   Authenticator, Microsoft Authenticator, 1Password and the like), then type the 6-digit code.
+4. **Save the recovery codes.** You get 8 one-time codes for when your phone is lost. Keep them
+   somewhere other than the server.
 
-- **Laptop:** the setup questions ask for an email and a password (press Enter and one is made for
-  you). At the end, `run.ps1` / `run.sh` prints the sign-in, with the password shown that one time.
-- **Server:** the installer asks for both, or takes `--admin-email`, and prints the sign-in at the
-  end.
+On a server, the installer can make the Owner for you instead: it asks for the Owner's email and
+password on a first install (or takes `--admin-email`). Press Enter to skip and use a setup code.
 
-Open the dashboard (`http://127.0.0.1:8501` on a laptop, `https://<server>:8501` on a server)
-and sign in.
+A machine set up before accounts existed keeps its sign-in: that email and password become the
+Owner, who adds an authenticator at the next sign-in.
 
-After five wrong tries from one address, that address has to wait five minutes.
+## Invite your team
 
-## Find or reset the sign-in
+On the **Team** page (Owners and Admins only), type a person's email, pick a role and press
+**Make invite link**. Send them the link; it lasts 72 hours. They pick their own password and add
+their own authenticator.
 
-| | Demo (from the `mvp` folder) | Server |
+| Role | Can |
+| --- | --- |
+| Owner | everything, including adding and removing Owners |
+| Admin | approve and block, scan, back up and restore, add or revoke machines, change settings, invite and remove Admins and Auditors |
+| Auditor | see every page, including Machines and Backups, check that a backup is intact and download reports; changes nothing |
+
+For an Auditor, buttons that would change something are greyed out with the reason, and the
+dashboard refuses the change before it reaches the core.
+
+Each sign-in shows when and from where your previous one happened, so a sign-in you did not make
+stands out. After five wrong passwords or codes from one address, that address waits five minutes.
+
+## Reset a sign-in
+
+A forgotten password or a lost phone: an Owner or Admin opens the **Team** page, picks the person
+and presses **Reset sign-in**. Their old password stops working, and the link it makes lets them
+set a new password and authenticator. A recovery code also gets you in once without your phone.
+
+If no one else can sign in, reset from the machine itself:
+
+| | Laptop (from the `mvp` folder) | Server |
 | --- | --- | --- |
-| Show the sign-in email | `python cactai_config.py admin` | `sudo cactai-admin` |
-| New password, printed once | `python cactai_config.py admin --reset` | `sudo cactai-admin --reset` |
-| New email and password | `python cactai_config.py admin --email you@example.com --reset` | `sudo cactai-admin --email you@example.com --reset` |
+| Who may sign in (a setup code on a new machine) | `python cactai_config.py admin` | `sudo cactai-admin` |
+| The first Owner: new password, printed once | `python cactai_config.py admin --reset` | `sudo cactai-admin --reset` |
+| The same for another account | `python cactai_config.py admin --reset --email you@example.com` | `sudo cactai-admin --reset --email you@example.com` |
 
-You can also change the password on the dashboard, under **Configuration**, section **6. Access**.
+After a reset, the authenticator app is added again at the next sign-in.
+
+For local testing where you do not want to sign in, start SentrAI with
+`CACTAI_DASHBOARD_LOGIN=off` (`$env:CACTAI_DASHBOARD_LOGIN = "off"` in PowerShell). Never use it
+on a server.
 
 ## The API token
 

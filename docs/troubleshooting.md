@@ -58,19 +58,23 @@ Work through these in order:
    the dashboard refuses to run without `nft` or `iptables` rather than run open. Install one, or
    use `--dashboard-local` and an [SSH tunnel](server.html#keep-the-dashboard-on-the-server).
 
-## I forgot the dashboard password
+## I forgot the dashboard password, or lost my phone
 
-Make a new one; it is printed once:
+Ask an Owner or Admin to press **Reset sign-in** for you on the **Team** page. A recovery code
+also lets you in once without your phone. If no one else can sign in, reset from the machine;
+the new password is printed once:
 
 ```bash
 python cactai_config.py admin --reset     # laptop
 sudo cactai-admin --reset                  # server
 ```
 
+Add `--email you@example.com` for an account other than the first Owner.
+
 ## "Too many tries"
 
-After five wrong passwords from one address, that address waits five minutes. Wait, then try
-again, or reset the password as above.
+After five wrong passwords or codes from one address, that address waits five minutes. Wait, then
+try again, or reset the sign-in as above.
 
 ## No alerts arrive in Telegram
 
@@ -90,11 +94,15 @@ Without a bot token, alerts go to the notifier's window (Windows) or `.run_logs/
 
 The agent installer prints why. The usual causes:
 
-- **"the panel must be reached over https://"**: use the HTTPS address in front of the core, not
-  `http://…:8000`. See [Let the agents reach the panel](panel.html#2-let-the-agents-reach-the-panel-over-https).
-- **"could not reach the panel"**: from the new machine, try `curl https://panel.example.com:8443/health`.
-  If it fails, open the port to that machine in the panel's firewall and your cloud provider's.
-  A certificate error means the panel uses its own certificate: pass it with `--ca`.
+- **"the panel must be reached over https://"**: use the agents' address, `https://…:8443`, not
+  `http://…:8000`. The panel needs `install.sh --panel` first; see
+  [Install the panel](panel.html#1-install-the-panel).
+- **"could not reach the panel"**: from the new machine, try
+  `curl -k https://panel.example.com:8443/health`. If it fails, allow port 8443 from that machine in
+  the panel's firewall and in your cloud provider's.
+- **"could not reach the panel … SSLError"**: the certificate does not match the pin. Copy the
+  command again from **Add machine**, with its `--pin`. After a certificate change, set the new pin
+  with `python -m agent pin sha256:...`.
 - **"the panel refused to join this machine"**: the join code was already used or is more than 24
   hours old. Make a new one under **Machines**, **Add machine**.
 - **"the panel no longer accepts this machine's key"**: the machine was revoked. Join it again with

@@ -573,20 +573,55 @@ def agent_rows(agents: Iterable[dict]) -> pd.DataFrame:
     for a in agents or []:
         if not isinstance(a, dict):
             continue
+        off = a.get("offline") if isinstance(a.get("offline"), dict) else {}
+        alone = (f"{off.get('local_blocks', 0)} local blocks, {short_time(off.get('from'))} to "
+                 f"{short_time(off.get('to'))}" if off else "")
         rows.append({"Machine": a.get("host"), "Id": a.get("agent_id"), "Joined": short_time(a.get("joined_at")),
                      "Invited by": a.get("invited_by") or "", "Last seen": short_time(a.get("last_seen")) or "never",
+                     "Last time offline": alone,
                      "Status": f"Revoked by {a.get('revoked_by') or '?'}" if a.get("revoked_at") else "Active"})
     rows.sort(key=lambda r: (r["Status"] != "Active", str(r["Machine"])))
-    return pd.DataFrame(rows, columns=["Machine", "Id", "Joined", "Invited by", "Last seen", "Status"])
+    return pd.DataFrame(rows, columns=["Machine", "Id", "Joined", "Invited by", "Last seen", "Last time offline",
+                                       "Status"])
 
 
-def join_commands(panel_url: str, code: str, name: str | None = None) -> dict[str, str]:
-    """What to paste on the new machine, for Linux (installer) and for Windows or a laptop (from a checkout)."""
+JOB_LABELS = {"threat_scan": "Threat scan", "backup": "Backup"}
+JOB_STATUS = {"queued": "Waiting", "running": "Running", "done": "Done", "failed": "Failed",
+              "expired": "Expired", "cancelled": "Cancelled"}
+
+
+def job_rows(jobs: Iterable[dict]) -> pd.DataFrame:
+    """Scans and backups the panel asked one machine to run, newest first."""
+    rows = []
+    for j in jobs or []:
+        if not isinstance(j, dict):
+            continue
+        rows.append({"Job": JOB_LABELS.get(str(j.get("kind")), str(j.get("kind"))),
+                     "Status": JOB_STATUS.get(str(j.get("status")), str(j.get("status"))),
+                     "Asked by": j.get("requested_by") or "", "Asked": short_time(j.get("created_at")),
+                     "Finished": short_time(j.get("finished_at")) or "", "Result": j.get("summary") or ""})
+    return pd.DataFrame(rows, columns=["Job", "Status", "Asked by", "Asked", "Finished", "Result"])
+
+
+def job_findings(jobs: Iterable[dict]) -> pd.DataFrame:
+    """Findings from the newest finished threat scan on one machine."""
+    scan = next((j for j in jobs or [] if isinstance(j, dict) and j.get("kind") == "threat_scan"
+                 and j.get("status") == "done"), None)
+    rows = [{"Severity": f.get("severity"), "What": f.get("label"), "Kind": f.get("kind"),
+             "File": f.get("path") + (f" ({f['entry']})" if f.get("entry") else ""), "Line": f.get("line")}
+            for f in ((scan or {}).get("result") or {}).get("findings") or [] if isinstance(f, dict)]
+    return pd.DataFrame(rows, columns=["Severity", "What", "Kind", "File", "Line"])
+
+
+def join_commands(panel_url: str, code: str, name: str | None = None, pin: str | None = None) -> dict[str, str]:
+    """What to paste on the new machine, from a SentrAI checkout: both install the agent as a service.
+    ``pin`` is the panel certificate's fingerprint: the agent then trusts that certificate and no other."""
     url = panel_url.rstrip("/")
-    named = f" --name {name}" if name else ""
     return {
-        "linux": f"sudo ./mvp/deploy/install-agent.sh --panel {url} --code {code}{named}",
-        "windows": f"cd mvp\\lab\npython -m agent join --panel {url} --code {code}{named}\npython -m agent run",
+        "linux": f"sudo ./mvp/deploy/install-agent.sh --panel {url} --code {code}" + (f" --name {name}" if name else "")
+                 + (f" --pin {pin}" if pin else ""),
+        "windows": (f"powershell -ExecutionPolicy Bypass -File .\\mvp\\deploy\\install-agent.ps1 -Panel {url} -Code {code}"
+                    + (f" -Name {name}" if name else "") + (f" -Pin {pin}" if pin else "")),
     }
 
 
@@ -786,6 +821,121 @@ def all_action_rows(incidents: Iterable[dict]) -> pd.DataFrame:
 def start_page(incidents: Iterable[dict] | None) -> str:
     """Where the console opens: Approvals when something waits on a person, otherwise Review."""
     return "approvals" if pending_approvals(incidents or []) else "review"
+
+
+# ------------------------------------------------------------------ incident board
+
+OPEN_STATUSES = ("open", "acknowledged", "contained")  # not closed yet: somebody still owns them
+SEVERITY_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
+
+
+def _age_hours(inc: dict, now: datetime | None = None) -> float:
+    opened = parse_ts(inc.get("opened_at"))
+    if opened is None:
+        return 0.0
+    now = now or datetime.now(opened.tzinfo)
+    return max(0.0, (now - opened).total_seconds() / 3600)
+
+
+def attention(inc: dict) -> list[str]:
+    """Why a person should look at this incident now, most urgent first. Empty when it is fine."""
+    if inc.get("status") not in OPEN_STATUSES:
+        return []
+    why = []
+    if not inc.get("owner"):
+        why.append("No owner")
+    if inc.get("sla_breached") and not inc.get("acked"):
+        why.append("Overdue, nobody answered")
+    if int(inc.get("escalation_level") or 0) > 0 and not inc.get("acked"):
+        why.append(f"Escalated to {inc.get('owner')}")
+    if inc.get("needs_review"):
+        why.append("AI unsure, needs review")
+    can = available_actions(inc)
+    if inc.get("status") == "contained" or can["contain_controls"]:
+        why.append("Keep or roll back the block")
+    elif can["decide"] and not inc.get("acked"):
+        why.append("Waiting for a decision")
+    return why
+
+
+def needs_attention(incidents: Iterable[dict]) -> list[dict]:
+    """Open incidents with at least one reason to look, most urgent first."""
+    rows = [i for i in incidents or [] if attention(i)]
+    return sorted(rows, key=lambda i: (bool(i.get("acked")), SEVERITY_RANK.get(str(i.get("severity")), 9),
+                                       -incident_contribution(i)))
+
+
+def board_counts(incidents: Iterable[dict], me: str = "") -> dict[str, int]:
+    incs = [i for i in incidents or [] if i.get("status") in OPEN_STATUSES]
+    me = me.strip().lower().lstrip("@")
+    return {
+        "open": len(incs),
+        "attention": sum(1 for i in incs if attention(i)),
+        "overdue": sum(1 for i in incs if i.get("sla_breached") and not i.get("acked")),
+        "escalated": sum(1 for i in incs if int(i.get("escalation_level") or 0) > 0),
+        "unassigned": sum(1 for i in incs if not i.get("owner")),
+        "mine": sum(1 for i in incs if me and str(i.get("owner") or "").lower().lstrip("@") == me),
+    }
+
+
+BOARD_COLUMNS = ["Incident", "What", "Host", "Severity", "Status", "Owner", "Backup", "Age (h)", "Needs"]
+
+
+def board_rows(incidents: Iterable[dict], include_closed: bool = False) -> pd.DataFrame:
+    """One row per incident: who has it, how long it has been open, and what it still needs."""
+    rows = []
+    for inc in incidents or []:
+        closed = inc.get("status") not in OPEN_STATUSES
+        if closed and not include_closed:
+            continue
+        needs = attention(inc)
+        rows.append({
+            "Incident": inc.get("id", "?"),
+            "What": category_label(inc.get("category")),
+            "Host": inc.get("host") or "-",
+            "Severity": str(inc.get("severity") or "-").capitalize(),
+            "Status": status_label(inc.get("status")),
+            "Owner": inc.get("owner") or "Nobody",
+            "Backup": inc.get("backup") or "-",
+            "Age (h)": round(_age_hours(inc), 1),
+            "Needs": ("Closed by " + str(inc.get("resolved_by") or inc.get("acked_by") or "-")) if closed
+            else ("; ".join(needs) if needs else "In hand"),
+            "_rank": (closed, not needs, SEVERITY_RANK.get(str(inc.get("severity")), 9)),
+        })
+    if not rows:
+        return pd.DataFrame(columns=BOARD_COLUMNS)
+    rows.sort(key=lambda r: r["_rank"])
+    return pd.DataFrame(rows, columns=BOARD_COLUMNS)
+
+
+def owner_history(inc: dict) -> list[str]:
+    """Plain lines: who was given the incident, by whom, and every escalation."""
+    out = [f"{t.get('ts', '')[11:19]}  {t.get('text', '')}" for t in inc.get("timeline") or []
+           if t.get("kind") in ("assigned", "escalated", "ack", "resolved")]
+    return out
+
+
+def routing_rows(routing: dict | None) -> pd.DataFrame:
+    names = {c.get("id"): c.get("name") for c in (routing or {}).get("contacts") or []}
+    rows = []
+    for r in (routing or {}).get("rules") or []:
+        match = r.get("match") or {}
+        rows.append({
+            "Rule": r.get("name"),
+            "When": "; ".join(f"{k} is {' or '.join(v)}" for k, v in match.items()) or "anything else",
+            "Owner": names.get(r.get("owner"), r.get("owner")),
+            "Also told": ", ".join(names.get(x, x) for x in r.get("notify") or []) or "-",
+        })
+    return pd.DataFrame(rows, columns=["Rule", "When", "Owner", "Also told"])
+
+
+def contact_rows(routing: dict | None) -> pd.DataFrame:
+    contacts = (routing or {}).get("contacts") or []
+    names = {c.get("id"): c.get("name") for c in contacts}
+    rows = [{"Contact": c.get("name"), "Role": str(c.get("role") or "-").replace("_", " "),
+             "Email": c.get("email") or "-", "Telegram": c.get("telegram") or "-",
+             "Backup": names.get(c.get("backup"), "-") if c.get("backup") else "-"} for c in contacts]
+    return pd.DataFrame(rows, columns=["Contact", "Role", "Email", "Telegram", "Backup"])
 
 
 def pending_approvals(incidents: Iterable[dict]) -> list[dict]:

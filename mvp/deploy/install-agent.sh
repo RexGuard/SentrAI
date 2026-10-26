@@ -1,16 +1,20 @@
 #!/usr/bin/env bash
 # Installs the SentrAI agent on a machine that reports to a central SentrAI panel (run as root,
-# from a checkout of the repo). The panel scores and decides; this machine only sends its logs
-# and puts the panel's blocks for it into its own firewall. Only outgoing HTTPS, no open port.
+# from a checkout of the repo). The panel scores and decides; this machine sends its logs and puts
+# the panel's blocks for it into its own firewall. Only outgoing HTTPS, no open port. While the
+# panel cannot be reached, local rules block clear attacks for an hour at a time and report back.
 #
-#   On the panel:   Machines > Add machine (or POST /fleet/join-codes) gives a one-time join code.
-#   Here:           sudo ./deploy/install-agent.sh --panel https://panel.example.com:8000 --code ABCD-EFGH-JKLM
+#   On the panel:   Machines > Add machine (or POST /fleet/join-codes) gives a one-time join code
+#                   and the panel's certificate pin.
+#   Here:           sudo ./deploy/install-agent.sh --panel https://panel.example.com:8443 --code ABCD-EFGH-JKLM \
+#                       --pin sha256:...
 #
 # Options:
 #   --panel URL       the panel's core address (https://; required on a first install)
 #   --code CODE       the one-time join code (required on a first install)
 #   --name NAME       this machine's name on the panel (default: its host name)
-#   --ca FILE         the panel's certificate, when it is self-signed
+#   --pin PIN         the panel's certificate pin (sha256:...), shown with the join code
+#   --ca FILE         the panel's certificate file, instead of a pin
 #   --allow-http      accept a plain http:// panel (private test networks only)
 #   --enforce         really change the firewall (default: dry run, the commands are only logged)
 #   --protect IP      never block this IP or network here (repeatable; the panel's own address is always kept)
@@ -22,7 +26,7 @@
 #   /etc/cactai/agent.env              settings (root:cactai 0640)
 #   /var/lib/cactai/agent/             machine key, read positions, blocks in force (cactai 0700)
 #   /etc/systemd/system/cactai-agent.service
-# The agent also approves this machine's nginx and SSH login logs (collector --add-system-logs).
+# The agent also approves this machine's nginx, SSH login, Suricata and database logs (collector --add-system-logs).
 # Remove it with: systemctl disable --now cactai-agent && rm /etc/systemd/system/cactai-agent.service
 set -euo pipefail
 
@@ -32,6 +36,7 @@ PANEL=""
 CODE=""
 NAME=""
 CA=""
+PIN=""
 ALLOW_HTTP=0
 ENFORCE=0
 START=1
@@ -41,6 +46,7 @@ while [ $# -gt 0 ]; do
         --panel) PANEL="$2"; shift 2 ;;
         --code) CODE="$2"; shift 2 ;;
         --name) NAME="$2"; shift 2 ;;
+        --pin) PIN="$2"; shift 2 ;;
         --ca) CA="$2"; shift 2 ;;
         --allow-http) ALLOW_HTTP=1; shift ;;
         --enforce) ENFORCE=1; shift ;;
@@ -48,7 +54,7 @@ while [ $# -gt 0 ]; do
         --prefix) PREFIX="$2"; shift 2 ;;
         --user) SVC_USER="$2"; shift 2 ;;
         --no-start) START=0; shift ;;
-        -h|--help) sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "Unknown option: $1 (see --help)" >&2; exit 2 ;;
     esac
 done
@@ -90,7 +96,7 @@ install -d -m 0755 "$PREFIX" "$MVP"
 rm -rf "$MVP/core/app"
 tar -C "$SRC" -cf - --exclude=.venv --exclude=__pycache__ --exclude=.pytest_cache \
     --exclude=./lab/logs --exclude=./lab/scout/sources.json --exclude=./lab/scout/pending.json \
-    ./lab ./core/app ./cactai_config.py | tar -C "$MVP" -xf - --no-same-owner
+    ./lab ./core/app ./cactai_config.py ./cactai_llm.py | tar -C "$MVP" -xf - --no-same-owner
 chown -R root:root "$MVP"
 chmod -R u=rwX,go=rX "$MVP"
 if [ ! -x "$MVP/lab/.venv/bin/python" ]; then
@@ -114,6 +120,10 @@ CACTAI_LAB_LOGS=$STATE/logs
 CACTAI_FIREWALL=auto
 CACTAI_FIREWALL_ENFORCE=$ENFORCE
 PROTECTED_IPS=$protected
+# While the panel cannot be reached: block clear attacks here for this long, at most this many an hour.
+CACTAI_AGENT_LOCAL_RULES=on
+CACTAI_AGENT_LOCAL_TTL_MIN=60
+CACTAI_AGENT_LOCAL_MAX_PER_HOUR=10
 EOF
     chown root:"$SVC_USER" "$ENV_FILE"
     chmod 0640 "$ENV_FILE"
@@ -133,11 +143,12 @@ as_agent() {  # run as the service account with the agent's settings
 if [ -n "$CODE" ]; then
     args=(-m agent join --panel "$PANEL" --code "$CODE")
     [ -n "$NAME" ] && args+=(--name "$NAME")
+    [ -n "$PIN" ] && args+=(--pin "$PIN")
     [ -n "$CA" ] && args+=(--ca "$CA")
     [ "$ALLOW_HTTP" = 1 ] && args+=(--allow-http)
     as_agent "${args[@]}" || die "could not join the panel (see the message above)"
 fi
-as_agent -m collector.collector --add-system-logs || echo "No nginx or SSH logs found yet; approve logs later with Scout."
+as_agent -m collector.collector --add-system-logs || echo "No web, SSH, Suricata or database logs found yet; approve logs later with Scout."
 
 # --- service ----------------------------------------------------------------
 sed -e "s|@PREFIX@|$PREFIX|g" -e "s|@USER@|$SVC_USER|g" -e "s|@LOGGROUPS@|${LOG_GROUPS[*]}|g" \

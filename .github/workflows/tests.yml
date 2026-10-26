@@ -70,3 +70,33 @@ jobs:
         if: ${{ !cancelled() }}
         working-directory: mvp/notifier
         run: .venv/${{ runner.os == 'Windows' && 'Scripts/python.exe' || 'bin/python' }} -m pytest -q
+
+  windows-agent:
+    # Installs the agent as a real Windows service on the runner (which runs as Administrator),
+    # joins a local panel, puts one real Windows Firewall block in place and uninstalls again.
+    name: Windows agent installer
+    runs-on: windows-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: powershell
+        working-directory: mvp
+    env:
+      PYTHONUTF8: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: mvp/*/requirements.txt
+
+      - name: Panel venv
+        run: |
+          python -m venv core\.venv
+          core\.venv\Scripts\python.exe -m pip install -q -r core\requirements.txt
+
+      - name: Install, enforce, uninstall
+        run: ..\.github\scripts\windows-agent-smoke.ps1

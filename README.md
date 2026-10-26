@@ -83,13 +83,13 @@ Upgrade by running `git pull` and the same install command again; settings, sign
 
 ### 3c. Watch more machines from one panel
 
-A server install can be the **central panel** for other machines. Add `CACTAI_RISK_SCOPE=host`, `CACTAI_FIREWALL=off` and `CACTAI_PUBLIC_URL=https://panel.example.com:8443` to its `/etc/cactai/cactai.env`, put HTTPS in front of its core, and restart it. Then, for each machine, press **Make join code** on the dashboard's **Machines** page and paste the command it shows on that machine:
+A server install can be the **central panel** for other machines. Add `--panel` to the install command (or run `sudo ./deploy/install.sh --panel` on an installed server): it opens port 8443 for agents, with HTTPS, and scores each machine on its own. Then, for each machine, press **Make join code** on the dashboard's **Machines** page and paste the command it shows on that machine, for example on Linux:
 
 ```bash
-sudo ./mvp/deploy/install-agent.sh --panel https://panel.example.com:8443 --code ABCD-EFGH-JKLM --name web-01
+sudo ./mvp/deploy/install-agent.sh --panel https://panel.example.com:8443 --code ABCD-EFGH-JKLM --pin sha256:... --name web-01
 ```
 
-The agent sends that machine's logs to the panel and applies the panel's blocks for it, as a dry run until you rerun it with `--enforce`. It only makes outgoing HTTPS calls. Step by step, with the HTTPS setup and Windows: [One panel, many machines](https://rexguard.github.io/SentrAI/docs/panel.html).
+Windows machines get a matching `install-agent.ps1` command. The agent sends that machine's logs to the panel and applies the panel's blocks for it, as a dry run until you rerun it with `--enforce`. It only makes outgoing HTTPS calls. Step by step: [One panel, many machines](https://rexguard.github.io/SentrAI/docs/panel.html).
 
 ### 4. Protect your own IP first
 
@@ -108,6 +108,7 @@ cd lab && .venv/bin/python -m collector.collector --add-system-logs
 Out of the box a block only goes on SentrAI's own blocklist (`/blocklist`, for your app or proxy to read). For blocks to stop traffic on their own, turn on one of:
 
 - **Host firewall:** set `CACTAI_FIREWALL=auto` (or `nftables`, `iptables`, `netsh` on Windows). It starts as a dry run that only logs the command it would run. When the commands look right, set `CACTAI_FIREWALL_ENFORCE=1` (needs root or administrator rights).
+- **Cloudflare:** set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ZONE_ID` so each block also stops the attacker at Cloudflare's edge, and is removed there when it ends. See [Integrations](https://rexguard.github.io/SentrAI/docs/integrations.html).
 - **Webhook:** set `CACTAI_RESPONDER_WEBHOOK_URL` (and `CACTAI_RESPONDER_WEBHOOK_SECRET`) so your own gateway, proxy or WAF applies each block and unblock.
 
 See [Firewall blocking](https://rexguard.github.io/SentrAI/docs/settings.html#firewall-blocking) and the [full variable list](https://github.com/RexGuard/SentrAI/blob/main/mvp/README.md#variables).

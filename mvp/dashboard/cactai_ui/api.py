@@ -21,10 +21,17 @@ class CoreError(Exception):
         self.status = status
 
 
+READ_ONLY_POSTS = ("/chat",)  # asking the orchestrator a question changes nothing
+READ_ONLY_POST_ENDS = ("/verify",)  # checking a backup is intact changes nothing either
+READ_ONLY_MESSAGE = "Auditors can see everything but change nothing. Ask an Owner or Admin."
+
+
 class CoreClient:
-    def __init__(self, base_url: str, timeout: float = DEFAULT_TIMEOUT, token: str = "") -> None:
+    def __init__(self, base_url: str, timeout: float = DEFAULT_TIMEOUT, token: str = "",
+                 read_only: bool = False) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self.read_only = read_only  # an Auditor's console: every change is refused before it leaves
         self.session = requests.Session()
         if token:  # the core's API token (cactai_config.api_token())
             self.session.headers["Authorization"] = f"Bearer {token}"
@@ -34,6 +41,9 @@ class CoreClient:
 
     def _request(self, method: str, path: str, body: Any | None = None,
                  timeout: float | None = None) -> requests.Response:
+        if self.read_only and method != "GET" and path not in READ_ONLY_POSTS \
+                and not path.endswith(READ_ONLY_POST_ENDS):
+            raise CoreError(READ_ONLY_MESSAGE, 403)
         try:
             resp = self.session.request(method, self._url(path), json=body, timeout=(0.8, timeout or self.timeout))
         except requests.RequestException as exc:
@@ -113,6 +123,16 @@ class CoreClient:
     def revoke_agent(self, agent_id: str, operator: str) -> dict:
         return self.post_json(f"/fleet/agents/{quote(agent_id, safe='')}/revoke", {"operator": operator})
 
+    def machine_jobs(self, host: str) -> list[dict]:
+        return list(self.get_json(f"/fleet/jobs?host={quote(host, safe='')}") or [])
+
+    def queue_job(self, host: str, kind: str, operator: str) -> dict:
+        """Ask one joined machine's agent to run a threat scan or a backup there (core jobs.py)."""
+        return self.post_json("/fleet/jobs", {"host": host, "kind": kind, "operator": operator})
+
+    def cancel_job(self, job_id: str, operator: str) -> dict:
+        return self.post_json(f"/fleet/jobs/{quote(job_id, safe='')}/cancel", {"operator": operator})
+
     def report_md(self, incident_id: str) -> str:
         return self.get_text(f"/reports/{incident_id}.md")
 
@@ -130,6 +150,16 @@ class CoreClient:
 
     def ack(self, incident_id: str, operator: str, channel: str = "dashboard") -> Any:
         return self.post_json(f"/incidents/{incident_id}/ack", {"operator": operator, "channel": channel})
+
+    def assign(self, incident_id: str, assignee: str, operator: str, note: str = "") -> Any:
+        return self.post_json(f"/incidents/{incident_id}/assign",
+                              {"assignee": assignee, "operator": operator, "note": note or None})
+
+    def resolve(self, incident_id: str, operator: str, note: str) -> Any:
+        return self.post_json(f"/incidents/{incident_id}/resolve", {"operator": operator, "note": note})
+
+    def routing(self) -> dict:
+        return self.get_json("/routing")
 
     def rollback(self, incident_id: str, operator: str, justification: str) -> Any:
         return self.post_json(
@@ -164,6 +194,13 @@ class CoreClient:
     def ai_reload(self) -> dict:
         """Make the running core read the saved AI settings again (no restart)."""
         return self.post_json("/ai/reload", {})
+
+    def integrations(self) -> list[dict]:
+        """Outside services (Cloudflare, AbuseIPDB, Slack...): whether each is set up. Never their keys."""
+        return self.get_json("/integrations")
+
+    def test_integration(self, name: str) -> dict:
+        return self.post_json(f"/integrations/{name}/test", timeout=AI_TEST_TIMEOUT)
 
     def ai_test(self, settings: dict | None = None) -> dict:
         """One real request to the AI provider: with settings, those; without, what Cyanide uses now."""

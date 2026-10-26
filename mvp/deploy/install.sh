@@ -21,10 +21,12 @@
 #   --dashboard-allow IP   open the dashboard to this IP or network only (repeatable): it listens on
 #                          all addresses, a firewall rule drops everyone else, and it uses HTTPS
 #   --dashboard-local      keep the dashboard on this server only (reach it through an SSH tunnel)
-#   --admin-email EMAIL    the dashboard sign-in email (asked on a first install when not given)
-#   --reset-password       make a new dashboard password (shown once at the end)
+#   --admin-email EMAIL    the dashboard Owner's email (asked on a first install when not given; with no
+#                          password typed, the Owner is created in the browser with a setup code)
+#   --reset-password       make a new password for that account (or the first Owner), shown once at the
+#                          end; its authenticator app is added again at the next sign-in
 #   --no-questions         never ask; with a terminal and without this, the installer asks for the
-#                          dashboard port, who may open it, and the sign-in email and password
+#                          dashboard port, who may open it, and on a new machine the Owner account
 #   --no-notifier          do not enable the Telegram notifier service
 #   --no-start             install and enable, but do not start or restart anything
 #   --remote-copy URL      send every audit record and log line to a SentrAI witness on another
@@ -33,6 +35,11 @@
 #   --remote-copy-ca FILE  the witness's certificate, when it is self-signed
 #   --seal-journal         keep the system journal on disk and seal it (journald Forward Secure
 #                          Sealing): prints a verification key once, to store away from this server
+#   --panel [PORT]         make this server a central panel: agents on other machines join it over
+#                          HTTPS on PORT (default 8443) with a self-signed certificate they pin, and
+#                          each machine is scored on its own. That port only answers agents' machine
+#                          keys; the API and dashboard stay as set above. "--panel off" closes it.
+#   --panel-url URL        the address agents use (default https://<this server's name>:PORT)
 #
 # What it creates:
 #   /etc/cactai/cactai.env           ports, addresses and paths (root:cactai 0640, kept on upgrade)
@@ -66,6 +73,8 @@ SEAL=0
 REMOTE=""
 REMOTE_TOKEN=""
 REMOTE_CA=""
+PANEL=""
+PANEL_URL=""
 declare -A SET=()  # env values given on the command line
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -87,6 +96,8 @@ while [ $# -gt 0 ]; do
         --remote-copy) REMOTE="$2"; shift 2 ;;
         --remote-copy-token-file) REMOTE_TOKEN="$2"; shift 2 ;;
         --remote-copy-ca) REMOTE_CA="$2"; shift 2 ;;
+        --panel) case "${2:-}" in [0-9]*|off) PANEL="$2"; shift 2 ;; *) PANEL=8443; shift ;; esac ;;
+        --panel-url) PANEL_URL="$2"; shift 2 ;;
         -h|--help) sed -n '2,57p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "Unknown option: $1 (see --help)" >&2; exit 2 ;;
     esac
@@ -95,6 +106,9 @@ for k in CACTAI_CORE_PORT CACTAI_DASHBOARD_PORT; do
     v="${SET[$k]:-}"
     case "$v" in '') ;; *[!0-9]*) echo "$k must be a number (got '$v')" >&2; exit 2 ;; esac
 done
+
+case "$PANEL" in ''|off) ;; *[!0-9]*) echo "--panel takes a port number or off (got '$PANEL')" >&2; exit 2 ;; esac
+case "$PANEL_URL" in ''|https://*) ;; *) echo "--panel-url must start with https:// (got '$PANEL_URL')" >&2; exit 2 ;; esac
 
 case "$ADMIN_EMAIL" in ''|*@*) ;; *) echo "--admin-email needs an email address (got '$ADMIN_EMAIL')" >&2; exit 2 ;; esac
 
@@ -141,20 +155,19 @@ if [ "$ASK" = 1 ] && [ -t 0 ]; then
         a="${a:-${cur:-local}}"
         if [ "$a" = local ]; then DASH_LOCAL=1; else IFS=', ' read -r -a ALLOW <<< "$a"; fi
     fi
-    if [ -z "$ADMIN_EMAIL" ]; then
-        cur="$(grep -o '"CACTAI_DASHBOARD_EMAIL": "[^"]*"' "$saved_config" 2>/dev/null | sed 's/.*: "\(.*\)"/\1/' || true)"
-        while :; do
-            read -r -p "  Dashboard sign-in email [${cur:-admin@sentrai.local}]: " a || a=""
-            case "$a" in '') ADMIN_EMAIL="$cur"; break ;; *@*) ADMIN_EMAIL="$a"; break ;; *) echo "    Please enter an email address." ;; esac
-        done
-    fi
-    if grep -q '"CACTAI_DASHBOARD_PASSWORD_HASH": "pbkdf2' "$saved_config" 2>/dev/null; then keep="keep the current one"
-    else keep="make one for you"; fi
-    if [ "$RESET_PW" = 0 ]; then
-        while :; do
-            read -r -s -p "  Dashboard password, at least 8 characters (Enter to $keep): " p1 || p1=""; echo
-            [ -n "$p1" ] || break
-            if [ "${#p1}" -lt 8 ]; then echo "    Use at least 8 characters."; continue; fi
+    # The Owner account, only on a machine with no one yet. People after that join by invite (Team page).
+    if [ ! -f "$(dirname "$saved_config")/accounts.json" ] \
+        && ! grep -q '"CACTAI_DASHBOARD_PASSWORD_HASH": "pbkdf2' "$saved_config" 2>/dev/null; then
+        echo "  The dashboard's Owner account. Press Enter to skip and create it in the browser with a setup code."
+        if [ -z "$ADMIN_EMAIL" ]; then
+            while :; do
+                read -r -p "  Owner email: " a || a=""
+                case "$a" in '') break ;; *@*.*) ADMIN_EMAIL="$a"; break ;; *) echo "    Please enter an email address." ;; esac
+            done
+        fi
+        while [ -n "$ADMIN_EMAIL" ]; do
+            read -r -s -p "  Owner password, at least 12 characters: " p1 || p1=""; echo
+            if [ "${#p1}" -lt 12 ]; then echo "    Use at least 12 characters."; continue; fi
             read -r -s -p "  Type it again: " p2 || p2=""; echo
             if [ "$p1" = "$p2" ]; then ADMIN_PASSWORD="$p1"; break; fi
             echo "    The two passwords differ; try again."
@@ -367,8 +380,8 @@ chmod 0755 /usr/local/bin/cactai-scout
 # --- dashboard sign-in --------------------------------------------------------
 cat > /usr/local/bin/cactai-admin <<EOF
 #!/usr/bin/env bash
-# Shows the dashboard sign-in email, or makes a new password (printed once).
-#   sudo cactai-admin          sudo cactai-admin --reset          sudo cactai-admin --email you@example.com
+# Lists who may sign in to the dashboard; on a new machine, prints a one-time setup code for the Owner.
+#   sudo cactai-admin          sudo cactai-admin --reset [--email you@example.com]   (new password, authenticator again)
 set -euo pipefail
 [ "\$(id -u)" = 0 ] || { echo "run with sudo" >&2; exit 1; }
 set -a; . $ENV_FILE; set +a
@@ -378,7 +391,7 @@ chmod 0755 /usr/local/bin/cactai-admin
 admin_args=()
 if [ -n "$ADMIN_EMAIL" ]; then admin_args+=(--email "$ADMIN_EMAIL"); fi
 if [ "$RESET_PW" = 1 ]; then admin_args+=(--reset); fi
-if [ -n "$ADMIN_PASSWORD" ]; then
+if [ -n "$ADMIN_PASSWORD" ] && [ -n "$ADMIN_EMAIL" ]; then
     SIGN_IN="$(printf '%s\n' "$ADMIN_PASSWORD" | /usr/local/bin/cactai-admin "${admin_args[@]}" --password-stdin)" \
         || die "could not set up the dashboard sign-in"
 else
@@ -422,6 +435,45 @@ else
 fi
 SCHEME=http
 if grep -q '^STREAMLIT_SERVER_SSL_CERT_FILE=' "$ENV_FILE"; then SCHEME=https; fi
+
+# --- central panel: the agents' HTTPS port (--panel) -------------------------
+# The core opens a second port (app/serve.py) that only answers agents' machine keys. Agents pin this
+# certificate (its SHA-256 comes with every join code), so it may stay self-signed.
+open_panel_port() {  # PORT [remove]: ufw and firewalld drop it on their own
+    if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then
+        if [ "${2:-}" = remove ]; then ufw delete allow proto tcp to any port "$1" >/dev/null 2>&1 || true
+        else ufw allow proto tcp to any port "$1" comment sentrai-panel >/dev/null; fi
+    elif command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --state >/dev/null 2>&1; then
+        if [ "${2:-}" = remove ]; then firewall-cmd -q --permanent --remove-port="$1/tcp" || true
+        else firewall-cmd -q --permanent --add-port="$1/tcp" || true; fi
+        firewall-cmd -q --reload || true
+    fi
+}
+if [ "$PANEL" = off ]; then
+    old="$(get_env CACTAI_PANEL_PORT)"
+    [ -n "$old" ] && open_panel_port "$old" remove
+    sed -i '/^CACTAI_PANEL_/d' "$ENV_FILE"
+elif [ -n "$PANEL" ]; then
+    command -v openssl >/dev/null 2>&1 || die "openssl is needed for the panel's HTTPS port"
+    install -d -o root -g "$SVC_USER" -m 0750 "$TLS"
+    if [ ! -f "$TLS/panel-cert.pem" ]; then
+        name="$(hostname -f 2>/dev/null || hostname)"
+        openssl req -x509 -newkey rsa:2048 -nodes -days 1825 -subj "/CN=$name" -addext "subjectAltName=DNS:$name" \
+            -keyout "$TLS/panel-key.pem" -out "$TLS/panel-cert.pem" >/dev/null 2>&1 \
+            || die "could not make the panel's certificate"
+    fi
+    chown root:"$SVC_USER" "$TLS"/panel-*.pem
+    chmod 0640 "$TLS"/panel-*.pem
+    old="$(get_env CACTAI_PANEL_PORT)"
+    [ -n "$old" ] && [ "$old" != "$PANEL" ] && open_panel_port "$old" remove
+    set_env CACTAI_PANEL_PORT "$PANEL"
+    set_env CACTAI_PANEL_HOST 0.0.0.0
+    set_env CACTAI_PANEL_CERT "$TLS/panel-cert.pem"
+    set_env CACTAI_PANEL_KEY "$TLS/panel-key.pem"
+    set_env CACTAI_PANEL_URL "${PANEL_URL:-https://$(hostname -f 2>/dev/null || hostname):$PANEL}"
+    set_env CACTAI_RISK_SCOPE host
+    open_panel_port "$PANEL"
+fi
 
 # --- sealed journal (--seal-journal) ----------------------------------------
 # journald signs the journal at intervals with a key that moves forward and forgets the old one,
@@ -500,7 +552,7 @@ else
     esac
 fi
 printf '%s\n' "$SIGN_IN" | sed 's/^/  /'
-echo "  Change it:  sudo cactai-admin --reset   (or on the dashboard: Configuration, 6. Access)"
+echo "  People:     invite them on the dashboard's Team page. Locked out: sudo cactai-admin --reset"
 REMOTE_URL="$(get_env CACTAI_REMOTE_COPY_URL)"
 if [ -n "$REMOTE_URL" ]; then
     echo "  Off-box copy: every audit record and log line goes to $REMOTE_URL as it happens."
@@ -511,6 +563,13 @@ if [ -n "$SEAL_KEY" ]; then
     echo "  Journal sealing is on. Verification key (shown only now; keep it OFF this server):"
     echo "    $SEAL_KEY"
     echo "  Check the journal later with:  journalctl --verify --verify-key=<that key>"
+fi
+PANEL_PORT="$(get_env CACTAI_PANEL_PORT)"
+if [ -n "$PANEL_PORT" ]; then
+    pin="$(openssl x509 -in "$(get_env CACTAI_PANEL_CERT)" -outform DER 2>/dev/null | sha256sum | cut -d' ' -f1)"
+    echo "  Central panel: agents join at $(get_env CACTAI_PANEL_URL) (only machine keys are answered there)."
+    echo "    Certificate pin: sha256:$pin   (the Machines page shows it with every join code)"
+    echo "    On each machine: sudo ./mvp/deploy/install-agent.sh --panel $(get_env CACTAI_PANEL_URL) --code <code> --pin sha256:$pin"
 fi
 case "$CORE_HOST" in
     127.0.0.1|localhost|::1) ;;

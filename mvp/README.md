@@ -5,7 +5,7 @@ A working prototype of SentrAI that runs natively on one Windows laptop or Linux
 | Component | Folder | What it does | URL |
 | --- | --- | --- | --- |
 | Core | `core/` | FastAPI risk engine, rules + Jev classifier, agents (Warden, Gatehouse, Vault, Garrison, Countersign, Watchdog, Scribe, HelpDesk), TTL hotpatches, hash-chained audit log, evidence reports (Markdown/JSON/PDF) | http://127.0.0.1:8000 |
-| Collector | `lab/collector/` | Tails the logs you approve (nginx, sshd, journald, or JSON-lines app logs) and sends normalized events to core | |
+| Collector | `lab/collector/` | Tails the logs you approve (nginx, sshd, journald, Windows Event Log, Suricata, MySQL/MariaDB, PostgreSQL, MongoDB, or JSON-lines app logs) and sends normalized events to core | |
 | Scout | `lab/scout/` | Finds the security logs on a new system | |
 | Dashboard | `dashboard/` | Streamlit console with a sidebar menu: Configuration (home), Approvals, Collector, Classifier, Action taker, Review (gauge, threshold, risk accumulated), Reports, Audit trail. Menu bubbles flag new malicious activity per part | http://127.0.0.1:8501 |
 | Notifier | `notifier/` | Telegram bot with Approve / Reject buttons, or console mode without a token | |
@@ -88,8 +88,7 @@ been set up, the dashboard opens on Chat with a **Set up with Cyanide** offer (t
 button on Chat, or **Set up with Cyanide** on Configuration, starts it any time). Cyanide asks
 what SentrAI guards and suggests a preset, then the logs folder, IPs and accounts never to
 touch, your name, how to alert you (Telegram and/or email), the AI key, and the dashboard:
-who may open it (this computer, or named IP addresses), its port, and the sign-in email and
-password (saved only as a hash, used from the next sign-in). Opening the dashboard to other
+who may open it (this computer, or named IP addresses) and its port. Opening the dashboard to other
 computers changes the firewall, so Cyanide ends with the one `sudo ./deploy/install.sh
 --dashboard-allow ...` command that applies it on a Linux server. Answer with the buttons or by typing. Keys and passwords go in a hidden field and are
 never shown in the chat. Nothing is saved until you confirm the summary; it then saves through
@@ -134,7 +133,7 @@ behind an arrow.
 | `CACTAI_FIREWALL` | `off` | core: also block IPs in the host firewall (`auto`, `nftables`, `iptables`, `netsh`); `off` keeps blocks on SentrAI's own blocklist only |
 | `CACTAI_FIREWALL_ENFORCE` | `0` | core: `0` is a dry run that only logs the firewall command; `1` really runs it (needs admin/root) |
 | `CACTAI_RISK_SCOPE` | `fleet` | core: `host` scores and blocks each machine on its own, for a central panel (set `CACTAI_FIREWALL=off` with it) |
-| `CACTAI_PUBLIC_URL` | `http://127.0.0.1:8000` | core and dashboard: the core's address as other machines see it; fills in **Add machine** and report links |
+| `CACTAI_PANEL_PORT` / `CACTAI_PANEL_URL` | unset | core and dashboard: the agents' HTTPS port and the address they use (`install.sh --panel` sets both, with `CACTAI_PANEL_CERT` / `CACTAI_PANEL_KEY`) |
 | `CACTAI_AGENT_OFFLINE_HOLD_H` | `24` | agent: hours blocks stay in place while the panel cannot be reached |
 | `AUTO_ACTIONS` | `block_ip,rate_limit,waf_rule` | core: action types SentrAI may take on its own; any other type waits for a person |
 | `MAX_AUTO_ACTIONS_PER_HOUR` | `10` | core: automatic actions allowed in any rolling hour; past it a person decides |
@@ -166,8 +165,7 @@ behind an arrow.
 | `CACTAI_OPERATOR` | `operator` | notifier: name shown on approvals |
 | `CACTAI_CONFIG` | `~\.cactai\config.json` | all: where the setup wizard saves settings |
 | `CACTAI_API_TOKEN` | generated | all: the token the core API requires (`python cactai_config.py token` prints it) |
-| `CACTAI_DASHBOARD_EMAIL` | `admin@sentrai.local` | dashboard: the sign-in email |
-| `CACTAI_DASHBOARD_PASSWORD_HASH` | made on first run | dashboard: the sign-in password, saved only as a salted PBKDF2 hash |
+| `CACTAI_ACCOUNTS` | `accounts.json` next to the settings | dashboard: who may sign in (see Access below) |
 | `CACTAI_DASHBOARD_LOGIN` | on | dashboard: `off` opens it without signing in (local testing only) |
 
 ### Access
@@ -182,21 +180,35 @@ $t = python cactai_config.py token
 Invoke-RestMethod http://127.0.0.1:8000/incidents -Headers @{ Authorization = "Bearer $t" }
 ```
 
-The dashboard asks for an email and password. The first run makes them: the wizard asks for
-both (Enter makes a random password), and `run.ps1` / `run.sh` print the sign-in at the end, with the
-password shown only that once. Only a salted hash of the password is saved. After five wrong
-tries from one address, that address waits five minutes.
+Everyone signs in to the dashboard with their own account: email, password, then a 6-digit
+code from an authenticator app. On a new machine `run.sh` / `run.ps1` (or `python cactai_config.py admin`)
+prints a one-time **setup code**; the dashboard opens on "Create your Owner account", which takes
+that code (it works once, for 24 hours). The Owner then scans a QR code with any authenticator app
+and saves 8 recovery codes. There is no open sign-up: Owners and Admins invite people from the
+**Team** page, which makes a link (valid 72 hours) for a given email and role.
+
+| Role | Can |
+| --- | --- |
+| Owner | everything, including adding or removing Owners |
+| Admin | approve, block, scan, change settings, invite and remove Admins and Auditors |
+| Auditor | see every page and export reports; changes nothing |
+
+Accounts live in `accounts.json` next to the settings file, readable by its owner only, with
+salted PBKDF2 password hashes; the setup, invite and recovery codes are kept only as hashes. After
+five wrong passwords or codes from one address, that address waits five minutes. Each sign-in
+shows the time and address of the one before, so you notice someone else using your account.
 
 ```bash
-python cactai_config.py admin                                  # show the sign-in email (makes one if missing)
-python cactai_config.py admin --reset                          # new password, printed once
-python cactai_config.py admin --email you@example.com --reset  # new email and password
+python cactai_config.py admin                                   # who may sign in; a setup code on a new machine
+python cactai_config.py admin --reset                           # the first Owner: new password, authenticator again
+python cactai_config.py admin --reset --email you@example.com   # the same for another account
 ```
 
-You can also change the password on the dashboard: Configuration, section 6. For local testing
-where you do not want to sign in, start SentrAI with `CACTAI_DASHBOARD_LOGIN=off`
-(`$env:CACTAI_DASHBOARD_LOGIN = "off"` in PowerShell). Settings saved with the older plain
-dashboard password keep working; the file then keeps only its hash.
+A forgotten password or lost phone is also reset by another Owner or Admin on the Team page. For a
+recording where you do not want to sign in on camera, start SentrAI with `CACTAI_DASHBOARD_LOGIN=off`
+(`$env:CACTAI_DASHBOARD_LOGIN = "off"` in PowerShell). A machine set up before accounts existed
+keeps its sign-in: that email and password become the Owner, who adds an authenticator at the
+next sign-in.
 
 ### Telegram setup (optional)
 

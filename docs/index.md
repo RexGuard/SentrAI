@@ -17,7 +17,8 @@ a server that keeps watch around the clock.
 | Run SentrAI on your own computer | [Run on a laptop](laptop.html) | about 5 minutes |
 | Keep SentrAI running on a Linux server | [Install on a server](server.html) | about 10 minutes |
 | Watch several machines from one dashboard | [One panel, many machines](panel.html) | about 10 minutes per machine |
-| Sign in to the dashboard, or reset a password | [Signing in](sign-in.html) | |
+| See which logs SentrAI reads (Windows, Suricata, databases) | [Log sources](log-sources.html) | |
+| Sign in, invite your team, or reset a sign-in | [Signing in](sign-in.html) | |
 | Change thresholds, alerts or protected IPs | [Settings](settings.html) | |
 | Fix a port clash, a missing package or a blocked dashboard | [Troubleshooting](troubleshooting.html) | |
 
@@ -30,8 +31,8 @@ a server that keeps watch around the clock.
 | Rights | your normal account | your normal account | `sudo` |
 | Also | Git, or the ZIP from GitHub | Git | Git, and `nft` or `iptables` to open the dashboard to other computers |
 
-A machine you add to a [central panel](panel.html) needs only Linux with systemd, Python 3.10 or
-newer with `venv`, Git and `sudo`.
+A machine you add to a [central panel](panel.html) needs Linux with systemd or Windows 10, 11 or
+Server 2016 and newer, with Python 3.10 or newer and administrator rights.
 
 On Debian and Ubuntu, add the `venv` module with:
 
