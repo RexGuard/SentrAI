@@ -9,7 +9,8 @@ Default sources: one ``JsonLogSource`` per target-app log, one ``DiscoveredLogSo
 ``JournaldSource``) per approved server log in ``scout/sources.json``, plus a ``HeartbeatSource``
 every 10 seconds so Watchdog can tell the collector is alive.
 
-Server logs (nginx, sshd via syslog or journald) are parsed by ``collector/parsers.py``: events carry
+Server logs (nginx, sshd via syslog or journald, Suricata, MySQL/MariaDB, PostgreSQL, MongoDB) and
+the Windows Event Log (``WindowsEventSource``) are parsed by ``collector/parsers.py``: events carry
 the log's own timestamp and host name and a ``parsed`` object (see "Parsed fields" in
 ``mvp/CONTRACT.md``). Read positions are saved in ``collector-state.json`` (next to the settings
 file, or ``CACTAI_COLLECTOR_STATE``) once core has accepted the events, so a restart carries on
@@ -17,7 +18,8 @@ where it stopped instead of re-sending whole files.
 
 Run:  python -m collector.collector           (from mvp/lab)
    or python collector/collector.py
-      python -m collector.collector --add-system-logs   approve this server's nginx and SSH logs
+      python -m collector.collector --add-system-logs   approve this machine's web, login, network
+                                                        and database logs (Windows: its event logs)
 
 On a new machine (no settings file yet) it first runs the setup wizard in
 ``mvp/cactai_config.py``; the logs directory and file names come from there.
@@ -43,7 +45,7 @@ import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import requests
 
@@ -466,9 +468,14 @@ IPV4 = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
 USER = re.compile(r"(?i)\b(?:user(?:name)?|for(?: invalid user)?)[=: ]+([\w.@-]+)")
 
 
-def server_log_event(line: str, layer: str, source: str, fmt: str) -> dict[str, Any]:
-    """One line of a real server log -> Event. Known formats (nginx, syslog/sshd, journald JSON) are
-    parsed; anything else keeps its raw text with the source IP and user guessed from it."""
+def server_log_event(line: str, layer: str, source: str, fmt: str,
+                     sessions: dict[str, tuple[str | None, str | None]] | None = None) -> dict[str, Any] | None:
+    """One line of a real server log -> Event, or None for a line the format writes but SentrAI skips
+    (Suricata flow records, MongoDB storage notes). Known formats are parsed; anything else keeps
+    its raw text with the source IP and user guessed from it.
+
+    ``sessions`` (one dict per log file) remembers each database connection's client address and
+    user, so a later line of the same PostgreSQL process or MySQL thread gets them too."""
     src_ip = user = ts = host = None
     fields: dict[str, Any] | None = None
     raw = line
@@ -484,9 +491,24 @@ def server_log_event(line: str, layer: str, source: str, fmt: str) -> dict[str, 
             ts = ts if isinstance(ts, str) else None
         fields = {"format": "jsonl", "kind": "log"}
     elif (p := parsers.parse_line(line, fmt)) is not None:
+        if p.extra.get("drop"):
+            return None
         src_ip, user, ts, host, fields = p.src_ip, p.user, p.ts, p.host, p.fields
         if fmt == "journald":
             raw = str(fields.get("message") or line)
+        elif fields.get("format") == "winevent":
+            raw = parsers.winevent_raw(p)
+        elif fields.get("format") == "suricata":
+            raw = parsers.suricata_raw(p)
+        elif fields.get("kind") == "db_query" and fields.get("sql"):
+            raw = str(fields["sql"])
+        if sessions is not None and (sid := fields.get("session")):
+            known_ip, known_user = sessions.get(sid, (None, None))
+            src_ip, user = src_ip or known_ip, user or known_user
+            if (src_ip, user) != (known_ip, known_user):
+                if len(sessions) > 5000:
+                    sessions.clear()
+                sessions[sid] = (src_ip, user)
     if fields is None:
         fields = {"format": "text", "kind": "log"}
     guess = fields.get("kind") == "log" or fields.get("ssh_event") == "other"
@@ -495,7 +517,7 @@ def server_log_event(line: str, layer: str, source: str, fmt: str) -> dict[str, 
     if user is None and guess and (m := USER.search(raw)):
         user = m.group(1)
     return make_event(layer, source, raw[:2000], src_ip=src_ip, user=user, ts=ts, host=host or real_host(),
-                      parsed=fields)
+                      parsed=fields, criticality=criticality_for(layer, {}))
 
 
 class DiscoveredLogSource(FileSource):
@@ -514,9 +536,11 @@ class DiscoveredLogSource(FileSource):
         super().__init__(path, saved, "end" if from_end else "backfill")
         self.layer, self.fmt = layer, fmt
         self.source = f"scout:{path.name}"
+        self.sessions: dict[str, tuple[str | None, str | None]] = {}
 
     def poll(self) -> list[dict[str, Any]]:
-        events = [server_log_event(line, self.layer, self.source, self.fmt) for line in self.tailer.read_new_lines()]
+        events = [ev for line in self.tailer.read_new_lines()
+                  if (ev := server_log_event(line, self.layer, self.source, self.fmt, self.sessions)) is not None]
         return events + self.integrity_events(real_host())
 
 
@@ -591,7 +615,8 @@ class JournaldSource(Source):
                 continue
             if parsed.extra.get("cursor"):
                 self._read_cursor = parsed.extra["cursor"]
-            events.append(server_log_event(line, self.layer, self.source, "journald"))
+            if (ev := server_log_event(line, self.layer, self.source, "journald")) is not None:
+                events.append(ev)
         return events
 
     def checkpoint(self) -> dict | None:
@@ -602,9 +627,99 @@ class JournaldSource(Source):
             self._proc.terminate()
 
 
+# Windows channel -> the event IDs read from it (parsers.WINDOWS_EVENTS says what each one means).
+# 4688 (every process started) is left out: it is only useful with command-line auditing on and
+# floods a busy machine; add it with "event_ids" in the sources.json entry.
+WINDOWS_CHANNELS: dict[str, list[int]] = {
+    "Security": [4624, 4625, 4740, 4771, 4776, 1102, 4720, 4728, 4732, 4756, 4697],
+    "System": [104, 7045],
+    "Application": [18456],
+    "Microsoft-Windows-Windows Defender/Operational": [1116, 1117],
+}
+WINDOWS_EVERY_S = 5.0
+
+
+class WindowsEventSource(Source):
+    """Reads one Windows event log channel with ``wevtutil`` (built into Windows; no extra package).
+    sources.json entry: ``{"path": "winevent:Security", "format": "winevent", "layer": "os"}``;
+    ``"event_ids"`` picks other events. Every 5 s it asks for records newer than the last one read
+    and resumes from that record number after a restart; with none, it starts with the last 200.
+
+    The Security channel needs an administrator (the agent's service account) or a member of the
+    "Event Log Readers" group; without that it says so once and keeps trying."""
+
+    def __init__(self, channel: str = "Security", layer: str = "os", event_ids: list[int] | None = None,
+                 saved: dict | None = None, from_end: bool = False,
+                 run: Callable[[list[str]], str] | None = None) -> None:
+        self.channel = channel
+        self.name = self.key = self.source = f"winevent:{channel}"
+        self.layer = layer
+        self.event_ids = [int(i) for i in (event_ids or WINDOWS_CHANNELS.get(channel) or [])]
+        self.record_id: int | None = (saved or {}).get("record_id")
+        self._from_end = from_end and self.record_id is None
+        self._run = run or self._wevtutil
+        self._next = 0.0
+        self._warned = False
+
+    @staticmethod
+    def _wevtutil(cmd: list[str]) -> str:
+        out = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
+        if out.returncode != 0:
+            raise OSError((out.stderr or out.stdout or f"exit {out.returncode}").strip()[:200])
+        return out.stdout
+
+    def query(self) -> list[str]:
+        ids = " or ".join(f"EventID={i}" for i in self.event_ids)
+        where = f"({ids})" if ids else ""
+        if self.record_id is not None:
+            where = f"EventRecordID>{self.record_id}" + (f" and {where}" if where else "")
+        xpath = f"*[System[{where}]]" if where else "*"
+        cmd = ["wevtutil", "qe", self.channel, f"/q:{xpath}", "/f:RenderedXml", "/e:Events"]
+        if self.record_id is None:
+            cmd += ["/rd:true", f"/c:{1 if self._from_end else 200}"]  # newest first; put back in order below
+        else:
+            cmd += ["/c:500"]
+        return cmd
+
+    def poll(self) -> list[dict[str, Any]]:
+        if time.time() < self._next:
+            return []
+        self._next = time.time() + WINDOWS_EVERY_S
+        first = self.record_id is None
+        try:
+            records = parsers.winevent_from_xml(self._run(self.query()))
+        except (OSError, subprocess.SubprocessError) as exc:
+            if not self._warned:
+                self._warned = True
+                print(f"[collector] cannot read the Windows {self.channel} log ({exc}); run SentrAI as an "
+                      f"administrator or add its account to Event Log Readers", flush=True)
+            return []
+        records.sort(key=lambda r: r.get("record_id") or 0)
+        if records and records[-1].get("record_id") is not None:
+            self.record_id = max(self.record_id or 0, int(records[-1]["record_id"]))
+        elif first and not records:
+            self.record_id = 0  # an empty log: read everything from now on
+        if first and self._from_end:
+            return []  # approved while running: only what happens from now on
+        events = []
+        for rec in records:
+            if (p := parsers.winevent_parsed(rec)) is None:
+                continue
+            events.append(make_event(self.layer, self.source, parsers.winevent_raw(p)[:2000], src_ip=p.src_ip,
+                                     user=p.user, ts=p.ts, host=real_host(), parsed=p.fields))
+        return events
+
+    def checkpoint(self) -> dict | None:
+        return {"record_id": self.record_id} if self.record_id is not None else None
+
+
 def source_for(entry: dict, store: OffsetStore | None = None, from_end: bool = False) -> Source:
     """A ``scout/sources.json`` entry -> the Source that reads it."""
     fmt = entry.get("format", "text")
+    if str(entry["path"]).startswith("winevent:"):
+        key = str(entry["path"])
+        return WindowsEventSource(key.split(":", 1)[1], entry["layer"], entry.get("event_ids"),
+                                  saved=store.get(key) if store else None, from_end=from_end)
     if fmt == "journald" or str(entry["path"]).startswith("journald:"):
         name = str(entry["path"]).split(":", 1)[1] if ":" in str(entry["path"]) else "sshd"
         key = f"journald:{name}"
@@ -674,7 +789,7 @@ class Collector:
         self._tail_from_end = self._sources_stamp is not None or stamp > self._started
         self._sources_stamp = stamp
         tailed = {str(s.tailer.path) for s in self.sources if isinstance(s, DiscoveredLogSource)}
-        tailed |= {s.name for s in self.sources if isinstance(s, JournaldSource)}
+        tailed |= {s.name for s in self.sources if isinstance(s, (JournaldSource, WindowsEventSource))}
         added: list[Source] = [source_for(s, self.store, from_end=self._tail_from_end)
                                for s in scout_sources.load() if str(Path(s["path"])) not in tailed
                                and s["path"] not in tailed]
@@ -744,12 +859,50 @@ class Collector:
 
 NGINX_LOGS = [("/var/log/nginx/access.log", "web", "nginx"), ("/var/log/nginx/error.log", "web", "nginx")]
 AUTH_LOGS = ["/var/log/auth.log", "/var/log/secure"]  # Debian/Ubuntu, RHEL/Fedora
+# Network and database logs at their usual places: (candidate paths or globs, layer, format, why).
+# The first candidate that exists wins; a glob picks the newest file.
+SERVICE_LOGS = [
+    (["/var/log/suricata/eve.json"], "network", "suricata", "Suricata network alerts"),
+    (["/var/log/mysql/error.log", "/var/log/mysql/mysqld.log", "/var/log/mysqld.log", "/var/log/mariadb/mariadb.log"],
+     "db", "mysql", "MySQL / MariaDB sign-ins"),
+    (["/var/log/postgresql/postgresql-*-main.log", "/var/lib/pgsql/data/log/postgresql-*.log",
+      "/var/lib/pgsql/*/data/log/postgresql-*.log"], "db", "postgres", "PostgreSQL sign-ins"),
+    (["/var/log/mongodb/mongod.log", "/var/log/mongodb/mongodb.log"], "db", "mongodb", "MongoDB sign-ins"),
+]
+WINDOWS_WHY = {"Security": "Windows sign-ins, lockouts, admin group changes and cleared logs",
+               "System": "new Windows services and cleared logs",
+               "Application": "SQL Server sign-ins",
+               "Microsoft-Windows-Windows Defender/Operational": "Microsoft Defender malware alerts"}
 
 
-def system_log_entries(root: Path = Path("/"), has_journalctl: bool | None = None) -> list[dict]:
-    """This server's nginx and SSH login logs, as ``scout/sources.json`` entries."""
+def service_log_entries(root: Path = Path("/")) -> list[dict]:
+    """Suricata, MySQL/MariaDB, PostgreSQL and MongoDB logs on this machine, as sources.json entries."""
+    found = []
+    for candidates, layer, fmt, why in SERVICE_LOGS:
+        for pattern in candidates:
+            rel = pattern.lstrip("/")
+            hits = [p for p in root.glob(rel) if p.is_file()] if "*" in rel else [root / rel] if (root / rel).is_file() else []
+            if hits:
+                newest = max(hits, key=lambda p: p.stat().st_mtime)
+                found.append({"path": str(newest), "layer": layer, "format": fmt, "why": why})
+                break
+    return found
+
+
+def windows_log_entries() -> list[dict]:
+    return [{"path": f"winevent:{ch}", "layer": "os", "format": "winevent", "why": WINDOWS_WHY[ch]}
+            for ch in WINDOWS_CHANNELS]
+
+
+def system_log_entries(root: Path = Path("/"), has_journalctl: bool | None = None,
+                       windows: bool | None = None) -> list[dict]:
+    """This machine's web, SSH login, network and database logs, as ``scout/sources.json`` entries;
+    on Windows also its event logs."""
     def here(p: str) -> Path:
         return root / p.lstrip("/")
+
+    if windows if windows is not None else os.name == "nt":
+        return windows_log_entries() + service_log_entries(root)
 
     entries = [{"path": str(here(p)), "layer": layer, "format": fmt, "why": "nginx web server log"}
                for p, layer, fmt in NGINX_LOGS if here(p).is_file()]
@@ -759,7 +912,7 @@ def system_log_entries(root: Path = Path("/"), has_journalctl: bool | None = Non
     elif has_journalctl if has_journalctl is not None else shutil.which("journalctl"):
         entries.append({"path": "journald:sshd", "layer": "os", "format": "journald",
                         "why": "SSH logins (sshd) from the systemd journal; this system has no auth.log"})
-    return entries
+    return entries + service_log_entries(root)
 
 
 def add_system_logs() -> int:
@@ -767,7 +920,7 @@ def add_system_logs() -> int:
 
     entries = system_log_entries()
     if not entries:
-        print("[collector] found no nginx, auth.log, secure or journald logs on this machine")
+        print("[collector] found no nginx, SSH, Suricata, database or Windows event logs on this machine")
         return 1
     for e in entries:
         scout_sources.add(e, "collector --add-system-logs")
@@ -787,7 +940,8 @@ def main() -> None:
                     help="seconds between checks for new log lines (default 0.05; CACTAI_COLLECTOR_POLL_S)")
     ap.add_argument("--heartbeat-interval", type=float, default=10.0)
     ap.add_argument("--add-system-logs", action="store_true",
-                    help="approve this server's nginx logs and SSH login log (auth.log, secure or journald), then exit")
+                    help="approve this machine's nginx, SSH login (auth.log, secure or journald), Suricata and "
+                         "database logs, or on Windows its event logs, then exit")
     args = ap.parse_args()
     if args.add_system_logs:
         sys.exit(add_system_logs())

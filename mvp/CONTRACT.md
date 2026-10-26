@@ -57,6 +57,20 @@ Every `parsed` has `format` and `kind`:
 | `syslog`, `journald` | `log` (any other program) | `program`, `pid`, `message` |
 | `cactai_demo` | `http_request` / `web_login` / `db_query` / `log` | demo portal: `method`, `path`, `status` / `outcome` / `rows` |
 | `jsonl`, `text` | `log` | nothing else; `src_ip` and `user` are taken from JSON keys or guessed from the text |
+| `winevent` | `auth` (4624 network/RDP sign-in, 4625, 4771, 4776, 4740, 18456 SQL Server) | `event_id`, `win_event`, `channel`, `provider`, `record_id`, `message` (first line), `service` (`windows_logon`, `rdp`, `kerberos`, `ntlm`, `mssql`), `outcome`, `logon_type` (`network`, `remote_desktop`, ...), `status`, `workstation`, `reason` |
+| `winevent` | `windows_event` (1102/104 log cleared, 4720, 4728/4732/4756, 4688, 4697/7045, Defender 1116/1117) | as above plus, by event: `log`; `group`, `member`, `by`; `process`, `parent`, `command_line`; `service_name`, `image_path`, `account`; `threat`, `path`, `severity`, `action` |
+| `suricata` | `network_alert` (eve.json `alert` records only) | `signature`, `signature_id`, `alert_category` (classtype), `severity` (1 high .. 3 low), `action` (`allowed`, `blocked`), `proto`, `app_proto`, `src_ip`, `src_port`, `dest_ip`, `dest_port`, `direction` (`inbound`, `outbound`), `interface`, sometimes `http_host`, `http_url`, `user_agent`. The Event's `src_ip` is the far end: `dest_ip` for an outbound alert |
+| `mysql`, `postgres`, `mongodb` | `auth` | `service`, `auth_event`, `outcome`, `session`; MySQL `password_used`; PostgreSQL `pid`, `level`, `invalid_user`; MongoDB `mechanism`, `database`, `reason` |
+| `mysql`, `postgres` | `db_query` (MySQL general log, PostgreSQL `statement:` lines) | `sql`, `session`; the Event's `raw` is the SQL text |
+| `mysql`, `postgres` | `log` (warnings and errors) | `level`, `message`, `session` |
+
+`auth_event` values: MySQL `access_denied`, `connected`, `aborted_preauth`, `aborted`,
+`host_blocked`; PostgreSQL `password_failed` (or `<method>_failed`), `no_hba_entry`, `no_such_role`,
+`connection_received`, `connected`; MongoDB `auth_failed`, `connected`, `connection_received`.
+`session` (`postgres:<pid>`, `mysql:<thread>`, `mongodb:<ctx>`) lets the collector give a line with
+no client address the address of an earlier line of the same connection. Lines the formats write
+but SentrAI has no use for (Suricata flows, MySQL notes, PostgreSQL checkpoints, MongoDB storage
+messages, Windows service sign-ins) are not sent at all.
 
 `ssh_event` values (`src_ip` and `user` are set on the Event where the line has them):
 `accepted`, `failed_auth` ("Failed password/publickey for [invalid user] X"), `invalid_user`

@@ -11,7 +11,7 @@ Talks to the core (`http://127.0.0.1:8000`) over the shared contract in `../CONT
 lab/
   requirements.txt        requests, psutil, pytest (+ optional AI packages for Scout)
   collector/collector.py  tails logs/*.jsonl + approved server logs -> POST core /events
-  collector/parsers.py    nginx access/error, syslog (sshd), journald line parsers
+  collector/parsers.py    nginx, syslog (sshd), journald, Windows Event Log, Suricata, MySQL, PostgreSQL, MongoDB parsers
   collector/paths.py      where the JSON-lines logs live (CACTAI_LAB_LOGS, CACTAI_LOG_*)
   scout/                  finds log files on a new system and learns from expert trails
   logs/                   JSON-lines logs (access/auth/db/os/deception) from the app being guarded
@@ -53,13 +53,14 @@ Each proposal is saved to `scout/pending.json` the moment Scout makes it, so sto
 
 Scout can only read files under the `--root` folders, never write. It masks `password=`, `token=` and similar values before the AI sees a line, and treats log text as data, never as instructions. Two example trails (a Linux web server and Windows IIS) ship in `scout/trails/`. `python -m scout list` shows what the collector will watch. Scout needs one AI key: Anthropic, OpenAI, DeepSeek or another OpenAI-compatible service (`python cactai_config.py setup`, section 5). `SCOUT_MODEL` overrides the model.
 
-## Real server logs (nginx, SSH)
+## Real server logs (nginx, SSH, Windows, Suricata, databases)
 
 On a Linux server, approve its own logs once, then run the collector as a user that can read
 them (root, or a member of the `adm` group on Debian/Ubuntu):
 
 ```bash
-python -m collector.collector --add-system-logs   # nginx access/error + auth.log, secure or journald
+python -m collector.collector --add-system-logs   # nginx + auth.log/secure/journald + Suricata + database logs;
+                                                  # on Windows: Security, System, Application, Defender
 python -m collector.collector
 ```
 
@@ -72,6 +73,10 @@ python -m collector.collector
   (`CACTAI_COLLECTOR_BACKFILL_KB`).
 - Lines with no time zone (auth.log, nginx error.log) use this computer's zone, or `CACTAI_LOG_TZ`
   (`Asia/Singapore`, `+08:00`, `UTC`). `CACTAI_HOST` overrides the host name.
+- Windows: `winevent:<channel>` entries are read with the built-in `wevtutil` every 5 s and resume
+  from the last record number. Suricata keeps only `alert` records. Database logs get the client
+  address of an earlier line of the same connection. What each source catches, and the settings
+  some of them need: `docs/log-sources.md`.
 - Sample lines for tests are in `tests/samples/` (synthetic, documentation IP ranges only).
 
 ## Tests
@@ -81,5 +86,5 @@ python -m collector.collector
 ```
 
 Covers: collector normalization to a valid contract Event, tailer creation/rotation handling,
-real nginx/sshd/journald parsing, the line chain and log-integrity checks, the setup wizard and
+real nginx/sshd/journald, Windows Event Log, Suricata and database log parsing, the line chain and log-integrity checks, the setup wizard and
 Scout. Tests write to a temp dir and hit no network.
