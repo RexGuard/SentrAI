@@ -85,7 +85,9 @@ $WinSWSha256 = "B5066B7BBDFBA1293E5D15CDA3CAAEA88FBEAB35BD5B38C41C913D492AADFC4F
 # Callers check $LASTEXITCODE.
 function Native {
     $ErrorActionPreference = "Continue"
-    $exe, $rest = $args
+    # @() keeps a single argument a list: splatting a bare string would pass it letter by letter.
+    $exe = $args[0]
+    $rest = @($args | Select-Object -Skip 1)
     & $exe @rest
 }
 
