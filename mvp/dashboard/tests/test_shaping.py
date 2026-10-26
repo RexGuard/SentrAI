@@ -131,6 +131,10 @@ def test_machine_rows():
     assert ">31<" in rows and "Elevated" in rows and "width:31%" in rows and "threshold 80" in rows
     assert "Office &lt;PC&gt;" in rows and ">Offline<" in rows  # names are escaped
     assert "remove_moderator" in rows and "Protection off" in rows and "threshold 70" in rows
+    assert "m-more" not in rows  # no arrow unless the rows open details
+    assert 'class="machine clickable"' in sh.machine_rows_html([here], opened=False)
+    assert ">expand_more<" in sh.machine_rows_html([here], opened=False)
+    assert ">expand_less<" in sh.machine_rows_html([here], opened=True)
 
 
 def test_demote_headings():
