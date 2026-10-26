@@ -317,3 +317,14 @@ def test_times_from_the_core_show_in_local_time():
         else:
             os.environ["TZ"] = old
         time.tzset()
+
+
+def test_expiry_says_how_long_is_left():
+    from datetime import datetime, timedelta, timezone
+    now = datetime(2026, 10, 26, 18, 0, 0, tzinfo=timezone.utc)
+    soon = (now + timedelta(minutes=125, seconds=30)).isoformat()
+    assert sh.expires_label(soon, now=now).endswith("(in 2 h 5 min)")
+    assert sh.expires_label((now + timedelta(minutes=4)).isoformat(), now=now).endswith("(in 4 min)")
+    assert sh.expires_label((now + timedelta(seconds=20)).isoformat(), now=now).endswith("(in under 1 min)")
+    assert sh.expires_label((now - timedelta(minutes=1)).isoformat(), now=now).endswith("(expired)")
+    assert sh.expires_label(None) == "-"

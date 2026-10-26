@@ -128,6 +128,20 @@ def short_time(value: Any) -> str:
     return ts.strftime("%H:%M:%S") if ts else (str(value) if value else "-")
 
 
+def expires_label(value: Any, now: datetime | None = None) -> str:
+    """When a block runs out, with how long is left: "20:52:58 (in 1 h 59 min)"."""
+    ts = parse_ts(value)
+    if not ts:
+        return str(value) if value else "-"
+    now = now or datetime.now(ts.tzinfo)
+    left = (ts - now).total_seconds()
+    if left <= 0:
+        return f"{ts.strftime('%H:%M:%S')} (expired)"
+    mins = int(left // 60)
+    span = "under 1 min" if mins < 1 else f"{mins} min" if mins < 60 else f"{mins // 60} h {mins % 60} min"
+    return f"{ts.strftime('%H:%M:%S')} (in {span})"
+
+
 def short_hash(value: str | None, n: int = 10) -> str:
     if not value:
         return "-"
@@ -268,7 +282,7 @@ def action_rows(inc: dict) -> pd.DataFrame:
             "Mode": a.get("mode", "-"),
             "Approved by": agent_label(a.get("approved_by", "-")),
             "Status": a.get("status", "-"),
-            "Expires": short_time(a.get("expires_at")),
+            "Expires": expires_label(a.get("expires_at")) if a.get("status") == "active" else short_time(a.get("expires_at")),
             "Checked": check_text(a),
             "Undo": undo_text(a),
             "Snapshot": short_hash(a.get("snapshot_hash")),
@@ -308,7 +322,7 @@ def build_containment_rows(blocklist: dict | None, incidents: Iterable[dict]) ->
                     "Incident": a.get("incident", "-"),
                     "Mode": a.get("mode", "-"),
                     "Approved by": agent_label(a.get("approved_by", "-")),
-                    "Expires": "permanent" if a.get("status") == "permanent" else short_time(a.get("expires_at")),
+                    "Expires": "permanent" if a.get("status") == "permanent" else expires_label(a.get("expires_at")),
                 }
             )
     # Non-blocklist containment (rate limits, WAF rules...) still worth showing.
@@ -323,7 +337,7 @@ def build_containment_rows(blocklist: dict | None, incidents: Iterable[dict]) ->
                 "Incident": a.get("incident", "-"),
                 "Mode": a.get("mode", "-"),
                 "Approved by": agent_label(a.get("approved_by", "-")),
-                "Expires": short_time(a.get("expires_at")),
+                "Expires": expires_label(a.get("expires_at")),
             }
         )
     return pd.DataFrame(rows, columns=["Kind", "Target", "Action", "Incident", "Mode", "Approved by", "Expires"])
