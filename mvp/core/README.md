@@ -35,6 +35,13 @@ Tests:
 | `RISK_THRESHOLD` | `80` | Risk index at which autonomous containment starts. |
 | `SLA_HOURS` | `2` | Acknowledgement SLA, in hours. |
 | `HOTPATCH_TTL_HOURS` | `2` | How long a hotpatch lasts, in hours. |
+| `ACTION_TTL_HOURS` | unset | Per-type expiry, e.g. `lock_user=1,block_ip=4`. Types not listed use `HOTPATCH_TTL_HOURS`. |
+| `MAX_TTL_HOURS` | `24` | Business limit: no temporary action lasts longer than this (0 = no limit). |
+| `AUTO_ACTIONS` | `block_ip,rate_limit,waf_rule` | Action types SentrAI may take on its own. Anything else (lock an account, kill a process, revoke access) waits for a person to approve it. Making any action permanent always needs a person. |
+| `MAX_AUTO_ACTIONS_PER_HOUR` | `10` | Business limit on automatic actions in any rolling hour; past it a person decides (0 = never act alone). |
+| `CHECK_AFTER_MIN` | `10` | After-action check, this many minutes after an action starts: did the target still get through, and did everyone else's traffic, server errors or the health page get worse? Problems are alerted to the on-duty person. |
+| `CACTAI_HEALTH_URL` | unset | A page that should keep answering while SentrAI blocks things (probed when an action starts and at its check). |
+| `UNDO_RETRY_S`, `UNDO_RETRIES` | `60`, `3` | A failed undo (the firewall rule or webhook did not confirm removal) is retried this often, this many times, then left to a person. Every undo is recorded as `action_undone` or `action_undo_failed`. |
 | `ON_DUTY` | `John Doe (SEC-409) / Shift Bravo` | The responsible entity named in reports and notifications. |
 | `TEAM_LEAD`, `IT_MANAGER`, `CXO` | role names | Escalation recipients. |
 | `TYPESAFE_API_KEY` | unset | Turns on Jev (TypeSafe System One). Without it the fallback classifier is used. |
@@ -214,6 +221,7 @@ Additions that do not change the contract:
 - `GET /incidents/{id}/why`: HelpDesk explanation.
 - `GET /helpdesk/why?target=<ip|user>`: "why was my IP blocked?"
 - `GET /agents`: status of each agent and of Jev.
+- `GET /limits`: the business limits on protective actions (what may run on its own, expiry per type, hourly cap and how much of it is used, after-action check delay).
 - `GET /notifications`: all notifications, including delivered ones.
 - `POST /heartbeat {"collector": "web-01"}`: collector heartbeat for Watchdog. An event with `"source": "heartbeat"` does the same.
 - `POST /system/scan {"operator": "erick"}` and `GET /system/scan` (latest): read-only process scan with suggested log files.
@@ -224,9 +232,9 @@ Additions that do not change the contract:
 
 - `/audit` returns `{"chain_valid", "first_invalid_seq", "count", "head_hash", "records": [{"seq","ts","type","data","prev_hash","hash"}]}`.
 - A notification has these fields: `id`, `incident`, `kind`, `title`, `text`, `recipients`, `risk_index`, `band`, `buttons`, `report_url`, `created_at`, `delivered`, `delivered_at`, `channel`, `message_id`, `deliveries`.
-  - `kind` is one of `incident_opened`, `needs_review`, `sla_reminder`, `escalation`, `autonomous_action`, `operator_action`, `needs_operator`, `action_expired` or `watchdog`.
+  - `kind` is one of `incident_opened`, `needs_review`, `sla_reminder`, `escalation`, `autonomous_action`, `operator_action`, `needs_operator`, `action_expired`, `action_check` (an action did not work or may be disrupting others), `undo_failed` (an action could not be confirmed removed) or `watchdog`.
   - `buttons` is a list of `[{label, action}]`, where `action` is one of `approve`, `reject`, `ack`, `rollback` or `permanent`.
-- Incidents have extra fields beyond the contract: `asset_criticality`, `malicious_probability`, `needs_review`, `contribution`, `time_unaddressed_hours`, `classification_reason`, `analyzed_by`, `notifications`, `timeline`, `decisions`, `ack_channel`. Actions also carry `verified`, `enforcement`, `applied_at`, `executed_by` and `proposed_by`.
+- Incidents have extra fields beyond the contract: `asset_criticality`, `malicious_probability`, `needs_review`, `contribution`, `time_unaddressed_hours`, `classification_reason`, `analyzed_by`, `notifications`, `timeline`, `decisions`, `ack_channel`. Actions also carry `verified`, `enforcement`, `applied_at`, `executed_by`, `proposed_by`, `check_at` and `check` (the after-action check: `worked`, `worked_note`, `disruption`, `disruption_note` and the counts behind them), and once they stop, `ended_at` and `undo` (`ok`, `at`, `attempts`, `error`).
 
 ### Operator verbs
 

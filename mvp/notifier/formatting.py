@@ -27,6 +27,8 @@ KIND_HEADERS = {
     "containment": ("🛡️", "Containment applied"),
     "report": ("📄", "Evidence report ready"),
     "audit_anchor": ("🔏", "Record fingerprint"),
+    "action_check": ("🔎", "After-action check: needs a look"),
+    "undo_failed": ("❗", "Undo failed: check by hand"),
 }
 # Kinds that are not about one incident: shown as a short note (header, title, text), no risk or buttons.
 NOTICE_KINDS = ("audit_anchor",)

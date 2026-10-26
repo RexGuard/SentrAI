@@ -53,6 +53,23 @@ def _i(name: str, default: int) -> int:
         return default
 
 
+def _set(name: str, default: str) -> set[str]:
+    return {x.strip() for x in os.getenv(name, default).split(",") if x.strip()}
+
+
+def _type_hours(text: str) -> dict[str, float]:
+    """'lock_user=1, block_ip=4' -> {'lock_user': 1.0, 'block_ip': 4.0}; bad entries are skipped."""
+    out: dict[str, float] = {}
+    for part in text.split(","):
+        key, _, value = part.partition("=")
+        try:
+            if key.strip():
+                out[key.strip()] = float(value)
+        except ValueError:
+            pass
+    return out
+
+
 @dataclass
 class Settings:
     demo_speed: float = field(default_factory=lambda: _f("DEMO_SPEED", 1.0))  # real time; above 1 speeds the timers up for testing
@@ -142,3 +159,24 @@ class Settings:
     background: bool = field(default_factory=lambda: os.getenv("CACTAI_BACKGROUND", "1") != "0")
     # Every endpoint but /health and /blocklist needs it (see main.py). Made and saved on first use.
     api_token: str = field(default_factory=cactai_config.api_token, repr=False)
+    # Business limits on protective actions (Countersign and Warden apply them).
+    # Action types SentrAI may take on its own; any other type waits for a person to approve it.
+    auto_actions: set[str] = field(default_factory=lambda: _set("AUTO_ACTIONS", "block_ip,rate_limit,waf_rule"))
+    # Longest any temporary action may last, in hours; HOTPATCH_TTL_HOURS and ACTION_TTL_HOURS are capped to it.
+    max_ttl_hours: float = field(default_factory=lambda: _f("MAX_TTL_HOURS", 24.0))
+    # Per-type expiry, e.g. "lock_user=1,block_ip=4" (hours). Types not listed use HOTPATCH_TTL_HOURS.
+    action_ttl_hours: dict[str, float] = field(default_factory=lambda: _type_hours(os.getenv("ACTION_TTL_HOURS", "")))
+    # At most this many automatic actions in any rolling hour (0 = none on its own); past it a person decides.
+    max_auto_actions_per_hour: int = field(default_factory=lambda: _i("MAX_AUTO_ACTIONS_PER_HOUR", 10))
+    # After-action check: this many timer minutes after an action starts, check it worked and did no harm.
+    check_after_min: float = field(default_factory=lambda: _f("CHECK_AFTER_MIN", 10.0))
+    # A page that should keep answering while SentrAI blocks things (your site's home page), blank = not probed.
+    health_url: str = field(default_factory=lambda: os.getenv("CACTAI_HEALTH_URL", "").strip())
+    # A failed undo is retried this often (real seconds), up to this many times, then left to a person.
+    undo_retry_s: float = field(default_factory=lambda: _f("UNDO_RETRY_S", 60.0))
+    undo_retries: int = field(default_factory=lambda: _i("UNDO_RETRIES", 3))
+
+    def ttl_for(self, action_type: str) -> float:
+        """Hours a temporary action of this type lasts, within the business limit."""
+        hours = self.action_ttl_hours.get(action_type, self.ttl_hours)
+        return max(0.0, min(hours, self.max_ttl_hours)) if self.max_ttl_hours > 0 else max(0.0, hours)

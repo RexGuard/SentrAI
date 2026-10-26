@@ -37,8 +37,10 @@ class Responder(ABC):
         """Put the action in place. Return True when it is verified to be in force."""
 
     @abstractmethod
-    def revert(self, action: Action) -> None:
-        """Take the action out again (rollback, rejection or TTL expiry)."""
+    def revert(self, action: Action) -> bool | None:
+        """Take the action out again (rollback, rejection or TTL expiry). Return True when the undo is
+        verified, False when it failed (the core retries it and tells the on-duty person), None when this
+        responder cannot tell."""
 
     def reset(self) -> None:
         """Forget all state (demo reset)."""
@@ -65,13 +67,14 @@ class BlocklistResponder(Responder):
         self._active[key] += 1
         return self._active[key] > 0
 
-    def revert(self, action: Action) -> None:
+    def revert(self, action: Action) -> bool | None:
         key = (action["type"], action["target"])
         if key not in self._active:
-            return  # never applied (refused target) or already reverted
+            return True  # never applied (refused target) or already reverted
         self._active[key] -= 1
         if self._active[key] <= 0:
             del self._active[key]
+        return True
 
     def reset(self) -> None:
         self._active.clear()
@@ -92,8 +95,8 @@ class SimulatedResponder(Responder):
     def apply(self, action: Action) -> bool:
         return True
 
-    def revert(self, action: Action) -> None:
-        pass
+    def revert(self, action: Action) -> bool | None:
+        return True
 
 
 def _is_ip(value: str) -> bool:
@@ -167,11 +170,12 @@ class WebhookResponder(Responder):
         action["webhook"] = {"url": self.url, "ok": ok, **({"error": self.last_error} if not ok else {})}
         return ok_inner and ok
 
-    def revert(self, action: Action) -> None:
+    def revert(self, action: Action) -> bool | None:
         inner = self.inner(action["type"])
-        if inner is not None:
-            inner.revert(action)
-        self._send("revert", action)
+        ok_inner = inner.revert(action) if inner is not None else True
+        ok = self._send("revert", action)
+        action["webhook_revert"] = {"url": self.url, "ok": ok, **({"error": self.last_error} if not ok else {})}
+        return ok and ok_inner is not False
 
     def reset(self) -> None:
         self.last_error = None
@@ -197,8 +201,8 @@ class Responders:
     def apply(self, action: Action) -> bool:
         return self.for_type(action["type"]).apply(action)
 
-    def revert(self, action: Action) -> None:
-        self.for_type(action["type"]).revert(action)
+    def revert(self, action: Action) -> bool | None:
+        return self.for_type(action["type"]).revert(action)
 
     def reset(self) -> None:
         for r in self.all:
