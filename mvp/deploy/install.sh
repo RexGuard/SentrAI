@@ -386,6 +386,11 @@ else
     SIGN_IN="$(/usr/local/bin/cactai-admin "${admin_args[@]}" </dev/null)" || die "could not set up the dashboard sign-in"
 fi
 unset ADMIN_PASSWORD
+# The API token every service sends to the core. Make it now: the core, collector and notifier may
+# not write the settings file (their sandbox), so none of them could save a new one.
+(set -a && . "$ENV_FILE" && set +a && cd "$MVP" && \
+    runuser -u "$SVC_USER" -- env HOME="$STATE" "$MVP/lab/.venv/bin/python" cactai_config.py token >/dev/null) \
+    || die "could not make the API token"
 
 # --- dashboard HTTPS and firewall rule -------------------------------------
 install -m 0755 "$SRC/deploy/dashboard-firewall.sh" /usr/local/sbin/cactai-dashboard-firewall
@@ -393,7 +398,8 @@ TLS=/etc/cactai/tls
 if [ -n "$DASH_ALLOW" ]; then
     if [ ! -f "$TLS/cert.pem" ] && command -v openssl >/dev/null 2>&1; then
         install -d -o root -g "$SVC_USER" -m 0750 "$TLS"
-        openssl req -x509 -newkey rsa:2048 -nodes -days 825 -subj "/CN=$(hostname -f 2>/dev/null || hostname)" \
+        cn="$(hostname -f 2>/dev/null || hostname)"; cn="${cn:0:64}"  # a certificate name holds at most 64 characters
+        openssl req -x509 -newkey rsa:2048 -nodes -days 825 -subj "/CN=$cn" \
             -keyout "$TLS/key.pem" -out "$TLS/cert.pem" >/dev/null 2>&1 || rm -f "$TLS/key.pem" "$TLS/cert.pem"
         chown root:"$SVC_USER" "$TLS"/*.pem 2>/dev/null || true
         chmod 0640 "$TLS"/*.pem 2>/dev/null || true

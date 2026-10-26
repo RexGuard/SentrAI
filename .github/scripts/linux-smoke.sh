@@ -26,7 +26,7 @@ dump() {
     journalctl --no-pager -n 60 -u cactai-core -u cactai-collector -u cactai-dashboard -u cactai-notifier -u cactai-agent || true
     nft list ruleset 2>/dev/null | head -60 || true
 }
-trap 'dump' ERR
+trap 'rc=$?; [ "$rc" = 0 ] || dump; exit "$rc"' EXIT
 
 [ "$(id -u)" = 0 ] || fail "run with sudo"
 [ -f deploy/install.sh ] || fail "run from mvp/"
@@ -148,5 +148,4 @@ done
 [ ! -e /opt/cactai ] || fail "/opt/cactai still there"
 ! nft list table inet cactai_dashboard >/dev/null 2>&1 || fail "dashboard firewall rule left behind"
 ! id cactai >/dev/null 2>&1 || fail "cactai user still there"
-trap - ERR
 echo "Linux install: all checks passed"
