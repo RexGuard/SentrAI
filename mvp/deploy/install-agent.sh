@@ -90,7 +90,7 @@ install -d -m 0755 "$PREFIX" "$MVP"
 rm -rf "$MVP/core/app"
 tar -C "$SRC" -cf - --exclude=.venv --exclude=__pycache__ --exclude=.pytest_cache \
     --exclude=./lab/logs --exclude=./lab/scout/sources.json --exclude=./lab/scout/pending.json \
-    ./lab ./core/app ./cactai_config.py | tar -C "$MVP" -xf - --no-same-owner
+    ./lab ./core/app ./cactai_config.py ./cactai_llm.py | tar -C "$MVP" -xf - --no-same-owner
 chown -R root:root "$MVP"
 chmod -R u=rwX,go=rX "$MVP"
 if [ ! -x "$MVP/lab/.venv/bin/python" ]; then
