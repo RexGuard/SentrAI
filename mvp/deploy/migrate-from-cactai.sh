@@ -31,7 +31,8 @@ _mig_rewrite() {  # FILE...: old names and paths inside settings files
     for f in "$@"; do
         [ -f "$f" ] || continue
         sed -i -e 's/CACTAI_/SENTRAI_/g' -e 's#/etc/cactai#/etc/sentrai#g' -e 's#/var/lib/cactai#/var/lib/sentrai#g' \
-            -e 's#/opt/cactai#/opt/sentrai#g' -e 's#cactai\.db#sentrai.db#g' -e 's#/\.cactai/#/.sentrai/#g' "$f"
+            -e 's#/opt/cactai#/opt/sentrai#g' -e 's#cactai\.db#sentrai.db#g' -e 's#/\.cactai/#/.sentrai/#g' \
+            -e '/^[[:space:]]*#/s/cactai/sentrai/g' "$f"  # comments name the old units (cactai-agent, cactai.target)
     done
     return 0
 }
