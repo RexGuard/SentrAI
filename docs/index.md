@@ -16,7 +16,7 @@ a server that keeps watch around the clock.
 | --- | --- | --- |
 | Run SentrAI on your own computer | [Run on a laptop](laptop.html) | about 5 minutes |
 | Keep SentrAI running on a Linux server | [Install on a server](server.html) | about 10 minutes |
-| Sign in to the dashboard, or reset a password | [Signing in](sign-in.html) | |
+| Sign in, invite your team, or reset a sign-in | [Signing in](sign-in.html) | |
 | Change thresholds, alerts or protected IPs | [Settings](settings.html) | |
 | Fix a port clash, a missing package or a blocked dashboard | [Troubleshooting](troubleshooting.html) | |
 

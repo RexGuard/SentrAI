@@ -21,7 +21,8 @@ powershell -ExecutionPolicy Bypass -File .\run.ps1
 
 The first run asks a few setup questions. Press **Enter** at each one to keep the defaults.
 When it finishes, a window opens for each part, the dashboard opens in your browser, and the
-console prints your **dashboard sign-in**. The password is shown only this once, so copy it now.
+console prints a one-time **setup code**. The dashboard opens on *Create your Owner account*:
+type the code there, then add an authenticator app. See [Signing in](sign-in.html).
 
 Stop everything with:
 
