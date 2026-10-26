@@ -78,3 +78,8 @@ def test_assign_and_resolve(fake_core):
         raise AssertionError("resolving without a note must fail")
     assert c.resolve(iid, "erick", "password reset")["status"] == "resolved"
     assert [x["id"] for x in c.routing()["contacts"]][0] == "on_duty"
+    doc = {"contacts": {"on_duty": {"name": "Amir"}, "lee": {"name": "Lee", "backup": "on_duty"}},
+           "rules": [{"name": "Web", "match": {"category": ["xss"]}, "owner": "lee", "notify": ["on_duty"]}]}
+    saved = c.save_routing(doc, "erick")
+    assert [x["name"] for x in saved["contacts"]] == ["Amir", "Lee"]
+    assert [r["name"] for r in saved["rules"]] == ["Web", "Everything else"]

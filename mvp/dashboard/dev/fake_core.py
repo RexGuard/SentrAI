@@ -452,13 +452,40 @@ ROUTING = {"source": "defaults", "contacts": [
     {"id": "team_lead", "name": "Team lead", "role": "team_lead", "email": "", "telegram": "", "backup": "it_manager"},
     {"id": "it_manager", "name": "IT manager", "role": "it_manager", "email": "", "telegram": "", "backup": "cxo"},
     {"id": "cxo", "name": "CXO", "role": "cxo", "email": "", "telegram": "", "backup": ""}],
-    "rules": [{"name": "Everything else", "match": {}, "owner": "on_duty", "notify": []}],
+    "rules": [{"name": "Critical", "match": {"severity": ["critical"]}, "owner": "on_duty",
+               "notify": ["team_lead", "it_manager", "cxo"]},
+              {"name": "Attacker inside", "match": {"category": ["malware", "data_exfiltration", "log_tampering",
+                                                                 "privilege_escalation"]},
+               "owner": "on_duty", "notify": ["team_lead", "it_manager"]},
+              {"name": "High", "match": {"severity": ["high"]}, "owner": "on_duty", "notify": ["team_lead"]},
+              {"name": "Everything else", "match": {}, "owner": "on_duty", "notify": []}],
     "follow_up": {"escalate_after_reminders": 2, "max_escalations": 3, "resolve_within_hours": 24}}
 
 
 @app.get("/routing")
 def routing():
     return {**ROUTING, "contacts": [{**c, "telegram_linked": c["id"] in TG_LINKS} for c in ROUTING["contacts"]]}
+
+
+@app.post("/routing")
+def save_routing(body: dict = Body(...)):
+    new = body.get("routing") or {}
+    contacts = new.get("contacts") or {}
+    if not contacts:
+        raise HTTPException(400, "keep at least one person in the routing")
+    for r in new.get("rules") or []:
+        if r.get("owner") not in contacts:
+            raise HTTPException(400, f"rule {r.get('name')!r} needs an owner who is one of the people")
+    ROUTING.update(source="routing.json (fake core)", follow_up=new.get("follow_up") or ROUTING["follow_up"],
+                   contacts=[{"id": k, **{f: str(v.get(f) or "") for f in ("name", "role", "email", "telegram", "backup")}}
+                             for k, v in contacts.items()],
+                   rules=[{"name": r.get("name"), "match": r.get("match") or {}, "owner": r.get("owner"),
+                           "notify": [x for x in r.get("notify") or [] if x != r.get("owner")]}
+                          for r in new.get("rules") or []])
+    if not ROUTING["rules"] or ROUTING["rules"][-1]["match"]:
+        ROUTING["rules"].append({"name": "Everything else", "match": {}, "owner": ROUTING["contacts"][0]["id"],
+                                 "notify": []})
+    return routing()
 
 
 TG_LINKS: dict = {}  # contact id -> chat id

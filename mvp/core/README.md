@@ -95,6 +95,12 @@ unanswered reminders, the incident is handed to the owner's backup (`escalated` 
 `incident_escalated` audit record), up to `max_escalations` times. Acknowledging stops it. An acknowledged incident
 that is still not resolved after `resolve_within_hours` gets a `resolve_reminder` to its owner (up to 3).
 
+The dashboard's **Incidents > Who gets what** draws this as a map (incident, rules, owner, also told, backup) and has
+forms to add or remove people, change which incident types go to whom, reorder rules and set the follow-up. They save
+through `POST /routing`, which checks the whole file first (owners and backups must be people in it, categories and
+severities must be known ones) and writes it in one step, so a bad edit never half-applies. Owners and Admins can edit;
+Auditors see the forms greyed out. Each save is a `routing_changed` audit record with who did it.
+
 Each notification carries `deliver_to` (the recipients' email and Telegram from the contacts): the notifier
 emails those addresses instead of `ALERT_EMAIL_TO`. The Telegram **Take it** button makes whoever pressed it the owner.
 
@@ -301,6 +307,8 @@ Additions that do not change the contract:
 - `POST /incidents/{id}/assign {"operator", "assignee", "note"?}`: give the incident to a contact (id, name, role or Telegram handle) or anyone by name.
 - `POST /incidents/{id}/resolve {"operator", "note"}`: close it with a note on what was done (400 without one). Blocks in force stay until they expire or are rolled back.
 - `GET /routing`: the contacts, rules and follow-up policy in use; each contact has `telegram_linked`.
+- `POST /routing` `{"operator", "routing": {"contacts", "rules", "follow_up"}}`: replace the routing file (same shape as
+  `profiles/routing.example.json`). 400 with a plain reason when it does not check out; nothing is written then.
 - `POST /telegram/link-codes {"operator", "contact"}`, `POST /telegram/link {"code", "chat_id", "username"}`,
   `POST /telegram/unlink {"operator", "contact" | "chat_id"}`, `GET /telegram/links`: personal Telegram chats (see above).
 - `POST /notifications/{id}/delivered` takes an optional `"to"`: the one person a direct message reached.

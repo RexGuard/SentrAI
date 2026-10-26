@@ -1276,9 +1276,163 @@ def page_incidents() -> None:
         else:
             st.caption(f"From {routing.get('source')}. Unanswered alerts go to the owner's backup after "
                        f"{(routing.get('follow_up') or {}).get('escalate_after_reminders', '?')} reminders.")
-            table(sh.routing_rows(routing), "", )
-            table(sh.contact_rows(routing), "")
+            routing_map(routing)
+            with st.expander("The same as tables"):
+                table(sh.routing_rows(routing), "", )
+                table(sh.contact_rows(routing), "")
             telegram_links(contacts)
+
+
+def routing_map(routing: dict) -> None:
+    """Who gets what as a mind map, with forms beside it to add or remove people and change the rules."""
+    st.graphviz_chart(sh.routing_dot(routing, th.palette(THEME, ACCENT)), width="stretch")
+    st.caption("Read left to right: a new incident takes the first rule it matches (1 first). "
+               "**owns** (solid) = gets it and every reminder · dashed = also told, once · "
+               "**backup** (dotted) = takes over when the owner does not answer.")
+    with st.container(border=True):
+        st.markdown("**Change who gets what**")
+        if locked("configure"):
+            st.caption(why_locked("configure"))
+        people, rules, follow = st.tabs(["People", "Which incidents go where", "Follow-up"])
+        with people:
+            routing_people(routing)
+        with rules:
+            routing_rules(routing)
+        with follow:
+            routing_follow_up(routing)
+
+
+def _pick_next(key: str, options: list) -> None:
+    """Select what was just saved (or "new" after a delete): a widget's value can only be set before it is drawn."""
+    want = st.session_state.pop(f"{key}_next", None)
+    if want is not None and want in options:
+        st.session_state[key] = want
+    elif st.session_state.get(key) not in options:
+        st.session_state.pop(key, None)
+
+
+def _save_routing(doc: dict, label: str) -> None:
+    run_action(label, lambda: client.save_routing(doc, st.session_state.operator))
+
+
+def routing_people(routing: dict) -> None:
+    doc = sh.routing_doc(routing)
+    people = doc["contacts"]
+    new = "+ Add a person"
+    _pick_next("rt_person", [new, *people])
+    pick = st.selectbox("Person", [new, *people], key="rt_person",
+                        format_func=lambda cid: cid if cid == new else people[cid]["name"])
+    cur = people.get(pick, {})
+    off = locked("configure")
+    with st.form(f"rt_person_{pick}", border=False):
+        l, r = st.columns(2)
+        name = l.text_input("Name", cur.get("name", ""), max_chars=120, disabled=off)
+        role = r.selectbox("Role", sh.ROLE_CHOICES, disabled=off,
+                            index=sh.ROLE_CHOICES.index(cur.get("role", "")) if cur.get("role", "") in sh.ROLE_CHOICES else 0,
+                            format_func=lambda r: r.replace("_", " ") or "none",
+                            help="On duty, team lead, IT manager and CXO stand in for the four names in the settings.")
+        email = l.text_input("Email", cur.get("email", ""), max_chars=120, disabled=off)
+        telegram = r.text_input("Telegram", cur.get("telegram", ""), max_chars=120, disabled=off,
+                                 placeholder="@handle")
+        others = [c for c in people if c != pick]
+        backup = l.selectbox("Backup (takes over when they do not answer)", ["", *others], disabled=off,
+                              index=([""] + others).index(cur.get("backup", "")) if cur.get("backup", "") in others else 0,
+                              format_func=lambda cid: people[cid]["name"] if cid else "nobody")
+        a, b, _ = st.columns([1, 1, 2])
+        saved = a.form_submit_button("Add person" if pick == new else "Save", icon=":material/save:",
+                                     type="primary", width="stretch", disabled=off, help=why_locked("configure"))
+        removed = pick != new and b.form_submit_button("Remove", icon=":material/person_remove:", width="stretch",
+                                                       disabled=off, help=why_locked("configure"))
+    if saved:
+        if not name.strip():
+            st.warning("Give the person a name.")
+            return
+        cid = sh.new_contact_id(doc, name) if pick == new else pick
+        st.session_state["rt_person_next"] = cid
+        for k, p in people.items():  # one person per settings role: it moves to whoever was given it last
+            if role and k != cid and p.get("role") == role:
+                p["role"] = ""
+        people[cid] = {"name": name.strip(), "role": role, "email": email.strip(), "telegram": telegram.strip(),
+                       "backup": backup}
+        _save_routing(doc, f"{name.strip()} {'added' if pick == new else 'saved'}")
+    if removed:
+        try:
+            notes = sh.remove_contact(doc, pick)
+        except ValueError as exc:
+            st.warning(str(exc))
+            return
+        st.session_state["rt_person_next"] = new
+        _save_routing(doc, f"{cur.get('name')} removed" + (f" ({'; '.join(notes)})" if notes else ""))
+
+
+def routing_rules(routing: dict) -> None:
+    doc = sh.routing_doc(routing)
+    people, rules = doc["contacts"], doc["rules"]
+    new = -1
+    _pick_next("rt_rule", [new, *range(len(rules))])
+    pick = st.selectbox("Rule", [new, *range(len(rules))], key="rt_rule",
+                        format_func=lambda i: "+ New rule" if i == new else f"{i + 1}. {rules[i]['name']}")
+    cur = rules[pick] if pick != new else {"name": "", "match": {}, "owner": next(iter(people), ""), "notify": []}
+    match = cur.get("match") or {}
+    off = locked("configure")
+    ids = list(people)
+    with st.form(f"rt_rule_{pick}", border=False):
+        l, r = st.columns(2)
+        name = l.text_input("Rule name", cur["name"], max_chars=120, disabled=off, placeholder="Web attacks")
+        cats = r.multiselect("Incident types", list(sh.CATEGORY_LABELS), default=match.get("category", []),
+                              format_func=sh.category_label, disabled=off, placeholder="any type")
+        sevs = l.multiselect("Severity", sh.SEVERITY_CHOICES, disabled=off, placeholder="any severity",
+                              default=[x for x in match.get("severity", []) if x in sh.SEVERITY_CHOICES])
+        hosts = r.text_input("Machines", ", ".join(match.get("host", [])), disabled=off, placeholder="any machine",
+                              help="Names or patterns such as web-* or db-01, separated by commas.")
+        owner = l.selectbox("Owner", ids, disabled=off or not ids,
+                             index=ids.index(cur["owner"]) if cur["owner"] in ids else 0,
+                             format_func=lambda cid: people[cid]["name"])
+        told = r.multiselect("Also tell", ids, default=[x for x in cur["notify"] if x in ids], disabled=off,
+                              format_func=lambda cid: people[cid]["name"], placeholder="nobody else")
+        order = l.number_input("Order (the first rule that matches wins)", 1, len(rules) + (pick == new),
+                                value=(pick + 1) if pick != new else max(1, len(rules)), disabled=off)
+        a, b, _ = st.columns([1, 1, 2])
+        saved = a.form_submit_button("Add rule" if pick == new else "Save", icon=":material/save:", type="primary",
+                                     width="stretch", disabled=off, help=why_locked("configure"))
+        removed = pick != new and b.form_submit_button("Delete", icon=":material/delete:", width="stretch",
+                                                       disabled=off, help=why_locked("configure"))
+    st.caption("Leave the types, severity and machines empty to catch everything that no rule above took.")
+    if saved:
+        if not name.strip():
+            st.warning("Give the rule a name.")
+            return
+        m = {"category": cats, "severity": sevs, "host": [h.strip() for h in hosts.split(",") if h.strip()]}
+        rule = {"name": name.strip(), "match": {k: v for k, v in m.items() if v} | (
+                {"layer": match["layer"]} if match.get("layer") else {}),
+                "owner": owner, "notify": [x for x in told if x != owner]}
+        if pick != new:
+            rules.pop(pick)
+        rules.insert(int(order) - 1, rule)
+        st.session_state["rt_rule_next"] = int(order) - 1
+        _save_routing(doc, f"Rule {rule['name']} {'added' if pick == new else 'saved'}")
+    if removed:
+        gone = rules.pop(pick)
+        st.session_state["rt_rule_next"] = new
+        _save_routing(doc, f"Rule {gone['name']} deleted")
+
+
+def routing_follow_up(routing: dict) -> None:
+    doc = sh.routing_doc(routing)
+    fu = doc["follow_up"]
+    off = locked("configure")
+    with st.form("rt_follow", border=False):
+        after = st.number_input("Unanswered reminders before the backup takes over", 1, 20,
+                                int(fu.get("escalate_after_reminders", 2)), disabled=off)
+        most = st.number_input("Hand it on at most this many times", 0, 20, int(fu.get("max_escalations", 3)),
+                               disabled=off)
+        hours = st.number_input("Remind the owner when acknowledged but not resolved after (hours, 0 = never)",
+                                0.0, 720.0, float(fu.get("resolve_within_hours", 24)), step=1.0, disabled=off)
+        if st.form_submit_button("Save", icon=":material/save:", type="primary", disabled=off,
+                                 help=why_locked("configure")):
+            doc["follow_up"] = {"escalate_after_reminders": int(after), "max_escalations": int(most),
+                                "resolve_within_hours": float(hours)}
+            _save_routing(doc, "Follow-up saved")
 
 
 def telegram_links(contacts: list[dict]) -> None:
