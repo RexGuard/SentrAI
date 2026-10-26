@@ -70,6 +70,7 @@ machine_reported() {
 }
 wait_for "the machine reports to the panel" 60 machine_reported
 grep -q '^CACTAI_FIREWALL_ENFORCE=0' /etc/cactai/agent.env || fail "first install is not a dry run"
+grep -q "$LOG" /var/lib/cactai/agent/sources.json || fail "the installer did not approve $LOG"
 grep -q "$ADMIN_IP" /etc/cactai/agent.env || fail "--protect was not kept"
 [ "$(stat -c '%U %a' /var/lib/cactai/agent)" = "cactai 700" ] || fail "agent state folder owner/mode"
 [ "$(systemctl show -p User --value cactai-agent)" = cactai ] || fail "agent does not run as cactai"

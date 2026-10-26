@@ -876,13 +876,21 @@ WINDOWS_WHY = {"Security": "Windows sign-ins, lockouts, admin group changes and 
                "Microsoft-Windows-Windows Defender/Operational": "Microsoft Defender malware alerts"}
 
 
+def _is_file(p: Path) -> bool:
+    """Path.is_file that says False, instead of raising, for a folder this account may not look in."""
+    try:
+        return p.is_file()
+    except OSError:
+        return False
+
+
 def service_log_entries(root: Path = Path("/")) -> list[dict]:
     """Suricata, MySQL/MariaDB, PostgreSQL and MongoDB logs on this machine, as sources.json entries."""
     found = []
     for candidates, layer, fmt, why in SERVICE_LOGS:
         for pattern in candidates:
             rel = pattern.lstrip("/")
-            hits = [p for p in root.glob(rel) if p.is_file()] if "*" in rel else [root / rel] if (root / rel).is_file() else []
+            hits = [p for p in root.glob(rel) if _is_file(p)] if "*" in rel else [root / rel] if _is_file(root / rel) else []
             if hits:
                 newest = max(hits, key=lambda p: p.stat().st_mtime)
                 found.append({"path": str(newest), "layer": layer, "format": fmt, "why": why})
@@ -906,8 +914,8 @@ def system_log_entries(root: Path = Path("/"), has_journalctl: bool | None = Non
         return windows_log_entries() + service_log_entries(root)
 
     entries = [{"path": str(here(p)), "layer": layer, "format": fmt, "why": "nginx web server log"}
-               for p, layer, fmt in NGINX_LOGS if here(p).is_file()]
-    auth = next((here(p) for p in AUTH_LOGS if here(p).is_file()), None)
+               for p, layer, fmt in NGINX_LOGS if _is_file(here(p))]
+    auth = next((here(p) for p in AUTH_LOGS if _is_file(here(p))), None)
     if auth is not None:
         entries.append({"path": str(auth), "layer": "os", "format": "syslog", "why": "SSH logins (sshd)"})
     elif has_journalctl if has_journalctl is not None else shutil.which("journalctl"):
