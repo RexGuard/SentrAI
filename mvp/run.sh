@@ -115,7 +115,7 @@ CACTAI_API_TOKEN="$("$PY_LAB" "$ROOT/cactai_config.py" token | tail -n 1)"
 [ -n "$CACTAI_API_TOKEN" ] || { echo "Could not read the API token (python cactai_config.py token)." >&2; exit 1; }
 export CACTAI_API_TOKEN
 
-# The dashboard sign-in (email + password). Made on first run; the password is shown only then.
+# Who may sign in to the dashboard; on a new machine, a one-time setup code for creating the Owner.
 SIGN_IN="$("$PY_LAB" "$ROOT/cactai_config.py" admin)" || { echo "Could not set up the dashboard sign-in." >&2; exit 1; }
 
 export PYTHONUTF8=1 PYTHONIOENCODING=utf-8 PYTHONUNBUFFERED=1

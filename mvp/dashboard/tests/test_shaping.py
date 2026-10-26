@@ -198,9 +198,9 @@ def test_agent_rows_and_join_commands():
     cmds = sh.join_commands("https://panel.example.com:8000/", "K7QM-2XPA-9RTD", "web-01")
     assert cmds["linux"] == ("sudo ./mvp/deploy/install-agent.sh --panel https://panel.example.com:8000 "
                              "--code K7QM-2XPA-9RTD --name web-01")
-    assert cmds["windows"].splitlines() == ["cd mvp\\lab",
-                                            "python -m agent join --panel https://panel.example.com:8000 --code K7QM-2XPA-9RTD --name web-01",
-                                            "python -m agent run"]
+    assert cmds["windows"] == ("powershell -ExecutionPolicy Bypass -File .\\mvp\\deploy\\install-agent.ps1 "
+                               "-Panel https://panel.example.com:8000 -Code K7QM-2XPA-9RTD -Name web-01")
+    assert "-Name" not in sh.join_commands("https://p.example.com", "K7QM-2XPA-9RTD")["windows"]
 
 
 def test_services_on_a_machine():

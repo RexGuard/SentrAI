@@ -581,12 +581,12 @@ def agent_rows(agents: Iterable[dict]) -> pd.DataFrame:
 
 
 def join_commands(panel_url: str, code: str, name: str | None = None) -> dict[str, str]:
-    """What to paste on the new machine, for Linux (installer) and for Windows or a laptop (from a checkout)."""
+    """What to paste on the new machine, from a SentrAI checkout: both install the agent as a service."""
     url = panel_url.rstrip("/")
-    named = f" --name {name}" if name else ""
     return {
-        "linux": f"sudo ./mvp/deploy/install-agent.sh --panel {url} --code {code}{named}",
-        "windows": f"cd mvp\\lab\npython -m agent join --panel {url} --code {code}{named}\npython -m agent run",
+        "linux": f"sudo ./mvp/deploy/install-agent.sh --panel {url} --code {code}" + (f" --name {name}" if name else ""),
+        "windows": (f"powershell -ExecutionPolicy Bypass -File .\\mvp\\deploy\\install-agent.ps1 -Panel {url} -Code {code}"
+                    + (f" -Name {name}" if name else "")),
     }
 
 

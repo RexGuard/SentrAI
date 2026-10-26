@@ -174,9 +174,6 @@ class SetupChat:
         else:
             lines.append("**AI model:** none, fixed playbooks")
         lines.append(f"**Dashboard:** {dashboard_address(self)}")
-        lines.append(f"**Dashboard sign-in:** {v(cfg.EMAIL_ENV)}, "
-                     + ("new password" if self.answers.get(cfg.HASH_ENV) else
-                        "current password" if v(cfg.HASH_ENV) else "password made on next start"))
         return lines
 
     # ------------------------------------------------------------ helpers
@@ -505,9 +502,9 @@ def _model(s: SetupChat, answer: str) -> str:
     return "The AI model is set; I'll switch to it as soon as you save."
 
 
-# 8. Web dashboard: who may open it, on which port, and the sign-in (email + password, saved as a hash).
+# 8. Web dashboard: who may open it and on which port. People sign in with their own accounts (Team page).
 # Opening it to other computers changes the firewall, which needs admin rights, so Cyanide saves the
-# sign-in itself and gives the one install command that applies the rest (deploy/install.sh).
+# port and gives the one install command that applies the rest (deploy/install.sh).
 DEFAULT_PORT = "8501"
 
 
@@ -577,23 +574,6 @@ def _web_port(s: SetupChat, answer: str) -> str:
     return ""
 
 
-def _web_email(s: SetupChat, answer: str) -> str:
-    if answer != "keep":
-        if not re.fullmatch(r"[^@\s]+@[^@\s]+\.\w+", answer.strip()):
-            raise Retry("Please type an email address, like admin@example.com.")
-        s.set(**{cfg.EMAIL_ENV: answer.strip()})
-    return ""
-
-
-def _web_password(s: SetupChat, answer: str) -> str:
-    if answer == "keep":
-        return "The dashboard password stays as it is."
-    if len(answer) < cfg.MIN_PASSWORD:
-        raise Retry(f"Please use at least {cfg.MIN_PASSWORD} characters.")
-    s.set(**{cfg.HASH_ENV: cfg.hash_password(answer)})  # only the hash is kept, here and in the file
-    return "Got it. It's saved only as a hash, and it works at your next sign-in."
-
-
 STEPS: tuple[Step, ...] = (
     Step("kind", lambda s: "First, what does SentrAI guard here?", _kind,
          lambda s: [("sensitive", "Sensitive records (students, patients, payments)"),
@@ -654,9 +634,4 @@ STEPS: tuple[Step, ...] = (
          when=lambda s: s.notes.get("web") == "network"),
     Step("web_port", lambda s: "Which port should it use?", _web_port,
          lambda s: [("keep", f"Keep {DEFAULT_PORT}")]),
-    Step("web_email", lambda s: "What email will you sign in to the dashboard with?", _web_email,
-         lambda s: [("keep", f"Keep {s.value(cfg.EMAIL_ENV)}")]),
-    Step("web_password", lambda s: f"Choose a dashboard password (at least {cfg.MIN_PASSWORD} characters).",
-         _web_password, lambda s: [("keep", "Keep the current password")] if s.current.get(cfg.HASH_ENV) else [],
-         secret=True),
 )
