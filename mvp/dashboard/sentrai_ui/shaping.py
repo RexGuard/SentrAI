@@ -132,6 +132,15 @@ def ai_classifier_state(status: Any) -> tuple[str, str]:
     return "Unknown", "the core did not report it"
 
 
+def plural(n: Any, word: str, many: str = "") -> str:
+    """'1 action', '2 actions', '2 addresses': no '(s)' in what people read."""
+    try:
+        one = int(n) == 1
+    except (TypeError, ValueError):
+        one = False
+    return f"{n} {word if one else (many or word + 's')}"
+
+
 def category_label(category: str | None) -> str:
     if not category:
         return "Unknown"
