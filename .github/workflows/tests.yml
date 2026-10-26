@@ -56,6 +56,11 @@ jobs:
         working-directory: mvp/core
         run: .venv/${{ runner.os == 'Windows' && 'Scripts/python.exe' || 'bin/python' }} -m pytest -q
 
+      - name: Classifier evaluation tests
+        if: ${{ !cancelled() }}
+        working-directory: mvp/eval
+        run: ../core/.venv/${{ runner.os == 'Windows' && 'Scripts/python.exe' || 'bin/python' }} -m pytest -q
+
       - name: Lab tests
         if: ${{ !cancelled() }}
         working-directory: mvp/lab

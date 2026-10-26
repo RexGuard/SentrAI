@@ -12,14 +12,14 @@ Without a key those columns say "not run".
 
 ## The event set
 
-`events.jsonl` holds 196 labelled events in the contract Event shape. It is a fixed set: the demo
+`events.jsonl` holds 202 labelled events in the contract Event shape. It is a fixed set: the demo
 portal and attack scripts that built it were removed, so it can no longer be rebuilt, only scored.
 
 - **lab (116)**: the old demo portal driven with its attack payloads, extra SQLi
   and XSS payloads, and normal staff traffic (including searches such as `O'Brien` and
   `select course`). The log lines go through the real collector.
 - **replay (17)**: the old scripted demo incident, unchanged.
-- **handcrafted (63)**: firewall, cloud, Windows and sshd lines the lab cannot produce, threat-scan findings, and benign
+- **handcrafted (69)**: firewall, cloud, Windows and sshd lines the lab cannot produce, threat-scan findings, prompt injections aimed at the AI classifier, and benign
   look-alikes (a closed security-group rule, a nightly `pg_dump`, a small export).
 
 A line gets an attack label only if the line itself shows the attack. Every failed login in a
