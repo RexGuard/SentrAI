@@ -38,6 +38,7 @@ UMask=0077
 CapabilityBoundingSet=
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 ProtectProc=invisible
+ReadWritePaths=/var/lib/cactai/notifier
 InaccessiblePaths=-/var/lib/cactai/core -/var/lib/cactai/collector
 
 [Install]

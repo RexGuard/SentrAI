@@ -132,6 +132,10 @@ attack "$ATTACKER2"
 approve "$ATTACKER2" >/dev/null
 wait_for "iptables drops $ATTACKER2" 60 ipt_has "$ATTACKER2"
 
+if journalctl -q --no-pager -u cactai-core -u cactai-collector -u cactai-notifier -u cactai-agent | grep "Read-only file system"; then
+    fail "a service tried to write outside its own folder (above)"
+fi
+
 # --- uninstall: service, code and blocks go; the key stays until --purge -------------------------
 ./deploy/uninstall-agent.sh
 ! systemctl cat cactai-agent >/dev/null 2>&1 || fail "agent service still installed"

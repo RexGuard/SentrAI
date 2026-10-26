@@ -179,7 +179,7 @@ for g in adm systemd-journal; do
     fi
 done
 install -d -o "$SVC_USER" -g "$SVC_USER" -m 0750 "$STATE" "$STATE/scout" "$STATE/scout/trails" "$STATE/lab-logs"
-install -d -o "$SVC_USER" -g "$SVC_USER" -m 0700 "$STATE/core" "$STATE/collector"
+install -d -o "$SVC_USER" -g "$SVC_USER" -m 0700 "$STATE/core" "$STATE/collector" "$STATE/notifier"
 install -d -o root -g "$SVC_USER" -m 0750 /etc/cactai
 
 # --- settings (ports, addresses, paths) ------------------------------------
@@ -213,6 +213,8 @@ fi
 chown root:"$SVC_USER" "$ENV_FILE"
 chmod 0640 "$ENV_FILE"
 for k in "${!SET[@]}"; do set_env "$k" "${SET[$k]}"; done
+# The notifier keeps the last audit fingerprint it delivered here (its code folder is read-only to it).
+[ -n "$(get_env NOTIFIER_WITNESS_FILE)" ] || set_env NOTIFIER_WITNESS_FILE "$STATE/notifier/last_witness.txt"
 if [ "${#PROTECT[@]}" -gt 0 ]; then
     ips="$(get_env PROTECTED_IPS)"
     for ip in "${PROTECT[@]}"; do

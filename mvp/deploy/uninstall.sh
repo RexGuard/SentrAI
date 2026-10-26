@@ -28,7 +28,7 @@ if [ -x /usr/local/sbin/cactai-dashboard-firewall ]; then /usr/local/sbin/cactai
 rm -f /usr/local/sbin/cactai-dashboard-firewall
 if command -v ufw >/dev/null 2>&1; then  # the allow rules install.sh added for the dashboard
     ufw status numbered 2>/dev/null | grep sentrai-dashboard | sed -n 's/^\[ *\([0-9]*\)\].*/\1/p' | sort -rn \
-        | while read -r n; do ufw --force delete "$n" >/dev/null; done
+        | while read -r n; do ufw --force delete "$n" >/dev/null; done || true  # none there is fine
 fi
 [ -f "$PREFIX/mvp/core/app/main.py" ] && rm -rf "$PREFIX"
 if [ "$PURGE" = 1 ]; then
