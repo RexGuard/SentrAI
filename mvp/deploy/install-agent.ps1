@@ -10,9 +10,9 @@
 
   Run it from an Administrator PowerShell, inside a SentrAI checkout:
 
-    On the panel:  Machines > Add machine gives a one-time join code.
+    On the panel:  Machines > Add machine gives a one-time join code and the panel's certificate pin.
     Here:          powershell -ExecutionPolicy Bypass -File .\deploy\install-agent.ps1 `
-                       -Panel https://panel.example.com:8443 -Code ABCD-EFGH-JKLM
+                       -Panel https://panel.example.com:8443 -Code ABCD-EFGH-JKLM -Pin sha256:...
 
   Run it again from a newer checkout to upgrade (no -Code needed: the machine stays joined).
   Remove it with deploy\uninstall-agent.ps1.
@@ -33,8 +33,11 @@
   The one-time join code from the panel's Machines page. Required on a first install.
 .PARAMETER Name
   This machine's name on the panel (default: its computer name).
+.PARAMETER Pin
+  The panel's certificate pin (sha256:...), shown with the join code: the agent then talks to that
+  certificate and nothing else.
 .PARAMETER Ca
-  The panel's certificate file, when it is self-signed.
+  The panel's certificate file, instead of a pin.
 .PARAMETER AllowHttp
   Accept a plain http:// panel (private test networks only).
 .PARAMETER Enforce
@@ -62,6 +65,7 @@ param(
     [string]$Panel = "",
     [string]$Code = "",
     [string]$Name = "",
+    [string]$Pin = "",
     [string]$Ca = "",
     [switch]$AllowHttp,
     [switch]$Enforce,
@@ -296,6 +300,7 @@ try {
     if ($Code) {
         $joinArgs = @("-m", "agent", "join", "--panel", $Panel, "--code", $Code)
         if ($Name) { $joinArgs += @("--name", $Name) }
+        if ($Pin) { $joinArgs += @("--pin", $Pin) }
         if ($Ca) { $joinArgs += @("--ca", $Ca) }
         if ($AllowHttp) { $joinArgs += "--allow-http" }
         Native $VenvPy @joinArgs
