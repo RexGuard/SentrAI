@@ -181,7 +181,7 @@ def test_evidence_report(client):
     assert first["id"] not in [n["id"] for n in client.get("/notifications/pending").json()]
     client.post("/events", json=ev(10, "GET /search?q=' OR 1=1 -- 200"))  # crosses 80 -> forced action
     rep = client.get("/reports/RSK-2026-081").json()
-    assert rep["responsible_entity"] == "John Doe (SEC-409) / Shift Bravo"
+    assert rep["responsible_entity"] == "On-duty responder"
     assert rep["sla"]["breached"] is True and "Policy SLA: 2 hrs" in rep["sla"]["summary"]
     assert rep["forced_action"]["taken"] is True
     assert rep["non_repudiation"]["ack"] == "Ack: none"
