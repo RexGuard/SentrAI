@@ -81,6 +81,16 @@ It then asks for the dashboard port, allowed IPs, sign-in email and a password (
 
 Upgrade by running `git pull` and the same install command again; settings, sign-in and records are kept. Remove it with `sudo ./deploy/uninstall.sh` (add `--purge` to also delete settings and records). All options are in the [server guide](https://rexguard.github.io/SentrAI/docs/server.html).
 
+### 3c. Watch more machines from one panel
+
+A server install can be the **central panel** for other machines. Add `--panel` to the install command (or run `sudo ./deploy/install.sh --panel` on an installed server): it opens port 8443 for agents, with HTTPS, and scores each machine on its own. Then, for each machine, press **Make join code** on the dashboard's **Machines** page and paste the command it shows on that machine, for example on Linux:
+
+```bash
+sudo ./mvp/deploy/install-agent.sh --panel https://panel.example.com:8443 --code ABCD-EFGH-JKLM --pin sha256:... --name web-01
+```
+
+Windows machines get a matching `install-agent.ps1` command. The agent sends that machine's logs to the panel and applies the panel's blocks for it, as a dry run until you rerun it with `--enforce`. It only makes outgoing HTTPS calls. Step by step: [One panel, many machines](https://rexguard.github.io/SentrAI/docs/panel.html).
+
 ### 4. Protect your own IP first
 
 SentrAI never blocks the addresses in `PROTECTED_IPS`. Your own machine (`127.0.0.1`, `::1`) is always in it, and every `--protect` address is added on a server install. **Add the IP you manage from before you turn on any blocking**, or SentrAI could lock you out. Change it on the dashboard's **Configuration** page, or in `/etc/cactai/cactai.env` on a server (then `sudo systemctl restart cactai.target`).
@@ -120,7 +130,7 @@ Port clashes, missing packages and a dashboard you can't reach are covered in [T
 
 ## More
 
-- 📘 **[Install guide](https://rexguard.github.io/SentrAI/docs/)**: laptop, server, sign-in, settings, troubleshooting.
+- 📘 **[Install guide](https://rexguard.github.io/SentrAI/docs/)**: laptop, server, central panel, sign-in, settings, troubleshooting.
 - 🛠️ **[MVP README](https://github.com/RexGuard/SentrAI/blob/main/mvp/README.md)**: configuration, every variable, the parts and the tests. Server details in [deploy/README.md](https://github.com/RexGuard/SentrAI/blob/main/mvp/deploy/README.md).
 - 📄 **[Full project plan](https://rexguard.github.io/SentrAI/Cybersecurity%20+%20AI.html)**: problem, data per layer, risk formula, Jev pipeline, hotpatch workflow, reports, ethics and stack. ([Markdown source](https://github.com/RexGuard/SentrAI/blob/main/Cybersecurity%20%2B%20AI.md))
 - 🗺️ **[Roadmap](https://rexguard.github.io/SentrAI/ROADMAP.html)**: 9 phases from the MVP to a pilot.

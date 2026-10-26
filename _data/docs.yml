@@ -5,6 +5,8 @@
   url: /docs/laptop.html
 - title: Install on a server
   url: /docs/server.html
+- title: One panel, many machines
+  url: /docs/panel.html
 - title: Log sources
   url: /docs/log-sources.html
 - title: Signing in

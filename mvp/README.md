@@ -132,6 +132,14 @@ behind an arrow.
 | `CONTAIN_MIN_SEVERITY` / `CONTAIN_MIN_POINTS` | `high` / `20` | core: an incident is only contained without a person when its own severity and points reach these, whatever the overall risk index |
 | `CACTAI_FIREWALL` | `off` | core: also block IPs in the host firewall (`auto`, `nftables`, `iptables`, `netsh`); `off` keeps blocks on SentrAI's own blocklist only |
 | `CACTAI_FIREWALL_ENFORCE` | `0` | core: `0` is a dry run that only logs the firewall command; `1` really runs it (needs admin/root) |
+| `CACTAI_RISK_SCOPE` | `fleet` | core: `host` scores and blocks each machine on its own, for a central panel (set `CACTAI_FIREWALL=off` with it) |
+| `CACTAI_PANEL_PORT` / `CACTAI_PANEL_URL` | unset | core and dashboard: the agents' HTTPS port and the address they use (`install.sh --panel` sets both, with `CACTAI_PANEL_CERT` / `CACTAI_PANEL_KEY`) |
+| `CACTAI_AGENT_OFFLINE_HOLD_H` | `24` | agent: hours blocks stay in place while the panel cannot be reached |
+| `AUTO_ACTIONS` | `block_ip,rate_limit,waf_rule` | core: action types SentrAI may take on its own; any other type waits for a person |
+| `MAX_AUTO_ACTIONS_PER_HOUR` | `10` | core: automatic actions allowed in any rolling hour; past it a person decides |
+| `MAX_TTL_HOURS` / `ACTION_TTL_HOURS` | `24` / unset | core: longest any temporary action lasts; per-type hours such as `lock_user=1,block_ip=4` |
+| `CHECK_AFTER_MIN` / `CACTAI_HEALTH_URL` | `10` / unset | core: minutes after an action to check it worked and did no harm; a page that must keep answering meanwhile |
+| `UNDO_RETRY_S` / `UNDO_RETRIES` | `60` / `3` | core: how often and how many times a failed undo is retried before a person is asked |
 | `CACTAI_BACKUP_PATHS` | (none) | core: folders to back up, separated by `:` (Linux) or `;` (Windows), when the system profile's `backup.paths` names none. SentrAI's own data is always backed up |
 | `CACTAI_BACKUP_EVERY_HOURS` | `24` | core: hours between scheduled backups; `0` turns the schedule off (Back up now still works) |
 | `CACTAI_BACKUP_KEEP` | `7` | core: how many backups to keep; the oldest go first |

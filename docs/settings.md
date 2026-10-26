@@ -1,7 +1,7 @@
 ---
 title: Settings
 nav: docs
-description: Change SentrAI's security preset, protected IPs, alerts, AI key and firewall blocking.
+description: Change SentrAI's security preset, protected IPs, alerts, AI key, firewall blocking, action limits and backups.
 ---
 
 # Settings
@@ -84,7 +84,24 @@ go step by step:
 3. When the commands look right, set `CACTAI_FIREWALL_ENFORCE=1`. This needs root or
    administrator rights.
 
-On a server these go in `/etc/cactai/cactai.env`; restart `cactai.target` afterwards.
+On a server these go in `/etc/cactai/cactai.env`; restart `cactai.target` afterwards. On a
+[central panel](panel.html) keep `CACTAI_FIREWALL=off`: each added machine applies its own blocks.
+
+## Limits on automatic actions
+
+SentrAI keeps every action it takes on its own small, temporary and recorded, so it can be undone.
+These settings set the limits:
+
+| Setting | Default | What it does |
+|---|---|---|
+| `AUTO_ACTIONS` | `block_ip,rate_limit,waf_rule` | what SentrAI may do without asking. Anything else, like locking an account, waits for a person |
+| `MAX_AUTO_ACTIONS_PER_HOUR` | `10` | at most this many actions on its own in any hour; after that a person decides |
+| `MAX_TTL_HOURS` | `24` | no temporary action lasts longer than this |
+| `ACTION_TTL_HOURS` | none | hours per type, for example `lock_user=1,block_ip=4` |
+| `CACTAI_HEALTH_URL` | none | a page that must keep answering while SentrAI blocks things, like your site's home page |
+
+About 10 minutes after each action, SentrAI checks that it worked and that it did not break the
+page above. A failed undo is tried again a few times, then handed to a person.
 
 ## Backups
 

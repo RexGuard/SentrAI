@@ -178,3 +178,8 @@ less at first. Blocks go on SentrAI's own blocklist by default. Blocking in the
 server's own firewall is built but off: once turned on it starts as a dry run that only logs the
 command it would run. Turn it on step by step in [Settings](settings.html#firewall-blocking),
 after your own IP is protected.
+
+## Next
+
+To watch more machines from this server's dashboard, make it a
+[central panel](panel.html) and add them with the agent.
