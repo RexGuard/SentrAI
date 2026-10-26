@@ -171,10 +171,25 @@ SECTIONS = (
         Field("CACTAI_API_TOKEN", "Core API token (shared by the collector, dashboard and Telegram bot)",
               secret=True, generated=True),
     )),
+    Section("integrations", "7. Integrations", "Outside services SentrAI works with. Each stays off while its "
+            "key is blank; the Integrations page tests them.", (
+        Field("CLOUDFLARE_API_TOKEN", "Cloudflare: API token, blank for no Cloudflare blocking", secret=True),
+        Field("CLOUDFLARE_ZONE_ID", "Cloudflare: zone id (one site)"),
+        Field("CLOUDFLARE_ACCOUNT_ID", "Cloudflare: account id (every site, or the IP list)"),
+        Field("CLOUDFLARE_METHOD", "Cloudflare: block with IP Access rules or an IP list", "access_rule",
+              choices=("access_rule", "list")),
+        Field("CLOUDFLARE_LIST_ID", "Cloudflare: IP list id (only for the list method)"),
+        Field("CLOUDFLARE_MODE", "Cloudflare: what an access rule does", "block",
+              choices=("block", "managed_challenge", "challenge", "js_challenge")),
+        Field("ABUSEIPDB_API_KEY", "AbuseIPDB: API key, blank for no address lookups", secret=True),
+        Field("SLACK_WEBHOOK_URL", "Slack: incoming webhook URL, blank for no Slack alerts", secret=True),
+    )),
 )
 FIELDS = {f.env: f for s in SECTIONS for f in s.fields}
 EMAIL_FIELDS = ("SMTP_PORT", "SMTP_SECURITY", "SMTP_USER", "SMTP_PASSWORD", "ALERT_EMAIL_FROM", "ALERT_EMAIL_TO",
                 "CACTAI_EMAIL_MODE")  # asked only when SMTP_HOST is set
+CLOUDFLARE_FIELDS = ("CLOUDFLARE_ZONE_ID", "CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_METHOD", "CLOUDFLARE_LIST_ID",
+                     "CLOUDFLARE_MODE")  # asked only when CLOUDFLARE_API_TOKEN is set
 MODEL_ENV = "CACTAI_LLM_MODEL"
 TOKEN_ENV = "CACTAI_API_TOKEN"
 # Before accounts: one dashboard sign-in in the settings file. Read only to make it the first Owner account.
@@ -464,6 +479,9 @@ def wizard(ask: Callable[[str], str] | None = None, ask_secret: Callable[[str], 
                 continue
             if f.env in EMAIL_FIELDS and not values.get("SMTP_HOST"):
                 values[f.env] = current[f.env]  # no SMTP server, so the other email questions are skipped
+                continue
+            if f.env in CLOUDFLARE_FIELDS and not values.get("CLOUDFLARE_API_TOKEN"):
+                values[f.env] = current[f.env]  # no Cloudflare token, so its other questions are skipped
                 continue
             if f.generated:
                 values[f.env] = current[f.env] or new_token()

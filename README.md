@@ -98,6 +98,7 @@ cd lab && .venv/bin/python -m collector.collector --add-system-logs
 Out of the box a block only goes on SentrAI's own blocklist (`/blocklist`, for your app or proxy to read). For blocks to stop traffic on their own, turn on one of:
 
 - **Host firewall:** set `CACTAI_FIREWALL=auto` (or `nftables`, `iptables`, `netsh` on Windows). It starts as a dry run that only logs the command it would run. When the commands look right, set `CACTAI_FIREWALL_ENFORCE=1` (needs root or administrator rights).
+- **Cloudflare:** set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ZONE_ID` so each block also stops the attacker at Cloudflare's edge, and is removed there when it ends. See [Integrations](https://rexguard.github.io/SentrAI/docs/integrations.html).
 - **Webhook:** set `CACTAI_RESPONDER_WEBHOOK_URL` (and `CACTAI_RESPONDER_WEBHOOK_SECRET`) so your own gateway, proxy or WAF applies each block and unblock.
 
 See [Firewall blocking](https://rexguard.github.io/SentrAI/docs/settings.html#firewall-blocking) and the [full variable list](https://github.com/RexGuard/SentrAI/blob/main/mvp/README.md#variables).
