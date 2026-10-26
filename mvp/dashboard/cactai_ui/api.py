@@ -21,10 +21,17 @@ class CoreError(Exception):
         self.status = status
 
 
+READ_ONLY_POSTS = ("/chat",)  # asking the orchestrator a question changes nothing
+READ_ONLY_POST_ENDS = ("/verify",)  # checking a backup is intact changes nothing either
+READ_ONLY_MESSAGE = "Auditors can see everything but change nothing. Ask an Owner or Admin."
+
+
 class CoreClient:
-    def __init__(self, base_url: str, timeout: float = DEFAULT_TIMEOUT, token: str = "") -> None:
+    def __init__(self, base_url: str, timeout: float = DEFAULT_TIMEOUT, token: str = "",
+                 read_only: bool = False) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self.read_only = read_only  # an Auditor's console: every change is refused before it leaves
         self.session = requests.Session()
         if token:  # the core's API token (cactai_config.api_token())
             self.session.headers["Authorization"] = f"Bearer {token}"
@@ -34,6 +41,9 @@ class CoreClient:
 
     def _request(self, method: str, path: str, body: Any | None = None,
                  timeout: float | None = None) -> requests.Response:
+        if self.read_only and method != "GET" and path not in READ_ONLY_POSTS \
+                and not path.endswith(READ_ONLY_POST_ENDS):
+            raise CoreError(READ_ONLY_MESSAGE, 403)
         try:
             resp = self.session.request(method, self._url(path), json=body, timeout=(0.8, timeout or self.timeout))
         except requests.RequestException as exc:
