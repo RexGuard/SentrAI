@@ -9,6 +9,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import logging
 import math
 import threading
 import time
@@ -31,7 +32,7 @@ from .agents import (
     SpineNet,
     Watchdog,
 )
-from . import firewall
+from . import cloudflare, firewall, reputation
 from . import anchor, remote_copy, routing
 from .audit import AuditLog
 from .classifier import Classification, JevCache, default_chain
@@ -44,6 +45,8 @@ from .responders import BlocklistResponder, Responders, SimulatedResponder, Webh
 from .risk import SEVERITY, band, band_rank, inaction_penalty, risk_index
 from .rules import TRIPWIRE_REASONS, RulesEngine
 from .state import StateStore
+
+log = logging.getLogger("cactai.saguaro")
 
 RISK_STATUSES = ("open", "acknowledged")  # count toward raw score
 MERGE_STATUSES = ("open", "acknowledged", "contained")  # new events attach to these
@@ -254,13 +257,27 @@ class Saguaro(Agent):
         # chain labels them, and the responders carry out approved containment.
         self.classifier, self.jev_step = default_chain(self.rules, self.jev, JevCache(s.jev_cache_size, s.jev_cache_ttl_s))
         self.blocklist_responder = firewall.from_settings(s.firewall, s.firewall_enforce, s.protected_ips)
-        self.responders = Responders(self.blocklist_responder, SimulatedResponder())
+        bl = self.blocklist_responder
+        # Cloudflare wraps the block_ip responder: the local block first, then the same address at the edge.
+        self.cloudflare, self.cloudflare_error = None, None
+        try:
+            self.cloudflare = cloudflare.from_settings(s, inner=bl)
+        except ValueError as exc:  # half-filled settings: run without it and say why on the Integrations page
+            self.cloudflare_error = str(exc)
+            log.warning("Cloudflare is off: %s", exc)
+        block_ip = self.cloudflare or bl
+        self.webhook_responder: WebhookResponder | None = None
         if s.responder_webhook_url:
-            # Registered last, so it takes the listed types; the blocklist still applies its own first.
-            bl = self.blocklist_responder
-            hook = WebhookResponder(s.responder_webhook_url, s.responder_webhook_actions, s.responder_webhook_secret,
-                                    s.responder_webhook_timeout_s, inner=lambda t: bl if t in bl.actions else None)
-            self.responders = Responders(self.blocklist_responder, SimulatedResponder(), hook)
+            # Registered last, so it takes the listed types; the blocklist (and Cloudflare) still apply first.
+            self.webhook_responder = WebhookResponder(
+                s.responder_webhook_url, s.responder_webhook_actions, s.responder_webhook_secret,
+                s.responder_webhook_timeout_s,
+                inner=lambda t: block_ip if t == "block_ip" else bl if t in bl.actions else None)
+        self.responders = Responders(bl, SimulatedResponder(),
+                                     *(r for r in (self.cloudflare, self.webhook_responder) if r is not None))
+        self.reputation = reputation.from_settings(s)
+        self._lookups = reputation.Lookups(self.reputation, self._on_reputation, s.protected_ips, s.background) \
+            if self.reputation else None
         self.root = Root(self.classifier)
         self.reservoir = Reservoir(self.classifier)
         self.spinenet = SpineNet(self.classifier)
@@ -330,7 +347,7 @@ class Saguaro(Agent):
             "limits": self.limits(),
             "on_duty": s.on_duty,
             "jev": self.jev.status,
-            "block_ip_enforcement": self.blocklist_responder.enforcement,
+            "block_ip_enforcement": (self.cloudflare or self.blocklist_responder).enforcement,
         }
 
     def layer_agents(self) -> list[LayerAgent]:
@@ -540,7 +557,20 @@ class Saguaro(Agent):
                 "recommended_action", "event_ids", "owner", "backup", "route", "notify")},
             "analyst": agent.name,
         })
+        if self._lookups is not None:
+            self._lookups.request(inc.get("src_ip"))
         return inc
+
+    def _on_reputation(self, ip: str, rep: dict[str, Any]) -> None:
+        """An AbuseIPDB answer arrived: note it on every open incident from that address. Context only."""
+        with self.lock:
+            now = self.clock.now()
+            for inc in self.incidents.values():
+                if inc.get("src_ip") == ip and inc["status"] in MERGE_STATUSES and "reputation" not in inc:
+                    inc["reputation"] = rep
+                    self._timeline(inc, now, "reputation", reputation.summary(rep))
+            self.scribe.record(self.name, "reputation_lookup", {"ip": ip, **{k: v for k, v in rep.items()
+                                                                            if k in ("score", "reports", "country", "error")}})
 
     def _proposals(self, inc: dict[str, Any], agent: LayerAgent) -> list[Proposal]:
         """The containment steps for an incident. Cyanide overrides this with its own plan."""
@@ -1040,7 +1070,9 @@ class Saguaro(Agent):
     def _undo(self, a: dict[str, Any], attempt: int) -> None:
         try:
             ok = self.responders.revert(a)
-            error = None if ok is not False else (a.get("webhook_revert") or a.get("firewall_revert") or {}).get(
+            failed = [a[k] for k in ("webhook_revert", "cloudflare_revert", "firewall_revert")
+                      if isinstance(a.get(k), dict) and a[k].get("ok") is False]
+            error = None if ok is not False else (failed[0] if failed else {}).get(
                 "error", "the responder could not confirm the action was removed")
         except Exception as exc:  # a broken responder must not stop the rest of the rollback
             ok, error = False, f"{type(exc).__name__}: {exc}"[:200]

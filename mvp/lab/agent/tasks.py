@@ -134,9 +134,11 @@ def send_result(data: dict[str, Any], session: requests.Session, verify: Any, jo
 
 
 def job_loop(data: dict[str, Any], verify: Any, data_dir: Path, stop: threading.Event,
-             every_s: float = JOBS_EVERY_S, log: Callable[[str], None] = lambda s: print(f"[agent] {s}", flush=True)) -> None:
-    """Runs beside the block list loop, so a long scan or backup never holds up blocking."""
-    session = requests.Session()
+             every_s: float = JOBS_EVERY_S, log: Callable[[str], None] = lambda s: print(f"[agent] {s}", flush=True),
+             session: requests.Session | None = None) -> None:
+    """Runs beside the block list loop, so a long scan or backup never holds up blocking. ``session`` is
+    the agent's panel session (pinned to the panel's certificate when joined with --pin)."""
+    session = session or requests.Session()
     while not stop.is_set():
         job = next_job(data, session, verify)
         if job:

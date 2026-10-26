@@ -195,6 +195,13 @@ class CoreClient:
         """Make the running core read the saved AI settings again (no restart)."""
         return self.post_json("/ai/reload", {})
 
+    def integrations(self) -> list[dict]:
+        """Outside services (Cloudflare, AbuseIPDB, Slack...): whether each is set up. Never their keys."""
+        return self.get_json("/integrations")
+
+    def test_integration(self, name: str) -> dict:
+        return self.post_json(f"/integrations/{name}/test", timeout=AI_TEST_TIMEOUT)
+
     def ai_test(self, settings: dict | None = None) -> dict:
         """One real request to the AI provider: with settings, those; without, what Cyanide uses now."""
         return self.post_json("/ai/test", settings, timeout=AI_TEST_TIMEOUT)

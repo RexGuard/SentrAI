@@ -9,6 +9,7 @@ Env:
   NOTIFIER_POLL_SECONDS poll interval (default 2)
   NOTIFIER_WITNESS_FILE where the last delivered audit fingerprint is kept (default notifier/data/last_witness.txt)
   SMTP_HOST, ALERT_EMAIL_TO, ...  email backup channel, see emailer.py
+  SLACK_WEBHOOK_URL    also post a copy of every alert to a Slack channel, see slack.py
 If TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is missing, runs in CONSOLE mode.
 Email is off until SMTP_HOST and ALERT_EMAIL_TO are set. Then it is sent when Telegram fails
 (CACTAI_EMAIL_MODE=backup, the default), next to every Telegram alert (always), and next to
@@ -33,6 +34,7 @@ from typing import Callable
 
 from core import Core, CoreError
 from emailer import EmailConfig, email_sender
+from slack import slack_from_env, with_slack
 from formatting import (APPROVE, PERMANENT, REJECT, ROLLBACK, TAKE, button_specs, format_console,
                         format_telegram, incident_id_of, parse_callback, witness_of)
 
@@ -167,7 +169,7 @@ def run_console(core: Core, poll: float, once: bool = False) -> None:
     email_cfg, email = email_from_env()
     print(f"   email alerts to {', '.join(email_cfg.recipients)} via {email_cfg.host}" if email_cfg
           else "   email alerts off (set SMTP_HOST + ALERT_EMAIL_TO to turn them on)")
-    send = with_email(console_sender(), "console", email, always=True)
+    send = with_slack(with_email(console_sender(), "console", email, always=True), slack_from_env())
     seen: set[str] = set()
     witness = WitnessStore()
     down = False
@@ -223,7 +225,8 @@ def run_telegram(core: Core, token: str, chat_id: str, poll: float, fallback_ope
             log.info("delivered %s as telegram message %s", n.get("id"), msg.message_id)
             return str(msg.message_id)
 
-        deliver = with_email(send, "telegram", email, always=bool(email_cfg and email_cfg.mode == "always"))
+        deliver = with_slack(with_email(send, "telegram", email, always=bool(email_cfg and email_cfg.mode == "always")),
+                             slack_from_env())
         while True:
             try:
                 await asyncio.to_thread(process_pending, core, deliver, "telegram", seen, witness)

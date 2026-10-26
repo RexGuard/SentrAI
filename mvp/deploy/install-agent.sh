@@ -1,16 +1,20 @@
 #!/usr/bin/env bash
 # Installs the SentrAI agent on a machine that reports to a central SentrAI panel (run as root,
-# from a checkout of the repo). The panel scores and decides; this machine only sends its logs
-# and puts the panel's blocks for it into its own firewall. Only outgoing HTTPS, no open port.
+# from a checkout of the repo). The panel scores and decides; this machine sends its logs and puts
+# the panel's blocks for it into its own firewall. Only outgoing HTTPS, no open port. While the
+# panel cannot be reached, local rules block clear attacks for an hour at a time and report back.
 #
-#   On the panel:   Machines > Add machine (or POST /fleet/join-codes) gives a one-time join code.
-#   Here:           sudo ./deploy/install-agent.sh --panel https://panel.example.com:8000 --code ABCD-EFGH-JKLM
+#   On the panel:   Machines > Add machine (or POST /fleet/join-codes) gives a one-time join code
+#                   and the panel's certificate pin.
+#   Here:           sudo ./deploy/install-agent.sh --panel https://panel.example.com:8443 --code ABCD-EFGH-JKLM \
+#                       --pin sha256:...
 #
 # Options:
 #   --panel URL       the panel's core address (https://; required on a first install)
 #   --code CODE       the one-time join code (required on a first install)
 #   --name NAME       this machine's name on the panel (default: its host name)
-#   --ca FILE         the panel's certificate, when it is self-signed
+#   --pin PIN         the panel's certificate pin (sha256:...), shown with the join code
+#   --ca FILE         the panel's certificate file, instead of a pin
 #   --allow-http      accept a plain http:// panel (private test networks only)
 #   --enforce         really change the firewall (default: dry run, the commands are only logged)
 #   --dry-run         back to only logging the commands (an upgrade keeps the last choice)
@@ -33,6 +37,7 @@ PANEL=""
 CODE=""
 NAME=""
 CA=""
+PIN=""
 ALLOW_HTTP=0
 ENFORCE=""  # empty: keep what the last install set (a first install is a dry run)
 START=1
@@ -42,6 +47,7 @@ while [ $# -gt 0 ]; do
         --panel) PANEL="$2"; shift 2 ;;
         --code) CODE="$2"; shift 2 ;;
         --name) NAME="$2"; shift 2 ;;
+        --pin) PIN="$2"; shift 2 ;;
         --ca) CA="$2"; shift 2 ;;
         --allow-http) ALLOW_HTTP=1; shift ;;
         --enforce) ENFORCE=1; shift ;;
@@ -50,7 +56,7 @@ while [ $# -gt 0 ]; do
         --prefix) PREFIX="$2"; shift 2 ;;
         --user) SVC_USER="$2"; shift 2 ;;
         --no-start) START=0; shift ;;
-        -h|--help) sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "Unknown option: $1 (see --help)" >&2; exit 2 ;;
     esac
 done
@@ -124,6 +130,10 @@ CACTAI_LAB_LOGS=$STATE/logs
 CACTAI_FIREWALL=$FIREWALL
 CACTAI_FIREWALL_ENFORCE=$ENFORCE
 PROTECTED_IPS=$protected
+# While the panel cannot be reached: block clear attacks here for this long, at most this many an hour.
+CACTAI_AGENT_LOCAL_RULES=on
+CACTAI_AGENT_LOCAL_TTL_MIN=60
+CACTAI_AGENT_LOCAL_MAX_PER_HOUR=10
 EOF
     # settings added by hand stay
     if [ -f "$ENV_FILE" ]; then
@@ -150,6 +160,7 @@ as_agent() {  # run as the service account with the agent's settings
 if [ -n "$CODE" ]; then
     args=(-m agent join --panel "$PANEL" --code "$CODE")
     [ -n "$NAME" ] && args+=(--name "$NAME")
+    [ -n "$PIN" ] && args+=(--pin "$PIN")
     [ -n "$CA" ] && args+=(--ca "$CA")
     [ "$ALLOW_HTTP" = 1 ] && args+=(--allow-http)
     as_agent "${args[@]}" || die "could not join the panel (see the message above)"

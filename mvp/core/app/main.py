@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .config import Settings, sign
 from .reports import build_report, render_markdown, render_pdf
-from . import ai, anchor, fleet, jobs, webhook
+from . import ai, anchor, fleet, integrations, jobs, webhook
 from .chat import OperatorChat, default_chat_provider
 from .discovery import Discovery
 from .threats import ThreatWatch
@@ -181,10 +181,30 @@ class JobResultIn(BaseModel):
     error: Optional[str] = Field(None, max_length=2000)
 
 
+class OfflineActionIn(BaseModel):
+    ip: str = Field(max_length=64)
+    category: str = Field(max_length=40)
+    reason: str = Field("", max_length=300)
+    score: float = 0.0
+    at: Optional[str] = Field(None, max_length=40)
+    until: Optional[str] = Field(None, max_length=40)
+    applied: bool = False
+    event_ids: list[str] = Field(default_factory=list, max_length=50)
+
+
+class OfflineReportIn(BaseModel):
+    """What an agent did on its own while the panel was out of reach (lab/agent/offline.py)."""
+    from_: Optional[str] = Field(None, alias="from", max_length=40)
+    to: Optional[str] = Field(None, max_length=40)
+    scored: int = Field(0, ge=0)
+    actions: list[OfflineActionIn] = Field(default_factory=list, max_length=500)
+
+
 # What a machine's own agent key may do (fleet.py): send its events and heartbeat, read its block list.
 # It also picks up the jobs the panel queued for its own machine and reports how they went (jobs.py).
 AGENT_ROUTES = frozenset({("POST", "/events"), ("POST", "/heartbeat"), ("GET", "/blocklist"), ("GET", "/fleet/me"),
-                           ("POST", "/fleet/services"), ("GET", "/fleet/jobs/next"), ("POST", "/fleet/jobs/result")})
+                           ("POST", "/fleet/services"), ("GET", "/fleet/jobs/next"), ("POST", "/fleet/jobs/result"),
+                           ("POST", "/fleet/offline-report")})
 
 
 # Open without a token: the launchers' readiness check, and the list the fake portal enforces
@@ -628,6 +648,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def ai_test(body: Optional[AITestIn] = None) -> dict[str, Any]:
         return ai.test(core, chat, body.model_dump() if body else None)
 
+    @app.get("/integrations")
+    def get_integrations() -> list[dict[str, Any]]:
+        return integrations.status(core)
+
+    @app.post("/integrations/{name}/test")
+    def test_integration(name: str) -> dict[str, Any]:
+        try:
+            return integrations.test(core, name)
+        except KeyError as e:
+            raise HTTPException(404, str(e).strip("'\""))
+
     @app.post("/heartbeat")
     def post_heartbeat(request: Request, body: HeartbeatIn) -> dict[str, Any]:
         host = request.state.agent["host"] if request.state.agent is not None else body.collector
@@ -646,7 +677,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise fleet_error(exc)
         core.scribe.record(core.name, "join_code_created", {"operator": body.operator, "name": out["name"],
                                                             "expires_at": out["expires_at"]})
-        return out
+        return {**out, **fleet.panel_info()}
+
+    @app.get("/fleet/panel")
+    def get_fleet_panel() -> dict[str, Any]:
+        """The address and certificate pin new machines use (CACTAI_PANEL_URL, CACTAI_PANEL_CERT)."""
+        return fleet.panel_info()
 
     @app.post("/fleet/enrol")
     def post_enrol(body: EnrolIn) -> dict[str, Any]:
@@ -749,6 +785,32 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                              f"Backup on {host} failed", f"The backup {job['requested_by']} asked {host} to take "
                              f"failed: {line[:300]}. Until one works, {host} has no fresh copy to restore from.", [])
         return {"ok": True, "status": job["status"], "new_alerts": new_alerts}
+
+    @app.post("/fleet/offline-report")
+    def post_offline_report(request: Request, body: OfflineReportIn) -> dict[str, Any]:
+        """An agent is back: what it scored and blocked on its own while the panel could not be reached.
+        Its buffered logs arrive through /events as usual and are scored here; this is the record of
+        the local decisions, which already expire on the machine by themselves."""
+        a = request.state.agent
+        if a is None:
+            raise HTTPException(status_code=400, detail="only a machine's agent sends an offline report")
+        report = body.model_dump(by_alias=True)
+        summary = machines.offline_report(a, report)
+        host = a["host"]
+        for act in report["actions"]:
+            core.scribe.record(core.name, "agent_local_block", {"host": host, **act})
+        core.scribe.record(core.name, "agent_offline_report", {"host": host, **summary, "summary": (
+            f"{host} worked alone from {summary['from'] or '?'} to {summary['to'] or '?'}: scored {summary['scored']} "
+            f"events, made {summary['local_blocks']} local blocks")})
+        if report["actions"]:
+            ips = ", ".join(sorted({x["ip"] for x in report["actions"]})[:10])
+            with core.lock:
+                core._notify(core.clock.now(), "agent_offline_actions", None, [core.settings.on_duty],
+                             f"{host} blocked {summary['local_blocks']} address(es) while the panel was unreachable",
+                             f"While {host} could not reach the panel ({summary['from'] or '?'} to "
+                             f"{summary['to'] or '?'}), its local rules blocked: {ips}. Each block expires on its own; "
+                             f"the logs from that time are being scored here now.", [])
+        return {"ok": True, **summary}
 
     @app.get("/fleet/me")
     def get_fleet_me(request: Request) -> dict[str, Any]:
