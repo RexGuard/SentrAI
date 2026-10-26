@@ -402,6 +402,8 @@ def test_staff_reports_page_closes_a_report_with_a_note(fake_core, tmp_path, mon
     monkeypatch.setenv("CACTAI_CONFIG", str(tmp_path / "config.json"))
     rid = requests.post(f"{fake_core}/staff-reports", timeout=3,
                         json={"text": "My laptop shows pop-ups asking me to call Microsoft.", "reporter": "Arif"}).json()["id"]
+    import streamlit as st
+    st.cache_data.clear()  # the staff page render in an earlier test may have cached the list without it
     at = AppTest.from_file(APP, default_timeout=20)
     at.session_state["core_url"] = fake_core
     at.session_state["auto_refresh"] = False
