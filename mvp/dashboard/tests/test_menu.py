@@ -57,7 +57,7 @@ APP = str(Path(__file__).resolve().parents[1] / "app.py")
 
 
 @pytest.mark.parametrize("page", ["config", "approvals", "incidents", "chat", "collector", "classifier", "responder",
-                                  "machines", "review", "reports", "audit"])
+                                  "machines", "review", "reports", "audit", "backups"])
 def test_every_page_renders(fake_core, page, tmp_path, monkeypatch):
     from streamlit.testing.v1 import AppTest
 

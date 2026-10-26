@@ -35,6 +35,13 @@ Tests:
 | `RISK_THRESHOLD` | `80` | Risk index at which autonomous containment starts. |
 | `SLA_HOURS` | `2` | Acknowledgement SLA, in hours. |
 | `HOTPATCH_TTL_HOURS` | `2` | How long a hotpatch lasts, in hours. |
+| `ACTION_TTL_HOURS` | unset | Per-type expiry, e.g. `lock_user=1,block_ip=4`. Types not listed use `HOTPATCH_TTL_HOURS`. |
+| `MAX_TTL_HOURS` | `24` | Business limit: no temporary action lasts longer than this (0 = no limit). |
+| `AUTO_ACTIONS` | `block_ip,rate_limit,waf_rule` | Action types SentrAI may take on its own. Anything else (lock an account, kill a process, revoke access) waits for a person to approve it. Making any action permanent always needs a person. |
+| `MAX_AUTO_ACTIONS_PER_HOUR` | `10` | Business limit on automatic actions in any rolling hour; past it a person decides (0 = never act alone). |
+| `CHECK_AFTER_MIN` | `10` | After-action check, this many minutes after an action starts: did the target still get through, and did everyone else's traffic, server errors or the health page get worse? Problems are alerted to the on-duty person. |
+| `CACTAI_HEALTH_URL` | unset | A page that should keep answering while SentrAI blocks things (probed when an action starts and at its check). |
+| `UNDO_RETRY_S`, `UNDO_RETRIES` | `60`, `3` | A failed undo (the firewall rule or webhook did not confirm removal) is retried this often, this many times, then left to a person. Every undo is recorded as `action_undone` or `action_undo_failed`. |
 | `ON_DUTY` | `John Doe (SEC-409) / Shift Bravo` | The responsible entity named in reports and notifications. |
 | `TEAM_LEAD`, `IT_MANAGER`, `CXO` | role names | Escalation recipients. |
 | `CACTAI_ROUTING` | `routing.json` next to the database | Contacts, routing rules and follow-up policy (see "Owners, routing and escalation"). Without the file, the four names above form the chain. |
@@ -219,6 +226,20 @@ The process scan finds logs; the threat scan (`app/threatscan.py`, `app/threats.
 
 Audit records: `threat_scan`, `file_quarantined`, `file_restored`.
 
+## Backups (putting a system back)
+
+`app/backups.py` copies chosen folders, plus SentrAI's own data, on a schedule, so a defaced site or a wiped game server can be put back.
+
+- **What.** The folders in `"backup": {"paths": ["/var/www"], "every_hours": 24, "keep": 7}` in the system profile, or `CACTAI_BACKUP_PATHS`. SentrAI's own settings file, data folder (protection switch, signing key, threat state) and a consistent snapshot of the audit database are always included (`"include_sentrai": false` turns that off). `"exclude": ["*.log", "cache/*"]` skips files; `max_total_mb` (default 5120) refuses a backup that would fill the disk.
+- **Where.** One `.tar.gz` per backup in `backups/` next to the database (`CACTAI_BACKUP_DIR`), readable by SentrAI's account only, with a note beside it. `"copy_to": "/mnt/usb/sentrai"` (or `CACTAI_BACKUP_COPY_TO`) puts a second copy on another drive or share. The newest `keep` are kept.
+- **Proof.** Inside each archive, `manifest.json` lists every file with its SHA-256. The archive's own SHA-256 goes into the audit trail (`backup_made`), so **Check** (`POST /backups/{id}/verify`) catches a backup that was edited or swapped later.
+- **Alerts.** A failed backup (or a failed second copy) sends a `backup_failed` notice to the on-duty contact; a failed scheduled one is retried after an hour, not every minute.
+- **Restore needs a person**, and checks the backup first. By default files go into `restores/<id>-<time>/` next to the database and nothing live changes. Putting them back in place needs `in_place` and the backup id typed as `confirm`, and first takes a `before_restore` safety backup of the folders it will overwrite, so the restore can itself be undone. SentrAI's own data is never written over while the core runs; it is unpacked with a note on how to swap it in. The chat can show backups and offer a **Back up now** button, but cannot restore.
+- **On a hardened server** (`deploy/install.sh`), the core runs as its own account and may only write under `/var/lib/cactai/core`. Files it cannot read are skipped and listed on the backup. To restore in place there, add the folders to `ReadWritePaths=` in `cactai-core.service`, or restore into a new folder and copy back by hand.
+- **With the central panel** (planned agents on each machine), each agent runs this same code on its own machine and reports its backups to the panel.
+
+Audit records: `backup_made`, `backup_failed`, `backup_verified`, `backup_restored`, `backup_pruned`.
+
 ## Endpoints
 
 These follow the contract:
@@ -238,6 +259,7 @@ Additions that do not change the contract:
 - `GET /incidents/{id}/why`: HelpDesk explanation.
 - `GET /helpdesk/why?target=<ip|user>`: "why was my IP blocked?"
 - `GET /agents`: status of each agent and of Jev.
+- `GET /limits`: the business limits on protective actions (what may run on its own, expiry per type, hourly cap and how much of it is used, after-action check delay).
 - `GET /notifications`: all notifications, including delivered ones.
 - `POST /heartbeat {"collector": "web-01"}`: collector heartbeat for Watchdog. An event with `"source": "heartbeat"` does the same.
 - `POST /system/scan {"operator": "erick"}` and `GET /system/scan` (latest): read-only process scan with suggested log files.
@@ -245,6 +267,7 @@ Additions that do not change the contract:
 - `POST /incidents/{id}/assign {"operator", "assignee", "note"?}`: give the incident to a contact (id, name, role or Telegram handle) or anyone by name.
 - `POST /incidents/{id}/resolve {"operator", "note"}`: close it with a note on what was done (400 without one). Blocks in force stay until they expire or are rolled back.
 - `GET /routing`: the contacts, rules and follow-up policy in use.
+- `GET /backups`, `POST /backups`, `POST /backups/{id}/verify`, `POST /backups/{id}/restore`: backups and restore.
 - `GET /log-sources` and `POST /log-sources {"operator", "file_id", "layer"?}`: extra log files the collector watches; a file is added only by its id from the latest scan.
 
 ### Response shapes the contract leaves open
@@ -252,9 +275,9 @@ Additions that do not change the contract:
 - `/audit` returns `{"chain_valid", "first_invalid_seq", "count", "head_hash", "records": [{"seq","ts","type","data","prev_hash","hash"}]}`.
 - A notification has these fields: `id`, `incident`, `kind`, `title`, `text`, `recipients`, `risk_index`, `band`, `buttons`, `report_url`, `created_at`, `delivered`, `delivered_at`, `channel`, `message_id`, `deliveries`.
   - `deliver_to` lists `{id, name, email, telegram}` for each recipient found in the routing contacts, and `owner` is the incident's owner.
-  - `kind` is one of `incident_opened`, `needs_review`, `sla_reminder`, `escalated`, `assigned`, `resolve_reminder`, `escalation`, `autonomous_action`, `operator_action`, `needs_operator`, `action_expired` or `watchdog`.
+  - `kind` is one of `incident_opened`, `needs_review`, `sla_reminder`, `escalated`, `assigned`, `resolve_reminder`, `escalation`, `autonomous_action`, `operator_action`, `needs_operator`, `action_expired`, `action_check` (an action did not work or may be disrupting others), `undo_failed` (an action could not be confirmed removed) or `watchdog`.
   - `buttons` is a list of `[{label, action}]`, where `action` is one of `approve`, `reject`, `ack`, `rollback` or `permanent`.
-- Incidents have extra fields beyond the contract: `asset_criticality`, `malicious_probability`, `needs_review`, `contribution`, `time_unaddressed_hours`, `classification_reason`, `analyzed_by`, `notifications`, `timeline`, `decisions`, `ack_channel`, and the ownership fields `owner`, `owner_id`, `backup`, `backup_id`, `assigned_by`, `assigned_at`, `route`, `notify`, `escalation_level`, `escalations`, `resolved_by`, `resolution`. Actions also carry `verified`, `enforcement`, `applied_at`, `executed_by` and `proposed_by`.
+- Incidents have extra fields beyond the contract: `asset_criticality`, `malicious_probability`, `needs_review`, `contribution`, `time_unaddressed_hours`, `classification_reason`, `analyzed_by`, `notifications`, `timeline`, `decisions`, `ack_channel`, and the ownership fields `owner`, `owner_id`, `backup`, `backup_id`, `assigned_by`, `assigned_at`, `route`, `notify`, `escalation_level`, `escalations`, `resolved_by`, `resolution`. Actions also carry `verified`, `enforcement`, `applied_at`, `executed_by`, `proposed_by`, `check_at` and `check` (the after-action check: `worked`, `worked_note`, `disruption`, `disruption_note` and the counts behind them), and once they stop, `ended_at` and `undo` (`ok`, `at`, `attempts`, `error`).
 
 ### Operator verbs
 

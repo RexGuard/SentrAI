@@ -296,6 +296,7 @@ PAGES = {  # key: (Material icon, label, menu group)
     "review": ("speed", "Review", "Oversight"),
     "reports": ("description", "Reports", "Oversight"),
     "audit": ("link", "Audit trail", "Oversight"),
+    "backups": ("backup", "Backups", "Oversight"),
     "config": ("tune", "Configuration", "Settings"),
 }
 
@@ -1171,6 +1172,9 @@ def chat_suggestion(mid: Any, n: int, s: dict, inc: dict | None) -> None:
     if s.get("kind") == "quarantine_file":
         quarantine_suggestion(mid, n, s)
         return
+    if s.get("kind") == "backup_now":
+        backup_suggestion(mid, n, s)
+        return
     inc_id, decision = str(s.get("incident")), str(s.get("decision"))
     ok, why_not = sh.suggestion_state(inc, decision)
     label = str(s.get("label") or f"{decision} {inc_id}")
@@ -1231,6 +1235,18 @@ def quarantine_suggestion(mid: Any, n: int, s: dict) -> None:
         if st.button(f"Confirm: {label}", key=f"sugg_{mid}_{n}", type="primary"):
             run_action(label, lambda: client.quarantine(str(s.get("finding_id")), st.session_state.operator,
                                                         str(s.get("reason") or "")), rerun=False)
+            st.rerun()
+
+
+def backup_suggestion(mid: Any, n: int, s: dict) -> None:
+    """Cyanide thinks a fresh backup is a good idea. Pressing it takes one now."""
+    with st.container(border=True):
+        st.markdown(":material/lightbulb: **Suggested: Back up now**")
+        if s.get("reason"):
+            st.caption(str(s["reason"]))
+        if st.button("Confirm: Back up now", key=f"sugg_{mid}_{n}", type="primary"):
+            with st.spinner("Backing up…"):
+                run_action("Backup made", lambda: client.backup_now(st.session_state.operator), rerun=False)
             st.rerun()
 
 
@@ -1663,6 +1679,99 @@ def page_audit() -> None:
               "Agent list unavailable.")
 
 
+def when(value: Any) -> str:
+    """Day and time: backups are days apart, so the clock time alone is not enough."""
+    ts = sh.parse_ts(value)
+    return ts.strftime("%d %b %H:%M") if ts else (str(value) if value else "-")
+
+
+BACKUP_REASON = {"schedule": "on schedule", "manual": "by hand", "before_restore": "safety copy before a restore"}
+
+
+def page_backups() -> None:
+    show_flash()
+    if header("Backups", "copies of your folders and SentrAI's own records, ready to put back") is None:
+        return
+    data, err = safe(client.backups, None)
+    if err or not data:
+        st.warning(f"Backups are not available on this core. {err or ''}")
+        return
+    kept = data.get("backups") or []
+    last = next((b for b in kept if b.get("reason") != "before_restore"), None)
+    check = (last or {}).get("verified") or {}
+    stats(("Last backup", when(last.get("created")) if last else "Never",
+           f"{last.get('files', 0)} files · {last.get('bytes', 0) / 1048576:.1f} MB" if last else "take one below",
+           sh.BAND_COLORS["amber"] if not last or data.get("overdue") else None),
+          ("Next due", "Off" if not data.get("every_hours") else
+           ("Now" if data.get("next_due") == "now" else when(data.get("next_due"))),
+           f"every {data['every_hours']:g} h" if data.get("every_hours") else "no schedule"),
+          ("Kept", f"{len(kept)} of {data.get('keep')}", "oldest removed first"),
+          ("Last check", "Intact" if check.get("ok") else "Problem" if check.get("ok") is False else "Not checked",
+           when(check.get("at")) if check.get("at") else "press Check on a backup",
+           sh.BAND_COLORS["red"] if check.get("ok") is False else None))
+    if data.get("last_error"):
+        st.error(f"The last backup failed ({when(data['last_error'].get('at'))}): "
+                 f"{data['last_error'].get('error')}")
+    elif data.get("overdue"):
+        st.warning("The last backup is more than two schedule periods old. Is SentrAI's core running?")
+
+    with st.container(border=True):
+        section("What is backed up", "change it under backup in the system profile, or CACTAI_BACKUP_PATHS", "folder_copy")
+        folders = data.get("folders") or []
+        st.markdown(("Folders: " + ", ".join(code(f) for f in folders) if folders else
+                     "No folders chosen yet, so only SentrAI's own data is copied.")
+                    + ("  \nSentrAI's own settings, signing key and audit records: always included."
+                       if data.get("include_sentrai") else "")
+                    + f"  \nStored in {code(data.get('stored_in'))}"
+                    + (f", with a second copy in {code(data['copy_to'])}" if data.get("copy_to") else ""),
+                    unsafe_allow_html=True)
+        if st.button("Back up now", icon=":material/backup:", type="primary", key="backup_now"):
+            with st.spinner("Backing up…"):
+                run_action("Backup made", lambda: client.backup_now(st.session_state.operator), rerun=False)
+            st.rerun()
+
+    with st.container(border=True):
+        section("Backups kept", "newest first · a restore always checks the backup first", "inventory_2")
+        if not kept:
+            empty("No backups yet.", "backup")
+        for b in kept:
+            backup_row(b)
+
+
+def backup_row(b: dict) -> None:
+    bid = str(b.get("id"))
+    v = b.get("verified") or {}
+    state = (":green[:material/verified:] intact" if v.get("ok") else
+             ":red[:material/error:] problem" if v.get("ok") is False else ":gray[:material/help:] not checked")
+    c1, c2 = st.columns([5, 1])
+    c1.markdown(f"**{html.escape(bid)}** · {when(b.get('created'))} · "
+                f"{html.escape(BACKUP_REASON.get(str(b.get('reason')), str(b.get('reason'))))} by "
+                f"{html.escape(str(b.get('by')))} · {b.get('files', 0)} files, {b.get('bytes', 0) / 1048576:.1f} MB · "
+                f"{state}", unsafe_allow_html=True)
+    if v.get("ok") is False:
+        c1.caption("; ".join(v.get("problems") or []))
+    if c2.button("Check", key=f"bk_check_{bid}", icon=":material/fact_check:"):
+        run_action(f"Backup {bid} is intact", lambda: client.verify_backup(bid, st.session_state.operator),
+                   rerun=False)
+        st.rerun()
+    with st.expander(f"Restore from {bid}"):
+        with st.form(key=f"bk_restore_{bid}", border=False):
+            where = st.radio("Where to put the files", ["new", "in_place"], horizontal=True, key=f"bk_where_{bid}",
+                             format_func=lambda w: "Into a new folder (nothing live changes)" if w == "new"
+                             else "Back where they came from (overwrites live files)")
+            confirm = st.text_input(f"For 'back where they came from', type {bid} to confirm", key=f"bk_conf_{bid}")
+            st.caption("Back in place first takes a safety backup of the current files, so it can be undone. "
+                       "SentrAI's own data is only ever restored into a new folder.")
+            go_ = st.form_submit_button("Restore", icon=":material/settings_backup_restore:")
+        if go_:
+            in_place = where == "in_place"
+            with st.spinner("Restoring…"):
+                run_action(f"Restored {bid}" + (" in place" if in_place else " into a new folder"),
+                           lambda: client.restore_backup(bid, st.session_state.operator, in_place, confirm.strip()),
+                           rerun=False)
+            st.rerun()
+
+
 def render_feed(feed: list[dict]) -> None:
     if not feed:
         empty("No audit records yet.", "receipt_long")
@@ -1708,4 +1817,5 @@ def report_viewer(inc_id: str) -> None:
     "config": page_config, "approvals": page_approvals, "incidents": page_incidents, "chat": page_chat,
     "collector": page_collector, "classifier": page_classifier, "responder": page_responder, "machines": page_machines,
     "review": page_review, "reports": page_reports, "audit": page_audit,
+    "backups": page_backups,
 }[st.session_state.page]()

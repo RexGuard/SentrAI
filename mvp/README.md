@@ -133,6 +133,11 @@ behind an arrow.
 | `CONTAIN_MIN_SEVERITY` / `CONTAIN_MIN_POINTS` | `high` / `20` | core: an incident is only contained without a person when its own severity and points reach these, whatever the overall risk index |
 | `CACTAI_FIREWALL` | `off` | core: also block IPs in the host firewall (`auto`, `nftables`, `iptables`, `netsh`); `off` keeps blocks on SentrAI's own blocklist only |
 | `CACTAI_FIREWALL_ENFORCE` | `0` | core: `0` is a dry run that only logs the firewall command; `1` really runs it (needs admin/root) |
+| `CACTAI_BACKUP_PATHS` | (none) | core: folders to back up, separated by `:` (Linux) or `;` (Windows), when the system profile's `backup.paths` names none. SentrAI's own data is always backed up |
+| `CACTAI_BACKUP_EVERY_HOURS` | `24` | core: hours between scheduled backups; `0` turns the schedule off (Back up now still works) |
+| `CACTAI_BACKUP_KEEP` | `7` | core: how many backups to keep; the oldest go first |
+| `CACTAI_BACKUP_DIR` | `backups` next to `CACTAI_DB` | core: where backups are stored |
+| `CACTAI_BACKUP_COPY_TO` | (none) | core: a second folder (another drive or a network share) that gets a copy of each backup |
 | `TYPESAFE_API_KEY` | unset | core: enables Jev (TypeSafe System One); otherwise rules + fallback heuristic |
 | `JEV_TIMEOUT_S` / `JEV_BUDGET_S` | 3 / 2 | core: per-call timeout and per-request time budget for Jev |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | unset | notifier: console mode when unset |

@@ -66,6 +66,16 @@ def test_default_incident_and_actions():
     assert len(sh.action_rows(INCIDENTS[0])) == 2
 
 
+def test_check_and_undo_text():
+    assert sh.check_text({"status": "active"}) == "pending"
+    assert sh.check_text({"check": {"worked": True, "disruption": False}}) == "worked, no harm seen"
+    assert sh.check_text({"check": {"worked": False, "disruption": True}}) == "did not work, possible disruption"
+    assert sh.check_text({"check": {"worked": None, "disruption": None}}) == "can't see"
+    assert sh.undo_text({}) == "-"
+    assert sh.undo_text({"undo": {"ok": True}}) == "done"
+    assert sh.undo_text({"undo": {"ok": False, "attempts": 3}}) == "FAILED (3 tries)"
+
+
 def test_containment_rows():
     df = sh.build_containment_rows({"ips": ["203.0.113.45"], "users": ["admin"]}, INCIDENTS)
     kinds = list(df["Kind"])

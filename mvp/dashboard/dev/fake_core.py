@@ -96,6 +96,7 @@ class State:
         self.log_sources: list[dict] = []
         self.threats: dict | None = None
         self.quarantine: list[dict] = []
+        self.backups: list[dict] = []
         self.pending: list[dict] = []  # Scout proposals; seed one with POST /_fake/scout-proposal
         # Machines joined to this (pretend) central panel: web-01 has the scripted incidents, office-pc is quiet.
         self.agents: dict[str, dict] = {
@@ -684,6 +685,57 @@ def post_restore(qid: str, body: dict = Body(...)):
             raise HTTPException(404, f"{qid} is not in quarantine")
         S.quarantine.remove(q)
         return {"ok": True, "file": q["original"]}
+
+
+def _fake_backup(by: str, reason: str) -> dict:
+    stamp = now()
+    b = {"id": f"b-{stamp.strftime('%Y%m%d-%H%M%S')}-{len(S.backups) + 1}", "created": iso(stamp),
+         "created_ts": stamp.timestamp(), "by": by, "reason": reason, "folders": ["/var/www/portal"],
+         "missing": [], "sentrai": True, "files": 1834, "bytes": 48_234_112, "archive_bytes": 21_004_800,
+         "sha256": "3" * 64, "manifest_sha256": "4" * 64, "skipped": [], "copy": None, "verified": None}
+    S.backups.insert(0, b)
+    del S.backups[7:]
+    return b
+
+
+@app.get("/backups")
+def get_backups():
+    return {"enabled": True, "every_hours": 24, "keep": 7, "folders": ["/var/www/portal"], "include_sentrai": True,
+            "copy_to": None, "stored_in": "/opt/sentrai/mvp/core/data/backups",
+            "next_due": iso(now() + timedelta(hours=24)) if S.backups else "now", "overdue": False,
+            "last_error": None, "backups": S.backups}
+
+
+@app.post("/backups")
+def post_backup(body: dict = Body(None)):
+    with lock:
+        b = _fake_backup((body or {}).get("operator") or "operator", "manual")
+        audit("backup_made", "Warden", backup=b["id"], summary=f"Backed up {b['files']} files as {b['id']}")
+        return {"ok": True, **b, "pruned": []}
+
+
+@app.post("/backups/{bid}/verify")
+def post_verify_backup(bid: str, body: dict = Body(None)):
+    with lock:
+        b = next((b for b in S.backups if b["id"] == bid), None)
+        if b is None:
+            raise HTTPException(404, f"{bid} is not a backup")
+        b["verified"] = {"ok": True, "at": iso(now()), "problems": []}
+        return {"ok": True, "backup": bid, "files_checked": b["files"], "problems": []}
+
+
+@app.post("/backups/{bid}/restore")
+def post_restore_backup(bid: str, body: dict = Body(...)):
+    with lock:
+        if not any(b["id"] == bid for b in S.backups):
+            raise HTTPException(404, f"{bid} is not a backup")
+        in_place = bool(body.get("in_place"))
+        if in_place and body.get("confirm") != bid:
+            raise HTTPException(409, f"type the backup id ({bid}) as confirmation")
+        safety = _fake_backup(body.get("operator") or "operator", "before_restore")["id"] if in_place else None
+        return {"ok": True, "backup": bid, "in_place": in_place, "files_restored": 1834, "failed": [],
+                "restored_to": "in place" if in_place else f"/opt/sentrai/mvp/core/data/restores/{bid}",
+                "safety_backup": safety, "note": ""}
 
 
 @app.get("/log-sources")
