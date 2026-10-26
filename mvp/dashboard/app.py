@@ -1638,7 +1638,8 @@ def page_machines() -> None:
 
 @st.fragment(run_every=AUTO)
 def page_reports() -> None:
-    header("Reports", "one evidence report for every contained incident")
+    header("Reports", "a one-page summary for the client, and one evidence report for every incident")
+    client_summary()
     incidents, err = fetch("incidents", [])
     records, _, _ = audit_records()
     with_report = {str((r.get("data") or {}).get("incident")) for r in sh.records_of(records, "report_generated")}
@@ -1792,11 +1793,62 @@ def render_feed(feed: list[dict]) -> None:
                 unsafe_allow_html=True)
 
 
+SUMMARY_EVERY = {"daily": "Every day", "weekly": "Every week", "off": "Off"}
+WEEKDAYS = {"mon": "Monday", "tue": "Tuesday", "wed": "Wednesday", "thu": "Thursday", "fri": "Friday",
+            "sat": "Saturday", "sun": "Sunday"}
+
+
+def client_summary() -> None:
+    """The one-page client summary: how often it goes out (the client's choice) and today's or this week's page."""
+    sched, err = safe(client.summary_schedule)
+    if err or not isinstance(sched, dict):
+        return  # an older core without the summary
+    left, right = st.columns([4, 8])
+    with left, st.container(border=True):
+        nxt = str(sched.get("next_at") or "")[:16].replace("T", " ")
+        section("Client summary", f"next: {nxt}" if nxt else "not scheduled", "event_repeat")
+        with st.form("summary_schedule", border=False):
+            every = st.radio("Send it", list(SUMMARY_EVERY), format_func=SUMMARY_EVERY.get, horizontal=True,
+                             index=list(SUMMARY_EVERY).index(sched.get("every", "daily")))
+            c1, c2 = st.columns(2)
+            at = c1.text_input("At (local time)", sched.get("at", "08:00"), help="24-hour time, such as 08:00")
+            day = c2.selectbox("On (weekly)", list(WEEKDAYS), format_func=WEEKDAYS.get,
+                               index=list(WEEKDAYS).index(sched.get("day", "mon")))
+            to = st.text_input("Addressed to", sched.get("to", "Client"),
+                               help="The client's name, shown on the page. It goes out on the alert channels.")
+            if st.form_submit_button("Save", icon=":material/save:", type="primary", width="stretch"):
+                run_action("Summary schedule saved", lambda: client.set_summary_schedule(
+                    st.session_state.operator, every, at, day, to), rerun=False)
+                st.rerun()
+        if st.button("Send one now", icon=":material/send:", width="stretch",
+                     help="Sends the summary for the chosen period to the alert channels now"):
+            run_action("Summary sent to the alert channels", lambda: client.send_summary(st.session_state.operator),
+                       rerun=False)
+            st.rerun()
+    with right, st.container(border=True):
+        period = st.segmented_control("Period", ["daily", "weekly"], default="weekly" if sched.get("every") == "weekly"
+                                      else "daily", format_func=lambda p: "Last 24 hours" if p == "daily" else "Last 7 days",
+                                      key="summary_period") or "daily"
+        md, merr = safe(lambda: client.summary_md(period))
+        if merr or not md:
+            empty(f"The summary could not be made: {merr}", "error")
+            return
+        d0, d1 = st.columns(2)
+        pdf, perr = safe(lambda: client.summary_pdf(period))
+        if pdf and not perr:
+            d0.download_button("PDF (one page)", pdf, icon=":material/picture_as_pdf:", file_name=f"sentrai-{period}-summary.pdf",
+                               mime="application/pdf", type="primary", width="stretch", key=f"dl_sum_pdf_{period}")
+        d1.download_button("Markdown", md, icon=":material/download:", file_name=f"sentrai-{period}-summary.md",
+                           mime="text/markdown", width="stretch", key=f"dl_sum_md_{period}")
+        with st.container(height=420, border=True):
+            st.markdown(sh.demote_headings(md))
+
+
 def report_viewer(inc_id: str) -> None:
     section("Evidence report", inc_id, "verified")
     md, err = safe(lambda: client.report_md(inc_id))
     if err or not md:
-        empty("No report for this incident yet. Scribe writes one when autonomous containment fires.", "hourglass_empty")
+        empty("No report for this incident yet.", "hourglass_empty")
         return
     d0, d1, d2 = st.columns(3)
     pdf, perr = safe(lambda: client.report_pdf(inc_id))

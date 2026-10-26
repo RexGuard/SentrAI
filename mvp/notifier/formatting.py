@@ -35,9 +35,11 @@ KIND_HEADERS = {
     "undo_failed": ("❗", "Undo failed: check by hand"),
     "backup_failed": ("💾", "Backup problem"),
     "backup_restored": ("💾", "Backup restored"),
+    "summary": ("📋", "Security summary"),
 }
 # Kinds that are not about one incident: shown as a short note (header, title, text), no risk or buttons.
-NOTICE_KINDS = ("audit_anchor", "backup_failed", "backup_restored")
+NOTICE_KINDS = ("audit_anchor", "backup_failed", "backup_restored", "summary")
+LINK_TEXT = {"summary": "Open the one-page summary (PDF)"}
 
 # Callback data: "<verb>:<incident_id>" (Telegram limits callback_data to 64 bytes).
 APPROVE = "approve"
@@ -150,6 +152,9 @@ def notice_lines(notification: dict) -> tuple[str, str, list[str]]:
     icon, header = KIND_HEADERS.get(notification_kind(notification), ("ℹ️", "Notice"))
     lines = [str(notification.get("title") or "")]
     lines += str(notification.get("text") or "").splitlines()
+    url = notification.get("report_url")
+    if url and url not in lines:  # a signed link (the one-page summary), shown as a link where the channel can
+        lines.append(str(url))
     w = witness_of(notification)
     if w and not any(ln.startswith("SENTRAI-FP") for ln in lines):
         lines.append(w)
@@ -162,7 +167,10 @@ def format_telegram(notification: dict, incident: dict | None = None, risk: dict
     if is_notice(notification):
         icon, header, lines = notice_lines(notification)
         # The last line of a fingerprint notice is the line to keep: monospace so it copies whole.
-        body = [e(ln) if not ln.startswith("SENTRAI-FP") else f"<code>{e(ln)}</code>" for ln in lines]
+        url = notification.get("report_url")
+        body = [f"<code>{e(ln)}</code>" if ln.startswith("SENTRAI-FP")
+                else f'<a href="{e(ln, quote=True)}">{e(LINK_TEXT.get(notification_kind(notification), "Open"))}</a>'
+                if url and ln == url else e(ln) for ln in lines]
         return "\n".join([f"{icon} <b>{e(header)}</b>  ·  <i>🛡️ {BRAND}</i>", *body])
     f = alert_fields(notification, incident, risk)
     risk_txt = f"{f['risk_index']}/100" if f["risk_index"] is not None else "-"

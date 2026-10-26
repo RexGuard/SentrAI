@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 from .clock import fmt_demo_hours, fmt_offset
 from .pdfdoc import ACCENT, BLACK, BOLD, EDGE, MONO, MUTED, PAGE_W, SOFT_ON_DARK, Column, PdfDoc, text_width
 from .saguaro import public
+from .summary import PLAIN_ACTIONS, plain_names, plain_title
 
 if TYPE_CHECKING:
     from .saguaro import Saguaro
@@ -98,6 +99,7 @@ def build_report(core: "Saguaro", iid: str) -> dict[str, Any]:
             approvals.append({"ts": d.get("at"), "by": d.get("operator"), "decision": d.get("decision"),
                               "note": d.get("justification") or ""})
         approvals.sort(key=lambda a: a["ts"] or "")
+        plain = _plain_words(inc, s, auto, op, breached)
         report = {
             "report_id": f"ER-{iid}",
             "title": "Security Evidence Report",
@@ -106,6 +108,17 @@ def build_report(core: "Saguaro", iid: str) -> dict[str, Any]:
             "incident": {k: inc[k] for k in (
                 "category", "severity", "status", "host", "layer", "src_ip", "user", "opened_at", "classified_by",
                 "ai_confidence", "base_points", "points", "inaction_penalty", "recommended_action", "explanation")},
+            "in_plain_words": plain["story"],
+            "outcome": plain["outcome"],
+            "next_steps": list(inc.get("next_steps") or []),
+            "how_to_check": [
+                "Every line of this report comes from the activity record on the server. Each record holds a "
+                "fingerprint of the one before it, so a changed or deleted record breaks every one after it.",
+                "Your technical staff can re-check the whole record at any time (GET /audit, or GET /audit/verify "
+                "with a fingerprint line from any alert you received).",
+                "Each alert carried a fingerprint off the server when it was sent. If the server's record was "
+                "rebuilt later, those fingerprints no longer match.",
+            ],
             "responsible_entity": s.on_duty,
             "sla": {
                 "policy_hours": s.sla_hours,
@@ -147,7 +160,39 @@ def build_report(core: "Saguaro", iid: str) -> dict[str, Any]:
         return report
 
 
+def _plain_words(inc: dict[str, Any], s: Any, auto: list, op: list, breached: bool) -> dict[str, str]:
+    """The incident in two or three everyday sentences, and where it stands now (plan items 2 and 11)."""
+    where = f" on {inc['host']}" if inc.get("host") else ""
+    who = f" from {inc['src_ip']}" if inc.get("src_ip") else ""
+    story = [f"{plain_title(inc['category'])}{where}{who}, first seen {inc['opened_at'].replace('T', ' ')[:16]}."]
+    steps = sorted({PLAIN_ACTIONS.get(a["type"], a["type"].replace("_", " ")) for a in auto or op})
+    if auto:
+        story.append(f"Nobody had responded and the risk was high, so SentrAI stepped in on its own: it "
+                     f"{' and '.join(steps)}, for {s.ttl_hours:g} hours only, and each step can be undone.")
+    elif op:
+        story.append(f"Your staff approved the protective steps: SentrAI {' and '.join(steps)}.")
+    else:
+        story.append("No protective step was taken.")
+    if inc["acked"]:
+        story.append(f"{inc['acked_by']} responded" + (" after the agreed response time had passed." if breached
+                                                       else " within the agreed response time."))
+    else:
+        story.append("Nobody has responded yet" + (f", and the agreed response time ({s.sla_hours:g} h) has passed."
+                                                   if breached else "."))
+    status = inc["status"]
+    if status == "resolved":
+        outcome = f"Closed{' at ' + str(inc.get('closed_at')).replace('T', ' ')[:16] if inc.get('closed_at') else ''}."
+    elif status == "rejected":
+        outcome = "Closed by your staff as not a real threat."
+    elif status == "contained":
+        outcome = "Contained: the protective steps are in force until they expire or your staff decide."
+    else:
+        outcome = "Still open: it needs a decision from your staff."
+    return {"story": " ".join(story), "outcome": outcome}
+
+
 def render_markdown(r: dict[str, Any]) -> str:
+    r = plain_names(r)
     inc = r["incident"]
     fa, nr, chain_ok = r["forced_action"], r["non_repudiation"], r["audit_proof"]["chain_valid"]
     status = " · ".join([
@@ -166,6 +211,18 @@ def render_markdown(r: dict[str, Any]) -> str:
         f"**Report:** {r['report_id']}  ",
         f"**Incident:** {r['incident_id']} ({inc['category']}, {inc['severity']}, status {inc['status']})  ",
         f"**Generated:** {r['generated_at']}",
+        "",
+        "## In plain words",
+        "",
+        r["in_plain_words"],
+        "",
+        f"**Where it stands:** {r['outcome']}",
+        "",
+        "**What to do next:**",
+        "",
+        *[f"{n}. {t}" for n, t in enumerate(r["next_steps"], 1)],
+        "",
+        "## The record",
         "",
         "| Report Field | Value |",
         "| --- | --- |",
@@ -215,6 +272,7 @@ def render_markdown(r: dict[str, Any]) -> str:
         lines += [f"- {line}" for line in action_outcomes(r["forced_action"]["actions"])]
     else:
         lines.append("None.")
+    lines += ["", "## How to check this report", ""] + [f"- {t}" for t in r["how_to_check"]]
     lines += ["", "## Hash-chain proof", "", "| Seq | Time | Type | Agent | Hash |", "| --- | --- | --- | --- | --- |"]
     for rec in r["audit_proof"]["records"]:
         lines.append(f"| {rec['seq']} | {rec['ts']} | {rec['type']} | {rec['agent']} | `{rec['hash'][:16]}...` |")
@@ -249,6 +307,7 @@ def _ts(ts: Any) -> str:
 
 def render_pdf(r: dict[str, Any]) -> bytes:
     """The same content as the Markdown report, laid out for printing and sharing."""
+    r = plain_names(r)
     inc = r["incident"]
     proof = r["audit_proof"]
     doc = PdfDoc(title=f"{r['title']} {r['report_id']}",
@@ -278,6 +337,15 @@ def render_pdf(r: dict[str, Any]) -> bytes:
          else "Operator" if r["forced_action"]["actions"] else "None", ACCENT),
         ("Audit chain", "Valid" if chain_ok else "Broken", GREEN if chain_ok else RED),
     ])
+    doc.heading("In plain words")
+    doc.paragraph(r["in_plain_words"], size=10)
+    doc.paragraph(f"Where it stands: {r['outcome']}", BOLD, 9.5)
+    if r["next_steps"]:
+        doc.paragraph("What to do next:", BOLD, 9.5)
+        for t in r["next_steps"]:
+            doc.bullet(t)
+
+    doc.heading("The record")
     doc.table([Column("Field", 1.1, BOLD), Column("Record", 3.4)], [
         ["Responsible entity", r["responsible_entity"]],
         ["SLA", r["sla"]["summary"]],
@@ -329,6 +397,10 @@ def render_pdf(r: dict[str, Any]) -> bytes:
             doc.bullet(line)
     else:
         doc.paragraph("None.")
+
+    doc.heading("How to check this report")
+    for t in r["how_to_check"]:
+        doc.bullet(t, size=9)
 
     doc.heading("Hash-chain proof")
     doc.paragraph("Each audit record stores the hash of the one before it, so changing or deleting any record breaks "
