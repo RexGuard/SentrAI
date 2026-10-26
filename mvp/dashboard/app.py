@@ -649,11 +649,14 @@ def table(df, empty_text: str, **kwargs) -> None:
         st.dataframe(df, hide_index=True, width="stretch", **kwargs)
 
 
+def severity_color(inc: dict) -> str:
+    return {"low": sh.BAND_COLORS["green"], "medium": sh.BAND_COLORS["amber"], "high": sh.BAND_COLORS["red"],
+            "critical": sh.BAND_COLORS["critical"]}.get(str(inc.get("severity")), sh.UNKNOWN_COLOR)
+
+
 def incident_summary(inc: dict) -> None:
     inc_id = str(inc.get("id"))
-    sev_color = {"low": sh.BAND_COLORS["green"], "medium": sh.BAND_COLORS["amber"], "high": sh.BAND_COLORS["red"],
-                 "critical": sh.BAND_COLORS["critical"]}.get(
-        str(inc.get("severity")), sh.UNKNOWN_COLOR)
+    sev_color = severity_color(inc)
     st.markdown(
         f'<div class="inc-head">'
         f'<span class="inc-id">{html.escape(inc_id)}</span>'
@@ -750,6 +753,70 @@ def decision_controls(inc: dict) -> None:
                        lambda: client.permanent(inc_id, op, just.strip() or "Made permanent by operator from dashboard"))
     else:
         st.caption(f"No operator action available (status: {inc.get('status')}).")
+
+
+def quick_actions(inc: dict, where: str) -> None:
+    """The one or two buttons an incident row needs. Justification is optional here, and the full form is in Details."""
+    inc_id, op = str(inc.get("id")), st.session_state.operator
+    can, off, ro = sh.available_actions(inc), locked(), why_locked()
+    k = f"{where}_{inc_id}"
+    c1, c2 = st.columns(2)
+    if can["decide"]:
+        no_patch = protection_off()
+        if c1.button("Approve", icon=":material/check:", type="primary", key=f"qa_{k}", width="stretch",
+                     disabled=off or no_patch,
+                     help=ro or ("Protection is off (monitor only): turn it on in Configuration to apply a hotpatch."
+                                 if no_patch else "Approve & patch, written to the audit log")):
+            def _approve() -> None:
+                if can["ack"]:
+                    client.ack(inc_id, op)
+                client.decision(inc_id, op, "approve", "")
+            run_action(f"Approved & patched {inc_id}", _approve)
+        with c2.popover("Reject", icon=":material/block:", width="stretch", disabled=off, help=ro):
+            just = st.text_input("Why (required, written to the audit log)", key=f"qrj_{k}",
+                                 placeholder="e.g. False positive: our penetration tester")
+            if st.button("Reject", key=f"qr_{k}", width="stretch", disabled=not just.strip()):
+                def _reject() -> None:
+                    if can["ack"]:
+                        client.ack(inc_id, op)
+                    client.decision(inc_id, op, "reject", just.strip())
+                run_action(f"Rejected {inc_id}", _reject)
+    elif can["contain_controls"]:
+        # Rollback is the safe default, so it is one click; keeping a block forever asks once more.
+        if c1.button("Roll back", icon=":material/undo:", type="primary", key=f"qb_{k}", width="stretch",
+                     disabled=off, help=ro or "Undo the block now"):
+            run_action(f"Rolled back {inc_id}",
+                       lambda: client.rollback(inc_id, op, "Rolled back by operator from dashboard"))
+        with c2.popover("Make permanent", icon=":material/push_pin:", width="stretch", disabled=off, help=ro):
+            st.caption("The block will no longer expire on its own.")
+            just = st.text_input("Why (optional, written to the audit log)", key=f"qpj_{k}",
+                                 placeholder="e.g. Verified attacker")
+            if st.button("Keep this block forever", key=f"qp_{k}", type="primary", width="stretch"):
+                run_action(f"Made permanent {inc_id}", lambda: client.permanent(
+                    inc_id, op, just.strip() or "Made permanent by operator from dashboard"))
+    elif can["ack"]:
+        if c1.button("Acknowledge", icon=":material/visibility:", key=f"qk_{k}", width="stretch", disabled=off,
+                     help=ro or "Records that you have seen this alert"):
+            run_action(f"Acknowledged {inc_id}", lambda: client.ack(inc_id, op))
+
+
+def incident_row(inc: dict, where: str, note: str = "", details=None) -> None:
+    """One short line per incident with its quick buttons; everything else waits behind Details."""
+    with st.container(border=True):
+        a, b = st.columns([3, 2], vertical_alignment="center")
+        sev = str(inc.get("severity") or "unknown").capitalize()
+        a.markdown(
+            f'<div class="inc-row"><div class="inc-head">'
+            f'<span class="inc-id">{html.escape(str(inc.get("id")))}</span>{pill(sev, severity_color(inc))}'
+            f'<b>{html.escape(sh.category_label(inc.get("category")))}</b></div>'
+            f'<div class="inc-sub">{html.escape(sh.incident_target(inc))} · {sh.incident_contribution(inc)} pts'
+            + (f' · {html.escape(note)}' if note else "") + '</div></div>',
+            unsafe_allow_html=True)
+        with b:
+            quick_actions(inc, where)
+        if details is not None:
+            with st.expander("Details", icon=":material/info:"):
+                details()
 
 
 # ------------------------------------------------------------------ pages
@@ -1159,14 +1226,14 @@ def page_approvals() -> None:
     if not waiting:
         empty("Nothing waiting for a decision. All quiet at the gate.", "check_circle", good=True)
         return
-    for n, inc in enumerate(waiting):
-        can = sh.available_actions(inc)
-        verb = "Approve or reject" if can["decide"] else "Keep or roll back"
-        title = f"{verb} · {inc.get('id')} · {sh.category_label(inc.get('category'))} · {sh.incident_contribution(inc)} pts"
-        with st.expander(title, expanded=n == 0):
+    for inc in waiting:
+        verb = "Approve or reject" if sh.available_actions(inc)["decide"] else "Keep or roll back"
+
+        def details(inc=inc) -> None:
             incident_summary(inc)
             decision_controls(inc)
             table(sh.action_rows(inc), "No containment actions yet.")
+        incident_row(inc, "appr", verb, details)
 
 
 def owner_controls(inc: dict, contacts: list[dict]) -> None:
@@ -1249,11 +1316,9 @@ def page_incidents() -> None:
         todo = sh.needs_attention(incidents)
         if not todo:
             empty("Nothing needs a person right now. Every open incident is in hand.", "check_circle", good=True)
-        for n, inc in enumerate(todo):
-            title = (f"{inc.get('id')} · {sh.category_label(inc.get('category'))} · {inc.get('owner') or 'no owner'}"
-                     f" · {'; '.join(sh.attention(inc))}")
-            with st.expander(title, expanded=n == 0):
-                incident_card(inc, contacts)
+        for inc in todo:
+            note = f"{inc.get('owner') or 'no owner'} · {'; '.join(sh.attention(inc))}"
+            incident_row(inc, "todo", note, lambda inc=inc: incident_card(inc, contacts))
 
     with st.container(border=True):
         section("All incidents", "owner, backup and what each one still needs", "assignment_ind")

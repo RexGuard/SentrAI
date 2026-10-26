@@ -238,3 +238,11 @@ def test_job_rows_and_latest_findings():
     found = sh.job_findings(jobs)
     assert list(found["File"]) == ["/var/www/x.php"] and found["Severity"][0] == "critical"
     assert sh.job_findings([]).empty and sh.job_rows(None).empty
+
+
+def test_incident_target_names_the_live_block_then_the_source():
+    inc = {"src_ip": "1.2.3.4", "host": "web", "actions": [
+        {"target": "5.6.7.8", "status": "rolled_back"}, {"target": "9.9.9.9", "status": "active"}]}
+    assert sh.incident_target(inc) == "9.9.9.9 on web"
+    assert sh.incident_target({"src_ip": "1.2.3.4"}) == "1.2.3.4"
+    assert sh.incident_target({}) == "-"
