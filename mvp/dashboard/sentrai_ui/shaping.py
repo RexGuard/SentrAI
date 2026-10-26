@@ -518,6 +518,32 @@ def build_activity_feed(records: list[dict], limit: int = 30) -> list[dict]:
     return feed
 
 
+def agent_table(agents: list[dict] | None, records: list[dict]) -> pd.DataFrame:
+    """Who does what, and how busy each one has been in the records on screen.
+
+    Without the core's agent list, the agents seen in the records still show, so the box is never empty
+    while the feed beside it is full."""
+    seen: dict[str, dict] = {}
+    for rec in records or []:
+        name = agent_for(rec).split(":", 1)[0]
+        row = seen.setdefault(name, {"n": 0, "ts": None})
+        row["n"] += 1
+        ts = parse_ts(rec.get("ts"))
+        if ts and (row["ts"] is None or ts > row["ts"]):
+            row["ts"] = ts
+    rows = [{"Agent": agent_label(a.get("name")), "Role": a.get("role") or "-",
+             "Can act": "Yes" if a.get("can_execute") else "No"} for a in agents or [] if isinstance(a, dict)]
+    if not rows:
+        rows = [{"Agent": name, "Role": "-", "Can act": "-"} for name in seen]
+    for r in rows:
+        hit = seen.get(r["Agent"], {})
+        r["Records"] = hit.get("n", 0)
+        r["Last"] = hit["ts"].strftime("%H:%M:%S") if hit.get("ts") else "-"
+    rows.sort(key=lambda r: -r["Records"])
+    cols = ["Agent", "Role", "Can act", "Records", "Last"] if agents else ["Agent", "Records", "Last"]
+    return pd.DataFrame(rows, columns=cols)
+
+
 def verify_chain_links(records: list[dict]) -> bool:
     """Client-side sanity check: each prev_hash equals the previous record's hash."""
     ordered = sorted(records, key=lambda r: r.get("seq") or 0)
