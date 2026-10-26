@@ -465,8 +465,13 @@ elif [ -n "$PANEL" ]; then
     command -v openssl >/dev/null 2>&1 || die "openssl is needed for the panel's HTTPS port"
     install -d -o root -g "$SVC_USER" -m 0750 "$TLS"
     if [ ! -f "$TLS/panel-cert.pem" ]; then
-        name="$(hostname -f 2>/dev/null || hostname)"
-        openssl req -x509 -newkey rsa:2048 -nodes -days 1825 -subj "/CN=$name" -addext "subjectAltName=DNS:$name" \
+        # Named after the address agents use (--panel-url), else this server's name. Agents check the pin,
+        # not the name, but a matching name lets a browser or curl check it too.
+        name="$("$PYTHON" -c 'import sys, urllib.parse; print(urllib.parse.urlsplit(sys.argv[1]).hostname or "")' "$PANEL_URL")"
+        [ -n "$name" ] || name="$(hostname -f 2>/dev/null || hostname)"
+        if "$PYTHON" -c 'import ipaddress, sys; ipaddress.ip_address(sys.argv[1])' "$name" 2>/dev/null; then san="IP:$name"
+        else san="DNS:$name"; fi
+        openssl req -x509 -newkey rsa:2048 -nodes -days 1825 -subj "/CN=${name:0:64}" -addext "subjectAltName=$san" \
             -keyout "$TLS/panel-key.pem" -out "$TLS/panel-cert.pem" >/dev/null 2>&1 \
             || die "could not make the panel's certificate"
     fi
