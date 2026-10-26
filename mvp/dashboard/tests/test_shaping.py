@@ -298,3 +298,25 @@ def test_incident_target_names_the_live_block_then_the_source():
     assert sh.incident_target(inc) == "9.9.9.9 on web"
     assert sh.incident_target({"src_ip": "1.2.3.4"}) == "1.2.3.4"
     assert sh.incident_target({}) == "-"
+
+
+def test_times_from_the_core_show_in_local_time():
+    # Works on any machine's zone (Windows has no time.tzset): both spellings of one moment
+    # must print the same local clock time.
+    from datetime import datetime, timezone
+    local = datetime(2026, 10, 26, 18, 52, 58, tzinfo=timezone.utc).astimezone().strftime("%H:%M:%S")
+    assert sh.short_time("2026-10-26T18:52:58+00:00") == local  # UTC from the fleet / jobs code
+    assert sh.short_time("2026-10-27T02:52:58+08:00") == local  # same moment, another offset
+    assert sh.short_time("2026-10-26T18:52:58Z") == local
+    assert sh.short_time("2026-10-26T18:52:58") == "18:52:58"  # no offset: taken as local already
+
+
+def test_expiry_says_how_long_is_left():
+    from datetime import datetime, timedelta, timezone
+    now = datetime(2026, 10, 26, 18, 0, 0, tzinfo=timezone.utc)
+    soon = (now + timedelta(minutes=125, seconds=30)).isoformat()
+    assert sh.expires_label(soon, now=now).endswith("(in 2 h 5 min)")
+    assert sh.expires_label((now + timedelta(minutes=4)).isoformat(), now=now).endswith("(in 4 min)")
+    assert sh.expires_label((now + timedelta(seconds=20)).isoformat(), now=now).endswith("(in under 1 min)")
+    assert sh.expires_label((now - timedelta(minutes=1)).isoformat(), now=now).endswith("(expired)")
+    assert sh.expires_label(None) == "-"
