@@ -1,10 +1,10 @@
 /* SentrAI Risk Console. Black or White theme with one accent colour; risk bands keep their own
-   green / amber / red in both. Fonts are bundled (cactai_ui/fonts), so the console looks the same offline.
+   green / amber / red in both. Fonts are bundled (sentrai_ui/fonts), so the console looks the same offline.
    Direction: an instrument panel, not a marketing page. Flat surfaces, hairlines instead of shadows,
    colour only where something needs attention, numbers in tabular figures. */
 :root {
   /* Streamlit's root font size is 15 px: .8rem (12 px) is the smallest text size used here.
-     Colours come from cactai_ui/theme.py (Black or White theme plus the accent picked in Configuration),
+     Colours come from sentrai_ui/theme.py (Black or White theme plus the accent picked in Configuration),
      injected before this file as a :root block. Only shape and type live here. */
   --radius: 10px;
 }
@@ -96,7 +96,7 @@ div[data-testid="stVerticalBlockBorderWrapper"], div[data-testid="stForm"] { bor
 }
 
 /* Machine list: one row per SentrAI program, like a server-status screen. More rows appear as
-   machines are added (CACTAI_PEERS), so the rows carry no fixed height. */
+   machines are added (SENTRAI_PEERS), so the rows carry no fixed height. */
 /* Streamlit's markdown indents lists and pads list items, hence the stronger selectors. */
 div[data-testid="stMarkdownContainer"] ul.machines { list-style: none; margin: 0 0 .3rem; padding: 0; display: flex;
            flex-direction: column; gap: .6rem; }

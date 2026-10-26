@@ -1,25 +1,22 @@
 [Unit]
-Description=SentrAI core (risk engine, agents, API)
-PartOf=cactai.target
+Description=SentrAI agent (sends this machine's logs to the central panel, applies its blocks here)
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=@PREFIX@/mvp/core
+WorkingDirectory=@PREFIX@/mvp/lab
 # iptables takes this lock file before every change; /run is read-only to the service otherwise.
 ExecStartPre=-+/bin/sh -c 'touch /run/xtables.lock'
-# app.serve: the local API on CACTAI_CORE_HOST:CACTAI_CORE_PORT, plus the agents' HTTPS port when
-# CACTAI_PANEL_PORT is set (install.sh --panel).
-ExecStart=@PREFIX@/mvp/core/.venv/bin/python -m app.serve
+ExecStart=@PREFIX@/mvp/lab/.venv/bin/python -m agent run
 User=@USER@
 Group=@USER@
-EnvironmentFile=/etc/cactai/cactai.env
-Environment=HOME=/var/lib/cactai PYTHONUNBUFFERED=1 PYTHONUTF8=1 PYTHONIOENCODING=utf-8
+EnvironmentFile=/etc/sentrai/agent.env
+Environment=HOME=/var/lib/sentrai/agent PYTHONUNBUFFERED=1 PYTHONUTF8=1 PYTHONIOENCODING=utf-8
 Restart=on-failure
-RestartSec=5
-# Least privilege: the only service that may change the firewall (CACTAI_FIREWALL), and the only
-# one that can open the audit record in /var/lib/cactai/core. Reads logs through the log groups.
+RestartSec=10
+# Least privilege: reads logs through the log groups, changes only the firewall (CAP_NET_ADMIN)
+# and writes only its own folder (the machine key, read positions, blocks in force).
 NoNewPrivileges=yes
 PrivateTmp=yes
 PrivateDevices=yes
@@ -43,8 +40,7 @@ SupplementaryGroups=@LOGGROUPS@
 AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
 CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
-ReadWritePaths=/var/lib/cactai/core /var/lib/cactai/scout -/run/xtables.lock
-InaccessiblePaths=-/var/lib/cactai/collector
+ReadWritePaths=/var/lib/sentrai/agent -/run/xtables.lock
 
 [Install]
-WantedBy=cactai.target
+WantedBy=multi-user.target

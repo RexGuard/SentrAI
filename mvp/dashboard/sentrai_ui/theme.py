@@ -45,7 +45,7 @@ THEMES = {
 }
 
 # Type: IBM Plex Sans for everything people read, JetBrains Mono for ids, hashes and times.
-# Bundled in cactai_ui/fonts (see its README), so the console needs no internet.
+# Bundled in sentrai_ui/fonts (see its README), so the console needs no internet.
 FONT = "'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif"
 MONO = "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
 _FONT_FILES = [("IBM Plex Sans", w, f"ibm-plex-sans-latin-{w}-normal.woff2") for w in (400, 500, 600, 700)] + \

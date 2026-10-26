@@ -17,7 +17,7 @@ class Core:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.session = requests.Session()
-        if token:  # the core's API token (cactai_config.api_token())
+        if token:  # the core's API token (sentrai_config.api_token())
             self.session.headers["Authorization"] = f"Bearer {token}"
 
     def _req(self, method: str, path: str, body: Any | None = None) -> Any:

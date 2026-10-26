@@ -1,4 +1,4 @@
-"""Per-machine risk (CACTAI_RISK_SCOPE=host): one central core scoring many machines, each on its own."""
+"""Per-machine risk (SENTRAI_RISK_SCOPE=host): one central core scoring many machines, each on its own."""
 
 import pytest
 from fastapi.testclient import TestClient
@@ -13,7 +13,7 @@ SQLI = "GET /search?q=' OR 1=1 -- 200"
 
 @pytest.fixture
 def panel(tmp_path):
-    settings = Settings(db_path=tmp_path / "cactai.db", background=False, demo_speed=60.0, risk_scope="host")
+    settings = Settings(db_path=tmp_path / "sentrai.db", background=False, demo_speed=60.0, risk_scope="host")
     app = create_app(settings)
     with TestClient(app, headers=AUTH) as c:
         c.core = app.state.core  # type: ignore[attr-defined]
@@ -28,9 +28,9 @@ def attack(c, host, ip, start):
 
 
 def test_scope_setting(monkeypatch):
-    monkeypatch.setenv("CACTAI_RISK_SCOPE", "host")
+    monkeypatch.setenv("SENTRAI_RISK_SCOPE", "host")
     assert Settings().risk_scope == "host"
-    monkeypatch.setenv("CACTAI_RISK_SCOPE", "anything else")
+    monkeypatch.setenv("SENTRAI_RISK_SCOPE", "anything else")
     assert Settings().risk_scope == "fleet"
 
 

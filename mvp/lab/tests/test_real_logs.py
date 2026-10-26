@@ -23,9 +23,9 @@ SGT = parsers.log_tz("+08:00")
 
 @pytest.fixture(autouse=True)
 def _env(monkeypatch, tmp_path):
-    monkeypatch.setenv("CACTAI_LOG_TZ", "+08:00")
-    monkeypatch.setenv("CACTAI_HOST", "vps-real")
-    monkeypatch.setenv("CACTAI_COLLECTOR_STATE", str(tmp_path / "state.json"))
+    monkeypatch.setenv("SENTRAI_LOG_TZ", "+08:00")
+    monkeypatch.setenv("SENTRAI_HOST", "vps-real")
+    monkeypatch.setenv("SENTRAI_COLLECTOR_STATE", str(tmp_path / "state.json"))
 
 
 def lines(name: str) -> list[str]:
@@ -179,7 +179,7 @@ def test_demo_portal_events_keep_their_shape():
                                                 "method": "POST", "path": "/login", "status": 401,
                                                 "raw": "POST /login 401 user=admin"})
     assert ev["host"] == "web-01" and ev["raw"] == "POST /login 401 user=admin"
-    assert ev["parsed"] == {"format": "cactai_demo", "kind": "http_request", "method": "POST", "path": "/login",
+    assert ev["parsed"] == {"format": "sentrai_demo", "kind": "http_request", "method": "POST", "path": "/login",
                             "status": 401}
 
 

@@ -18,9 +18,9 @@ SAMPLES = Path(__file__).resolve().parent / "samples"
 
 @pytest.fixture(autouse=True)
 def _env(monkeypatch, tmp_path):
-    monkeypatch.setenv("CACTAI_LOG_TZ", "+08:00")
-    monkeypatch.setenv("CACTAI_HOST", "vps-real")
-    monkeypatch.setenv("CACTAI_COLLECTOR_STATE", str(tmp_path / "state.json"))
+    monkeypatch.setenv("SENTRAI_LOG_TZ", "+08:00")
+    monkeypatch.setenv("SENTRAI_HOST", "vps-real")
+    monkeypatch.setenv("SENTRAI_COLLECTOR_STATE", str(tmp_path / "state.json"))
 
 
 def lines(name: str) -> list[str]:

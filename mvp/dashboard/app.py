@@ -20,24 +20,24 @@ from typing import Any
 
 import streamlit as st
 
-from cactai_ui import shaping as sh
-from cactai_ui import signin
-from cactai_ui import theme as th
-from cactai_ui.api import READ_ONLY_MESSAGE, CoreClient, CoreError
+from sentrai_ui import shaping as sh
+from sentrai_ui import signin
+from sentrai_ui import theme as th
+from sentrai_ui.api import READ_ONLY_MESSAGE, CoreClient, CoreError
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
-import cactai_accounts as acc  # noqa: E402
-import cactai_config as cfg  # noqa: E402
+import sentrai_accounts as acc  # noqa: E402
+import sentrai_config as cfg  # noqa: E402
 import setup_chat  # noqa: E402
 
 cfg.load()
 
-DEFAULT_CORE = os.environ.get("CACTAI_CORE_URL", "http://127.0.0.1:8000")
-DEFAULT_OPERATOR = os.environ.get("CACTAI_OPERATOR", "operator")
-# The machine list on Review: this computer first, then any other SentrAI cores listed in CACTAI_PEERS
+DEFAULT_CORE = os.environ.get("SENTRAI_CORE_URL", "http://127.0.0.1:8000")
+DEFAULT_OPERATOR = os.environ.get("SENTRAI_OPERATOR", "operator")
+# The machine list on Review: this computer first, then any other SentrAI cores listed in SENTRAI_PEERS
 # ("Office PC=http://10.0.0.5:8000, Web server=https://web:8000"). They share this console's API token.
-NODE_NAME = os.environ.get("CACTAI_NODE_NAME") or "This computer"
-PEERS = sh.parse_peers(os.environ.get("CACTAI_PEERS"))
+NODE_NAME = os.environ.get("SENTRAI_NODE_NAME") or "This computer"
+PEERS = sh.parse_peers(os.environ.get("SENTRAI_PEERS"))
 REFRESH_SECONDS = 2
 
 # Look: Black or White theme plus an accent, picked under Configuration > Appearance and saved with the settings.
@@ -47,9 +47,9 @@ ACCENT = LOOK.get("accent") or th.DEFAULT_ACCENT
 sh.set_palette(th.chart_colors(THEME))
 
 
-# SentrAI logo: assets/brand/mark.svg and wordmark.svg, copied into cactai_ui so the console needs no other folder.
+# SentrAI logo: assets/brand/mark.svg and wordmark.svg, copied into sentrai_ui so the console needs no other folder.
 def _logo_svg(name: str) -> str:
-    svg = (Path(__file__).parent / "cactai_ui" / name).read_text(encoding="utf-8")
+    svg = (Path(__file__).parent / "sentrai_ui" / name).read_text(encoding="utf-8")
     svg = re.sub(r'\s*<title>.*?</title>|\s(width|height)="[\d.]+"', "", svg)
     return svg.replace('role="img" aria-label="SentrAI"', 'aria-hidden="true"').replace("\n", "")
 
@@ -62,7 +62,7 @@ _FAVICON = Path(__file__).resolve().parents[2] / "assets" / "brand" / "favicon-3
 PAGE_ICON = str(_FAVICON) if _FAVICON.exists() else "🛡️"
 st.set_page_config(page_title="SentrAI · Risk Console", page_icon=PAGE_ICON, layout="wide",
                    initial_sidebar_state="auto")  # collapsed on a phone, so the page shows first
-CSS = (Path(__file__).parent / "cactai_ui" / "console.css").read_text(encoding="utf-8")
+CSS = (Path(__file__).parent / "sentrai_ui" / "console.css").read_text(encoding="utf-8")
 st.markdown(f"<style>{th.font_css()}{th.css(THEME, ACCENT)}{CSS}</style>", unsafe_allow_html=True)
 
 
@@ -146,8 +146,8 @@ def _register_owner(box) -> None:
     with box.form("register"):
         st.markdown(BRAND, unsafe_allow_html=True)
         st.markdown("#### Create your Owner account")
-        st.caption("This machine has no accounts yet. Type the setup code that `python cactai_config.py admin` "
-                   "(on a server: `sudo cactai-admin`) printed. It works once.")
+        st.caption("This machine has no accounts yet. Type the setup code that `python sentrai_config.py admin` "
+                   "(on a server: `sudo sentrai-admin`) printed. It works once.")
         code = st.text_input("Setup code", placeholder="ABCD-EFGH-JKLM")
         name = st.text_input("Your name", autocomplete="name")
         email = st.text_input("Email", autocomplete="username")
@@ -284,9 +284,9 @@ def _code_step(box, email: str) -> None:
 def login() -> dict | None:
     """Who is using the console: their account ({email, name, role, ...}), or None with the sign-in off.
 
-    A new machine opens on the register screen (setup code from `cactai_config.py admin`); an invite
+    A new machine opens on the register screen (setup code from `sentrai_config.py admin`); an invite
     link (?invite=...) opens the join screen; everyone else signs in with email, password and an
-    authenticator code. CACTAI_DASHBOARD_LOGIN=off skips all of it, for local testing and recordings.
+    authenticator code. SENTRAI_DASHBOARD_LOGIN=off skips all of it, for local testing and recordings.
     """
     if not cfg.login_required():
         return None
@@ -313,8 +313,8 @@ def login() -> dict | None:
         else:
             with box.container(border=True):
                 st.markdown(BRAND, unsafe_allow_html=True)
-                st.warning("No one can sign in yet. On this machine, run `python cactai_config.py admin` "
-                           "(on a server: `sudo cactai-admin`) for a one-time setup code, then reload this page.")
+                st.warning("No one can sign in yet. On this machine, run `python sentrai_config.py admin` "
+                           "(on a server: `sudo sentrai-admin`) for a one-time setup code, then reload this page.")
     else:
         if invite_code:
             box.error("This invite link is wrong or has expired. Ask whoever invited you for a new one.")
@@ -461,13 +461,13 @@ def audit_records() -> tuple[list[dict], bool | None, str | None]:
 
 
 def panel_mode(risk: Any) -> bool:
-    """This core is a central panel: it scores each joined machine on its own (CACTAI_RISK_SCOPE=host)."""
+    """This core is a central panel: it scores each joined machine on its own (SENTRAI_RISK_SCOPE=host)."""
     return isinstance(risk, dict) and risk.get("risk_scope") == "host"
 
 
 def machines() -> list[dict]:
     """Every SentrAI machine this console watches: on a central panel, the machines that joined it;
-    otherwise this computer first, then the cores listed in CACTAI_PEERS."""
+    otherwise this computer first, then the cores listed in SENTRAI_PEERS."""
     risk, err = fetch("risk")
     if panel_mode(risk):
         found, _ = fetch("machines", [])
@@ -844,7 +844,7 @@ def page_config() -> None:
                 if f.generated:  # shown, never edited here: every part must restart with the same value
                     cols[n % 2].text_input(f.prompt, value=current[f.env], key=f"cfg_{f.env}", type="password",
                                            disabled=True, help=f"Environment variable {f.env}. Generated by setup; "
-                                           "python cactai_config.py token prints it.")
+                                           "python sentrai_config.py token prints it.")
                     continue
                 values[f.env] = cols[n % 2].text_input(
                     f.prompt, value=current[f.env], key=f"cfg_{f.env}", help=f"Environment variable {f.env}",
@@ -968,7 +968,7 @@ def preset_settings(current: dict[str, str]) -> dict[str, str]:
 
     name = st.segmented_control("Preset", cfg.PRESET_CHOICES, key=pick, required=True, on_change=fill,
                                 format_func=cfg.preset_label,
-                                help="Environment variable CACTAI_PRESET. A preset fills in the values below; "
+                                help="Environment variable SENTRAI_PRESET. A preset fills in the values below; "
                                      "changing any of them by hand switches to Advanced.")
     advanced = name == cfg.ADVANCED
     st.caption(cfg.ADVANCED_ABOUT + " Pick a preset to go back to its values." if advanced
@@ -990,36 +990,36 @@ def preset_settings(current: dict[str, str]) -> dict[str, str]:
 
 def ai_settings(current: dict[str, str]) -> dict[str, str]:
     """Section 5: one provider list, one key, and a button that asks the provider for its models."""
-    keys = {env: f"cfg_{env}" for env in ("CACTAI_LLM_PROVIDER", "CACTAI_LLM_API_KEY", "CACTAI_LLM_BASE_URL",
+    keys = {env: f"cfg_{env}" for env in ("SENTRAI_LLM_PROVIDER", "SENTRAI_LLM_API_KEY", "SENTRAI_LLM_BASE_URL",
                                           cfg.MODEL_ENV)}
     for env, key in keys.items():  # widgets take their start value from session state, so a pick can fill the model
         st.session_state.setdefault(key, current[env])
     c1, c2 = st.columns(2)
-    provider = c1.selectbox("Provider", cfg.cactai_llm.PROVIDERS, key=keys["CACTAI_LLM_PROVIDER"],
-                            format_func=lambda p: cfg.cactai_llm.LABEL[p],
-                            help="Environment variable CACTAI_LLM_PROVIDER")
-    api_key = c2.text_input("API key", key=keys["CACTAI_LLM_API_KEY"], type="password",
-                            help="Environment variable CACTAI_LLM_API_KEY. Leave blank to run on fixed playbooks.").strip()
+    provider = c1.selectbox("Provider", cfg.sentrai_llm.PROVIDERS, key=keys["SENTRAI_LLM_PROVIDER"],
+                            format_func=lambda p: cfg.sentrai_llm.LABEL[p],
+                            help="Environment variable SENTRAI_LLM_PROVIDER")
+    api_key = c2.text_input("API key", key=keys["SENTRAI_LLM_API_KEY"], type="password",
+                            help="Environment variable SENTRAI_LLM_API_KEY. Leave blank to run on fixed playbooks.").strip()
     if provider == "compatible":
-        base_url = st.text_input("Base URL", key=keys["CACTAI_LLM_BASE_URL"], placeholder="https://llm.example.com/v1",
-                                 help="Environment variable CACTAI_LLM_BASE_URL").strip()
+        base_url = st.text_input("Base URL", key=keys["SENTRAI_LLM_BASE_URL"], placeholder="https://llm.example.com/v1",
+                                 help="Environment variable SENTRAI_LLM_BASE_URL").strip()
     else:
-        base_url = st.session_state[keys["CACTAI_LLM_BASE_URL"]].strip()
-        st.caption(f"Endpoint: {base_url or cfg.cactai_llm.BASE_URL.get(provider, '')}")
+        base_url = st.session_state[keys["SENTRAI_LLM_BASE_URL"]].strip()
+        st.caption(f"Endpoint: {base_url or cfg.sentrai_llm.BASE_URL.get(provider, '')}")
 
-    default = cfg.cactai_llm.DEFAULT_MODEL.get(provider) or "none, type one"
+    default = cfg.sentrai_llm.DEFAULT_MODEL.get(provider) or "none, type one"
     m1, m2 = st.columns([3, 1], vertical_alignment="bottom")
     model = m1.text_input("Model", key=keys[cfg.MODEL_ENV], placeholder=f"blank for the default ({default})",
-                          help="Environment variable CACTAI_LLM_MODEL; a value set in the environment "
+                          help="Environment variable SENTRAI_LLM_MODEL; a value set in the environment "
                                "before SentrAI starts wins over this one.").strip()
-    ai = {"CACTAI_LLM_PROVIDER": provider, "CACTAI_LLM_API_KEY": api_key, "CACTAI_LLM_BASE_URL": base_url,
+    ai = {"SENTRAI_LLM_PROVIDER": provider, "SENTRAI_LLM_API_KEY": api_key, "SENTRAI_LLM_BASE_URL": base_url,
           cfg.MODEL_ENV: model}
     if m2.button("Fetch models", icon=":material/refresh:", width="stretch", disabled=not api_key,
                  help="Ask the provider which models this key can use"):
         with st.spinner("Asking the provider for its models..."):
             try:
                 st.session_state.ai_models = (provider, cfg.fetch_models(ai), None)
-            except cfg.cactai_llm.LLMError as exc:
+            except cfg.sentrai_llm.LLMError as exc:
                 st.session_state.ai_models = (provider, [], str(exc))
 
     fetched_for, models, error = st.session_state.get("ai_models") or ("", [], None)
@@ -1048,8 +1048,8 @@ def ai_connection(ai: dict[str, str]) -> None:
                    f" · key from {now.get('key_source') or 'unknown'}")
     else:
         t1.caption(f"Cyanide now: :red[:material/radio_button_unchecked: offline] · {now.get('off_reason') or now.get('chat')}")
-    body = {"provider": ai["CACTAI_LLM_PROVIDER"], "api_key": ai["CACTAI_LLM_API_KEY"],
-            "base_url": ai["CACTAI_LLM_BASE_URL"], "model": ai[cfg.MODEL_ENV]}
+    body = {"provider": ai["SENTRAI_LLM_PROVIDER"], "api_key": ai["SENTRAI_LLM_API_KEY"],
+            "base_url": ai["SENTRAI_LLM_BASE_URL"], "model": ai[cfg.MODEL_ENV]}
     if t2.button("Test connection", icon=":material/power:", width="stretch", disabled=bool(err),
                  help="Send one short request to the provider with the settings above (saved or not), "
                       "through the same code Cyanide uses"):
@@ -1453,14 +1453,14 @@ def save_setup(sc: "setup_chat.SetupChat") -> None:
     path = cfg.save(values)
     cfg.mark_setup_done("chat")
     try:
-        watched = setup_chat.save_log_sources(sc, f"guided setup ({values.get('CACTAI_OPERATOR') or 'operator'})")
+        watched = setup_chat.save_log_sources(sc, f"guided setup ({values.get('SENTRAI_OPERATOR') or 'operator'})")
     except OSError as e:
         watched = []
         sc.messages.append({"role": "assistant", "text": f"I couldn't add the log files to the collector's list ({e}). "
                             "Add them on the Collector page instead."})
     for key in [k for k in st.session_state if str(k).startswith("cfg_")]:  # Configuration shows the new values
         del st.session_state[key]
-    st.session_state.operator = values.get("CACTAI_OPERATOR") or st.session_state.operator
+    st.session_state.operator = values.get("SENTRAI_OPERATOR") or st.session_state.operator
     ai, err = safe(client.ai_reload)
     note = f"Saved to {path}. "
     if watched:
@@ -1605,10 +1605,10 @@ def page_collector() -> None:
     left, right = st.columns(2)
     with left, st.container(border=True):
         section("Log sources", "from the settings file", "folder_open")
-        logs_dir = Path(os.environ.get("CACTAI_LAB_LOGS") or cfg.FIELDS["CACTAI_LAB_LOGS"].default)
+        logs_dir = Path(os.environ.get("SENTRAI_LAB_LOGS") or cfg.FIELDS["SENTRAI_LAB_LOGS"].default)
         st.caption(f"Folder: {logs_dir}")
         rows = []
-        for env in ("CACTAI_LOG_ACCESS", "CACTAI_LOG_AUTH", "CACTAI_LOG_DB", "CACTAI_LOG_OS"):
+        for env in ("SENTRAI_LOG_ACCESS", "SENTRAI_LOG_AUTH", "SENTRAI_LOG_DB", "SENTRAI_LOG_OS"):
             path = logs_dir / (os.environ.get(env) or cfg.FIELDS[env].default)
             rows.append({"Log": cfg.FIELDS[env].prompt.replace(" file name", ""), "File": path.name,
                          "Size": f"{path.stat().st_size / 1024:.1f} KB" if path.exists() else "not created yet"})
@@ -1716,7 +1716,7 @@ def threat_panel() -> None:
             st.caption(latest["note"])
         if not latest.get("scanned_at"):
             st.caption("No threat scan yet. Set the folders under threat_scan.paths in the system profile "
-                       "(or CACTAI_THREAT_PATHS); Cyanide can also run one when you ask in Chat.")
+                       "(or SENTRAI_THREAT_PATHS); Cyanide can also run one when you ask in Chat.")
         else:
             c = latest.get("counts") or {}
             st.caption(f"Last scan {sh.short_time(latest.get('scanned_at'))}: {latest.get('files_checked', 0)} files in "
@@ -1897,7 +1897,7 @@ def page_machines() -> None:
     panel = panel_mode(risk)
     online = sum(1 for m in found if m["online"])
     attacked = [m for m in found if m.get("open") or m["band"] in ("red", "critical")]
-    stats(("Machines", str(len(found)), "joined this panel" if panel else "this computer and CACTAI_PEERS"),
+    stats(("Machines", str(len(found)), "joined this panel" if panel else "this computer and SENTRAI_PEERS"),
           ("Online", str(online), f"{len(found) - online} offline or waiting",
            sh.BAND_COLORS["amber"] if online < len(found) else None),
           ("Need a look", str(len(attacked)), "open incidents or red and above",
@@ -1905,7 +1905,7 @@ def page_machines() -> None:
           ("Blocks in force", str(sum(m.get("blocked", 0) for m in found)), "each on its own machine"))
     if not panel:
         st.info("This core adds every machine into one score. To run it as a central panel, set "
-                "CACTAI_RISK_SCOPE=host (and CACTAI_FIREWALL=off) on it and restart the core: each machine is then "
+                "SENTRAI_RISK_SCOPE=host (and SENTRAI_FIREWALL=off) on it and restart the core: each machine is then "
                 "scored and blocked on its own.", icon=":material/info:")
 
     left, right = st.columns([7, 5])
@@ -1948,7 +1948,7 @@ def page_machines() -> None:
             name = st.text_input("Machine name (optional)", key="join_name", placeholder="web-01",
                                  help="Leave empty to use the new machine's own host name")
             url = st.text_input("Panel address the machine will use", key="join_url",
-                                value=os.environ.get("CACTAI_PANEL_URL") or os.environ.get("CACTAI_PUBLIC_URL")
+                                value=os.environ.get("SENTRAI_PANEL_URL") or os.environ.get("SENTRAI_PUBLIC_URL")
                                 or st.session_state.core_url,
                                 help="Must be https:// from another machine (install.sh --panel opens port 8443)")
             if st.button("Make join code", icon=":material/key:", type="primary", key="join_make",
@@ -1976,7 +1976,7 @@ def page_machines() -> None:
                                "sudo ./deploy/install.sh --panel to open its HTTPS port for agents.",
                                icon=":material/lock_open:")
                 elif not pin:
-                    st.info("No certificate pin is known (CACTAI_PANEL_CERT is not set), so the machine checks the "
+                    st.info("No certificate pin is known (SENTRAI_PANEL_CERT is not set), so the machine checks the "
                             "panel's certificate against the usual authorities.", icon=":material/lock:")
 
     if panel:
@@ -2078,7 +2078,7 @@ def page_backups() -> None:
         st.warning("The last backup is more than two schedule periods old. Is SentrAI's core running?")
 
     with st.container(border=True):
-        section("What is backed up", "change it under backup in the system profile, or CACTAI_BACKUP_PATHS", "folder_copy")
+        section("What is backed up", "change it under backup in the system profile, or SENTRAI_BACKUP_PATHS", "folder_copy")
         folders = data.get("folders") or []
         st.markdown(("Folders: " + ", ".join(code(f) for f in folders) if folders else
                      "No folders chosen yet, so only SentrAI's own data is copied.")

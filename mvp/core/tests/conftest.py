@@ -3,14 +3,14 @@ import tempfile
 from pathlib import Path
 
 # Must run before app.main is imported (it builds a module-level app).
-_TMP = Path(tempfile.mkdtemp(prefix="cactai-test-"))
-os.environ["CACTAI_DB"] = str(_TMP / "import.db")
-os.environ["CACTAI_BACKGROUND"] = "0"
-os.environ["CACTAI_CONFIG"] = str(Path(_TMP) / "no-config.json")  # ignore this machine's saved settings
+_TMP = Path(tempfile.mkdtemp(prefix="sentrai-test-"))
+os.environ["SENTRAI_DB"] = str(_TMP / "import.db")
+os.environ["SENTRAI_BACKGROUND"] = "0"
+os.environ["SENTRAI_CONFIG"] = str(Path(_TMP) / "no-config.json")  # ignore this machine's saved settings
 os.environ.pop("TYPESAFE_API_KEY", None)
 for _name in ("CLOUDFLARE_API_TOKEN", "ABUSEIPDB_API_KEY", "SLACK_WEBHOOK_URL"):  # never call real services
     os.environ.pop(_name, None)
-os.environ["CACTAI_API_TOKEN"] = "test-token"  # the token the test clients send
+os.environ["SENTRAI_API_TOKEN"] = "test-token"  # the token the test clients send
 os.environ["CYANIDE_ENABLED"] = "0"  # never call Claude from tests; Cyanide tests inject a fake planner
 
 import pytest  # noqa: E402
@@ -25,7 +25,7 @@ AUTH = {"Authorization": "Bearer test-token"}
 
 @pytest.fixture
 def client(tmp_path):
-    settings = Settings(db_path=tmp_path / "cactai.db", background=False, demo_speed=60.0)
+    settings = Settings(db_path=tmp_path / "sentrai.db", background=False, demo_speed=60.0)
     app = create_app(settings)
     with TestClient(app, headers=AUTH) as c:
         c.core = app.state.core  # type: ignore[attr-defined]

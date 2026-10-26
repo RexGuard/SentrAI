@@ -6,14 +6,14 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-import cactai_config as cfg  # noqa: E402
+import sentrai_config as cfg  # noqa: E402
 import setup_chat  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
 def config_file(tmp_path, monkeypatch):
     path = tmp_path / "config.json"
-    monkeypatch.setenv("CACTAI_CONFIG", str(path))
+    monkeypatch.setenv("SENTRAI_CONFIG", str(path))
     monkeypatch.setattr(setup_chat, "system_logs", lambda *a, **k: [])  # this machine's /var/log stays out of it
     return path
 
@@ -51,11 +51,11 @@ def test_walkthrough_with_buttons_and_typing(tmp_path):
              )
     values = sc.values()
     assert values[cfg.PRESET_ENV] == "strict" and values["RISK_THRESHOLD"] == "65"
-    assert values["CACTAI_LAB_LOGS"] == str(logs.resolve())
+    assert values["SENTRAI_LAB_LOGS"] == str(logs.resolve())
     assert "192.168.1.20" in values["PROTECTED_IPS"] and "10.0.0.0/24" in values["PROTECTED_IPS"]
     assert "127.0.0.1" in values["PROTECTED_IPS"]  # the defaults stay
     assert values["PROTECTED_USERS"] == "admin,backup"
-    assert values["CACTAI_OPERATOR"] == "Erick" and values["ON_DUTY"] == "Erick"
+    assert values["SENTRAI_OPERATOR"] == "Erick" and values["ON_DUTY"] == "Erick"
     assert values["TELEGRAM_CHAT_ID"] == "-1001234" and values["SMTP_HOST"] == ""
     run(sc, "network", "earlier", "8600")
     assert sc.state == "review" and "Shall I save it?" in last(sc)
@@ -99,7 +99,7 @@ def test_ai_maps_an_unclear_answer_but_never_sees_secrets():
     run(sc, "yes", "own", "none", "none", "keep", "none")  # ... alerts: just the dashboard
     sc.answer("anthropic", interpret=interpret)
     sc.answer("sk-ant-secret", interpret=interpret)
-    assert "sk-ant-secret" not in seen and sc.values()["CACTAI_LLM_API_KEY"] == "sk-ant-secret"
+    assert "sk-ant-secret" not in seen and sc.values()["SENTRAI_LLM_API_KEY"] == "sk-ant-secret"
 
 
 def test_review_and_restart():
@@ -127,7 +127,7 @@ def test_launcher_sign_in_does_not_count_as_setup(config_file):
 
 
 def test_changed_values_count_as_done(config_file):
-    cfg.save({"CACTAI_OPERATOR": "Erick"})  # saved before the marker existed
+    cfg.save({"SENTRAI_OPERATOR": "Erick"})  # saved before the marker existed
     assert cfg.setup_done()
 
 
@@ -141,7 +141,7 @@ def test_logs_found_on_this_computer_are_offered_and_saved(tmp_path, monkeypatch
     sc.answer("found")
     assert sc.step.key == "ips"
     assert "/var/log/nginx/access.log, journald:sshd" in "\n".join(sc.summary())
-    monkeypatch.setenv("CACTAI_SCOUT_SOURCES", str(tmp_path / "sources.json"))
+    monkeypatch.setenv("SENTRAI_SCOUT_SOURCES", str(tmp_path / "sources.json"))
     assert setup_chat.save_log_sources(sc, "guided setup (erick)") == ["/var/log/nginx/access.log", "journald:sshd"]
     saved = json.loads((tmp_path / "sources.json").read_text())
     assert [e["path"] for e in saved] == ["/var/log/nginx/access.log", "journald:sshd"]
@@ -157,6 +157,6 @@ def test_a_typed_log_file_or_folder_is_watched(tmp_path):
     assert sc.notes["log_sources"] == [{"path": str((tmp_path / "auth.log").resolve()), "layer": "os",
                                         "format": "auto", "why": "chosen in guided setup"}]
     sc = run(setup_chat.SetupChat(), "office", "yes", str(tmp_path))
-    assert sc.values()["CACTAI_LAB_LOGS"] == str(tmp_path.resolve())
+    assert sc.values()["SENTRAI_LAB_LOGS"] == str(tmp_path.resolve())
     assert sorted(Path(e["path"]).name for e in sc.notes["log_sources"]) == ["access.log", "auth.log"]
     assert setup_chat.save_log_sources(setup_chat.SetupChat(), "x") == []  # nothing picked, nothing written

@@ -93,7 +93,7 @@ Windows machines get a matching `install-agent.ps1` command. The agent sends tha
 
 ### 4. Protect your own IP first
 
-SentrAI never blocks the addresses in `PROTECTED_IPS`. Your own machine (`127.0.0.1`, `::1`) is always in it, and every `--protect` address is added on a server install. **Add the IP you manage from before you turn on any blocking**, or SentrAI could lock you out. Change it on the dashboard's **Configuration** page, or in `/etc/cactai/cactai.env` on a server (then `sudo systemctl restart cactai.target`).
+SentrAI never blocks the addresses in `PROTECTED_IPS`. Your own machine (`127.0.0.1`, `::1`) is always in it, and every `--protect` address is added on a server install. **Add the IP you manage from before you turn on any blocking**, or SentrAI could lock you out. Change it on the dashboard's **Configuration** page, or in `/etc/sentrai/sentrai.env` on a server (then `sudo systemctl restart sentrai.target`).
 
 ### 5. Point it at your logs
 
@@ -107,15 +107,15 @@ cd lab && .venv/bin/python -m collector.collector --add-system-logs
 
 Out of the box a block only goes on SentrAI's own blocklist (`/blocklist`, for your app or proxy to read). For blocks to stop traffic on their own, turn on one of:
 
-- **Host firewall:** set `CACTAI_FIREWALL=auto` (or `nftables`, `iptables`, `netsh` on Windows). It starts as a dry run that only logs the command it would run. When the commands look right, set `CACTAI_FIREWALL_ENFORCE=1` (needs root or administrator rights).
+- **Host firewall:** set `SENTRAI_FIREWALL=auto` (or `nftables`, `iptables`, `netsh` on Windows). It starts as a dry run that only logs the command it would run. When the commands look right, set `SENTRAI_FIREWALL_ENFORCE=1` (needs root or administrator rights).
 - **Cloudflare:** set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ZONE_ID` so each block also stops the attacker at Cloudflare's edge, and is removed there when it ends. See [Integrations](https://rexguard.github.io/SentrAI/docs/integrations.html).
-- **Webhook:** set `CACTAI_RESPONDER_WEBHOOK_URL` (and `CACTAI_RESPONDER_WEBHOOK_SECRET`) so your own gateway, proxy or WAF applies each block and unblock.
+- **Webhook:** set `SENTRAI_RESPONDER_WEBHOOK_URL` (and `SENTRAI_RESPONDER_WEBHOOK_SECRET`) so your own gateway, proxy or WAF applies each block and unblock.
 
 See [Firewall blocking](https://rexguard.github.io/SentrAI/docs/settings.html#firewall-blocking) and the [full variable list](https://github.com/RexGuard/SentrAI/blob/main/mvp/README.md#variables).
 
 ### Something not working?
 
-Port clashes, missing packages and a dashboard you can't reach are covered in [Troubleshooting](https://rexguard.github.io/SentrAI/docs/troubleshooting.html). Lost the dashboard password? Run `python cactai_config.py admin --reset` in `mvp` (on a server, `sudo cactai-admin --reset`).
+Port clashes, missing packages and a dashboard you can't reach are covered in [Troubleshooting](https://rexguard.github.io/SentrAI/docs/troubleshooting.html). Lost the dashboard password? Run `python sentrai_config.py admin --reset` in `mvp` (on a server, `sudo sentrai-admin --reset`).
 
 ## What it does
 

@@ -4,7 +4,7 @@ The panel never reaches into a machine. An operator queues a job here (POST /fle
 machine's agent picks it up on its next call out (GET /fleet/jobs/next), runs it locally and sends
 back a short result (POST /fleet/jobs/result). So no port is opened on the machine, and the panel
 cannot choose what the agent reads: the agent scans and backs up only the folders set on that
-machine itself (CACTAI_THREAT_PATHS / CACTAI_BACKUP_PATHS there). Backups stay on the machine;
+machine itself (SENTRAI_THREAT_PATHS / SENTRAI_BACKUP_PATHS there). Backups stay on the machine;
 only their id, size and checksum come back.
 
 Jobs are kept in jobs.json next to the database, newest MAX_KEEP per machine.

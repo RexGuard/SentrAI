@@ -3,16 +3,16 @@
 `FirewallResponder` does everything `BlocklistResponder` does (the target app keeps
 polling GET /blocklist) and also mirrors each blocked IP into the host firewall:
 
-  * ``nftables``  Linux, one ``inet cactai`` table with a set of blocked addresses
+  * ``nftables``  Linux, one ``inet sentrai`` table with a set of blocked addresses
   * ``iptables``  Linux, one DROP rule per address (ip6tables for IPv6)
   * ``netsh``     Windows, one ``netsh advfirewall`` inbound block rule per address
 
 Settings (environment or setup wizard):
 
-  CACTAI_FIREWALL          off (default) | auto | nftables | iptables | netsh
-  CACTAI_FIREWALL_ENFORCE  0 (default: dry run, only log the command) | 1 (really run it)
+  SENTRAI_FIREWALL          off (default) | auto | nftables | iptables | netsh
+  SENTRAI_FIREWALL_ENFORCE  0 (default: dry run, only log the command) | 1 (really run it)
 
-With CACTAI_FIREWALL=off nothing changes: blocking stays portal-only, as in the demo.
+With SENTRAI_FIREWALL=off nothing changes: blocking stays portal-only, as in the demo.
 With a backend chosen but ENFORCE=0 the commands are logged and written to the audit
 trail, never run. The same approval gates, TTL expiry and rollback apply, because this
 responder is called at exactly the points `BlocklistResponder` is.
@@ -34,13 +34,13 @@ from collections.abc import Callable
 from . import protect
 from .responders import Action, BlocklistResponder
 
-log = logging.getLogger("cactai.firewall")
+log = logging.getLogger("sentrai.firewall")
 
 BACKENDS = ("nftables", "iptables", "netsh")
 Runner = Callable[[list[str]], "tuple[int, str]"]
 
-NFT_TABLE = ("inet", "cactai")
-IPT_COMMENT = "cactai"
+NFT_TABLE = ("inet", "sentrai")
+IPT_COMMENT = "sentrai"
 
 
 def run_command(args: list[str]) -> tuple[int, str]:
@@ -64,14 +64,14 @@ def detect_backend() -> str | None:
 
 
 def resolve_backend(choice: str) -> str | None:
-    """Maps the CACTAI_FIREWALL setting to a backend name, or None for off."""
+    """Maps the SENTRAI_FIREWALL setting to a backend name, or None for off."""
     choice = (choice or "off").strip().lower()
     if choice in ("", "off", "0", "no", "false", "none"):
         return None
     if choice == "auto":
         return detect_backend()
     if choice not in BACKENDS:
-        raise ValueError(f"CACTAI_FIREWALL must be off, auto or one of {', '.join(BACKENDS)} (got {choice!r})")
+        raise ValueError(f"SENTRAI_FIREWALL must be off, auto or one of {', '.join(BACKENDS)} (got {choice!r})")
     return choice
 
 
@@ -246,7 +246,7 @@ def from_settings(backend_choice: str, enforce: bool, protected_ips: set[str],
     backend = resolve_backend(backend_choice)
     if backend is None:
         if (backend_choice or "off").strip().lower() == "auto":
-            log.warning("CACTAI_FIREWALL=auto but no supported firewall found; blocking stays portal-only")
+            log.warning("SENTRAI_FIREWALL=auto but no supported firewall found; blocking stays portal-only")
         return BlocklistResponder()
     return FirewallResponder(backend, enforce=enforce, protected_ips=protected_ips, runner=runner)
 

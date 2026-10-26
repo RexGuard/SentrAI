@@ -86,7 +86,7 @@ def main(argv: list[str] | None = None) -> None:
         record(fs, args.goal, actor=args.who)
         return
 
-    from .agent import Scout, cactai_llm  # needs an AI key (python cactai_config.py setup, section 5)
+    from .agent import Scout, sentrai_llm  # needs an AI key (python sentrai_config.py setup, section 5)
 
     interactive = not args.no_input and has_terminal()
     try:
@@ -97,7 +97,7 @@ def main(argv: list[str] | None = None) -> None:
     trail = Trail(args.goal, "scout")
     try:
         proposals = scout.run(args.goal)
-    except cactai_llm.LLMError as e:  # the AI service failed part way: keep what was found
+    except sentrai_llm.LLMError as e:  # the AI service failed part way: keep what was found
         print(f"Scout stopped early: {e}")
         proposals = scout.proposals
     finally:  # a stop part way still keeps the route and the saved proposals

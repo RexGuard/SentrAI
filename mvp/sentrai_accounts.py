@@ -1,10 +1,10 @@
 """Dashboard accounts: who may sign in, with which role, and their authenticator.
 
-One JSON file per machine, next to the settings file (~/.cactai/accounts.json, readable by its owner
+One JSON file per machine, next to the settings file (~/.sentrai/accounts.json, readable by its owner
 only). It holds password hashes, authenticator secrets and hashes of one-time codes; never a password.
 
 How people get in:
-  - A new machine has no accounts. `python cactai_config.py admin` (on a server: `sudo cactai-admin`)
+  - A new machine has no accounts. `python sentrai_config.py admin` (on a server: `sudo sentrai-admin`)
     prints a one-time setup code; whoever has it creates the Owner account on the dashboard's first
     screen. The code works once, for SETUP_CODE_HOURS. install.sh can also make the Owner directly.
   - Everyone after that is invited by an Owner or Admin (no open sign-up). An invite is a code, or a
@@ -16,7 +16,7 @@ Settings from before accounts existed (one email and password hash in the settin
 Owner account the first time this file is read; that Owner adds an authenticator at the next sign-in.
 
 Roles: Owner and Admin run SentrAI; an Auditor reads everything and changes nothing.
-Stdlib only, like cactai_config, so the launchers can use it from any venv.
+Stdlib only, like sentrai_config, so the launchers can use it from any venv.
 """
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ import threading
 import time
 import urllib.parse
 
-import cactai_config as cfg
+import sentrai_config as cfg
 
 ROLES = ("owner", "admin", "auditor")
 ROLE_LABEL = {"owner": "Owner", "admin": "Admin", "auditor": "Auditor"}
@@ -208,8 +208,8 @@ def register_owner(code: str, name: str, email: str, password: str) -> dict:
             raise AccountError("This machine already has an Owner. Sign in, or ask them for an invite.")
         sc = data["setup_code"]
         if not sc or sc["expires"] <= _now() or not hmac.compare_digest(sc["hash"], _digest(code)):
-            raise AccountError("That setup code is wrong or has expired. Run `python cactai_config.py admin` "
-                               "(on a server: `sudo cactai-admin`) for a new one.")
+            raise AccountError("That setup code is wrong or has expired. Run `python sentrai_config.py admin` "
+                               "(on a server: `sudo sentrai-admin`) for a new one.")
         account = _new_account(email, name, "owner", cfg.hash_password(password))
         data["accounts"].append(account)
         data["setup_code"] = None
@@ -456,7 +456,7 @@ def reset(by_email: str, email: str) -> str:
             raise AccountError("No such account.")
         _may_manage(_find(data, by_email), a["role"])
         if _norm(by_email) == a["email"]:
-            raise AccountError("Ask another Owner or Admin, or reset it from the server with cactai-admin --reset.")
+            raise AccountError("Ask another Owner or Admin, or reset it from the server with sentrai-admin --reset.")
         a.update(hash="", totp="", totp_pending="", recovery=[])
         data["invites"] = [i for i in data["invites"] if i["email"] != a["email"]]
         data["invites"].append({"hash": _digest(code), "email": a["email"], "role": a["role"], "by": _norm(by_email),
@@ -466,7 +466,7 @@ def reset(by_email: str, email: str) -> str:
 
 
 def shell_reset(email: str = "", password: str = "") -> tuple[str, str]:
-    """`cactai-admin --reset`: whoever runs it on the machine is trusted. Sets a new password (made when
+    """`sentrai-admin --reset`: whoever runs it on the machine is trusted. Sets a new password (made when
     none is given, and returned) and clears the authenticator, which is added again at the next sign-in.
     Without an email it is the first Owner."""
     if password:

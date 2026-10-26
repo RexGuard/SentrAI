@@ -162,7 +162,7 @@ INTEGRITY_SOURCES = ("log_integrity", "audit_integrity")
 THREAT_SOURCE = "threat_scan"
 # Paths that hold the record: system logs, shell history, login records, SentrAI's own data.
 _LOG_PATH = (r"(?P<path>/var/log/\S*|\S*/\.(bash|zsh|sh|python)_history\b|\S*/\.history\b|/var/run/utmp\b"
-             r"|\S*/(\.cactai|cactai|sentrai)/\S*)")
+             r"|\S*/(\.cactai|\.sentrai|cactai|sentrai)/\S*)")
 # Groups that read the record: adm and systemd-journal (logs), cactai/sentrai (SentrAI's own data).
 _LOG_GROUP = r"(adm|systemd-journal|cactai|sentrai)"
 # Old rotated archives (auth.log.2.gz, syslog-20261001) are routinely deleted to free disk space.

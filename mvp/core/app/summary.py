@@ -5,7 +5,7 @@ no internal part names, and a short "how to check this" line backed by the audit
 Every number comes from the same incidents, actions and alerts the evidence reports use.
 
 The client picks daily or weekly (and the time of day) on the dashboard or with
-CACTAI_SUMMARY / CACTAI_SUMMARY_AT / CACTAI_SUMMARY_DAY. The choice is kept in summary.json
+SENTRAI_SUMMARY / SENTRAI_SUMMARY_AT / SENTRAI_SUMMARY_DAY. The choice is kept in summary.json
 next to the audit database. At each due time the core queues a "summary" notice with a signed
 link to the PDF, and the alert channels (Telegram, email) carry it to the client.
 """

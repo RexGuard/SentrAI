@@ -40,7 +40,7 @@ Already installed? Run `sudo ./deploy/install.sh --panel` on its own; your setti
 - opens a second port, **8443**, for agents only. It uses HTTPS with a certificate the installer
   makes, and answers only what a machine key may do. Your API token and the dashboard never face
   the network through it.
-- scores each machine on its own (`CACTAI_RISK_SCOPE=host`), so an attack on one machine never
+- scores each machine on its own (`SENTRAI_RISK_SCOPE=host`), so an attack on one machine never
   blocks traffic on another.
 - prints the address agents will use and the certificate's **pin** (`sha256:...`). You don't need
   to copy it: the dashboard shows it with every join code.
@@ -52,7 +52,7 @@ sudo ./deploy/install.sh --panel 8443 --panel-url https://panel.example.com:8443
 ```
 
 When the panel only watches other machines, keep its own firewall out of it: add
-`CACTAI_FIREWALL=off` to `/etc/cactai/cactai.env` and run `sudo systemctl restart cactai.target`.
+`SENTRAI_FIREWALL=off` to `/etc/sentrai/sentrai.env` and run `sudo systemctl restart sentrai.target`.
 
 The installer opens 8443 in `ufw` or `firewalld` when either is running. If your cloud provider has
 its own firewall, allow 8443 there too, ideally only from the machines you add.
@@ -83,7 +83,7 @@ sudo ./mvp/deploy/install-agent.sh --panel https://panel.example.com:8443 --code
 ```
 
 The installer joins the panel, approves the machine's nginx, SSH, Suricata and database logs if it
-finds them, and starts the `cactai-agent` service. Within a minute the machine shows on
+finds them, and starts the `sentrai-agent` service. Within a minute the machine shows on
 **Machines** with the services running on it.
 
 ### On Windows
@@ -104,7 +104,7 @@ after a crash. Check it with `Get-Service SentrAIAgent`. Its output is in
 ### Blocks start as a dry run
 
 On a new machine the agent only **logs** the firewall command it would run for each block. Watch
-it for a while (`journalctl -u cactai-agent -f` on Linux, the log file above on Windows). When the
+it for a while (`journalctl -u sentrai-agent -f` on Linux, the log file above on Windows). When the
 commands look right, let it really change the firewall:
 
 ```bash
@@ -135,9 +135,9 @@ runs set: `--protect` adds to the addresses already kept, and enforcing stays on
 | `--no-start` | `-NoStart` | install the service without starting it |
 | `--prefix DIR` / `--user NAME` | `-Prefix DIR` | install somewhere else, or run as another account |
 
-On Linux the settings are in `/etc/cactai/agent.env` and the machine's key in
-`/var/lib/cactai/agent/`. After editing `agent.env` by hand, run
-`sudo systemctl restart cactai-agent`. On Windows, rerun the installer with the option you want to
+On Linux the settings are in `/etc/sentrai/agent.env` and the machine's key in
+`/var/lib/sentrai/agent/`. After editing `agent.env` by hand, run
+`sudo systemctl restart sentrai-agent`. On Windows, rerun the installer with the option you want to
 change; the others are kept.
 
 ### On a laptop, without a service
@@ -160,18 +160,18 @@ On Windows use `.\.venv\Scripts\python.exe` in place of `.venv/bin/python`.
 | See one machine's incidents | **Machines**, then **Look at one machine** |
 | Scan a machine for threats, or back it up | **Machines**, pick it, press **Scan for threats** or **Back up now** |
 | Remove a machine from the panel | **Machines**, **Joined machines**: pick it, tick **Yes, stop accepting its key**, press **Revoke** |
-| Remove the agent from a Linux machine | `sudo systemctl disable --now cactai-agent && sudo rm /etc/systemd/system/cactai-agent.service` |
+| Remove the agent from a Linux machine | `sudo systemctl disable --now sentrai-agent && sudo rm /etc/systemd/system/sentrai-agent.service` |
 | Remove the agent from a Windows machine | `powershell -ExecutionPolicy Bypass -File .\mvp\deploy\uninstall-agent.ps1` (add `-Purge` to delete its key too) |
 
 A revoked machine stops at once: its key no longer works. To bring it back, make a new join code
 and run the installer again with it.
 
 **Scans and backups** run on the machine itself, on folders set there and never by the panel. List
-them in that machine's `/etc/cactai/agent.env` and restart the agent:
+them in that machine's `/etc/sentrai/agent.env` and restart the agent:
 
 ```bash
-CACTAI_THREAT_PATHS=/var/www:/srv/minecraft/plugins
-CACTAI_BACKUP_PATHS=/srv/app/data
+SENTRAI_THREAT_PATHS=/var/www:/srv/minecraft/plugins
+SENTRAI_BACKUP_PATHS=/srv/app/data
 ```
 
 The agent picks a job up within about 15 seconds. Serious scan findings open an incident on that
@@ -179,12 +179,12 @@ machine, and backups stay on the machine.
 
 ## When the panel cannot be reached
 
-- Blocks already in place stay for 24 hours (`CACTAI_AGENT_OFFLINE_HOLD_H`) and are then removed,
+- Blocks already in place stay for 24 hours (`SENTRAI_AGENT_OFFLINE_HOLD_H`) and are then removed,
   so a lost panel never leaves a block in force forever.
 - Logs wait on the machine and reach the panel when it is back.
 - After 30 seconds the agent's own rules take over and block clear attacks (password guessing, SQL
   injection, port scans and the like) for an hour at a time, at most 10 new blocks an hour. Private
-  and protected addresses are never blocked. `CACTAI_AGENT_LOCAL_RULES=off` turns this off.
+  and protected addresses are never blocked. `SENTRAI_AGENT_LOCAL_RULES=off` turns this off.
 - When the panel answers again, it gets a report of every block made alone. **Machines** shows it
   under **Last time offline**.
 

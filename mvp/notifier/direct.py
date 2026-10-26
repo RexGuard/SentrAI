@@ -16,7 +16,7 @@ import logging
 from dataclasses import dataclass
 from typing import Callable
 
-log = logging.getLogger("cactai.notifier")
+log = logging.getLogger("sentrai.notifier")
 
 GROUP_MODES = ("fallback", "always", "off")
 

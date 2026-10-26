@@ -39,7 +39,7 @@ def boot(tmp_path):
     def _boot(cls=Saguaro, **kw):
         if cores:
             cores[-1].audit.close()  # the previous process "stops"
-        core = cls(Settings(db_path=tmp_path / "cactai.db", background=False, demo_speed=60.0), **kw)
+        core = cls(Settings(db_path=tmp_path / "sentrai.db", background=False, demo_speed=60.0), **kw)
         cores.append(core)
         return core
 

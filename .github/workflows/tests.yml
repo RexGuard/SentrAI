@@ -131,3 +131,13 @@ jobs:
 
       - name: Install, attack, block, uninstall
         run: sudo PYTHON=/usr/bin/python3 ../.github/scripts/linux-smoke.sh
+
+      # A server installed before the CactAI -> SentrAI rename, upgraded with today's install.sh.
+      - name: Upgrade from the CactAI names
+        env:
+          OLD_SHA: 3ed7261a9b519d391ac75f8aafcf1eb155996589  # main just before the rename
+          OLD: /tmp/sentrai-before-rename
+        run: |
+          git fetch -q --depth 1 origin "$OLD_SHA"
+          mkdir -p "$OLD" && git archive "$OLD_SHA" mvp | tar -C "$OLD" -xf -
+          sudo PYTHON=/usr/bin/python3 OLD="$OLD" ../.github/scripts/linux-upgrade-smoke.sh

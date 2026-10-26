@@ -25,7 +25,7 @@ def test_seal_links_each_event_and_resumes_from_a_checkpoint():
 
 
 def test_collector_seals_what_it_sends_and_saves_the_head_after_delivery(tmp_path, monkeypatch):
-    monkeypatch.setenv("CACTAI_COLLECTOR_STATE", str(tmp_path / "state.json"))
+    monkeypatch.setenv("SENTRAI_COLLECTOR_STATE", str(tmp_path / "state.json"))
     log = tmp_path / "app.log"
     log.write_text("one\n")
     src = collector.DiscoveredLogSource(log, "os")
@@ -53,7 +53,7 @@ def test_streaming_defaults():
 def test_an_agent_seals_events_under_the_name_it_joined_as(tmp_path, monkeypatch):
     # The panel stamps an agent's events with its joined name; sealing under any other name
     # (the demo logs' web-01, a syslog line's own host) would read as altered on the panel.
-    monkeypatch.setenv("CACTAI_COLLECTOR_STATE", str(tmp_path / "state.json"))
+    monkeypatch.setenv("SENTRAI_COLLECTOR_STATE", str(tmp_path / "state.json"))
     log = tmp_path / "app.log"
     log.write_text("Oct 26 10:00:00 other-name sshd[1]: Accepted publickey for deploy\n")
     col = collector.Collector("http://127.0.0.1:9", tmp_path, host="lab-portal",

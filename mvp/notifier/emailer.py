@@ -9,7 +9,7 @@ Telegram or the console as before):
   SMTP_PASSWORD        login password or app password  (never hardcode it)
   ALERT_EMAIL_FROM     sender address (default SMTP_USER)
   ALERT_EMAIL_TO       recipients, comma-separated
-  CACTAI_EMAIL_MODE    backup: only when Telegram fails (default) | always: next to Telegram
+  SENTRAI_EMAIL_MODE    backup: only when Telegram fails (default) | always: next to Telegram
 
 Email has no buttons, so each message points the operator to the dashboard to act.
 """
@@ -29,7 +29,7 @@ from typing import Callable
 from formatting import (BAND_COLORS, BAND_EMOJI, BRAND_BUTTON, BRAND_ON_DARK, BRAND_DARK, TAGLINE, alert_fields,
                         button_specs, is_notice, LINK_TEXT, notice_lines, risk_meter)
 
-log = logging.getLogger("cactai.notifier.email")
+log = logging.getLogger("sentrai.notifier.email")
 
 SECURITY = ("starttls", "ssl", "none")
 MODES = ("backup", "always")
@@ -61,9 +61,9 @@ class EmailConfig:
         if security not in SECURITY:
             log.warning("SMTP_SECURITY=%r is not one of %s; using starttls", security, "/".join(SECURITY))
             security = "starttls"
-        mode = e.get("CACTAI_EMAIL_MODE", "backup").strip().lower() or "backup"
+        mode = e.get("SENTRAI_EMAIL_MODE", "backup").strip().lower() or "backup"
         if mode not in MODES:
-            log.warning("CACTAI_EMAIL_MODE=%r is not one of %s; using backup", mode, "/".join(MODES))
+            log.warning("SENTRAI_EMAIL_MODE=%r is not one of %s; using backup", mode, "/".join(MODES))
             mode = "backup"
         try:
             port = int(e.get("SMTP_PORT", "").strip() or (465 if security == "ssl" else 587))
@@ -71,9 +71,9 @@ class EmailConfig:
             port = 465 if security == "ssl" else 587
         user = e.get("SMTP_USER", "").strip()
         return cls(host=host, port=port, security=security, user=user, password=e.get("SMTP_PASSWORD", ""),
-                   sender=e.get("ALERT_EMAIL_FROM", "").strip() or user or f"cactai@{host}",
+                   sender=e.get("ALERT_EMAIL_FROM", "").strip() or user or f"sentrai@{host}",
                    recipients=recipients, mode=mode,
-                   dashboard_url=e.get("CACTAI_DASHBOARD_URL", "").strip() or DEFAULT_DASHBOARD)
+                   dashboard_url=e.get("SENTRAI_DASHBOARD_URL", "").strip() or DEFAULT_DASHBOARD)
 
     def describe(self) -> str:
         return (f"{', '.join(self.recipients)} via {self.host}:{self.port} ({self.security}), "
@@ -207,7 +207,7 @@ def build_message(cfg: EmailConfig, notification: dict, incident: dict | None, r
     msg["Subject"] = subject
     msg["From"] = cfg.sender
     msg["To"] = ", ".join(recipients_for(cfg, notification))
-    msg["Message-ID"] = make_msgid(domain="cactai.local")
+    msg["Message-ID"] = make_msgid(domain="sentrai.local")
     msg.set_content(text)
     msg.add_alternative(html_body, subtype="html")
     return msg

@@ -1,22 +1,22 @@
 """SentrAI notifier: delivers core alerts to Telegram (or the console) and relays operator decisions.
 
 Env:
-  CACTAI_CORE_URL      core API base URL (default http://127.0.0.1:8000)
-  CACTAI_API_TOKEN     core API token (default: the one saved by the setup wizard)
+  SENTRAI_CORE_URL      core API base URL (default http://127.0.0.1:8000)
+  SENTRAI_API_TOKEN     core API token (default: the one saved by the setup wizard)
   TELEGRAM_BOT_TOKEN   bot token from @BotFather  (never hardcode it)
   TELEGRAM_CHAT_ID     group chat for alerts that are not for one person, and for people who have
                        not linked their own chat yet; its members may press buttons
   TELEGRAM_GROUP_COPY  fallback (default): the group gets an alert only when someone it is for has
                        no linked chat; always: the group gets a copy of every alert; off: never,
                        unless nobody could be reached directly (see direct.py)
-  CACTAI_OPERATOR      fallback operator name (default "operator")
+  SENTRAI_OPERATOR      fallback operator name (default "operator")
   NOTIFIER_POLL_SECONDS poll interval (default 2)
   NOTIFIER_WITNESS_FILE where the last delivered audit fingerprint is kept (default notifier/data/last_witness.txt)
   SMTP_HOST, ALERT_EMAIL_TO, ...  email backup channel, see emailer.py
   SLACK_WEBHOOK_URL    also post a copy of every alert to a Slack channel, see slack.py
 If TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is missing, runs in CONSOLE mode.
 Email is off until SMTP_HOST and ALERT_EMAIL_TO are set. Then it is sent when Telegram fails
-(CACTAI_EMAIL_MODE=backup, the default), next to every Telegram alert (always), and next to
+(SENTRAI_EMAIL_MODE=backup, the default), next to every Telegram alert (always), and next to
 the console in CONSOLE mode.
 
 Usage:  python notifier.py [--console] [--once] [--core URL]
@@ -48,7 +48,7 @@ from slack import slack_from_env, with_slack
 from formatting import (APPROVE, REJECT, ROLLBACK, TAKE, button_specs, format_console,
                         format_telegram, incident_id_of, parse_callback, witness_of)
 
-log = logging.getLogger("cactai.notifier")
+log = logging.getLogger("sentrai.notifier")
 
 DEFAULT_CORE = "http://127.0.0.1:8000"
 DEFAULT_WITNESS = Path(__file__).resolve().parent / "data" / "last_witness.txt"
@@ -471,11 +471,11 @@ def run_telegram(core: Core, token: str, chat_id: str, poll: float, fallback_ope
 
 def main(argv: list[str] | None = None) -> int:
     sys.path.append(str(Path(__file__).resolve().parents[1]))
-    import cactai_config
-    cactai_config.load()  # saved settings (bot token, chat id, operator) as env defaults
+    import sentrai_config
+    sentrai_config.load()  # saved settings (bot token, chat id, operator) as env defaults
 
     p = argparse.ArgumentParser(description="SentrAI notifier")
-    p.add_argument("--core", default=os.environ.get("CACTAI_CORE_URL", DEFAULT_CORE))
+    p.add_argument("--core", default=os.environ.get("SENTRAI_CORE_URL", DEFAULT_CORE))
     p.add_argument("--console", action="store_true", help="force console mode")
     p.add_argument("--once", action="store_true", help="console mode: deliver pending once and exit")
     p.add_argument("--poll", type=float, default=float(os.environ.get("NOTIFIER_POLL_SECONDS", "2")))
@@ -488,14 +488,14 @@ def main(argv: list[str] | None = None) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-    core = Core(args.core, token=cactai_config.api_token())
+    core = Core(args.core, token=sentrai_config.api_token())
     if args.verify is not None:
         ok, message = verify_witness(core, args.verify.strip() or WitnessStore().last())
         print(message)
         return 0 if ok else (1 if ok is False else 2)
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
     chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
-    operator = os.environ.get("CACTAI_OPERATOR", "operator")
+    operator = os.environ.get("SENTRAI_OPERATOR", "operator")
 
     try:
         if args.console or args.once or not (token and chat_id):

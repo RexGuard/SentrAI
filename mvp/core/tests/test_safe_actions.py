@@ -18,7 +18,7 @@ IP = "203.0.113.45"
 @pytest.fixture
 def make_client(tmp_path):
     def make(**kw):
-        s = Settings(db_path=tmp_path / "cactai.db", background=False, demo_speed=60.0, **kw)
+        s = Settings(db_path=tmp_path / "sentrai.db", background=False, demo_speed=60.0, **kw)
         app = create_app(s)
         c = TestClient(app, headers=AUTH)
         c.core = app.state.core  # type: ignore[attr-defined]

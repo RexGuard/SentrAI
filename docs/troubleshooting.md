@@ -47,7 +47,7 @@ to PATH** on the first screen of the installer. Close and reopen PowerShell afte
 
 Work through these in order:
 
-1. **Is it running?** On the server: `systemctl status cactai-dashboard`.
+1. **Is it running?** On the server: `systemctl status sentrai-dashboard`.
 2. **Is your IP allowed?** Your public IP may have changed. Check it, then
    `sudo ./deploy/install.sh --dashboard-allow <your IP>`.
 3. **Are you using https?** A server dashboard opened to other computers only answers on
@@ -65,8 +65,8 @@ also lets you in once without your phone. If no one else can sign in, reset from
 the new password is printed once:
 
 ```bash
-python cactai_config.py admin --reset     # laptop
-sudo cactai-admin --reset                  # server
+python sentrai_config.py admin --reset     # laptop
+sudo sentrai-admin --reset                  # server
 ```
 
 Add `--email you@example.com` for an account other than the first Owner.
@@ -79,7 +79,7 @@ try again, or reset the sign-in as above.
 ## No alerts arrive in Telegram
 
 Without a bot token, alerts go to the notifier's window (Windows) or `.run_logs/notifier.log`
-(Linux, macOS), or `journalctl -u cactai-notifier` on a server. Check the token and chat ID under
+(Linux, macOS), or `journalctl -u sentrai-notifier` on a server. Check the token and chat ID under
 **Configuration**, section **4. Notifications**, and make sure you sent your bot a message first.
 
 ## Nothing shows up on the dashboard
