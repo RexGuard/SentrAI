@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import html
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Iterable
 
 import pandas as pd
@@ -479,6 +479,69 @@ def machine(name: str, place: str, risk: Any = None, error: str | None = None) -
             "monitor_only": bool(risk.get("monitor_only"))}
 
 
+AGENT_STALE_S = 60.0  # an agent that has not called in for this long shows as offline
+
+
+def panel_machines(found: Iterable[dict], agents: Iterable[dict], risk: dict | None,
+                   now: datetime | None = None) -> list[dict]:
+    """The machine list on a central panel: every machine the core scores (GET /machines) plus joined
+    agents that have sent nothing yet, in the same shape as machine(), worst first."""
+    now = now or datetime.now(timezone.utc)
+    risk = risk or {}
+    threshold = float(risk.get("threshold") or 80)
+    live = {str(a.get("host")): a for a in agents or [] if isinstance(a, dict) and not a.get("revoked_at")}
+    rows, seen = [], set()
+    for m in found or []:
+        if not isinstance(m, dict) or not m.get("host"):
+            continue
+        host = str(m["host"])
+        seen.add(host)
+        agent = live.get(host)
+        last = parse_ts((agent or {}).get("last_seen") or m.get("last_seen"))
+        if last is not None and last.tzinfo is None:
+            last = last.astimezone(timezone.utc)  # a naive time is this computer's local time
+        stale = bool(agent) and (last is None or (now - last).total_seconds() > AGENT_STALE_S)
+        idx = m.get("risk_index")
+        rows.append({"name": host, "place": "Agent" if agent else "Seen in logs", "host": host,
+                     "online": not (m.get("silent") or stale),
+                     "index": None if idx is None else max(0.0, min(100.0, float(idx))),
+                     "band": m.get("band") or band_for(idx), "threshold": threshold,
+                     "monitor_only": bool(risk.get("monitor_only")),
+                     "open": int(m.get("open_incidents") or 0), "contained": int(m.get("contained_incidents") or 0),
+                     "blocked": int(m.get("blocked") or 0), "last_seen": last,
+                     "agent_id": (agent or {}).get("agent_id")})
+    for host, agent in live.items():
+        if host not in seen:
+            rows.append({"name": host, "place": "Agent", "host": host, "online": False, "waiting": True,
+                         "index": None, "band": "unknown", "threshold": threshold, "monitor_only": False,
+                         "open": 0, "contained": 0, "blocked": 0, "last_seen": None, "agent_id": agent.get("agent_id")})
+    rows.sort(key=lambda r: (-(r["index"] or 0), r["name"]))
+    return rows
+
+
+def agent_rows(agents: Iterable[dict]) -> pd.DataFrame:
+    """Joined machines for the Machines page table (revoked ones last)."""
+    rows = []
+    for a in agents or []:
+        if not isinstance(a, dict):
+            continue
+        rows.append({"Machine": a.get("host"), "Id": a.get("agent_id"), "Joined": short_time(a.get("joined_at")),
+                     "Invited by": a.get("invited_by") or "", "Last seen": short_time(a.get("last_seen")) or "never",
+                     "Status": f"Revoked by {a.get('revoked_by') or '?'}" if a.get("revoked_at") else "Active"})
+    rows.sort(key=lambda r: (r["Status"] != "Active", str(r["Machine"])))
+    return pd.DataFrame(rows, columns=["Machine", "Id", "Joined", "Invited by", "Last seen", "Status"])
+
+
+def join_commands(panel_url: str, code: str, name: str | None = None) -> dict[str, str]:
+    """What to paste on the new machine, for Linux (installer) and for Windows or a laptop (from a checkout)."""
+    url = panel_url.rstrip("/")
+    named = f" --name {name}" if name else ""
+    return {
+        "linux": f"sudo ./mvp/deploy/install-agent.sh --panel {url} --code {code}{named}",
+        "windows": f"cd mvp\\lab\npython -m agent join --panel {url} --code {code}{named}\npython -m agent run",
+    }
+
+
 def machine_rows_html(machines: list[dict]) -> str:
     """The machine list: one row per SentrAI program, like a game's server-status screen.
 
@@ -488,7 +551,11 @@ def machine_rows_html(machines: list[dict]) -> str:
     rows = []
     for m in machines:
         name, place = html.escape(str(m["name"])), html.escape(str(m["place"]))
-        if not m["online"]:
+        if m.get("waiting"):
+            icon, state, tone = "hourglass_empty", "Joined", UNKNOWN_COLOR
+            num, word, color, width = "-", "Waiting", UNKNOWN_COLOR, 0.0
+            place = f"{place} · waiting for its first data"
+        elif not m["online"]:
             icon, state, tone = "cancel", "Offline", BAND_COLORS["critical"]
             num, word, color, width = "0", "Offline", UNKNOWN_COLOR, 0.0
         else:
