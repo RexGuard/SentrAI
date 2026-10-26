@@ -58,19 +58,23 @@ Work through these in order:
    the dashboard refuses to run without `nft` or `iptables` rather than run open. Install one, or
    use `--dashboard-local` and an [SSH tunnel](server.html#keep-the-dashboard-on-the-server).
 
-## I forgot the dashboard password
+## I forgot the dashboard password, or lost my phone
 
-Make a new one; it is printed once:
+Ask an Owner or Admin to press **Reset sign-in** for you on the **Team** page. A recovery code
+also lets you in once without your phone. If no one else can sign in, reset from the machine;
+the new password is printed once:
 
 ```bash
 python cactai_config.py admin --reset     # laptop
 sudo cactai-admin --reset                  # server
 ```
 
+Add `--email you@example.com` for an account other than the first Owner.
+
 ## "Too many tries"
 
-After five wrong passwords from one address, that address waits five minutes. Wait, then try
-again, or reset the password as above.
+After five wrong passwords or codes from one address, that address waits five minutes. Wait, then
+try again, or reset the sign-in as above.
 
 ## No alerts arrive in Telegram
 

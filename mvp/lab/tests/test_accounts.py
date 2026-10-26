@@ -7,7 +7,7 @@ import os
 
 import pytest
 
-from target_app import paths  # noqa: F401 - puts mvp/ on sys.path
+from collector import paths  # noqa: F401 - puts mvp/ on sys.path
 
 import cactai_accounts as acc  # noqa: E402
 import cactai_config as cfg  # noqa: E402

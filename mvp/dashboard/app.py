@@ -1349,7 +1349,7 @@ def watch_suggestion(mid: Any, n: int, s: dict) -> None:
         st.markdown(f":material/lightbulb: **Suggested: {html.escape(label)}**")
         if s.get("reason"):
             st.caption(str(s["reason"]))
-        if st.button(f"Confirm: {label}", key=f"sugg_{mid}_{n}", type="primary, disabled=locked(), help=why_locked()):
+        if st.button(f"Confirm: {label}", key=f"sugg_{mid}_{n}", type="primary", disabled=locked(), help=why_locked()):
             run_action(label, lambda: client.watch_log(str(s.get("file_id")), st.session_state.operator), rerun=False)
             st.rerun()
 
@@ -1361,7 +1361,7 @@ def quarantine_suggestion(mid: Any, n: int, s: dict) -> None:
         st.markdown(f":material/lightbulb: **Suggested: {html.escape(label)}**")
         if s.get("reason"):
             st.caption(str(s["reason"]))
-        if st.button(f"Confirm: {label}", key=f"sugg_{mid}_{n}", type="primary, disabled=locked(), help=why_locked()):
+        if st.button(f"Confirm: {label}", key=f"sugg_{mid}_{n}", type="primary", disabled=locked(), help=why_locked()):
             run_action(label, lambda: client.quarantine(str(s.get("finding_id")), st.session_state.operator,
                                                         str(s.get("reason") or "")), rerun=False)
             st.rerun()
@@ -1373,7 +1373,7 @@ def backup_suggestion(mid: Any, n: int, s: dict) -> None:
         st.markdown(":material/lightbulb: **Suggested: Back up now**")
         if s.get("reason"):
             st.caption(str(s["reason"]))
-        if st.button("Confirm: Back up now", key=f"sugg_{mid}_{n}", type="primary, disabled=locked(), help=why_locked()):
+        if st.button("Confirm: Back up now", key=f"sugg_{mid}_{n}", type="primary", disabled=locked(), help=why_locked()):
             with st.spinner("Backing up…"):
                 run_action("Backup made", lambda: client.backup_now(st.session_state.operator), rerun=False)
             st.rerun()

@@ -127,6 +127,11 @@ def test_invite_link_lets_an_auditor_join_who_can_change_nothing(app, fake_core)
     app.session_state["page"] = "config"
     app.run()
     assert button(app, "Save settings").disabled
+    for page, label in (("backups", "Back up now"), ("collector", "Scan for threats")):
+        app.session_state["page"] = page
+        app.run()
+        assert not app.exception, app.exception
+        assert button(app, label).disabled, page  # greyed out with the reason, not a click that fails
 
 
 def test_team_page_makes_an_invite_link(app):
@@ -157,3 +162,13 @@ def test_an_auditor_client_refuses_changes_before_they_reach_the_core(fake_core)
     assert isinstance(ro.incidents(), list)  # reading works
     with pytest.raises(CoreError, match="Auditors"):
         ro.set_protection(False, "hozen@example.com")
+
+
+def test_an_auditor_may_still_check_that_a_backup_is_intact(fake_core):
+    ro = CoreClient(fake_core, read_only=True)
+    try:
+        ro.verify_backup("b1", "hozen@example.com")
+    except CoreError as exc:  # the fake core may not know the backup; what matters is it was asked
+        assert "Auditors" not in str(exc)
+    with pytest.raises(CoreError, match="Auditors"):
+        ro.join_code("hozen@example.com")
