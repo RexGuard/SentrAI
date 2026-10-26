@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import quote
 
 import requests
 
@@ -95,6 +96,22 @@ class CoreClient:
 
     def blocklist(self) -> dict:
         return self.get_json("/blocklist")
+
+    # ---- a central panel: machines that joined it (core fleet.py) ----
+    def machines(self) -> list[dict]:
+        return list(self.get_json("/machines") or [])
+
+    def machine_incidents(self, host: str) -> list[dict]:
+        return list(self.get_json(f"/incidents?host={quote(host, safe='')}") or [])
+
+    def fleet_agents(self) -> list[dict]:
+        return list(self.get_json("/fleet/agents") or [])
+
+    def join_code(self, operator: str, name: str | None = None) -> dict:
+        return self.post_json("/fleet/join-codes", {"operator": operator, "name": name or None})
+
+    def revoke_agent(self, agent_id: str, operator: str) -> dict:
+        return self.post_json(f"/fleet/agents/{quote(agent_id, safe='')}/revoke", {"operator": operator})
 
     def report_md(self, incident_id: str) -> str:
         return self.get_text(f"/reports/{incident_id}.md")
