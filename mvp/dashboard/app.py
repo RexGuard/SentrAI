@@ -2253,11 +2253,12 @@ def page_machines() -> None:
                 "scored and blocked on its own.", icon=":material/info:")
 
     with st.container(border=True):
-        title, plus = st.columns([12, 1], vertical_alignment="center")
+        title, plus = st.columns([9, 2], vertical_alignment="center")
         with title:
             section("Machine list", "worst first · click a machine for its details · SentrAI acts on a machine "
                     "when its own score passes the threshold", "dns")
-        if plus.button(":material/add:", key="add_toggle", help="Add a machine", width="stretch",
+        if plus.button("Add machine", icon=":material/add:", key="add_toggle", help="Show the join command for a new machine",
+                       width="stretch",
                        type="primary" if st.session_state.get("add_open") else "secondary"):
             st.session_state["add_open"] = not st.session_state.get("add_open")
             st.rerun(scope="fragment")
