@@ -909,6 +909,15 @@ def join_commands(panel_url: str, code: str, name: str | None = None, pin: str |
     }
 
 
+def newly_joined(agents: Iterable[dict], before: Iterable[str] | None) -> list[str]:
+    """Host names of machines that joined since a join code was made (``before``: the agent ids then)."""
+    if before is None:
+        return []
+    known = set(before)
+    return [str(a.get("host")) for a in agents or [] if isinstance(a, dict)
+            and a.get("agent_id") not in known and not a.get("revoked_at")]
+
+
 def seen_ago(ts: Any, now: datetime | None = None) -> str:
     """When a machine last called in, the way people say it: "just now", "40 s ago", "7 min ago", "never"."""
     ts = parse_ts(ts)

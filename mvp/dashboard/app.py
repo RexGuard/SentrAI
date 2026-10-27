@@ -2688,6 +2688,8 @@ def add_machine(panel: bool) -> None:
         if st.button("Make join code", icon=":material/key:", type="primary", key="join_make",
                      disabled=locked("configure"), help=why_locked("configure")):
             try:
+                before, _ = fetch("fleet", [])
+                st.session_state["join_before"] = {a.get("agent_id") for a in before or [] if isinstance(a, dict)}
                 st.session_state["join_made"] = client.join_code(st.session_state.operator, name.strip() or None)
             except CoreError as exc:
                 st.session_state["flash"] = (f"Could not make a join code: {exc}", WARN_ICON)
@@ -2734,6 +2736,15 @@ def page_machines() -> None:
         st.info("This core adds every machine into one score. To run it as a central panel, set "
                 "SENTRAI_RISK_SCOPE=host (and SENTRAI_FIREWALL=off) on it and restart the core: each machine is then "
                 "scored and blocked on its own.", icon=":material/info:")
+
+    joined = sh.newly_joined(fetch("fleet", [])[0] if panel else [], st.session_state.get("join_before"))
+    if st.session_state.get("join_made") and joined:
+        # The code was used: close the form, so it does not look like the machine still has to join.
+        for k in ("join_made", "join_before", "add_open"):
+            st.session_state.pop(k, None)
+        st.session_state["flash"] = (f"{', '.join(joined)} joined this panel. It shows below once its agent "
+                                     "calls in.", ":material/check_circle:")
+        st.rerun(scope="fragment")
 
     with card():
         title, plus = st.columns([9, 2], vertical_alignment="center")

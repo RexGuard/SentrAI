@@ -429,6 +429,14 @@ def test_agent_rows_and_join_commands():
     assert off["Last time offline"][0].startswith("2 local blocks")
 
 
+def test_newly_joined_closes_the_join_form():
+    agents = [{"agent_id": "a", "host": "web-01"}, {"agent_id": "b", "host": "homelab-01"},
+              {"agent_id": "c", "host": "old", "revoked_at": "x"}]
+    assert sh.newly_joined(agents, {"a"}) == ["homelab-01"]
+    assert sh.newly_joined(agents, {"a", "b"}) == []
+    assert sh.newly_joined(agents, None) == []  # no join code made in this session
+
+
 def test_services_on_a_machine():
     svcs = [{"name": "sshd", "port": 22, "proto": "tcp", "process": "sshd", "open_incidents": 0},
             {"name": "nginx", "port": 443, "proto": "tcp", "process": "nginx", "open_incidents": 2},
