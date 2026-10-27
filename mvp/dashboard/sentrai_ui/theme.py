@@ -66,6 +66,22 @@ def font_css() -> str:
     return "".join(rules)
 
 
+# Icons: Lucide, bundled in sentrai_ui/icons as a font that answers to Streamlit's own icon-font name,
+# so `icon=":material/…:"` widgets and the console's <span class="mi"> draw the same set (icons/README.md).
+ICON_FONT = "Material Symbols Rounded"
+
+
+@lru_cache(maxsize=1)
+def icon_css() -> str:
+    """@font-face for the bundled icon font, inlined; empty when it is missing (Streamlit's own icons show then)."""
+    f = Path(__file__).parent / "icons" / "sentrai-icons.woff2"
+    if not f.exists():
+        return ""
+    data = base64.b64encode(f.read_bytes()).decode("ascii")
+    return (f"@font-face{{font-family:'{ICON_FONT}';font-style:normal;font-weight:400;font-display:block;"
+            f"src:url(data:font/woff2;base64,{data}) format('woff2');}}")
+
+
 # Preset accents. Mono uses the theme's own ink (white on Black, black on White).
 # Violet is the logo's colour. No greens, ambers or reds: those mean risk.
 ACCENTS = {

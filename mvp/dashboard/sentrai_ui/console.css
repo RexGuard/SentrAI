@@ -14,7 +14,8 @@ h1, h2, h3, .page-title h1 { text-wrap: balance; }
 .block-container { padding-top: 1.6rem; padding-bottom: 3rem; max-width: 1480px; }
 header[data-testid="stHeader"] { background: transparent; }
 
-/* Material Symbols ship with Streamlit, so icons work offline. */
+/* Icons: Lucide, bundled in sentrai_ui/icons as a font under Streamlit's icon-font name (theme.icon_css),
+   so the :material/…: widget icons and these spans draw the same set, offline. */
 .mi { font-family: "Material Symbols Rounded"; font-weight: normal; font-style: normal; font-size: 1.15em;
       line-height: 1; letter-spacing: normal; text-transform: none; display: inline-block; white-space: nowrap;
       -webkit-font-feature-settings: "liga"; font-feature-settings: "liga"; vertical-align: -.18em; }
@@ -113,8 +114,7 @@ div[class*="st-key-mrow-"] .stButton button { opacity: 0; cursor: pointer; }
 div[class*="st-key-mrow-"]:hover li.machine.clickable { background: var(--surface-3); }
 div[class*="st-key-mrow-"]:hover li.machine.clickable .m-bar { background: var(--line); }
 div[class*="st-key-mrow-"]:has(button:focus-visible) li.machine.clickable { outline: 2px solid var(--brand); outline-offset: 2px; }
-.m-icon { font-size: 1.9rem; font-variation-settings: "FILL" 1; padding-right: 1rem; border-right: 1px solid var(--line);
-          vertical-align: 0; }
+.m-icon { font-size: 1.9rem; padding-right: 1rem; border-right: 1px solid var(--line); vertical-align: 0; }
 .m-main { display: flex; flex-direction: column; gap: .3rem; min-width: 0; }
 .m-name { color: var(--ink); font-weight: 600; font-size: 1.05rem; line-height: 1.2; overflow-wrap: anywhere; }
 .m-sub { display: flex; align-items: center; gap: .6rem; color: var(--ink-soft); font-size: .85rem; flex-wrap: wrap; }

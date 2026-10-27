@@ -65,7 +65,7 @@ PAGE_ICON = str(_FAVICON) if _FAVICON.exists() else "🛡️"
 st.set_page_config(page_title="SentrAI · Risk Console", page_icon=PAGE_ICON, layout="wide",
                    initial_sidebar_state="auto")  # collapsed on a phone, so the page shows first
 CSS = (Path(__file__).parent / "sentrai_ui" / "console.css").read_text(encoding="utf-8")
-st.markdown(f"<style>{th.font_css()}{th.css(THEME, ACCENT)}{CSS}</style>", unsafe_allow_html=True)
+st.markdown(f"<style>{th.font_css()}{th.icon_css()}{th.css(THEME, ACCENT)}{CSS}</style>", unsafe_allow_html=True)
 
 
 def _apply_streamlit_theme() -> bool:
@@ -203,7 +203,8 @@ def _signed_in(email: str, note: str = "") -> None:
     for key in ("pending", "totp_secret", "recovery_codes"):
         st.session_state.pop(key, None)
     st.session_state.signed_in = email
-    st.session_state.flash = (note or f"Last sign-in: {_when(before)}" + (f" from {where}" if where else ""), "🔐")
+    st.session_state.flash = (note or f"Last sign-in: {_when(before)}" + (f" from {where}" if where else ""),
+                              ":material/lock:")
     st.query_params.clear()
     st.rerun()
 
@@ -416,8 +417,8 @@ def why_locked(permission: str = "act", otherwise: str | None = None) -> str | N
 # ------------------------------------------------------------------ helpers
 
 def icon(name: str) -> str:
-    """A Material Symbols icon (the font ships with Streamlit, so it works offline)."""
-    return f'<span class="mi">{name}</span>'
+    """An icon from the bundled Lucide set, by the name sentrai_ui/icons/icons.json lists (works offline)."""
+    return f'<span class="mi" aria-hidden="true">{name}</span>'
 
 
 def pill(text: str, color: str, pulse: bool = False) -> str:
@@ -2754,7 +2755,7 @@ def page_team() -> None:
             try:
                 if b1.button("Change role", width="stretch", disabled=role == person["role"]):
                     acc.set_role(ME["email"], who, role)
-                    st.session_state.flash = (f"{who} is now {acc.ROLE_LABEL[role]}", "✅")
+                    st.session_state.flash = (f"{who} is now {acc.ROLE_LABEL[role]}", OK_ICON)
                     st.rerun()
                 if b2.button("Reset sign-in", width="stretch",
                              help="Forgot the password or lost the phone: their old password stops working "
@@ -2765,7 +2766,7 @@ def page_team() -> None:
                 sure = b3.checkbox("I'm sure", key="team_sure")
                 if b3.button("Remove", width="stretch", disabled=not sure):
                     acc.remove(ME["email"], who)
-                    st.session_state.flash = (f"{who} can no longer sign in", "✅")
+                    st.session_state.flash = (f"{who} can no longer sign in", OK_ICON)
                     st.rerun()
             except acc.AccountError as e:
                 st.error(str(e))
