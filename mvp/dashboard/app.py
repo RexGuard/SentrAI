@@ -203,8 +203,7 @@ def _signed_in(email: str, note: str = "") -> None:
     for key in ("pending", "totp_secret", "recovery_codes"):
         st.session_state.pop(key, None)
     st.session_state.signed_in = email
-    st.session_state.flash = (note or f"Last sign-in: {_when(before)}" + (f" from {where}" if where else ""),
-                              ":material/lock:")
+    st.session_state.flash = (note or f"Last sign-in: {_when(before)}" + (f" from {where}" if where else ""), "🔐")
     st.query_params.clear()
     st.rerun()
 
