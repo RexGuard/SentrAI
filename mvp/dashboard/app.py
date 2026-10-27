@@ -403,7 +403,9 @@ def login() -> dict | None:
 
 
 ME = login()
-ROLE = ME["role"] if ME else "owner"  # sign-in off: a local demo console, so everything is allowed
+# Sign-in off: a local demo console, so everything is allowed, unless SENTRAI_DASHBOARD_ROLE=auditor (or admin)
+# asks to see the console as that role, for checks and screenshots.
+ROLE = ME["role"] if ME else (os.environ.get("SENTRAI_DASHBOARD_ROLE", "").strip().lower() or "owner")
 
 
 def can(permission: str) -> bool:
