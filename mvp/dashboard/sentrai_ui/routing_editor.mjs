@@ -1014,15 +1014,16 @@ class Editor {
     const told = r.notify.filter((x) => findPerson(d, x)).map((x) => nameOf(d, x));
     const note = !owner ? "needs an owner" : unreachable ? "never reached" : "";
     el.classList.toggle("dim", unreachable && !bad);
-    el.setAttribute("aria-label", `Rule ${i + 1}, ${r.name.trim() || "no name"}: ${when ? `when ${when}` : "catches everything"}. `
+    el.setAttribute("aria-label", `Rule ${(this.data.numbers || [])[i] || i + 1}, ${r.name.trim() || "no name"}: ${when ? `when ${when}` : "catches everything"}. `
       + `${owner ? `${owner} owns it` : "No owner yet"}${told.length ? `; also tells ${told.join(", ")}` : ""}.`
       + `${unreachable ? " Never reached: a rule above it catches everything." : ""}`);
-    const sig = JSON.stringify([i, r.name, when, note, this.readOnly]);
+    const num = (this.data.numbers || [])[i] || i + 1; // a person's own part keeps each rule's place in the full list
+    const sig = JSON.stringify([num, r.name, when, note, this.readOnly]);
     if (el.dataset.sig === sig) return;
     el.dataset.sig = sig;
     el.title = brief !== when ? `When ${when}` : "";
     el.replaceChildren(
-      h("span", { class: "re-num", "aria-hidden": "true" }, String(i + 1)),
+      h("span", { class: "re-num", "aria-hidden": "true" }, String(num)),
       h("div", { class: "re-main" },
         h("span", { class: "re-name" }, r.name.trim() || "No name"),
         h("span", { class: "re-when" }, brief || "catches everything"),
@@ -1039,9 +1040,11 @@ class Editor {
     const role = c.role.replace(/_/g, " ");
     const linked = !!(this.data.linked || {})[c.id];
     const used = d.rules.some((r) => r.owner === c.id || r.notify.includes(c.id)) || d.contacts.some((x) => x.backup === c.id);
-    const bits = [role && role.toLowerCase() !== c.name.trim().toLowerCase() ? role : "", linked ? "own Telegram chat" : "",
-      !used && !c.backup ? "in no rule yet" : ""].filter(Boolean);
+    const you = !!this.data.focus && this.data.focus === c.id;
+    const bits = [you ? "you" : "", role && role.toLowerCase() !== c.name.trim().toLowerCase() ? role : "",
+      linked ? "own Telegram chat" : "", !used && !c.backup ? "in no rule yet" : ""].filter(Boolean);
     el.classList.toggle("loose", !used && !c.backup);
+    el.classList.toggle("you", you);
     const owns = d.rules.map((r, i) => (r.owner === c.id ? ruleName(d, i) : "")).filter(Boolean);
     el.setAttribute("aria-label", `${c.name.trim() || "Person with no name"}${bits.length ? `, ${bits.join(", ")}` : ""}. `
       + `${owns.length ? `Owns ${owns.join(", ")}. ` : ""}Backup: ${c.backup ? nameOf(d, c.backup) : "nobody"}.`);

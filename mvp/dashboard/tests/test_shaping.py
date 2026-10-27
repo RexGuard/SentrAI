@@ -266,7 +266,7 @@ def test_routing_editor_data_is_what_the_map_draws():
     sent = copy.deepcopy(result)
     data = sh.routing_editor_data(ROUTING_MAP, read_only=True, lock_reason="Auditors look only.", result=result)
     assert set(data) == {"routing", "version", "linked", "categories", "severities", "roles", "read_only",
-                         "lock_reason", "result"}
+                         "lock_reason", "result", "focus", "numbers"}
     routing = data["routing"]
     assert list(routing) == ["contacts", "rules", "follow_up", "layout"]
     assert routing["contacts"] == [  # a list, in file order, each person with their id
@@ -519,3 +519,37 @@ def test_actions_read_in_plain_words():
     assert list(df["Status"]) == ["Rolled back", "-"]
     rows = sh.build_containment_rows({"ips": ["1.2.3.4"], "users": ["bob"]}, [])
     assert list(rows["Action"]) == ["Block IP", "Lock account"] and list(rows["Mode"]) == ["-", "-"]
+
+
+# ------------------------------------------------- each person's own part of "Who gets what"
+
+def test_find_person_matches_the_sign_in_email_first_then_the_name():
+    routing = {"contacts": [{"id": "a", "name": "Amir", "email": "Amir@Example.com"}, {"id": "b", "name": "Lee"}]}
+    assert sh.find_person(routing, "amir@example.com", "Lee")["id"] == "a"
+    assert sh.find_person(routing, "nobody@example.com", "@lee")["id"] == "b"
+    assert sh.find_person(routing, "", "") is None
+    assert sh.find_person(None, "amir@example.com") is None
+
+
+def test_my_part_lists_rules_backups_and_the_incidents_that_reach_a_person():
+    incidents = [{"id": "1", "owner": "Lee"}, {"id": "2", "owner": "Amir", "backup": "Lee"},
+                 {"id": "3", "owner": "Amir", "notify": ["Lee", "Ika"]}, {"id": "4", "owner": "Ika"}]
+    part = sh.my_part(ROUTING_MAP, "b", incidents)
+    assert [r["name"] for _, r in part["owns"]] == ["Everything else"]
+    assert [(i, r["name"]) for i, r in part["told"]] == [(0, "Inside")]
+    assert part["backup"]["name"] == "Ika" and [c["name"] for c in part["covers"]] == ["Amir"]
+    assert [[i["id"] for i in part[k]] for k in ("mine", "backing", "heard")] == [["1"], ["2"], ["3"]]
+
+
+def test_my_routing_cuts_the_map_down_to_one_person_and_keeps_rule_numbers_and_places():
+    cut = sh.my_routing(ROUTING_MAP, "c")  # Ika: told about rule 1, backs up Lee
+    assert [r["name"] for r in cut["rules"]] == ["Inside"] and cut["numbers"] == [1]
+    assert {c["id"] for c in cut["contacts"]} == {"a", "b", "c"}
+    amir = sh.my_routing(ROUTING_MAP, "a")  # owns Inside, which also tells Lee and Ika: only Lee (his backup) stays
+    assert {c["id"] for c in amir["contacts"]} == {"a", "b"} and amir["rules"][0]["notify"] == ["b"]
+    assert cut["layout"]["rules"] == [[210, 0]] and cut["layout"]["contacts"] == {"a": [620, 40]}
+    lone = sh.my_routing({**ROUTING_MAP, "contacts": ROUTING_MAP["contacts"] + [
+        {"id": "d", "name": "Dee", "backup": "a"}]}, "d")  # in no rule; their backup stays, Amir's does not
+    assert lone["rules"] == [] and {c["id"]: c["backup"] for c in lone["contacts"]} == {"a": "", "d": "a"}
+    data = sh.routing_editor_data(cut, read_only=True, focus="c")
+    assert data["focus"] == "c" and data["numbers"] == [1] and data["read_only"]

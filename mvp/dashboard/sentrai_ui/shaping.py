@@ -1175,7 +1175,7 @@ def routing_version(routing: dict | None) -> str:
 
 
 def routing_editor_data(routing: dict | None, read_only: bool = False, lock_reason: str = "",
-                        result: dict | None = None) -> dict:
+                        result: dict | None = None, focus: str = "") -> dict:
     """What the "Who gets what" editor draws: the routing (people in file order), the choices its panel
     offers, whether this person may change anything, and how their last save went."""
     routing = routing or {}
@@ -1191,6 +1191,8 @@ def routing_editor_data(routing: dict | None, read_only: bool = False, lock_reas
         "read_only": bool(read_only),
         "lock_reason": lock_reason,
         "result": result,
+        "focus": focus,  # a person to mark "you" (a person's own part of the map)
+        "numbers": list(routing.get("numbers") or []),  # each rule's place in the full list, when cut down
     }
 
 
@@ -1218,6 +1220,74 @@ def routing_from_editor(routing: Any) -> dict:
     if isinstance(routing.get("layout"), dict):
         out["layout"] = routing["layout"]
     return out
+
+
+# ------------------------------------------------- each person's own part of "Who gets what"
+
+def _same(a: Any, b: Any) -> bool:
+    a, b = str(a or "").strip().lower().lstrip("@"), str(b or "").strip().lower().lstrip("@")
+    return bool(a) and a == b
+
+
+def find_person(routing: dict | None, email: str = "", name: str = "") -> dict | None:
+    """The person in "Who gets what" a signed-in account is: same email first, else the same name."""
+    contacts = (routing or {}).get("contacts") or []
+    return (next((c for c in contacts if email and _same(c.get("email"), email)), None)
+            or next((c for c in contacts if name and _same(c.get("name"), name)), None))
+
+
+def my_part(routing: dict | None, cid: str, incidents: Iterable[dict] = ()) -> dict:
+    """What one person does in "Who gets what": the rules they own or hear about, who backs them up,
+    whom they back up, and the incidents that reach them (owned, backing up, or told once)."""
+    routing = routing or {}
+    contacts = {str(c.get("id")): c for c in routing.get("contacts") or [] if c.get("id")}
+    me = contacts.get(cid) or {}
+    name = str(me.get("name") or "")
+    rules = list(routing.get("rules") or [])
+    owns = [(i, r) for i, r in enumerate(rules) if r.get("owner") == cid]
+    told = [(i, r) for i, r in enumerate(rules) if r.get("owner") != cid and cid in (r.get("notify") or [])]
+    backup = contacts.get(str(me.get("backup") or ""))
+    covers = [c for c in contacts.values() if c.get("backup") == cid and str(c.get("id")) != cid]
+    mine, backing, heard = [], [], []
+    for inc in incidents or []:
+        if _same(inc.get("owner"), name):
+            mine.append(inc)
+        elif _same(inc.get("backup"), name):
+            backing.append(inc)
+        elif any(_same(n, name) for n in inc.get("notify") or []):
+            heard.append(inc)
+    return {"person": me, "owns": owns, "told": told, "backup": backup, "covers": covers,
+            "mine": mine, "backing": backing, "heard": heard}
+
+
+def my_routing(routing: dict | None, cid: str) -> dict:
+    """The same routing cut down to one person's part, to draw read-only: the rules that reach them and
+    who owns each, their backup and the people they back up (others those rules tell are left out). Boxes keep the places
+    they have on the whole map, and ``numbers`` keeps each rule's place in the full list."""
+    routing = routing or {}
+    part = my_part(routing, cid)
+    picked = sorted(part["owns"] + part["told"], key=lambda x: x[0])
+    keep = {cid} | {str(c.get("id")) for c in part["covers"]}
+    if part["backup"]:
+        keep.add(str(part["backup"].get("id")))
+    keep.update(str(r.get("owner")) for _, r in picked)
+    contacts = []
+    for c in routing.get("contacts") or []:
+        if str(c.get("id")) in keep:
+            c = dict(c)
+            if c.get("backup") not in keep:  # drawn only between people on this map
+                c["backup"] = ""
+            contacts.append(c)
+    layout = routing.get("layout") or {}
+    spots = layout.get("rules") or []
+    cut = {k: v for k, v in layout.items() if k in ("incident",)}
+    if spots:
+        cut["rules"] = [spots[i] if i < len(spots) else None for i, _ in picked]
+    if layout.get("contacts"):
+        cut["contacts"] = {k: v for k, v in layout["contacts"].items() if k in keep}
+    rules = [{**r, "notify": [x for x in r.get("notify") or [] if x in keep]} for _, r in picked]
+    return {**routing, "contacts": contacts, "rules": rules, "layout": cut,
+            "numbers": [i + 1 for i, _ in picked]}
 
 
 def approvals_headline(waiting: list[dict], now: datetime | None = None) -> str:

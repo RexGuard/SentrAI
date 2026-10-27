@@ -808,12 +808,13 @@ def incident_summary(inc: dict) -> None:
     st.write("")
 
 
-def decision_controls(inc: dict) -> None:
+def decision_controls(inc: dict, where: str = "") -> None:
     """Approve / reject an open incident, or keep / roll back a contained one."""
     if locked():
         st.caption(f":material/visibility: {READ_ONLY_MESSAGE}")
         return
     inc_id = str(inc.get("id"))
+    kid = f"{where}{inc_id}"  # the same incident can be open in two places on a page
     op = st.session_state.operator
     can = sh.available_actions(inc)
 
@@ -827,11 +828,11 @@ def decision_controls(inc: dict) -> None:
         return _run
 
     if can["decide"]:
-        if can["ack"] and st.button("Acknowledge", icon=":material/visibility:", key=f"ack_{inc_id}",
+        if can["ack"] and st.button("Acknowledge", icon=":material/visibility:", key=f"ack_{kid}",
                                     help="Records that you have seen this alert (POST /ack)"):
             run_action(f"Acknowledged {inc_id}", lambda: client.ack(inc_id, op))
-        with st.form(key=f"decide_{inc_id}", clear_on_submit=True, border=True):
-            just = st.text_area("Justification (required to reject, written to the audit log)", key=f"just_{inc_id}",
+        with st.form(key=f"decide_{kid}", clear_on_submit=True, border=True):
+            just = st.text_area("Justification (required to reject, written to the audit log)", key=f"just_{kid}",
                                 height=80, placeholder="e.g. False positive: this IP is our penetration tester")
             c1, c2 = st.columns(2)
             off = protection_off()
@@ -847,10 +848,10 @@ def decision_controls(inc: dict) -> None:
             else:
                 run_action(f"Rejected {inc_id}", ack_then("reject", just.strip()))
     elif can["contain_controls"]:
-        with st.form(key=f"contain_{inc_id}", clear_on_submit=True, border=True):
-            just = st.text_area("Justification (written to the audit log)", key=f"cjust_{inc_id}", height=70,
+        with st.form(key=f"contain_{kid}", clear_on_submit=True, border=True):
+            just = st.text_area("Justification (written to the audit log)", key=f"cjust_{kid}", height=70,
                                 placeholder="e.g. Verified attacker; keep the block")
-            sure = st.checkbox("Keep this block forever. It will no longer expire on its own.", key=f"sure_{inc_id}")
+            sure = st.checkbox("Keep this block forever. It will no longer expire on its own.", key=f"sure_{kid}")
             c1, c2 = st.columns(2)
             # Rollback is the safe default, so it gets the filled style; the permanent choice needs the tick above.
             rb = c1.form_submit_button("Roll back", icon=":material/undo:", type="primary", width="stretch")
@@ -1595,9 +1596,10 @@ def staff_report_detail(r: dict) -> None:
         st.rerun()
 
 
-def owner_controls(inc: dict, contacts: list[dict]) -> None:
+def owner_controls(inc: dict, contacts: list[dict], where: str = "") -> None:
     """Who has the incident, its hand-over history, and the Assign / Mark resolved forms."""
     inc_id, op = str(inc.get("id")), st.session_state.operator
+    kid = f"{where}{inc_id}"  # the same incident can be open in two places on a page
     owner, backup = inc.get("owner") or "Nobody yet", inc.get("backup")
     level = int(inc.get("escalation_level") or 0)
     st.markdown(
@@ -1616,15 +1618,15 @@ def owner_controls(inc: dict, contacts: list[dict]) -> None:
         return
     names = [str(c.get("name")) for c in contacts if c.get("name")]
     a, b = st.columns(2)
-    with a, st.form(key=f"assign_{inc_id}", clear_on_submit=True, border=True):
+    with a, st.form(key=f"assign_{kid}", clear_on_submit=True, border=True):
         me, other = f"Me ({op})", "Someone else"
-        choice = st.selectbox("Give it to", [me, *[n for n in names if n != owner], other], key=f"to_{inc_id}")
-        typed = st.text_input("Name, if someone else", key=f"toname_{inc_id}")
-        note = st.text_input("Note (optional)", key=f"tonote_{inc_id}", placeholder="e.g. You know this server best")
+        choice = st.selectbox("Give it to", [me, *[n for n in names if n != owner], other], key=f"to_{kid}")
+        typed = st.text_input("Name, if someone else", key=f"toname_{kid}")
+        note = st.text_input("Note (optional)", key=f"tonote_{kid}", placeholder="e.g. You know this server best")
         go_assign = st.form_submit_button("Assign", icon=":material/person_add:", width="stretch",
                                           disabled=locked(), help=why_locked())
-    with b, st.form(key=f"resolve_{inc_id}", clear_on_submit=True, border=True):
-        done = st.text_area("What was done (required, written to the audit log)", key=f"done_{inc_id}", height=108,
+    with b, st.form(key=f"resolve_{kid}", clear_on_submit=True, border=True):
+        done = st.text_area("What was done (required, written to the audit log)", key=f"done_{kid}", height=108,
                             placeholder="e.g. Password reset for admin, attacker IP blocked at the router")
         go_resolve = st.form_submit_button("Mark resolved", icon=":material/task_alt:", type="primary", width="stretch",
                                            disabled=locked(), help=why_locked())
@@ -1641,11 +1643,11 @@ def owner_controls(inc: dict, contacts: list[dict]) -> None:
             run_action(f"Resolved {inc_id}", lambda: client.resolve(inc_id, op, done.strip()))
 
 
-def incident_card(inc: dict, contacts: list[dict]) -> None:
+def incident_card(inc: dict, contacts: list[dict], where: str = "") -> None:
     incident_summary(inc)
-    owner_controls(inc, contacts)
+    owner_controls(inc, contacts, where)
     if sh.available_actions(inc)["decide"] or sh.available_actions(inc)["contain_controls"]:
-        decision_controls(inc)
+        decision_controls(inc, where)
 
 
 @st.fragment(run_every=AUTO)
@@ -1659,7 +1661,8 @@ def page_incidents() -> None:
     incidents = incidents or []
     routing, rerr = safe(client.routing, {})
     contacts = (routing or {}).get("contacts") or []
-    me = st.session_state.operator
+    person = sh.find_person(routing, (ME or {}).get("email", ""), st.session_state.operator)
+    me = str(person.get("name")) if person else st.session_state.operator
     c = sh.board_counts(incidents, me)
     stats(("Open", str(c["open"]), "not resolved yet"),
           ("Needs attention", str(c["attention"]), f"{c['unassigned']} with no owner",
@@ -1671,13 +1674,16 @@ def page_incidents() -> None:
           ("Yours", str(c["mine"]), f"owned by {me}"))
 
     with st.container(border=True):
+        my_part_section(routing, incidents, contacts, person, rerr)
+
+    with st.container(border=True):
         section("Needs attention", "most urgent first", "notification_important")
         todo = sh.needs_attention(incidents)
         if not todo:
             empty("Nothing needs a person right now. Every open incident is in hand.", "check_circle", good=True)
         for inc in todo:
             note = f"{inc.get('owner') or 'no owner'} · {'; '.join(sh.attention(inc))}"
-            incident_row(inc, "todo", note, lambda inc=inc: incident_card(inc, contacts))
+            incident_row(inc, "todo", note, lambda inc=inc: incident_card(inc, contacts, "todo_"))
 
     with st.container(border=True):
         section("All incidents", "owner, backup and what each one still needs", "assignment_ind")
@@ -1694,24 +1700,91 @@ def page_incidents() -> None:
                 with st.container(border=True):
                     incident_card(inc, contacts)
 
-    with st.container(border=True):
-        section("Who gets what", "routing rules: the first match owns the incident", "alt_route")
-        if rerr and not st.session_state.get("rt_last"):
-            st.caption(f"Could not load the routing rules: {rerr}")
-        else:
-            if rerr:  # a blip in the core must not throw away what someone is half-way through changing
-                routing = st.session_state["rt_last"]
-                st.caption(f"Could not reach the core ({rerr}). Showing the last copy; saving works again "
-                           "once it is back.")
-            st.session_state["rt_last"] = routing
-            st.caption(f"From {routing.get('source')}. Unanswered alerts go to the owner's backup after "
-                       f"{(routing.get('follow_up') or {}).get('escalate_after_reminders', '?')} reminders.")
-            routing_editor(routing)
-            with st.expander("The same as tables"):
-                table(sh.routing_rows(routing), "", )
-                table(sh.contact_rows(routing), "")
-            if any("telegram_linked" in c for c in contacts):  # the core says so only while Telegram is added
-                telegram_links(contacts)
+    if can("configure"):  # Owners and Admins change the whole map; everyone else has their own part above
+        with st.container(border=True):
+            section("Who gets what", "routing rules: the first match owns the incident", "alt_route")
+            whole_team_map(routing, contacts, rerr)
+    else:
+        with st.container(border=True):
+            section("The whole team", "everyone's part, to look at", "alt_route")
+            if st.toggle("Show the whole team's map", key="whole_map"):
+                whole_team_map(routing, contacts, rerr)
+
+
+def whole_team_map(routing: dict, contacts: list[dict], rerr: str | None) -> None:
+    if rerr and not st.session_state.get("rt_last"):
+        st.caption(f"Could not load the routing rules: {rerr}")
+    else:
+        if rerr:  # a blip in the core must not throw away what someone is half-way through changing
+            routing = st.session_state["rt_last"]
+            st.caption(f"Could not reach the core ({rerr}). Showing the last copy; saving works again "
+                       "once it is back.")
+        st.session_state["rt_last"] = routing
+        st.caption(f"From {routing.get('source')}. Unanswered alerts go to the owner's backup after "
+                   f"{(routing.get('follow_up') or {}).get('escalate_after_reminders', '?')} reminders.")
+        routing_editor(routing)
+        with st.expander("The same as tables"):
+            table(sh.routing_rows(routing), "", )
+            table(sh.contact_rows(routing), "")
+        if any("telegram_linked" in c for c in contacts):  # the core says so only while Telegram is added
+            telegram_links(contacts)
+
+
+def my_part_section(routing: dict, incidents: list[dict], contacts: list[dict], person: dict | None,
+                    rerr: str | None) -> None:
+    """Your part of "Who gets what": the incidents that reach you, the rules that send them, who takes
+    over when you don't answer, and your corner of the map. Owners and Admins can look as anyone."""
+    section("Your part", "what reaches you, and who covers for you", "person")
+    if rerr or not contacts:
+        st.caption(f"Could not load who gets what: {rerr}" if rerr else "Nobody is in who gets what yet.")
+        return
+    names = [str(c.get("name")) for c in contacts if c.get("name")]
+    if can("configure"):
+        mine = str(person.get("name")) if person else ""
+        me_label = f"Me ({mine})" if mine else "Me"
+        pick = st.selectbox("See it as", [me_label, *[n for n in names if n != mine]], key="part_as",
+                            help="Each person sees this part when they sign in. Pick someone to see what they see.")
+        if pick != me_label:
+            person = next((c for c in contacts if c.get("name") == pick), person)
+    if person is None:
+        email = f"**{ME['email']}**" if ME else "your sign-in email"
+        st.info(f"You are not one of the people in who gets what yet, so no incidents come to you by name. "
+                f"{'Click a person on the map below and put' if can('configure') else 'Ask an Owner or Admin to put'} "
+                f"{email} as their email to make it you.", icon=":material/link_off:")
+        return
+    cid, name = str(person.get("id")), str(person.get("name"))
+    part = sh.my_part(routing, cid, incidents)
+    open_ = lambda incs: [i for i in incs if i.get("status") in sh.OPEN_STATUSES]  # noqa: E731
+    owned, backing, heard = open_(part["mine"]), open_(part["backing"]), open_(part["heard"])
+    backup = part["backup"]
+    stats(("Yours to handle", str(len(owned)), f"open, owned by {name}",
+           sh.BAND_COLORS["amber"] if owned else None),
+          ("Backing up", str(len(backing)), "you take over if the owner is silent"),
+          ("Told about", str(len(heard)), "open, for your information"),
+          ("Your backup", str(backup.get("name")) if backup else "Nobody",
+           "takes over when you don't answer", None if backup else sh.BAND_COLORS["amber"]))
+    def rule_line(i: int, r: dict) -> str:
+        return f"{i + 1}. {r.get('name')}"
+    lines = []
+    if part["owns"]:
+        lines.append("**You own:** " + ", ".join(rule_line(i, r) for i, r in part["owns"]))
+    if part["told"]:
+        lines.append("**You are told about:** " + ", ".join(rule_line(i, r) for i, r in part["told"]))
+    if part["covers"]:
+        lines.append("**You back up:** " + ", ".join(str(c.get("name")) for c in part["covers"]))
+    st.markdown("  \n".join(lines) if lines else "No rule sends anything to you, and you back nobody up.")
+    for inc in owned:
+        incident_row(inc, "mine", "yours", lambda inc=inc: incident_card(inc, contacts, "mine_"))
+    for inc in backing:
+        incident_row(inc, "mine", f"owned by {inc.get('owner')}, you are the backup",
+                     lambda inc=inc: incident_card(inc, contacts, "mine_"))
+    if ROUTING_EDITOR is not None and (part["owns"] or part["told"] or part["covers"]):
+        with st.expander("Your part of the map", icon=":material/alt_route:", expanded=not owned and not backing):
+            lock = ("Your part only. An Owner or Admin changes who gets what on the whole map."
+                    if not can("configure") else "Only your part. Change it on the whole map below.")
+            ROUTING_EDITOR(key=f"routing_mine_{cid}", on_save_change=lambda: None,
+                           data=sh.routing_editor_data(sh.my_routing(routing, cid), read_only=True,
+                                                       lock_reason=lock, focus=cid))
 
 
 def routing_editor(routing: dict) -> None:
