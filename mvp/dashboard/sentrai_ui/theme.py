@@ -44,6 +44,21 @@ THEMES = {
         "#6b6b6b", "rgba(0,0,0,0.08)", .07),
 }
 
+# Depth: panels are set apart by shading, not outlines. Each theme gives a panel fill (a faint top-to-bottom
+# gradient), its shadow, the dot pattern on the page behind them and the hatch on empty states.
+DEPTH = {
+    "dark": {
+        "card": "linear-gradient(180deg, #191919 0%, #131313 100%)",
+        "card-shadow": "inset 0 1px 0 rgba(255,255,255,.05), 0 1px 2px rgba(0,0,0,.6), 0 12px 28px -14px rgba(0,0,0,.8)",
+        "dots": "rgba(255,255,255,.045)", "hatch": "rgba(255,255,255,.035)",
+    },
+    "light": {
+        "card": "linear-gradient(180deg, #ffffff 0%, #fbfbfb 100%)",
+        "card-shadow": "0 1px 2px rgba(10,10,10,.06), 0 8px 24px -10px rgba(10,10,10,.12)",
+        "dots": "rgba(0,0,0,.06)", "hatch": "rgba(0,0,0,.04)",
+    },
+}
+
 # Type: IBM Plex Sans for everything people read, JetBrains Mono for ids, hashes and times.
 # Bundled in sentrai_ui/fonts (see its README), so the console needs no internet.
 FONT = "'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif"
@@ -188,7 +203,8 @@ def fill_hover(fill: str, on: str) -> str:
 def css(theme: str = DEFAULT_THEME, accent: str = DEFAULT_ACCENT) -> str:
     """A :root block of CSS variables for console.css."""
     t = THEMES.get(theme, THEMES[DEFAULT_THEME])
-    body = "".join(f"--{k}:{v};" for k, v in palette(theme, accent).items())
+    depth = DEPTH.get(theme, DEPTH[DEFAULT_THEME])
+    body = "".join(f"--{k}:{v};" for k, v in (palette(theme, accent) | depth).items())
     return f":root{{{body}--font:{FONT};--mono:{MONO};color-scheme:{t.base};}}"
 
 

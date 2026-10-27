@@ -1,7 +1,8 @@
 /* SentrAI Risk Console. Black or White theme with one accent colour; risk bands keep their own
    green / amber / red in both. Fonts are bundled (sentrai_ui/fonts), so the console looks the same offline.
-   Direction: an instrument panel, not a marketing page. Flat surfaces, hairlines instead of shadows,
-   colour only where something needs attention, numbers in tabular figures. */
+   Direction: an instrument panel, not a marketing page. Panels stand apart by shading (a faint gradient and a soft
+   shadow over a dotted page), not by outlines; colour only where something needs attention, numbers in tabular
+   figures. Outlines stay only where they carry meaning: form fields, buttons and focus rings. */
 :root {
   /* Streamlit's root font size is 15 px: .8rem (12 px) is the smallest text size used here.
      Colours come from sentrai_ui/theme.py (Black or White theme plus the accent picked in Configuration),
@@ -9,7 +10,9 @@
   --radius: 10px;
 }
 
-.stApp { background: var(--bg); font-feature-settings: "tnum" 1; }
+.stApp { background: radial-gradient(1100px 520px at 85% -12%, var(--glow), transparent 65%),
+                     radial-gradient(var(--dots) 1px, transparent 1.4px) 0 0 / 22px 22px, var(--bg);
+         background-attachment: fixed; font-feature-settings: "tnum" 1; }
 h1, h2, h3, .page-title h1 { text-wrap: balance; }
 /* Content up to 1440 px, centred in what the sidebar leaves, so wide screens keep even margins on both sides
    and the pipeline's six columns fit without shrinking. */
@@ -34,7 +37,7 @@ section[data-testid="stSidebar"] div[data-testid="stMarkdownContainer"] { margin
 .brand-name svg { height: 1.3rem; width: auto; display: block; }
 .brand-tag { color: var(--ink-muted); font-size: .8rem; }
 
-.side-risk { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: .7rem .8rem .75rem;
+.side-risk { background: var(--card); box-shadow: var(--card-shadow); border-radius: var(--radius); padding: .7rem .8rem .75rem;
              margin: 0 0 .6rem 0; }
 .side-risk .row { display: flex; justify-content: space-between; align-items: baseline; }
 .side-risk .lbl { color: var(--ink-muted); font-size: .8rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
@@ -81,21 +84,30 @@ section[data-testid="stSidebar"] .stButton button[kind="primary"] span[data-test
 @media (prefers-reduced-motion: reduce) { .chip .dot.pulse, .status .dot.pulse { animation: none; } }
 
 /* ------------------------------------------------------------ cards */
-div[data-testid="stVerticalBlockBorderWrapper"], div[data-testid="stForm"] { border-radius: var(--radius) !important; }
-/* Headline numbers: one strip with hairline dividers, not a row of separate cards. */
+/* Panels: app.py's card() (st.container(border=True) keyed card-N), the chat log, the step help, forms and expanders.
+   Streamlit draws them with a 1px outline; it is made transparent (so nothing moves) and the panel is shaded instead.
+   A panel inside a panel is a flat, slightly lighter well, so stacks don't pile up shadows. */
+div[class*="st-key-card-"], div.st-key-chat_log, div[class*="st-key-help_"], div[data-testid="stForm"],
+div[data-testid="stExpander"] details { border-color: transparent !important; border-radius: var(--radius) !important;
+  background: var(--card); box-shadow: var(--card-shadow); }
+:is(div[class*="st-key-card-"], div.st-key-chat_log, div[class*="st-key-help_"], div[data-testid="stForm"],
+    div[data-testid="stExpander"] details) :is(div[class*="st-key-card-"], div[data-testid="stForm"],
+    div[data-testid="stExpander"] details) { background: color-mix(in srgb, var(--surface-3) 45%, var(--surface-2)); box-shadow: none; }
+/* Headline numbers: one shaded strip with fading dividers, not a row of separate cards. */
 .stats { display: grid; grid-template-columns: repeat(var(--n, 4), minmax(0, 1fr)); margin: 0 0 1.25rem;
-         border-top: 1px solid var(--line-soft); border-bottom: 1px solid var(--line-soft); }
-.stat { padding: .8rem 1.1rem .85rem; min-width: 0; }
-.stat + .stat { border-left: 1px solid var(--line-soft); }
-.stat:first-child { padding-left: 0; }
+         background: var(--card); box-shadow: var(--card-shadow); border-radius: var(--radius); }
+.stat { position: relative; padding: .8rem 1.1rem .85rem; min-width: 0; }
+.stat + .stat::before { content: ""; position: absolute; left: 0; top: 18%; bottom: 18%; width: 1px;
+                        background: linear-gradient(transparent, var(--line), transparent); }
 .stat-label { color: var(--ink-muted); font-size: .8rem; font-weight: 500; }
 .stat-value { color: var(--ink); font-size: 1.9rem; font-weight: 600; line-height: 1.15; letter-spacing: -.02em;
               font-variant-numeric: tabular-nums; margin: .1rem 0 .05rem; }
 .stat-sub { color: var(--ink-muted); font-size: .8rem; overflow-wrap: anywhere; }
 @media (max-width: 900px) {
   .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .stat:nth-child(odd) { border-left: 0; padding-left: 0; }
-  .stat:nth-child(n+3) { border-top: 1px solid var(--line-soft); }
+  .stat:nth-child(odd)::before { display: none; }
+  .stat:nth-child(n+3)::after { content: ""; position: absolute; top: 0; left: 1.1rem; right: 1.1rem; height: 1px;
+                                background: linear-gradient(90deg, transparent, var(--line), transparent); }
   .stat:last-child:nth-child(odd) { grid-column: 1 / -1; }
 }
 
@@ -137,7 +149,7 @@ div[class*="st-key-mrow-"]:has(button:focus-visible) li.machine.clickable { outl
 .m-num { color: var(--ink); font-size: 1.6rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 .m-word { font-size: .9rem; font-weight: 500; }
 /* One machine's page: the status card under its name (the same row, with the state word in the name's place). */
-div[data-testid="stMarkdownContainer"] ul.machines > li.machine.status { background: var(--surface); border: 1px solid var(--line); }
+div[data-testid="stMarkdownContainer"] ul.machines > li.machine.status { background: var(--card); box-shadow: var(--card-shadow); }
 /* Its live log, set like a game panel's console. */
 .console { font-family: var(--mono); font-size: .8rem; line-height: 1.55; background: var(--surface-2);
            border-radius: 8px; padding: .55rem .8rem; height: 330px; overflow-y: auto; }
@@ -157,29 +169,34 @@ div[data-testid="stMarkdownContainer"] ul.machines > li.machine.status { backgro
 .sec-title small { color: var(--ink-muted); font-weight: 500; font-size: .8rem; }
 
 .empty { display: flex; align-items: center; gap: .6rem; color: var(--ink-soft); font-size: .86rem; padding: .9rem 1rem;
-         border: 1px dashed var(--line); border-radius: var(--radius); background: transparent;
+         border-radius: var(--radius); background: repeating-linear-gradient(135deg, var(--hatch) 0 1px, transparent 1px 9px), var(--surface);
          margin-bottom: .8rem; }
 .empty .mi { color: var(--ink-muted); font-size: 1.3rem; }
-.empty.good { border-color: var(--green-line); background: color-mix(in srgb, var(--green) 7%, transparent); color: var(--ink); }
+.empty.good { background: linear-gradient(135deg, color-mix(in srgb, var(--green) 12%, var(--surface)), color-mix(in srgb, var(--green) 4%, var(--surface)));
+              color: var(--ink); }
 .empty.good .mi { color: var(--green); }
 
-.offline { border: 1px solid color-mix(in srgb, var(--critical) 45%, transparent); background: color-mix(in srgb, var(--critical) 8%, transparent);
+/* Warnings: a tinted gradient with a coloured edge on the left, no outline. */
+.offline { background: linear-gradient(135deg, color-mix(in srgb, var(--critical) 13%, var(--surface)), color-mix(in srgb, var(--critical) 5%, var(--surface)));
+           box-shadow: inset 3px 0 0 var(--critical);
            border-radius: var(--radius); padding: 1.1rem 1.3rem; color: var(--ink-soft); display: flex; gap: .9rem; }
 .offline .mi { font-size: 1.6rem; color: var(--critical); }
 .offline b { color: var(--ink); }
 .offline small { color: var(--ink-muted); }
 /* One sentence that answers the page's question before the details (Approvals). */
 .lead { display: flex; gap: .7rem; align-items: center; padding: .75rem 1rem; margin-bottom: 1rem;
-        border: 1px solid var(--line); border-left: 3px solid var(--amber); border-radius: var(--radius);
+        background: var(--card); box-shadow: inset 3px 0 0 var(--amber), var(--card-shadow); border-radius: var(--radius);
         color: var(--ink); font-size: .95rem; line-height: 1.45; }
 .lead .mi { color: var(--amber); font-size: 1.3rem; }
-.protect-off { border: 1px solid color-mix(in srgb, var(--amber) 50%, transparent); background: color-mix(in srgb, var(--amber) 9%, transparent);
+.protect-off { background: linear-gradient(135deg, color-mix(in srgb, var(--amber) 14%, var(--surface)), color-mix(in srgb, var(--amber) 5%, var(--surface)));
+               box-shadow: inset 3px 0 0 var(--amber);
                border-radius: var(--radius); padding: .9rem 1.2rem; margin-bottom: 1rem; color: var(--ink-soft); display: flex; gap: .9rem; }
 .protect-off .mi { font-size: 1.6rem; color: var(--amber); }
 .protect-off b { color: var(--ink); }
 .protect-off > div { font-size: .9rem; line-height: 1.5; }
 .protect-off small { color: var(--ink-muted); }
-.side-update { border: 1px solid color-mix(in srgb, var(--amber) 50%, transparent); background: color-mix(in srgb, var(--amber) 9%, transparent);
+.side-update { background: linear-gradient(135deg, color-mix(in srgb, var(--amber) 14%, var(--surface)), color-mix(in srgb, var(--amber) 5%, var(--surface)));
+               box-shadow: inset 3px 0 0 var(--amber);
                border-radius: var(--radius); padding: .6rem .75rem; margin: .5rem 0; display: flex; gap: .6rem; font-size: .82rem; line-height: 1.45; }
 .side-update .mi { color: var(--amber); font-size: 1.2rem; }
 .side-update b { color: var(--ink); }
@@ -196,7 +213,7 @@ div[data-testid="stMarkdownContainer"] ul.machines > li.machine.status { backgro
 .step-help p:first-of-type { color: var(--ink); }
 /* Once put away: the pipeline's live numbers in one slim line. */
 .ribbon { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .55rem; font-size: .85rem; color: var(--ink-soft);
-          padding: .45rem .7rem; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+          padding: .45rem .7rem; border-radius: var(--radius); background: var(--card); box-shadow: var(--card-shadow); }
 .ribbon b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
 .ribbon .cell.alert b { color: color-mix(in srgb, var(--critical) 75%, var(--ink)); }
 .ribbon .cell.busy b { color: color-mix(in srgb, var(--amber) 70%, var(--ink)); }
@@ -205,10 +222,9 @@ div[data-testid="stMarkdownContainer"] ul.machines > li.machine.status { backgro
 /* ------------------------------------------------------------ incidents */
 .inc-head { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin-bottom: .6rem; }
 .inc-id { font-size: 1.1rem; font-weight: 500; color: var(--ink); font-family: var(--mono); letter-spacing: -.01em; }
-.detail-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; margin: .2rem 0 .8rem 0;
-               background: var(--line-soft); border: 1px solid var(--line-soft); border-radius: var(--radius); overflow: hidden; }
+.detail-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .35rem; margin: .2rem 0 .8rem 0; }
 .detail-grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.detail-grid div { background: var(--surface); padding: .55rem .8rem; }
+.detail-grid div { background: var(--surface-2); border-radius: 8px; padding: .55rem .8rem; }
 .detail-grid b { display: block; color: var(--ink); font-size: .95rem; font-weight: 600; overflow-wrap: anywhere; }
 .detail-grid span { color: var(--ink-muted); font-size: .8rem; font-weight: 500; }
 /* A short incident row: id, severity, what; one muted line under it. */
@@ -217,12 +233,12 @@ div[data-testid="stMarkdownContainer"] ul.machines > li.machine.status { backgro
 .inc-sub { color: var(--ink-muted); font-size: .85rem; overflow-wrap: anywhere; }
 .explain { color: var(--ink-soft); font-size: .88rem; margin: 0 0 .6rem 0; }
 /* The recommended action is the answer on an incident card: larger text and an accent edge. */
-.reco { border: 1px solid var(--brand-line); background: var(--brand-soft); padding: .8rem 1rem;
+.reco { background: linear-gradient(135deg, var(--brand-soft), color-mix(in srgb, var(--brand-soft) 45%, var(--surface)));
+        box-shadow: inset 3px 0 0 var(--brand); padding: .8rem 1rem;
         border-radius: var(--radius); color: var(--ink); display: flex; gap: .7rem; align-items: flex-start; font-size: 1.05rem;
         font-weight: 500; line-height: 1.45; }
 .reco .mi { color: var(--brand); font-size: 1.3rem; margin-top: .1rem; }
 .reco b { color: var(--ink-soft); font-size: .8rem; font-weight: 500; display: block; margin-bottom: .1rem; }
-div[data-testid="stExpander"] details { border-radius: var(--radius); background: var(--surface); }
 div[data-testid="stExpander"] summary { font-weight: 600; }
 
 /* ------------------------------------------------------------ activity feed */
@@ -241,7 +257,6 @@ div[data-testid="stExpander"] summary { font-weight: 600; }
 .feed:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 8px; }
 
 /* ------------------------------------------------------------ forms */
-div[data-testid="stForm"] { background: var(--surface); }
 /* Primary buttons of every kind (download and link ones too): text in --on-brand, which reads on the accent
    in every theme. Streamlit's own text is always white, unreadable on a light accent (Mono on Black).
    Hover uses our shade so the text stays readable there too. Disabled ones keep Streamlit's faded look. */
@@ -270,7 +285,7 @@ div[data-testid="stForm"] { background: var(--surface); }
 .swatch { display: inline-flex; align-items: center; gap: .45rem; font-size: .8rem; color: var(--ink-soft); }
 .swatch i { width: 1.1rem; height: 1.1rem; border-radius: 50%; border: 1px solid var(--line); display: inline-block; }
 .preview { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; padding: .7rem .8rem; border-radius: 12px;
-           border: 1px solid var(--line); background: var(--surface-2); margin-top: .4rem; }
+           background: var(--surface-2); margin-top: .4rem; }
 .preview .btn { background: var(--brand-fill); color: var(--on-brand); border-radius: 9px; padding: .3rem .8rem;
                 font-weight: 700; font-size: .82rem; }
 .preview .lnk { color: var(--brand); font-weight: 600; font-size: .82rem; }

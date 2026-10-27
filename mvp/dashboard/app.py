@@ -10,6 +10,7 @@ Run from this folder:  .venv\\Scripts\\streamlit run app.py
 from __future__ import annotations
 
 import hmac
+import itertools
 import html
 import json
 import os
@@ -41,6 +42,16 @@ DEFAULT_OPERATOR = os.environ.get("SENTRAI_OPERATOR", "operator")
 NODE_NAME = os.environ.get("SENTRAI_NODE_NAME") or "This computer"
 PEERS = sh.parse_peers(os.environ.get("SENTRAI_PEERS"))
 REFRESH_SECONDS = 2
+
+
+# Panels: a bordered st.container with a "card-N" key, which Streamlit adds as the CSS class st-key-card-N.
+# console.css finds them by it and sets them apart with shading instead of an outline. The key only names the
+# class (no state hangs on it), so a plain counter is enough; it only has to be unique within a run.
+_card_ids = itertools.count()
+
+
+def card(parent=None, **kwargs):
+    return (parent or st).container(border=True, key=f"card-{next(_card_ids)}", **kwargs)
 
 # Look: Black or White theme plus an accent, picked under Configuration > Appearance and saved with the settings.
 LOOK = cfg.appearance()
@@ -328,7 +339,7 @@ def _add_authenticator(box, email: str) -> None:
 
 
 def _show_recovery_codes(box, email: str) -> None:
-    with box.container(border=True):
+    with card(box):
         st.markdown(BRAND, unsafe_allow_html=True)
         st.markdown("#### Save your recovery codes")
         st.caption("If you lose your phone, each of these signs you in once instead of an app code. "
@@ -398,7 +409,7 @@ def login() -> dict | None:
         if acc.setup_code_waiting():
             _register_owner(box)
         else:
-            with box.container(border=True):
+            with card(box):
                 st.markdown(BRAND, unsafe_allow_html=True)
                 st.warning("No one can sign in yet. On this machine, run `python sentrai_config.py admin` "
                            "(on a server: `sudo sentrai-admin`) for a one-time setup code, then reload this page.")
@@ -951,7 +962,7 @@ def quick_actions(inc: dict, where: str) -> None:
 
 def incident_row(inc: dict, where: str, note: str = "", details=None) -> None:
     """One short line per incident with its quick buttons; everything else waits behind Details."""
-    with st.container(border=True):
+    with card():
         a, b = st.columns([3, 2], vertical_alignment="center")
         sev = str(inc.get("severity") or "unknown").capitalize()
         a.markdown(
@@ -983,7 +994,7 @@ class fold:
         self.title, self.searching, self.ico = title, searching, ico
 
     def __enter__(self):
-        self.box = st.container(border=True) if self.searching else st.expander(self.title)
+        self.box = card() if self.searching else st.expander(self.title)
         self.box.__enter__()
         if self.searching:
             section(self.title, ico=self.ico)
@@ -1011,7 +1022,7 @@ def page_config() -> None:
 
     if not query or matches(query, APPEARANCE_WORDS):
         shown += 1
-        with st.container(border=True):
+        with card():
             section("Appearance", "Saved at once, for everyone who opens this console", "palette")
             appearance_settings()
 
@@ -1020,7 +1031,7 @@ def page_config() -> None:
         [f"{cfg.FIELDS[e].prompt} {e}" for e in cfg.PRESET_FIELDS] + [p.label for p in cfg.PRESETS.values()]
     if not query or matches(query, *preset_words):
         shown += 1
-        with st.container(border=True):
+        with card():
             section(preset.title, preset.about, "verified_user")
             values |= preset_settings(current)
             protection_switch()
@@ -1377,7 +1388,7 @@ def page_extensions() -> None:
         section(title, note, ico)
         cols = st.columns(2)
         for n, r in enumerate(group):
-            with cols[n % 2], st.container(border=True):
+            with cols[n % 2], card():
                 extension_card(r, results, managed)
     st.caption("Removing an extension keeps its settings, so adding it back restores it. Installing one means "
                "putting its folder in mvp/extensions (or a folder named in SENTRAI_EXTENSIONS_DIR) and restarting "
@@ -1463,7 +1474,7 @@ def extension_card(r: dict, results: dict, managed: bool) -> None:
     if not in_config and r.get("settings"):
         st.caption("Set with environment variables: " + ", ".join(f"`{f}`" for f in r.get("settings") or []))
     if st.session_state.get("confirm_remove") == name and r.get("added"):
-        with st.container(border=True):
+        with card():
             st.markdown(f"**Remove {html.escape(title)}?** {html.escape(removal_note(r))}")
             c1, c2 = st.columns(2)
             if c1.button(f"Remove {title}", key=f"remove_yes_{name}", icon=":material/remove:", type="primary",
@@ -1545,7 +1556,7 @@ def page_staff() -> None:
           ("Reviewing", str(counts.get("reviewing", 0)), "someone is on it"),
           ("Resolved", str(counts.get("resolved", 0)), "real problems dealt with"),
           ("Not a threat", str(counts.get("not_a_threat", 0)), "checked and harmless"))
-    with st.container(border=True):
+    with card():
         section("Share the report page", "no sign-in; it shows nothing from SentrAI", "share")
         st.markdown(f"Staff can report from {code(report_link())}. Put it on the noticeboard or in the staff chat. "
                     "Each report is sorted straight away (the AI model when one is set up, keywords otherwise), "
@@ -1709,10 +1720,10 @@ def page_incidents() -> None:
            sh.BAND_COLORS["amber"] if c["escalated"] else None),
           ("Yours", str(c["mine"]), f"owned by {me}"))
 
-    with st.container(border=True):
+    with card():
         my_part_section(routing, incidents, contacts, person, rerr)
 
-    with st.container(border=True):
+    with card():
         section("Needs attention", "most urgent first", "notification_important")
         todo = sh.needs_attention(incidents)
         if not todo:
@@ -1721,7 +1732,7 @@ def page_incidents() -> None:
             note = f"{inc.get('owner') or 'no owner'} · {'; '.join(sh.attention(inc))}"
             incident_row(inc, "todo", note, lambda inc=inc: incident_card(inc, contacts, "todo_"))
 
-    with st.container(border=True):
+    with card():
         section("All incidents", "owner, backup and what each one still needs", "assignment_ind")
         t1, t2 = st.columns(2)
         closed = t1.toggle("Show resolved and rejected", key="board_closed")
@@ -1733,15 +1744,15 @@ def page_incidents() -> None:
             pick = st.selectbox("Open one to assign, resolve or decide", ["-", *ids], key="board_pick")
             inc = next((i for i in shown if str(i.get("id")) == pick), None)
             if inc is not None:
-                with st.container(border=True):
+                with card():
                     incident_card(inc, contacts)
 
     if can("configure"):  # Owners and Admins change the whole map; everyone else has their own part above
-        with st.container(border=True):
+        with card():
             section("Who gets what", "routing rules: the first match owns the incident", "alt_route")
             whole_team_map(routing, contacts, rerr)
     else:
-        with st.container(border=True):
+        with card():
             section("The whole team", "everyone's part, to look at", "alt_route")
             if st.toggle("Show the whole team's map", key="whole_map"):
                 whole_team_map(routing, contacts, rerr)
@@ -1916,7 +1927,7 @@ def page_chat() -> None:
         setup_conversation()
         return
     if not cfg.setup_done() and not st.session_state.get("setup_later"):
-        with st.container(border=True):
+        with card():
             s1, s2, s3 = st.columns([6, 2, 1], vertical_alignment="center")
             s1.markdown("**New here?** Cyanide can set SentrAI up with you in a few plain questions, "
                         "so you don't need the Configuration page.")
@@ -2137,7 +2148,7 @@ def chat_suggestion(mid: Any, n: int, s: dict, inc: dict | None) -> None:
 def watch_suggestion(mid: Any, n: int, s: dict) -> None:
     """A log file Cyanide found in a process scan. Pressing Watch adds it to the collector."""
     label = str(s.get("label") or "Watch log")
-    with st.container(border=True):
+    with card():
         st.markdown(f":material/lightbulb: **Suggested: {html.escape(label)}**")
         if s.get("reason"):
             st.caption(str(s["reason"]))
@@ -2149,7 +2160,7 @@ def watch_suggestion(mid: Any, n: int, s: dict) -> None:
 def quarantine_suggestion(mid: Any, n: int, s: dict) -> None:
     """A file Cyanide thinks is hostile. Pressing it moves the file into quarantine (it can be restored)."""
     label = str(s.get("label") or "Quarantine file")
-    with st.container(border=True):
+    with card():
         st.markdown(f":material/lightbulb: **Suggested: {html.escape(label)}**")
         if s.get("reason"):
             st.caption(str(s["reason"]))
@@ -2161,7 +2172,7 @@ def quarantine_suggestion(mid: Any, n: int, s: dict) -> None:
 
 def backup_suggestion(mid: Any, n: int, s: dict) -> None:
     """Cyanide thinks a fresh backup is a good idea. Pressing it takes one now."""
-    with st.container(border=True):
+    with card():
         st.markdown(":material/lightbulb: **Suggested: Back up now**")
         if s.get("reason"):
             st.caption(str(s["reason"]))
@@ -2193,7 +2204,7 @@ def page_flow() -> None:
               "click it to open it") is None:
         return
     data = flow_data()
-    with st.container(border=True):
+    with card():
         if FLOW_MAP is None:
             st.caption("This Streamlit is too old to draw the map: run `pip install -r requirements.txt` in "
                        "mvp/dashboard. The same steps as a list:")
@@ -2235,7 +2246,7 @@ def page_guardrails() -> None:
     if header("Automation guardrails", "what SentrAI may do without asking, and what it never touches",
               chips=guardrails_chips(risk)) is None:
         return
-    with st.container(border=True):
+    with card():
         limits_map({f.env: f.default for f in cfg.FIELDS.values()} | cfg.read())
 
 
@@ -2345,7 +2356,7 @@ def page_collector() -> None:
            sh.BAND_COLORS["amber"] if silent else None))
 
     left, right = st.columns(2)
-    with left, st.container(border=True):
+    with left, card():
         section("Log sources", "from the settings file", "folder_open")
         logs_dir = Path(os.environ.get("SENTRAI_LAB_LOGS") or cfg.FIELDS["SENTRAI_LAB_LOGS"].default)
         st.caption(f"Folder: {logs_dir}")
@@ -2359,7 +2370,7 @@ def page_collector() -> None:
             rows.append({"Log": f"{x.get('layer', '?')} · {x.get('found_by') or 'Scout'}", "File": x.get("path"),
                          "Size": "watched"})
         table(sh.pd.DataFrame(rows), "")
-    with right, st.container(border=True):
+    with right, card():
         section("Heartbeats", "Watchdog flags a collector that goes quiet", "monitor_heart")
         table(sh.pd.DataFrame([{"Collector": c.get("collector", "-"), "State": "Silent" if c.get("silent") else "Alive",
                                 "Last seen": datetime.fromtimestamp(float(c["last_seen_ts"])).strftime("%H:%M:%S")
@@ -2371,7 +2382,7 @@ def page_collector() -> None:
     scout_proposals()
     log_discovery()
     threat_panel()
-    with st.container(border=True):
+    with card():
         section("Malicious events collected", "newest first", "warning")
         table(sh.classification_rows(records)[["Time", "Event", "Category", "Layer agent", "Incident", "Raw log line"]],
               "No malicious events yet.")
@@ -2382,7 +2393,7 @@ def scout_proposals() -> None:
     waiting, err = safe(client.pending_log_sources, [])
     if err or not waiting:
         return
-    with st.container(border=True):
+    with card():
         section("Scout proposals", "log files Scout found · nothing is watched until you press Watch",
                 "travel_explore")
         for p in waiting:
@@ -2402,7 +2413,7 @@ def scout_proposals() -> None:
 
 def log_discovery() -> None:
     """Process scan: the core lists running programs and their log files; the operator picks what to watch."""
-    with st.container(border=True):
+    with card():
         section("Find logs on this computer", "read-only scan of running programs · nothing is watched until you "
                                               "press Watch", "travel_explore")
         if st.button("Scan running programs", icon=":material/radar:", key="scan_system",
@@ -2443,7 +2454,7 @@ OTHER_SEVERITY = ":gray[:material/help:]"
 
 def threat_panel() -> None:
     """Threat scan: look inside the configured folders for web shells, miners, reverse shells and the like."""
-    with st.container(border=True):
+    with card():
         section("Check for threats", "read-only look inside your chosen folders · files move to quarantine only "
                                      "when you press it", "bug_report")
         if st.button("Scan for threats", icon=":material/policy:", key="scan_threats",
@@ -2537,7 +2548,7 @@ def page_classifier() -> None:
           ("Settled by rules", str(by_rules), "certain, no AI needed"),
           ("AI classifier", ai_value, ai_note[:48]))
 
-    with st.container(border=True):
+    with card():
         section("Rules in use", "change them on the Configuration page", "rule")
         preset = cfg.preset_label(os.environ.get(cfg.PRESET_ENV, cfg.DEFAULT_PRESET))
         st.markdown(
@@ -2546,7 +2557,7 @@ def page_classifier() -> None:
             f"**{os.environ.get('BRUTE_FORCE_WINDOW_S', '60')} s**\n"
             f"- Bulk exfiltration: **{os.environ.get('EXPORT_ROWS_THRESHOLD', '100')}** rows or more in one export\n"
             "- Signatures: SQL injection, XSS, privilege escalation, port scans, misconfiguration, log tampering")
-    with st.container(border=True):
+    with card():
         section("Classifications", "newest first · 40-60% sure goes to a person and is never blocked on its own", "label")
         table(rows, "No malicious classifications yet.", column_config={
             "Confidence": st.column_config.ProgressColumn("Confidence", min_value=0, max_value=1, format="%.2f"),
@@ -2570,16 +2581,16 @@ def page_responder() -> None:
           ("Locked accounts", str(len((blocklist or {}).get("users") or [])), "locked right now"),
           ("Actions taken", str(len(history)), f"each expires after {os.environ.get('HOTPATCH_TTL_HOURS', '2')} h"))
 
-    with st.container(border=True):
+    with card():
         section("Active containment", "blocked or locked right now", "block")
         if bl_err:
             st.warning(f"Could not load blocklist: {bl_err}")
         table(containment, "Nothing contained right now.")
     left, right = st.columns([7, 5])
-    with left, st.container(border=True):
+    with left, card():
         section("Action history", "every action is reversible and expires unless a person keeps it", "history")
         table(history, "No actions taken yet.")
-    with right, st.container(border=True):
+    with right, card():
         section("Countersign reviews", "two-key check before any autonomous action", "key")
         render_feed(sh.build_activity_feed(sh.records_of(records, "needle_review", "action_applied",
                                                          "auto_rollback", "action_rolled_back"), limit=15))
@@ -2610,19 +2621,19 @@ def page_review() -> None:
           ("Raw score", f"{float(risk.get('raw_score') or 0):.1f}", "points before scaling to 0-100"))
 
     g, h = st.columns([5, 7])
-    with g, st.container(border=True):
+    with g, card():
         found = machines()
         online = sum(m["online"] for m in found)
         section("Machines", f"{online} of {len(found)} online · SentrAI acts on its own above the threshold", "dns")
         machine_list(found, panel_mode(risk))
-    with h, st.container(border=True):
+    with h, card():
         section("Risk over time", "dashed line is the threshold", "show_chart")
         if hist.empty:
             empty("No history yet. The core adds a point on every risk change.", "show_chart")
         else:
             st.plotly_chart(sh.history_figure(hist, threshold), width="stretch", config={"displayModeBar": False}, key="history")
 
-    with st.container(border=True):
+    with card():
         section("What adds to the score", "one row per incident", "calculate")
         st.caption("Each incident adds base points × AI confidence × how critical the target is, plus 5 for every "
                    "hour nobody responds. The 0-100 index is 100 × (1 − e^(−raw ÷ 60)), so it slows down near the top.")
@@ -2665,7 +2676,7 @@ def panel_address() -> str:
 
 def add_machine(panel: bool) -> None:
     """The join-code form behind the + on the machine list."""
-    with st.container(border=True):
+    with card():
         section("Add machine", "a one-time join code, valid for 24 hours", "add_circle")
         if not panel:
             empty("Turn on central panel mode first (see the note above).", "info")
@@ -2724,7 +2735,7 @@ def page_machines() -> None:
                 "SENTRAI_RISK_SCOPE=host (and SENTRAI_FIREWALL=off) on it and restart the core: each machine is then "
                 "scored and blocked on its own.", icon=":material/info:")
 
-    with st.container(border=True):
+    with card():
         title, plus = st.columns([9, 2], vertical_alignment="center")
         with title:
             section("Machine list", "worst first · click a machine for its details · SentrAI acts on a machine "
@@ -2740,7 +2751,7 @@ def page_machines() -> None:
 
     if panel:
         agents, aerr = fetch("fleet", [])
-        with st.container(border=True):
+        with card():
             section("Joined machines", "each has its own key; revoking one never touches the others", "key")
             if aerr:
                 st.warning(f"Could not load joined machines: {aerr}")
@@ -2846,13 +2857,13 @@ def machine_overview(m: dict, incs: list[dict], agent: dict | None, mine: list[d
     records, _, _ = audit_records()
     log = sh.build_activity_feed(sh.machine_records(records, host, [i.get("id") for i in incs]), limit=80)
     left, right = st.columns([7, 5])
-    with left, st.container(border=True):
+    with left, card():
         section("Live log", "what SentrAI saw and did on this machine, newest first", "terminal")
         if log:
             st.markdown(sh.console_html(log, f"Live log for {host}"), unsafe_allow_html=True)
         else:
             empty(f"Nothing recorded about {host} yet.", "terminal")
-    with right, st.container(border=True):
+    with right, card():
         section("Risk over time", "this machine's own score · dashed line is the threshold", "show_chart")
         own, err = safe(lambda: client.machine_risk(host), {})
         hist = sh.history_frame((own or {}).get("history"))
@@ -2865,7 +2876,7 @@ def machine_overview(m: dict, incs: list[dict], agent: dict | None, mine: list[d
 
 def machine_incidents(m: dict, incs: list[dict], agent: dict | None, mine: list[dict]) -> None:
     waiting = sh.pending_approvals(incs)
-    with st.container(border=True):
+    with card():
         section("Waiting on you", "approve or reject, keep or roll back", "approval_delegation")
         if not waiting:
             empty(f"Nothing on {m['host']} waits for a decision.", "check_circle", good=True)
@@ -2877,7 +2888,7 @@ def machine_incidents(m: dict, incs: list[dict], agent: dict | None, mine: list[
                 decision_controls(inc)
                 table(sh.action_rows(inc), "No containment actions yet.")
             incident_row(inc, "mach", verb, details)
-    with st.container(border=True):
+    with card():
         section("All its incidents", "what adds to its own score, one row per incident", "calculate")
         table(sh.risk_breakdown(incs), f"All quiet on {m['host']}. No incidents.")
 
@@ -2886,20 +2897,20 @@ def machine_blocks(m: dict, incs: list[dict], agent: dict | None, mine: list[dic
     """Its firewall, as a game panel's Network tab: what is blocked there right now, and every action taken."""
     host = m["host"]
     blocks, err = safe(lambda: client.machine_blocklist(host), {"ips": [], "users": []})
-    with st.container(border=True):
+    with card():
         section("In force on this machine", "its agent puts each one in place there and takes it out when it ends",
                 "block")
         if err:
             st.warning(f"Could not load its blocks: {err}")
         table(sh.build_containment_rows(blocks, incs), f"Nothing blocked on {host} right now.")
-    with st.container(border=True):
+    with card():
         section("Every action on this machine", "each one ends on its own unless a person keeps it", "history")
         table(sh.all_action_rows(incs), f"No actions taken on {host} yet.")
 
 
 def machine_services(m: dict, incs: list[dict], agent: dict | None, mine: list[dict]) -> None:
     at = sh.parse_ts(m.get("services_at"))
-    with st.container(border=True):
+    with card():
         section("Services", "what listens on it, reported by its agent every minute"
                 + (f" · last report {sh.seen_ago(at)}" if at else ""), "lan")
         table(sh.service_rows(m.get("services")),
@@ -2908,7 +2919,7 @@ def machine_services(m: dict, incs: list[dict], agent: dict | None, mine: list[d
 
 def machine_jobs_tab(m: dict, incs: list[dict], agent: dict | None, mine: list[dict]) -> None:
     host = m["host"]
-    with st.container(border=True):
+    with card():
         section("Scans and backups", "asked with the buttons above · its agent picks each one up within about "
                 "15 seconds and runs it on the folders set on that machine", "policy")
         if not m.get("agent_id"):
@@ -2928,7 +2939,7 @@ def machine_agent(m: dict, incs: list[dict], agent: dict | None, mine: list[dict
     """Its agent and key, with Revoke, as a game panel's Settings tab with its danger zone."""
     host = m["host"]
     old = [a for a in mine if a.get("revoked_at")]
-    with st.container(border=True):
+    with card():
         section("Agent", "the SentrAI program on the machine: it sends the logs and puts the blocks in place", "key")
         if agent is None:
             empty(f"No SentrAI agent runs on {host}: the panel only knows it from the logs it was sent. "
@@ -2942,7 +2953,7 @@ def machine_agent(m: dict, incs: list[dict], agent: dict | None, mine: list[dict
             table(sh.agent_rows(old), "")
     if agent is None:
         return
-    with st.container(border=True):
+    with card():
         section("Revoke its key", "it can join again later with a new join code", "block")
         st.caption(f"The panel stops accepting {host}'s key at once: its agent can no longer send logs or pick up "
                    "scans and backups. Blocks it already put in place end on their own.")
@@ -2976,10 +2987,10 @@ def page_reports() -> None:
     rows = [{"Incident": i, "Category": sh.category_label(by_id[i].get("category")),
              "Report": "Ready" if i in with_report else "-"} for i in ids]
     left, right = st.columns([4, 8])
-    with left, st.container(border=True):
+    with left, card():
         section("All incidents", f"{len(with_report & set(by_id))} reports ready", "inventory_2")
         table(sh.pd.DataFrame(rows), "")
-    with right, st.container(border=True):
+    with right, card():
         inc_id = st.selectbox("Open report for", ids, key="report_inc", format_func=lambda i: f"{i} · {sh.category_label(by_id[i].get('category'))}")
         report_viewer(inc_id)
 
@@ -2991,13 +3002,13 @@ def page_audit() -> None:
     records, valid, err = audit_records()
     agents, _ = fetch("agents", [])
     left, right = st.columns([7, 5])
-    with left, st.container(border=True):
+    with left, card():
         state = "intact" if valid else "broken" if valid is False else "not checked"
         section("Agent activity", f"latest {len(records)} records · chain {state}", "timeline")
         if err:
             st.warning(f"Could not load audit log: {err}")
         render_feed(sh.build_activity_feed(records, limit=60))
-    with right, st.container(border=True):
+    with right, card():
         section("Agents", f"who does what · records in the latest {len(records)}", "groups")
         table(sh.agent_table(agents, records), "No agents yet.")
 
@@ -3038,7 +3049,7 @@ def page_backups() -> None:
     elif data.get("overdue"):
         st.warning("The last backup is more than two schedule periods old. Is SentrAI's core running?")
 
-    with st.container(border=True):
+    with card():
         section("What is backed up", "change it under backup in the system profile, or SENTRAI_BACKUP_PATHS", "folder_copy")
         folders = data.get("folders") or []
         st.markdown(("Folders: " + ", ".join(code(f) for f in folders) if folders else
@@ -3054,7 +3065,7 @@ def page_backups() -> None:
                 run_action("Backup made", lambda: client.backup_now(st.session_state.operator), rerun=False)
             st.rerun()
 
-    with st.container(border=True):
+    with card():
         section("Backups kept", "newest first · a restore always checks the backup first", "inventory_2")
         if not kept:
             empty("No backups yet.", "backup")
@@ -3128,7 +3139,7 @@ def client_summary() -> None:
     if err or not isinstance(sched, dict):
         return  # an older core without the summary
     left, right = st.columns([4, 8])
-    with left, st.container(border=True):
+    with left, card():
         nxt = str(sched.get("next_at") or "")[:16].replace("T", " ")
         section("Client summary", f"next: {nxt}" if nxt else "not scheduled", "event_repeat")
         with st.form("summary_schedule", border=False):
@@ -3149,7 +3160,7 @@ def client_summary() -> None:
             run_action("Summary sent to the alert channels", lambda: client.send_summary(st.session_state.operator),
                        rerun=False)
             st.rerun()
-    with right, st.container(border=True):
+    with right, card():
         period = st.segmented_control("Period", ["daily", "weekly"], default="weekly" if sched.get("every") == "weekly"
                                       else "daily", format_func=lambda p: "Last 24 hours" if p == "daily" else "Last 7 days",
                                       key="summary_period") or "daily"
@@ -3164,7 +3175,7 @@ def client_summary() -> None:
                                mime="application/pdf", type="primary", width="stretch", key=f"dl_sum_pdf_{period}")
         d1.download_button("Markdown", md, icon=":material/download:", file_name=f"sentrai-{period}-summary.md",
                            mime="text/markdown", width="stretch", key=f"dl_sum_md_{period}")
-        with st.container(height=420, border=True):
+        with card(height=420):
             st.markdown(sh.demote_headings(md))
 
 
@@ -3185,7 +3196,7 @@ def report_viewer(inc_id: str) -> None:
     if rep_json is not None and not jerr:
         d2.download_button("JSON", json.dumps(rep_json, indent=2), icon=":material/data_object:", file_name=f"{inc_id}-evidence-report.json",
                            mime="application/json", width="stretch", key=f"dl_json_{inc_id}")
-    with st.container(height=520, border=True):
+    with card(height=520):
         st.markdown(sh.demote_headings(md))
 
 
@@ -3202,11 +3213,11 @@ def page_team() -> None:
     """Owners and Admins: who may sign in, with which role. No open sign-up; people join by invite."""
     header("Team", "Who may sign in to this console, and what each role may do")
     if made := st.session_state.pop("team_link", None):
-        with st.container(border=True):
+        with card():
             st.markdown(f"**{made[0]}**")
             _invite_link(made[1])
     people = acc.people()
-    with st.container(border=True):
+    with card():
         section("People", f"{len(people)} with access", "group")
         table(sh.pd.DataFrame([{
             "Name": p["name"], "Email": p["email"], "Role": acc.ROLE_LABEL[p["role"]],
@@ -3218,7 +3229,7 @@ def page_team() -> None:
 
     others = [p for p in people if p["email"] != ME["email"]]
     if others:
-        with st.container(border=True):
+        with card():
             section("Change someone's access", "", "manage_accounts")
             c1, c2 = st.columns([2, 1])
             who = c1.selectbox("Person", [p["email"] for p in others], key="team_who")
@@ -3246,7 +3257,7 @@ def page_team() -> None:
             except acc.AccountError as e:
                 st.error(str(e))
 
-    with st.container(border=True):
+    with card():
         section("Invite someone", "They set their own password and authenticator", "person_add")
         with st.form("team_invite", clear_on_submit=True):
             c1, c2 = st.columns([2, 1])
