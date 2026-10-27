@@ -1702,6 +1702,87 @@ def pending_approvals(incidents: Iterable[dict]) -> list[dict]:
     return sorted(waiting, key=lambda i: (not available_actions(i)["decide"], -incident_contribution(i)))
 
 
+APPROVAL_GROUPS = {"Attacker": "attacker", "Machine": "machine", "Type": "type"}
+
+
+def approval_group(inc: dict, by: str) -> str:
+    """The heading an approval sits under when the page groups by attacker, machine or type of attack."""
+    if by == "attacker":
+        acts = [a for a in inc.get("actions") or [] if isinstance(a, dict) and a.get("target")]
+        return str(inc.get("src_ip") or (acts[-1]["target"] if acts else "") or "Unknown source")
+    if by == "machine":
+        return str(inc.get("host") or "Unknown machine")
+    if by == "type":
+        return category_label(inc.get("category"))
+    return ""
+
+
+def group_approvals(waiting: list[dict], by: str | None) -> list[tuple[str, list[dict]]]:
+    """Waiting incidents in groups, biggest group first; one unnamed group when not grouping."""
+    if not by:
+        return [("", list(waiting))]
+    groups: dict[str, list[dict]] = {}
+    for inc in waiting:
+        groups.setdefault(approval_group(inc, by), []).append(inc)
+    return sorted(groups.items(), key=lambda kv: -len(kv[1]))  # stable: equal sizes keep the page's order
+
+
+def saved_groups(waiting: list[dict], saved: dict[str, list[str]]) -> tuple[list[tuple[str, list[dict]]], list[dict]]:
+    """Split the waiting incidents into the groups a person saved (in the order they were made) and the rest.
+    An incident that no longer waits drops out of its group, and a group with none left is not shown."""
+    by_id = {str(i.get("id")): i for i in waiting}
+    groups, used = [], set()
+    for name, ids in saved.items():
+        members = [by_id[i] for i in dict.fromkeys(ids) if i in by_id and i not in used]
+        used.update(str(m.get("id")) for m in members)
+        if members:
+            groups.append((name, members))
+    return groups, [i for i in waiting if str(i.get("id")) not in used]
+
+
+def add_to_group(saved: dict[str, list[str]], name: str, ids: list[str], waiting_ids: set[str]) -> dict[str, list[str]]:
+    """The saved groups after putting ids into the group called name (made if new). An incident is in one group
+    only, so it leaves any other; ids that no longer wait are dropped, and so are groups left empty."""
+    out = {g: [i for i in members if i in waiting_ids and i not in ids] for g, members in saved.items()}
+    out[name] = list(dict.fromkeys([*out.get(name, []), *ids]))
+    return {g: m for g, m in out.items() if m}
+
+
+def suggest_group_name(picked: list[dict], saved: dict[str, list[str]]) -> str:
+    """A starting name for a new group: the attacker or machine they share, else Group N."""
+    for by in ("attacker", "machine", "type"):
+        names = {approval_group(i, by) for i in picked}
+        if len(names) == 1:
+            name = names.pop()
+            if name not in saved and not name.startswith("Unknown"):
+                return name
+    n = len(saved) + 1
+    while f"Group {n}" in saved:
+        n += 1
+    return f"Group {n}"
+
+
+def bulk_split(picked: list[dict]) -> dict[str, list[dict]]:
+    """Which of the picked incidents each bulk button acts on: open ones are decided, contained ones kept or undone."""
+    split: dict[str, list[dict]] = {"decide": [], "contain": []}
+    for inc in picked:
+        can = available_actions(inc)
+        if can["decide"]:
+            split["decide"].append(inc)
+        elif can["contain_controls"]:
+            split["contain"].append(inc)
+    return split
+
+
+def bulk_result(verb: str, done: list[str], failed: list[tuple[str, str]]) -> str:
+    """One line for the toast after a bulk action: how many went through, and which did not."""
+    n = len(done) + len(failed)
+    text = f"{verb} {len(done)} of {n} incident{'s' if n != 1 else ''}"
+    if failed:
+        text += ". Not done: " + "; ".join(f"{i} ({why})" for i, why in failed)
+    return text
+
+
 # ---------------------------------------------------------------- updates
 
 def _key_values(path) -> dict[str, str]:

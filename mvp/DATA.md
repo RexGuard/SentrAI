@@ -19,7 +19,7 @@ that machine, with its full path.
 ## The tree
 
 ```text
-<root>/             INDEX.md, config.json, accounts.json
+<root>/             INDEX.md, config.json, accounts.json, approval-groups.json
   core/             sentrai.db, anchor.key, archive/, protection.json, summary.json, extensions.json, remote-copy.token
     people/         routing.json, telegram_links.json, staff_reports.json
     machines/       fleet.json, jobs.json
@@ -46,6 +46,7 @@ or part the file belongs to. **Set with** is the variable that puts it somewhere
 | `INDEX.md` | `sentrai_paths.py` | this map, for this machine | |
 | `config.json` | every part | settings, read by every part when it starts | `SENTRAI_CONFIG` |
 | `accounts.json` | Dashboard | who may sign in, with password hashes and authenticator secrets | `SENTRAI_ACCOUNTS` |
+| `approval-groups.json` | Dashboard | approvals a person bundled into named groups | `SENTRAI_APPROVAL_GROUPS` |
 | `logs/` | Collector | JSON-lines logs the collector tails (an input, not SentrAI's own data). Older versions used `mvp/lab/logs`; a machine that saved its settings keeps the folder it saved | `SENTRAI_LAB_LOGS` |
 | `core/sentrai.db` (+ `-wal`, `-shm`) | Scribe | the hash-chained audit record and the working state (incidents, actions) | `SENTRAI_DB` |
 | `core/anchor.key` | Scribe | signs the audit fingerprints sent to the alert channels | |
