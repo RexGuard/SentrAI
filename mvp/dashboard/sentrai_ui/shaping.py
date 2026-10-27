@@ -1290,6 +1290,100 @@ def my_routing(routing: dict | None, cid: str) -> dict:
             "numbers": [i + 1 for i, _ in picked]}
 
 
+# ------------------------------------------------- "How an attack is handled" map (flow_map.mjs)
+
+ACTION_WORDS = {"block_ip": "block an address", "rate_limit": "slow an address down", "waf_rule": "add a web firewall rule",
+                "lock_user": "lock an account", "isolate_host": "cut a machine off", "kill_process": "stop a program"}
+ALERT_EXTENSIONS = ("telegram", "slack")
+
+
+def _ext(extensions: Iterable[dict] | None, name: str) -> dict | None:
+    return next((r for r in extensions or [] if r.get("name") == name), None)
+
+
+def _ext_on(row: dict | None) -> bool:
+    return bool(row and row.get("added") and row.get("configured") and not (row.get("error") or row.get("last_error")))
+
+
+def flow_map_data(risk: dict | None, incidents: Iterable[dict] | None, agents: Iterable[dict] | None,
+                  blocklist: dict | None, extensions: Iterable[dict] | None, records: list[dict] | None,
+                  settings: dict[str, str] | None, chain_ok: bool | None = None) -> dict:
+    """The steps an attack goes through, each with what it is doing right now, for the read-only map:
+    logs come in, get sorted, scored, then wait for a person or are acted on, blocked, and the owner and
+    alert channels hear about it, all written down. Each step names the page that shows it in full."""
+    risk, settings = risk or {}, settings or {}
+    incidents, agents, records = list(incidents or []), list(agents or []), list(records or [])
+    blocklist = blocklist or {}
+    open_ = [i for i in incidents if i.get("status") in OPEN_STATUSES]
+    layer = [a for a in agents if "analyzed" in a]
+    events = sum(int(a.get("analyzed") or 0) for a in layer)
+    collectors = (next((a for a in agents if a.get("name") == "Watchdog"), {}) or {}).get("collectors") or []
+    silent = records_of(records, "collector_silent")
+    attacks = records_of(records, "event_classified")
+    jev = next((a for a in agents if a.get("name") == "Jev"), {})
+    ai, ai_note = ai_classifier_state(jev.get("status"), _ext(extensions, "typesafe"))
+    idx, threshold = risk.get("risk_index"), float(risk.get("threshold") or settings.get("RISK_THRESHOLD") or 80)
+    band = resolve_band(risk) if risk else "unknown"
+    waiting = pending_approvals(incidents)
+    watch_only = bool(risk.get("monitor_only"))
+    allowed = [x.strip() for x in str(settings.get("AUTO_ACTIONS") or "").split(",") if x.strip()]
+    per_hour = settings.get("MAX_AUTO_ACTIONS_PER_HOUR") or "10"
+    ips, users = len(blocklist.get("ips") or []), len(blocklist.get("users") or [])
+    hours = settings.get("HOTPATCH_TTL_HOURS") or "2"
+    no_owner = sum(1 for i in open_ if not i.get("owner"))
+    edge = _ext(extensions, "cloudflare")
+    email_on = bool(settings.get("SMTP_HOST") and settings.get("ALERT_EMAIL_TO"))
+    channels = (["email"] if email_on else []) + [n.capitalize() for n in ALERT_EXTENSIONS if _ext_on(_ext(extensions, n))]
+    broken = [str(r.get("title") or r.get("name")) for r in extensions or []
+              if r.get("added") and (r.get("error") or r.get("last_error"))]
+
+    def node(nid, col, row, title, what, value, note, state, page, ico):
+        return {"id": nid, "col": col, "row": row, "title": title, "what": what, "value": value, "note": note,
+                "state": state, "page": page, "icon": ico}
+
+    nodes = [
+        node("logs", 0, 1, "Logs come in", "every line from your machines", f"{events:,}", "lines read" +
+             (f" · {plural(len(silent), 'source')} went quiet" if silent else
+              f" · {plural(len(collectors), 'source')} reporting" if collectors else ""),
+             "busy" if silent else "ok" if events or collectors else "idle", "collector", "input"),
+        node("sort", 1, 1, "Sorted", "attack or normal: rules first, then AI", str(len(attacks)),
+             f"looked like attacks · AI {ai.lower()}", "alert" if attacks else "ok", "classifier", "category"),
+        node("score", 2, 1, "Scored", "how dangerous right now, 0 to 100", "-" if idx is None else f"{idx}",
+             f"acts on its own from {threshold:.0f}", "unknown" if idx is None else
+             "alert" if band in ("red", "critical") else "busy" if band == "amber" else "ok", "review", "speed"),
+        node("ask", 3, 0, "Waits for a person", "unsure, or not allowed on its own", str(len(waiting)),
+             "waiting for approval" if waiting else "nothing waiting", "busy" if waiting else "ok", "approvals",
+             "pending_actions"),
+        node("auto", 3, 1, "Acts on its own", "only what you allowed", "Off" if watch_only else "On",
+             "watching only, blocks nothing" if watch_only else
+             (f"may {', '.join(ACTION_WORDS.get(a, a.replace('_', ' ')) for a in allowed)}; at most {per_hour} an hour"
+              if allowed else "nothing allowed: everything waits for a person"),
+             "off" if watch_only or not allowed else "ok", "config", "smart_toy"),
+        node("block", 4, 0.5, "Blocks the attacker", f"undoes itself after {hours} h unless kept", str(ips + users),
+             f"{plural(ips, 'address', 'addresses')}, {plural(users, 'account')} blocked now",
+             "busy" if ips + users else "ok", "responder", "block"),
+        node("edge", 5, 0.5, "Blocks at the edge", "stops them before your servers too",
+             "On" if _ext_on(edge) else "Off", "Cloudflare" if edge else "not available",
+             "ok" if _ext_on(edge) else "alert" if edge and edge.get("added") else "off", "extensions", "public"),
+        node("owner", 3, 2, "Owner gets it", "who gets what decides who", str(len(open_)),
+             f"open · {no_owner} with no owner" if no_owner else "open, each with an owner",
+             "alert" if no_owner else "busy" if open_ else "ok", "incidents", "assignment_ind"),
+        node("alerts", 4, 2, "Alerts go out", "messages with buttons to act", str(len(channels)),
+             (", ".join(channels) if channels else "no channel set up") + (f" · {', '.join(broken)} failing" if broken else ""),
+             "alert" if broken else "ok" if channels else "off", "extensions", "send"),
+        node("record", 5, 2, "Written down", "every step, sealed so it cannot be changed quietly", f"{len(records):,}",
+             "records · chain intact" if chain_ok else "records · chain broken" if chain_ok is False else "records",
+             "alert" if chain_ok is False else "ok", "audit", "link"),
+    ]
+    # Two lanes after scoring: stopping the attacker (top) and telling people (bottom); all of it is written down.
+    edges = [("logs", "sort"), ("sort", "score"), ("score", "ask"), ("score", "auto"), ("ask", "block"),
+             ("auto", "block"), ("block", "edge"), ("score", "owner"), ("owner", "alerts"), ("alerts", "record"),
+             ("block", "record")]
+    live = {n["id"]: n["state"] in ("busy", "alert") for n in nodes}
+    return {"nodes": nodes, "edges": [{"from": a, "to": b, "live": live[a] and live[b]} for a, b in edges],
+            "colors": {"ok": BAND_COLORS["green"], "busy": BAND_COLORS["amber"], "alert": BAND_COLORS["critical"]}}
+
+
 def approvals_headline(waiting: list[dict], now: datetime | None = None) -> str:
     """The answer first: how many decisions wait, of which kind, and when the first block undoes itself."""
     if not waiting:

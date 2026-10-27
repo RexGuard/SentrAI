@@ -553,3 +553,40 @@ def test_my_routing_cuts_the_map_down_to_one_person_and_keeps_rule_numbers_and_p
     assert lone["rules"] == [] and {c["id"]: c["backup"] for c in lone["contacts"]} == {"a": "", "d": "a"}
     data = sh.routing_editor_data(cut, read_only=True, focus="c")
     assert data["focus"] == "c" and data["numbers"] == [1] and data["read_only"]
+
+
+# ------------------------------------------------- "How an attack is handled" map
+
+def _flow(**kw):
+    args = dict(risk={"risk_index": 12, "band": "green", "threshold": 80}, incidents=[], agents=[], blocklist={},
+                extensions=[], records=[], settings={"AUTO_ACTIONS": "block_ip", "HOTPATCH_TTL_HOURS": "2"}, chain_ok=True)
+    data = sh.flow_map_data(**(args | kw))
+    return {n["id"]: n for n in data["nodes"]}, data["edges"]
+
+
+def test_a_quiet_system_shows_every_step_fine_and_nothing_moving():
+    nodes, edges = _flow()
+    assert nodes["score"]["value"] == "12" and nodes["score"]["state"] == "ok"
+    assert nodes["auto"]["value"] == "On" and "block an address" in nodes["auto"]["note"]
+    assert nodes["record"]["note"] == "records · chain intact"
+    assert not any(e["live"] for e in edges)
+
+
+def test_an_attack_in_progress_lights_its_path():
+    waiting = {"id": "1", "status": "open", "category": "brute_force", "recommended_action": "block_ip",
+               "requires_approval": True, "owner": ""}
+    nodes, edges = _flow(risk={"risk_index": 85, "band": "critical", "threshold": 80}, incidents=[waiting],
+                         blocklist={"ips": ["203.0.113.4"], "users": []})
+    assert nodes["score"]["state"] == "alert" and nodes["block"]["state"] == "busy"
+    assert nodes["owner"]["state"] == "alert" and "1 with no owner" in nodes["owner"]["note"]
+    assert {(e["from"], e["to"]) for e in edges if e["live"]} >= {("score", "owner")}
+
+
+def test_watch_only_and_broken_extensions_say_so():
+    nodes, _ = _flow(risk={"risk_index": 5, "monitor_only": True},
+                     extensions=[{"name": "telegram", "title": "Telegram", "added": True, "configured": True,
+                                  "last_error": "401"}], chain_ok=False)
+    assert nodes["auto"]["value"] == "Off" and nodes["auto"]["state"] == "off"
+    assert nodes["alerts"]["state"] == "alert" and "Telegram failing" in nodes["alerts"]["note"]
+    assert nodes["edge"]["value"] == "Off" and nodes["record"]["state"] == "alert"
+    assert _flow(settings={"AUTO_ACTIONS": ""})[0]["auto"]["note"].startswith("nothing allowed")

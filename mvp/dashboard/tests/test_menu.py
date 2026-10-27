@@ -59,7 +59,7 @@ def test_risk_breakdown_counts_only_active_incidents():
 APP = str(Path(__file__).resolve().parents[1] / "app.py")
 
 
-@pytest.mark.parametrize("page", ["config", "approvals", "incidents", "staff", "chat", "collector", "classifier", "responder",
+@pytest.mark.parametrize("page", ["flow", "config", "approvals", "incidents", "staff", "chat", "collector", "classifier", "responder",
                                   "machines", "review", "reports", "audit", "backups", "extensions"])
 def test_every_page_renders(fake_core, page, tmp_path, monkeypatch):
     from streamlit.testing.v1 import AppTest
@@ -587,6 +587,27 @@ def test_an_owner_can_see_the_page_as_anyone(fake_core, tmp_path, monkeypatch):
     _, data = _my_map(at)
     assert data["focus"] == "it_manager" and data["read_only"]
     _routing_editor(at)  # the whole map stays, to change
+
+
+def test_how_it_works_draws_every_step_and_each_opens_a_page(fake_core, tmp_path, monkeypatch):
+    from streamlit.testing.v1 import AppTest
+
+    monkeypatch.setenv("SENTRAI_CONFIG", str(tmp_path / "config.json"))
+    at = AppTest.from_file(APP, default_timeout=20)
+    at.session_state["core_url"] = fake_core
+    at.session_state["auto_refresh"] = False
+    at.session_state["page"] = "flow"
+    at.run()
+    assert not at.exception, at.exception
+    found = [json.loads(el.proto.json) for el in at.get("bidi_component") if el.proto.component_name.endswith("flow_map")]
+    assert len(found) == 1
+    data = found[0]
+    pages = {"approvals", "incidents", "collector", "classifier", "responder", "review", "audit", "extensions", "config"}
+    assert {n["id"] for n in data["nodes"]} == {"logs", "sort", "score", "ask", "auto", "block", "edge", "owner",
+                                                "alerts", "record"}
+    assert {n["page"] for n in data["nodes"]} <= pages
+    ids = {n["id"] for n in data["nodes"]}
+    assert all(e["from"] in ids and e["to"] in ids for e in data["edges"])
 
 
 def test_saving_the_map_reaches_the_core_and_the_editor_hears_how_it_went(fake_core, tmp_path, monkeypatch):

@@ -72,6 +72,9 @@ _UI = Path(__file__).parent / "sentrai_ui"
 ROUTING_EDITOR = st.components.v2.component(
     "routing_editor", js=(_UI / "routing_editor.mjs").read_text(encoding="utf-8"),
     css=(_UI / "routing_editor.css").read_text(encoding="utf-8")) if hasattr(st.components, "v2") else None
+FLOW_MAP = st.components.v2.component(
+    "flow_map", js=(_UI / "flow_map.mjs").read_text(encoding="utf-8"),
+    css=(_UI / "flow_map.css").read_text(encoding="utf-8")) if hasattr(st.components, "v2") else None
 
 
 def _apply_streamlit_theme() -> bool:
@@ -593,6 +596,7 @@ PAGES = {  # key: (Material icon, label, menu group)
     "incidents": ("assignment_ind", "Incidents", "Decide"),
     "staff": ("campaign", "Staff reports", "Decide"),
     "chat": ("forum", "Chat", "Decide"),
+    "flow": ("account_tree", "How it works", "Pipeline"),
     "collector": ("input", "Collector", "Pipeline"),
     "classifier": ("category", "Classifier", "Pipeline"),
     "responder": ("shield", "Action taker", "Pipeline"),
@@ -2136,6 +2140,32 @@ def backup_suggestion(mid: Any, n: int, s: dict) -> None:
 
 
 @st.fragment(run_every=AUTO)
+@st.fragment(run_every=AUTO)
+def page_flow() -> None:
+    """How an attack is handled, as one map with what each step is doing now. Click a step to open its page."""
+    if header("How it works", "how an attack is handled, step by step · click a step to open it") is None:
+        return
+    risk, _ = fetch("risk", {})
+    incidents, _ = fetch("incidents", [])
+    agents, _ = fetch("agents", [])
+    blocklist, _ = fetch("blocklist", {})
+    exts, _ = fetch("extensions", [])
+    records, valid, _ = audit_records()
+    settings = {f.env: f.default for f in cfg.FIELDS.values()} | cfg.read()
+    data = sh.flow_map_data(risk, incidents, agents, blocklist, exts, records, settings, valid)
+    with st.container(border=True):
+        if FLOW_MAP is None:
+            st.caption("This Streamlit is too old to draw the map: run `pip install -r requirements.txt` in "
+                       "mvp/dashboard. The same steps as a list:")
+            table(sh.pd.DataFrame([{"Step": n["title"], "Now": n["value"], "": n["note"]} for n in data["nodes"]]), "")
+            return
+        picked = FLOW_MAP(key="flow_map", data=data, on_open_change=lambda: None).get("open")
+        if picked in PAGES and page_allowed(picked):
+            go(picked)
+    st.caption("Nothing on this map changes a setting. Each step's own page shows it in full, and the settings "
+               "behind it are on the Configuration page.")
+
+
 def page_collector() -> None:
     show_flash()
     if header("Collector", "Step 1 of 3 · reads your logs and turns each line into an event") is None:
@@ -3091,7 +3121,7 @@ if not page_allowed(st.session_state.page):
     st.session_state.page = "config"
 {
     "config": page_config, "approvals": page_approvals, "incidents": page_incidents, "staff": page_staff, "chat": page_chat,
-    "collector": page_collector, "classifier": page_classifier, "responder": page_responder, "machines": page_machines,
+    "flow": page_flow, "collector": page_collector, "classifier": page_classifier, "responder": page_responder, "machines": page_machines,
     "review": page_review, "reports": page_reports, "audit": page_audit, "machine": page_machine,
     "backups": page_backups, "team": page_team, "extensions": page_extensions,
     "integrations": page_extensions,  # the page's name before extensions
