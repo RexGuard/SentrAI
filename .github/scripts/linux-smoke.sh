@@ -59,6 +59,15 @@ TOKEN="$(cd /opt/sentrai/mvp && set -a && . /etc/sentrai/sentrai.env && set +a &
 api() { curl -sf -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' "$@"; }
 
 grep -q '^SENTRAI_RISK_SCOPE=host' /etc/sentrai/sentrai.env || fail "--panel did not turn on per-machine scoring"
+# Reruns keep the address agents use: --panel alone must not swap it for this server's own name,
+# and --panel-url alone (what install.sh tells you to run) must change it.
+./deploy/install.sh --no-questions --panel >/dev/null
+grep -qx "SENTRAI_PANEL_URL=$AGENT_URL" /etc/sentrai/sentrai.env || fail "a --panel rerun lost --panel-url"
+./deploy/install.sh --no-questions --panel-url https://panel.example.com:8443 >/dev/null
+grep -qx "SENTRAI_PANEL_URL=https://panel.example.com:8443" /etc/sentrai/sentrai.env || fail "--panel-url alone was ignored"
+./deploy/install.sh --no-questions --panel-url "$AGENT_URL" >/dev/null
+grep -qx "SENTRAI_PANEL_URL=$AGENT_URL" /etc/sentrai/sentrai.env || fail "--panel-url did not change back"
+wait_for "core answers after reruns" 60 curl -sf "$PANEL/health"
 wait_for "the agents' HTTPS port answers" 30 curl -skf "$AGENT_URL/health"
 # That port answers machine keys only: the operator API stays on 127.0.0.1, even with the token.
 code="$(curl -sk -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $TOKEN" "$AGENT_URL/incidents")"
