@@ -567,7 +567,7 @@ def _flow(**kw):
 def test_a_quiet_system_shows_every_step_fine_and_nothing_moving():
     nodes, edges = _flow()
     assert nodes["score"]["value"] == "12" and nodes["score"]["state"] == "ok"
-    assert nodes["auto"]["value"] == "On" and "block an address" in nodes["auto"]["note"]
+    assert nodes["auto"]["badge"] == "On" and nodes["auto"]["value"] == "1" and "block an address" in nodes["auto"]["what"]
     assert nodes["record"]["note"] == "records · chain intact"
     assert not any(e["live"] for e in edges)
 
@@ -586,10 +586,10 @@ def test_watch_only_and_broken_extensions_say_so():
     nodes, _ = _flow(risk={"risk_index": 5, "monitor_only": True},
                      extensions=[{"name": "telegram", "title": "Telegram", "added": True, "configured": True,
                                   "last_error": "401"}], chain_ok=False)
-    assert nodes["auto"]["value"] == "Off" and nodes["auto"]["state"] == "off"
+    assert nodes["auto"]["badge"] == "Off" and nodes["auto"]["state"] == "off"
     assert nodes["alerts"]["state"] == "alert" and "Telegram failing" in nodes["alerts"]["note"]
-    assert nodes["edge"]["value"] == "Off" and nodes["record"]["state"] == "alert"
-    assert _flow(settings={"AUTO_ACTIONS": ""})[0]["auto"]["note"].startswith("nothing allowed")
+    assert nodes["edge"]["badge"] == "Off" and nodes["record"]["state"] == "alert"
+    assert _flow(settings={"AUTO_ACTIONS": ""})[0]["auto"]["note"] == "everything waits for a person"
 
 
 # ------------------------------------------------- "What it may do on its own" map

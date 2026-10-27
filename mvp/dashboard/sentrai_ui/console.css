@@ -11,7 +11,10 @@
 
 .stApp { background: var(--bg); font-feature-settings: "tnum" 1; }
 h1, h2, h3, .page-title h1 { text-wrap: balance; }
-.block-container { padding-top: 1.6rem; padding-bottom: 3rem; max-width: 1480px; }
+/* Content up to 1440 px, centred in what the sidebar leaves, so wide screens keep even margins on both sides
+   and the pipeline's six columns fit without shrinking. */
+.block-container { padding-top: 1.6rem; padding-bottom: 3rem; max-width: 1440px; margin-inline: auto;
+                   padding-inline: clamp(1rem, 3vw, 3rem); }
 header[data-testid="stHeader"] { background: transparent; }
 
 /* Icons: Lucide, bundled in sentrai_ui/icons as a font under Streamlit's icon-font name (theme.icon_css),
@@ -183,6 +186,21 @@ div[data-testid="stMarkdownContainer"] ul.machines > li.machine.status { backgro
 .side-update small { color: var(--ink-muted); }
 .side-update code { white-space: nowrap; }
 .side-off { margin-top: .45rem; font-size: .8rem; font-weight: 700; color: var(--amber); }
+/* Under the meter: a low index next to a queue of approvals must not read as "all clear". */
+.side-waiting { margin-top: .45rem; display: flex; align-items: center; gap: .35rem; font-size: .8rem; font-weight: 600;
+                color: color-mix(in srgb, var(--amber) 70%, var(--ink)); }
+
+/* ------------------------------------------------------------ "How this step works" (step pages) */
+.step-help .sec-title { margin-bottom: .3rem; }
+.step-help p { margin: 0 0 .35rem; color: var(--ink-soft); max-width: 80ch; }
+.step-help p:first-of-type { color: var(--ink); }
+/* Once put away: the pipeline's live numbers in one slim line. */
+.ribbon { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .55rem; font-size: .85rem; color: var(--ink-soft);
+          padding: .45rem .7rem; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.ribbon b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+.ribbon .cell.alert b { color: color-mix(in srgb, var(--critical) 75%, var(--ink)); }
+.ribbon .cell.busy b { color: color-mix(in srgb, var(--amber) 70%, var(--ink)); }
+.ribbon .arrow { color: var(--ink-faint); display: inline-flex; }
 
 /* ------------------------------------------------------------ incidents */
 .inc-head { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin-bottom: .6rem; }
@@ -273,7 +291,7 @@ div[data-testid="stButtonGroup"] button[aria-checked="true"] * { color: var(--on
 
 /* ------------------------------------------------------------ chat */
 /* The pinned "Ask Cyanide…" box lines up with the page content above it instead of the whole window. */
-[data-testid="stBottomBlockContainer"] { max-width: 1480px; }
+[data-testid="stBottomBlockContainer"] { max-width: 1440px; margin-inline: auto; }
 /* Quick replies under a Cyanide message: compact, left-aligned, like chips in a messenger. */
 [class*="st-key-quick_"] .stButton button { min-height: 2rem; padding: .25rem .8rem;
   font-size: .9rem; border-radius: 999px; }

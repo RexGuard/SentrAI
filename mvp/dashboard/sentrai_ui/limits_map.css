@@ -1,4 +1,4 @@
-/* "What it may do on its own" map (limits_map.mjs). Shadow root: the colour variables from theme.py come in
+/* Automation guardrails (limits_map.mjs). Shadow root: the colour variables from theme.py come in
    from the page, nothing else does. Hairlines, colour only where it means something, nothing under 12 px. */
 
 :host { display: block; }
@@ -28,36 +28,70 @@
 .lm-problems li { display: flex; align-items: center; gap: .4rem; }
 .lm-problems .mi { color: var(--alert); }
 
-.lm-flow { display: flex; align-items: stretch; gap: .25rem; overflow-x: auto; padding: 2px 2px .4rem; }
-.lm-arrow { display: flex; align-items: center; color: var(--ink-faint); flex: none; }
-.lm-box, .lm-lane, .lm-fence { border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2);
-                               padding: .6rem .7rem; display: flex; flex-direction: column; gap: .45rem; }
-.lm-box { flex: 1 1 8rem; min-width: 8rem; }
-.lm-box.start { flex: .7 1 6.5rem; min-width: 6.5rem; }
-.lm-head { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
+.lm-summary { display: flex; align-items: flex-start; gap: .55rem; padding: .65rem .8rem; border-radius: 10px;
+              background: var(--surface-2); border: 1px solid var(--line); }
+.lm-summary p { margin: 0; max-width: 80ch; }
+.lm-summary .mi { margin-top: .15rem; color: var(--ink-soft); }
+
+/* The four parts stack; 2 and 3 sit side by side when there is room, and stack again when there is not. */
+.lm { container-type: inline-size; }
+.lm-part { border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); padding: .75rem .85rem;
+           display: flex; flex-direction: column; gap: .6rem; min-width: 0; }
+.lm-head { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; }
+.lm-head h3 { margin: 0; font-size: .95rem; font-weight: 600; line-height: 1.3; color: var(--ink); }
+.lm-n { display: inline-flex; align-items: center; justify-content: center; width: 1.35rem; height: 1.35rem;
+        border-radius: 50%; border: 1px solid var(--line); font-size: .75rem; font-weight: 600; color: var(--ink-soft); }
 .lm-sub { font-size: .8rem; color: var(--ink-soft); font-weight: 400; }
-.lm-no { margin-top: auto; display: flex; align-items: flex-start; gap: .3rem; font-size: .8rem; color: var(--ink-soft); }
+.lm-lanes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .7rem; }
+@container (max-width: 720px) { .lm-lanes { grid-template-columns: minmax(0, 1fr); } }
+.lm-part.own { border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); }
+.lm-part.ask { border-color: color-mix(in srgb, var(--busy) 45%, var(--line)); }
+.lm-part.never { border-style: dashed; }
 
-.lm-field { display: flex; flex-direction: column; gap: .2rem; font-size: .8rem; color: var(--ink-soft); }
-.lm-field.wide { flex: 1 1 16rem; }
-.lm-in { font: inherit; font-size: .9rem; color: var(--ink); background: var(--surface); border: 1px solid var(--line);
-         border-radius: 6px; padding: .3rem .45rem; min-height: 2rem; box-sizing: border-box; width: 100%; }
-.lm-in:disabled { opacity: .7; }
+.lm-nums { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: .6rem 1rem; }
+.lm-nums.two { grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); padding-top: .55rem;
+               border-top: 1px solid var(--line); }
+.lm-num, .lm-tag-field { display: flex; flex-direction: column; gap: .25rem; min-width: 0; }
+.lm-label { font-size: .85rem; color: var(--ink); }
+.lm-help { font-size: .8rem; color: var(--ink-soft); min-height: 1.1em; }
+.lm-help.bad { color: var(--ink); }
+.lm-help.bad::before { content: "error"; font-family: "Material Symbols Rounded"; color: var(--alert); margin-right: .3rem;
+                       font-feature-settings: "liga"; vertical-align: -.12em; }
+.lm-in-wrap { display: flex; align-items: center; gap: .45rem; }
+.lm-affix { font-size: .85rem; color: var(--ink-soft); white-space: nowrap; }
+.lm-in { font: inherit; font-size: .95rem; color: var(--ink); background: var(--surface); border: 1px solid var(--line);
+         border-radius: 6px; padding: .3rem .5rem; min-height: 2.15rem; box-sizing: border-box; width: 6.5rem; }
+.lm-in:disabled, .lm-tag-in:disabled { opacity: .7; }
 
-.lm-lanes { flex: 1.6 1 12.5rem; min-width: 12.5rem; display: flex; flex-direction: column; gap: .5rem; }
-.lm-lane { flex: 1 1 auto; transition: border-color .15s ease-out, background-color .15s ease-out; }
-.lm-lane.auto { border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); }
-.lm-lane.ask { border-color: color-mix(in srgb, var(--busy) 45%, var(--line)); border-style: dashed; }
-.lm-lane.over { background: var(--surface); border-color: var(--brand); }
-.lm-chips { display: flex; flex-wrap: wrap; gap: .35rem; }
-.lm-chip { font: inherit; font-size: .82rem; display: inline-flex; align-items: center; gap: .3rem; padding: .25rem .55rem;
-           border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: grab; }
-.lm-chip.auto .mi { color: var(--ok); }
-.lm-chip:not(.auto) .mi { color: var(--busy); }
-.lm-chip:hover:not(:disabled) { border-color: var(--ink-faint); }
-.lm-chip:disabled { cursor: default; }
-.lm-empty { font-size: .8rem; color: var(--ink-faint); }
+.lm-chips { display: flex; flex-wrap: wrap; align-content: flex-start; gap: .45rem; min-height: 2.6rem; padding: .35rem;
+            border-radius: 8px; border: 1px dashed transparent; transition: border-color .15s ease-out, background-color .15s ease-out; }
+.lm-chips.over { border-color: var(--brand); background: var(--surface); }
+/* A pill you can pick up: a grip on the left, raised off the lane. */
+.lm-chip { font: inherit; font-size: .85rem; display: inline-flex; align-items: center; gap: .3rem; padding: .3rem .65rem .3rem .35rem;
+           min-height: 2.15rem; border-radius: 8px; border: 1px solid var(--ink-faint); background: var(--surface); color: var(--ink);
+           cursor: grab; box-shadow: 0 1px 0 var(--line), 0 2px 6px rgb(0 0 0 / .14);
+           transition: transform .12s ease-out, box-shadow .12s ease-out, border-color .12s ease-out; }
+.lm-chip .lm-grip { color: var(--ink-soft); }
+.lm-chip.auto .mi:not(.lm-grip) { color: var(--ok); }
+.lm-chip:not(.auto) .mi:not(.lm-grip) { color: var(--busy); }
+.lm-chip:hover:not(:disabled) { border-color: var(--ink-soft); transform: translateY(-1px); box-shadow: 0 1px 0 var(--line), 0 4px 10px rgb(0 0 0 / .2); }
+.lm-chip:active:not(:disabled) { cursor: grabbing; }
+.lm-chip:disabled { cursor: default; box-shadow: none; padding-left: .65rem; }
+.lm-empty { font-size: .8rem; color: var(--ink-soft); align-self: center; }
 
-.lm-fence { border-style: dashed; }
-.lm-fence .mi { color: var(--ink-soft); }
-.lm-fence-fields { display: flex; flex-wrap: wrap; gap: .6rem; }
+.lm-tag-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: .7rem 1rem; }
+.lm-tags { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; padding: .3rem .35rem; min-height: 2.4rem;
+           box-sizing: border-box; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; cursor: text; }
+.lm-tags:focus-within { outline: 2px solid var(--brand); outline-offset: 2px; }
+.lm-tags.ro { cursor: default; }
+.lm-tag { display: inline-flex; align-items: center; gap: .15rem; font-family: var(--mono, monospace); font-size: .82rem;
+          padding: .15rem .2rem .15rem .5rem; border-radius: 999px; border: 1px solid var(--line); background: var(--surface-2); }
+.lm-tags.ro .lm-tag { padding-right: .5rem; }
+.lm-tag.bad { border-color: color-mix(in srgb, var(--alert) 65%, var(--line)); }
+.lm-tag-x { font: inherit; display: inline-flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem;
+            border: 0; border-radius: 50%; background: transparent; color: var(--ink-soft); cursor: pointer; padding: 0; }
+.lm-tag-x:hover { background: var(--line); color: var(--ink); }
+.lm-tag-x:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+.lm-tag-in { flex: 1 1 8rem; min-width: 8rem; font: inherit; font-size: .9rem; color: var(--ink); background: transparent;
+             border: 0; outline: none; padding: .2rem .25rem; }
+.lm-tag-in::placeholder { color: var(--ink-soft); }

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import hashlib
 import html
+import ipaddress
 import json
 import re
 from datetime import datetime, timezone
@@ -1338,41 +1339,60 @@ def flow_map_data(risk: dict | None, incidents: Iterable[dict] | None, agents: I
     broken = [str(r.get("title") or r.get("name")) for r in extensions or []
               if r.get("added") and (r.get("error") or r.get("last_error"))]
 
-    def node(nid, col, row, title, what, value, note, state, page, ico):
-        return {"id": nid, "col": col, "row": row, "title": title, "what": what, "value": value, "note": note,
-                "state": state, "page": page, "icon": ico}
+    def node(nid, col, row, title, what, value, note, state, page, ico, unit="", badge=None):
+        """One box: a live count in big type (value, with its unit), an On/Off badge for a switch, a one-line
+        note under the count, and `what`, the step explained in full, for the hover tip."""
+        return {"id": nid, "col": col, "row": row, "title": title, "what": what, "value": value, "unit": unit,
+                "note": note, "state": state, "page": page, "icon": ico, "badge": badge}
 
+    may = ", ".join(ACTION_WORDS.get(a, a.replace("_", " ")) for a in allowed)
     nodes = [
-        node("logs", 0, 1, "Logs come in", "every line from your machines", f"{events:,}", "lines read" +
+        node("logs", 0, 1, "Logs come in", "Every line your machines write to their logs is read here, as it is "
+             "written.", f"{events:,}", "lines read" +
              (f" · {plural(len(silent), 'source')} went quiet" if silent else
               f" · {plural(len(collectors), 'source')} reporting" if collectors else ""),
              "busy" if silent else "ok" if events or collectors else "idle", "collector", "input"),
-        node("sort", 1, 1, "Sorted", "attack or normal: rules first, then AI", str(len(attacks)),
+        node("sort", 1, 1, "Sorted", "Each line is sorted into attack or normal: fixed rules first, then the AI "
+             "for what the rules cannot settle, then keywords.", f"{len(attacks):,}",
              f"looked like attacks · AI {ai.lower()}", "alert" if attacks else "ok", "classifier", "category"),
-        node("score", 2, 1, "Scored", "how dangerous right now, 0 to 100", "-" if idx is None else f"{idx}",
-             f"acts on its own from {threshold:.0f}", "unknown" if idx is None else
-             "alert" if band in ("red", "critical") else "busy" if band == "amber" else "ok", "review", "speed"),
-        node("ask", 3, 0, "Waits for a person", "unsure, or not allowed on its own", str(len(waiting)),
+        node("score", 2, 1, "Danger score", f"How dangerous things are right now, from 0 to 100. From "
+             f"{threshold:.0f} up, SentrAI may act on its own; below that it only tells people.",
+             "-" if idx is None else f"{idx}", f"acts on its own from {threshold:.0f}", "unknown" if idx is None else
+             "alert" if band in ("red", "critical") else "busy" if band == "amber" else "ok", "review", "speed",
+             unit="" if idx is None else "/ 100"),
+        node("ask", 3, 0, "Waits for a person", "Anything SentrAI is unsure about, or is not allowed to do on its "
+             "own, waits here until a person approves or rejects it.", str(len(waiting)),
              "waiting for approval" if waiting else "nothing waiting", "busy" if waiting else "ok", "approvals",
              "pending_actions"),
-        node("auto", 3, 1, "Acts on its own", "only what you allowed", "Off" if watch_only else "On",
+        node("auto", 3, 1, "Acts on its own", "Watching only: it blocks nothing until protection is switched on."
+             if watch_only else f"It may {may} without asking, at most {per_hour} times an hour. Change this on "
+             "Automation guardrails." if allowed else "Nothing is allowed on its own, so every action waits for a "
+             "person. Change this on Automation guardrails.", str(0 if watch_only else len(allowed)),
              "watching only, blocks nothing" if watch_only else
-             (f"may {', '.join(ACTION_WORDS.get(a, a.replace('_', ' ')) for a in allowed)}; at most {per_hour} an hour"
-              if allowed else "nothing allowed: everything waits for a person"),
-             "off" if watch_only or not allowed else "ok", "config", "smart_toy"),
-        node("block", 4, 0.5, "Blocks the attacker", f"undoes itself after {hours} h unless kept", str(ips + users),
+             (f"{'kind' if len(allowed) == 1 else 'kinds'} of action allowed · {per_hour} an hour at most"
+              if allowed else "everything waits for a person"),
+             "off" if watch_only or not allowed else "ok", "guardrails", "smart_toy",
+             badge="Off" if watch_only or not allowed else "On"),
+        node("block", 4, 0.5, "Blocks the attacker", f"Blocks the address or locks the account. Each block undoes "
+             f"itself after {hours} h unless a person keeps it.", str(ips + users),
              f"{plural(ips, 'address', 'addresses')}, {plural(users, 'account')} blocked now",
              "busy" if ips + users else "ok", "responder", "block"),
-        node("edge", 5, 0.5, "Blocks at the edge", "stops them before your servers too",
-             "On" if _ext_on(edge) else "Off", "Cloudflare" if edge else "not available",
-             "ok" if _ext_on(edge) else "alert" if edge and edge.get("added") else "off", "extensions", "public"),
-        node("owner", 3, 2, "Owner gets it", "who gets what decides who", str(len(open_)),
+        node("edge", 5, 0.5, "Blocks at the edge", "Sends the same blocks to Cloudflare, so attackers are stopped "
+             "before they reach your servers at all.", None,
+             "through Cloudflare" if edge else "Cloudflare not set up",
+             "ok" if _ext_on(edge) else "alert" if edge and edge.get("added") else "off", "extensions", "public",
+             badge="On" if _ext_on(edge) else "Off"),
+        node("owner", 3, 2, "Owner gets it", "Every incident gets an owner, picked by the rules under Who gets "
+             "what on the Incidents page.", str(len(open_)),
              f"open · {no_owner} with no owner" if no_owner else "open, each with an owner",
              "alert" if no_owner else "busy" if open_ else "ok", "incidents", "assignment_ind"),
-        node("alerts", 4, 2, "Alerts go out", "messages with buttons to act", str(len(channels)),
-             (", ".join(channels) if channels else "no channel set up") + (f" · {', '.join(broken)} failing" if broken else ""),
+        node("alerts", 4, 2, "Alerts go out", "People hear about it by email or chat, with buttons to approve, "
+             "reject or roll back.", str(len(channels)),
+             ("channels: " + ", ".join(channels) if channels else "no channel set up") +
+             (f" · {', '.join(broken)} failing" if broken else ""),
              "alert" if broken else "ok" if channels else "off", "extensions", "send"),
-        node("record", 5, 2, "Written down", "every step, sealed so it cannot be changed quietly", f"{len(records):,}",
+        node("record", 5, 2, "Written down", "Every step is written to the audit trail and sealed, so no one can "
+             "change it quietly.", f"{len(records):,}",
              "records · chain intact" if chain_ok else "records · chain broken" if chain_ok is False else "records",
              "alert" if chain_ok is False else "ok", "audit", "link"),
     ]
@@ -1385,7 +1405,35 @@ def flow_map_data(risk: dict | None, incidents: Iterable[dict] | None, agents: I
             "colors": {"ok": BAND_COLORS["green"], "busy": BAND_COLORS["amber"], "alert": BAND_COLORS["critical"]}}
 
 
-# ------------------------------------------------- "What it may do on its own" map (limits_map.mjs)
+def pipeline_ribbon(flow: dict) -> list[dict]:
+    """The slim line of live numbers a step's page shows once its "How this step works" panel is put away:
+    lines read, sorted as attacks, waiting for a person, blocked now. Taken from flow_map_data's nodes."""
+    by_id = {n["id"]: n for n in flow.get("nodes") or []}
+    words = (("logs", "lines read"), ("sort", "sorted as attacks"), ("ask", "waiting for a person"),
+             ("block", "blocked now"))
+    return [{"value": by_id[k]["value"], "label": label, "page": by_id[k]["page"], "state": by_id[k]["state"]}
+            for k, label in words if k in by_id]
+
+
+# What each step's page says under "How this step works": a few plain sentences, the answer first.
+STEP_HELP = {
+    "collector": ("Reads every log your machines write, as it is written, and turns each line into an event "
+                  "SentrAI can check.",
+                  "If a log goes quiet for too long, the Watchdog says so here and on the Review page.",
+                  "Which logs it reads is set on the Configuration page; Scout suggests more it finds."),
+    "classifier": ("Decides whether each event is an attack: fixed rules first, then the AI for what the rules "
+                   "cannot settle, then keywords if the AI is off.",
+                   "Something it is 40 to 60 % sure about always goes to a person and is never blocked on its own.",
+                   "The rules' numbers (failed logins, export size) are set on the Configuration page."),
+    "responder": ("Takes the action: blocks an address, slows it down or locks an account, on its own only where "
+                  "Automation guardrails allow it, otherwise after a person approves.",
+                  "Every block undoes itself after a while unless a person keeps it, and a second check "
+                  "(Countersign) reviews each one before it runs.",
+                  "What it may do on its own, and what it never touches, is set on Automation guardrails."),
+}
+
+
+# ------------------------------------------------- Automation guardrails (limits_map.mjs)
 
 LIMIT_FIELDS = ("AUTO_ACTIONS", "NEEDLE_MIN_CONFIDENCE", "RISK_THRESHOLD", "MAX_AUTO_ACTIONS_PER_HOUR",
                 "HOTPATCH_TTL_HOURS", "MAX_TTL_HOURS", "PROTECTED_IPS", "PROTECTED_USERS")
@@ -1426,8 +1474,42 @@ def check_limits(sent: Any) -> dict[str, str]:
     if float(out["HOTPATCH_TTL_HOURS"]) > float(out["MAX_TTL_HOURS"]):
         raise ValueError("a block cannot last longer than the longest block allowed")
     for key in ("PROTECTED_IPS", "PROTECTED_USERS"):
-        out[key] = ",".join(x.strip() for x in out[key].split(",") if x.strip())
+        out[key] = ",".join(dict.fromkeys(x.strip() for x in out[key].split(",") if x.strip()))
+    bad = [x for x in out["PROTECTED_IPS"].split(",") if x and not protected_address_ok(x)]
+    if bad:
+        raise ValueError(f"{bad[0]} is not an address, a network or a host name")
+    bad = [x for x in out["PROTECTED_USERS"].split(",") if x and re.search(r"\s", x)]
+    if bad:
+        raise ValueError(f'"{bad[0]}" has a space in it; one account per tag')
     return out
+
+
+_HOST = re.compile(r"^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$")
+
+
+def protected_address_ok(text: str) -> bool:
+    """One "never touched" entry the core can use: an IPv4 or IPv6 address, a network (10.0.0.0/8) or a host
+    name such as localhost. Mirrors addressOk() in limits_map.mjs, which checks the same while you type."""
+    text = text.strip()
+    try:
+        ipaddress.ip_network(text, strict=False)
+        return True
+    except ValueError:
+        pass
+    return bool(_HOST.match(text)) and not re.fullmatch(r"[\d.]+", text)
+
+
+def guardrails_changed(meta: dict | None, settings_mtime: float | None, now: datetime | None = None) -> str:
+    """The "last changed" chip on Automation guardrails: who saved the guardrails last and when, from the
+    small note the page writes on Save; just when, from the settings file, if the note is missing."""
+    meta = meta if isinstance(meta, dict) else {}
+    at = parse_ts(meta.get("at"))
+    if at is None and settings_mtime:
+        at = datetime.fromtimestamp(settings_mtime, timezone.utc)
+    if at is None:
+        return "Never changed"
+    who = str(meta.get("by") or "").strip() if parse_ts(meta.get("at")) else ""
+    return f"Changed {seen_ago(at, now)}" + (f" by {who}" if who else "")
 
 
 def approvals_headline(waiting: list[dict], now: datetime | None = None) -> str:

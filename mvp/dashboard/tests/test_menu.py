@@ -602,7 +602,8 @@ def test_how_it_works_draws_every_step_and_each_opens_a_page(fake_core, tmp_path
     found = [json.loads(el.proto.json) for el in at.get("bidi_component") if el.proto.component_name.endswith("flow_map")]
     assert len(found) == 1
     data = found[0]
-    pages = {"approvals", "incidents", "collector", "classifier", "responder", "review", "audit", "extensions", "config"}
+    pages = {"approvals", "incidents", "collector", "classifier", "responder", "review", "audit", "extensions",
+             "guardrails"}
     assert {n["id"] for n in data["nodes"]} == {"logs", "sort", "score", "ask", "auto", "block", "edge", "owner",
                                                 "alerts", "record"}
     assert {n["page"] for n in data["nodes"]} <= pages
@@ -610,7 +611,7 @@ def test_how_it_works_draws_every_step_and_each_opens_a_page(fake_core, tmp_path
     assert all(e["from"] in ids and e["to"] in ids for e in data["edges"])
 
 
-def _flow_page(fake_core, tmp_path, monkeypatch, role: str = ""):
+def _guardrails_page(fake_core, tmp_path, monkeypatch, role: str = ""):
     from streamlit.testing.v1 import AppTest
 
     monkeypatch.setenv("SENTRAI_CONFIG", str(tmp_path / "config.json"))
@@ -621,7 +622,7 @@ def _flow_page(fake_core, tmp_path, monkeypatch, role: str = ""):
     at = AppTest.from_file(APP, default_timeout=20)
     at.session_state["core_url"] = fake_core
     at.session_state["auto_refresh"] = False
-    at.session_state["page"] = "flow"
+    at.session_state["page"] = "guardrails"
     at.run()
     return at
 
@@ -649,7 +650,7 @@ def _press(at, el, event: str, value: dict) -> None:
 def test_the_limits_map_saves_to_the_settings_file(fake_core, tmp_path, monkeypatch):
     import sentrai_config as cfg
 
-    at = _flow_page(fake_core, tmp_path, monkeypatch)
+    at = _guardrails_page(fake_core, tmp_path, monkeypatch)
     assert not at.exception, at.exception
     el, data = _limits_map(at)
     assert not data["read_only"] and data["settings"]["AUTO_ACTIONS"] == "block_ip,rate_limit,waf_rule"
@@ -673,7 +674,7 @@ def test_the_limits_map_saves_to_the_settings_file(fake_core, tmp_path, monkeypa
 def test_an_auditor_sees_the_limits_but_never_saves_them(fake_core, tmp_path, monkeypatch):
     import sentrai_config as cfg
 
-    at = _flow_page(fake_core, tmp_path, monkeypatch, role="auditor")
+    at = _guardrails_page(fake_core, tmp_path, monkeypatch, role="auditor")
     el, data = _limits_map(at)
     assert data["read_only"] and data["lock_reason"] == READ_ONLY_MESSAGE
     _press(at, el, "save", {"id": "save-1", "settings": data["settings"] | {"RISK_THRESHOLD": "1"}})

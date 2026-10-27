@@ -302,6 +302,14 @@ def settle_preset(values: dict[str, str]) -> dict[str, str]:
     return values
 
 
+def _percent(value: str) -> str:
+    """0.6 as people say it, "60 %"; anything that is not a number as it is."""
+    try:
+        return f"{float(value) * 100:g} %"
+    except (TypeError, ValueError):
+        return str(value)
+
+
 def describe(values: dict[str, str]) -> list[tuple[str, tuple[str, ...]]]:
     """The preset-controlled values in plain words, each with the fields it shows, for summaries."""
     v = {env: values.get(env, FIELDS[env].default) for env in PRESET_FIELDS}
@@ -312,7 +320,7 @@ def describe(values: dict[str, str]) -> list[tuple[str, tuple[str, ...]]]:
         (f"acts at risk {v['RISK_THRESHOLD']}", ("RISK_THRESHOLD",)),
         (f"blocks last {v['HOTPATCH_TTL_HOURS']} h", ("HOTPATCH_TTL_HOURS",)),
         (f"people have {v['SLA_HOURS']} h to respond", ("SLA_HOURS",)),
-        (f"acts alone only at {v['NEEDLE_MIN_CONFIDENCE']} AI confidence or more", ("NEEDLE_MIN_CONFIDENCE",)),
+        (f"acts alone only when the AI is {_percent(v['NEEDLE_MIN_CONFIDENCE'])} sure or more", ("NEEDLE_MIN_CONFIDENCE",)),
     ]
 
 

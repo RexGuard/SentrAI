@@ -34,6 +34,7 @@
   "dns": "server",
   "do_not_disturb_on": "circle-minus",
   "download": "download",
+  "drag_indicator": "grip-vertical",
   "error": "circle-alert",
   "event_repeat": "calendar-sync",
   "expand_less": "chevron-up",

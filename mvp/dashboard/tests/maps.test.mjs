@@ -43,7 +43,7 @@ describe("limits map", () => {
   test("a draft that is fine has no problems; out-of-range numbers each say what to fix", () => {
     const d = limits.fromSettings(settings, actions);
     assert.deepEqual(limits.problems(d), []);
-    for (const [k, v] of [["NEEDLE_MIN_CONFIDENCE", "2"], ["RISK_THRESHOLD", "80.5"], ["MAX_AUTO_ACTIONS_PER_HOUR", ""],
+    for (const [k, v] of [["CONFIDENCE_PCT", "120"], ["RISK_THRESHOLD", "80.5"], ["MAX_AUTO_ACTIONS_PER_HOUR", ""],
       ["HOTPATCH_TTL_HOURS", "0"], ["HOTPATCH_TTL_HOURS", "48"]]) {
       assert.equal(limits.problems({ ...d, [k]: v }).length, 1, `${k}=${v}`);
     }

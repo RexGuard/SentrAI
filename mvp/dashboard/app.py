@@ -15,7 +15,7 @@ import json
 import os
 import re
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -599,10 +599,11 @@ PAGES = {  # key: (Material icon, label, menu group)
     "incidents": ("assignment_ind", "Incidents", "Decide"),
     "staff": ("campaign", "Staff reports", "Decide"),
     "chat": ("forum", "Chat", "Decide"),
-    "flow": ("account_tree", "How it works", "Pipeline"),
+    "flow": ("account_tree", "Overview", "Pipeline"),
     "collector": ("input", "Collector", "Pipeline"),
     "classifier": ("category", "Classifier", "Pipeline"),
     "responder": ("shield", "Action taker", "Pipeline"),
+    "guardrails": ("policy", "Automation guardrails", "Pipeline"),
     "machines": ("dns", "Machines", "Oversight"),
     "review": ("speed", "Review", "Oversight"),
     "reports": ("description", "Reports", "Oversight"),
@@ -631,8 +632,9 @@ def open_machine(host: str, tab: str = "Overview") -> None:
     st.rerun()
 
 
-def side_risk() -> None:
-    """Live risk index and chain state, visible from every page."""
+def side_risk(waiting: int = 0) -> None:
+    """Live risk index and chain state, visible from every page, and how many actions wait on a person: a
+    low index next to a queue of approvals would otherwise read as "all clear"."""
     risk, err = fetch("risk")
     if err or not isinstance(risk, dict):
         st.markdown(f'<div class="side-risk"><div class="lbl">Core</div>'
@@ -653,6 +655,8 @@ def side_risk() -> None:
         f'<div class="bar"><i style="width:{pct:.0f}%;background:{color}"></i><b style="left:{threshold:.0f}%"></b></div>'
         f'<div class="foot"><span>threshold {threshold:.0f}</span>'
         f'<span style="color:{chain[1]}">{icon("link")} {chain[0]}</span></div>'
+        + (f'<div class="side-waiting">{icon("pending_actions")} {html.escape(sh.plural(waiting, "action"))} '
+           f'awaiting review</div>' if waiting else "")
         + (f'<div class="side-off">{icon("remove_moderator")} Protection off · monitor only</div>' if risk.get("monitor_only") else "")
         + '</div>',
         unsafe_allow_html=True,
@@ -671,7 +675,7 @@ def menu() -> None:
                "incidents": sh.board_counts(incidents or [])["overdue"],
                "staff": int(((staff or {}).get("counts") or {}).get("new") or 0)}
 
-    side_risk()
+    side_risk(bubbles["approvals"])
     group = None
     for key, (ico, label, grp) in PAGES.items():
         if not page_allowed(key):
@@ -725,15 +729,19 @@ with st.sidebar:
 
 # ------------------------------------------------------------------ shared page parts
 
-def header(title: str, note: str = "", eyebrow: str = "") -> dict | None:
-    """Page title plus the live status chips. Returns /risk, or None when the core is offline.
+def header(title: str, note: str = "", eyebrow: str = "", chips: str | None = None) -> dict | None:
+    """Page title plus the live status chips (or the page's own, for a page that does not refresh itself).
+    Returns /risk, or None when the core is offline.
 
     The risk number lives in the sidebar card only, so each screen says it once."""
     risk, err = fetch("risk")
     now_s = datetime.now().strftime("%H:%M:%S")
     ico, _, group = PAGES.get(st.session_state.page, PAGES["machines"])
+    own, chips = chips, ""
     if err or not isinstance(risk, dict):
         chips = status("Core offline", sh.BAND_COLORS["critical"])
+    elif own is not None:
+        chips = own
     else:
         _, valid, _ = audit_records()
         chips = ((status("Log chain intact", sh.BAND_COLORS["green"]) if valid
@@ -741,8 +749,9 @@ def header(title: str, note: str = "", eyebrow: str = "") -> dict | None:
                     else status("Log chain unknown", sh.UNKNOWN_COLOR)))
         if risk.get("monitor_only"):
             chips = status("Protection off", sh.BAND_COLORS["amber"]) + chips
-    chips += status(f"Live {now_s}" if AUTO else f"Paused {now_s}", sh.BAND_COLORS["green"] if AUTO else sh.UNKNOWN_COLOR,
-                    pulse=bool(AUTO))
+    if own is None:
+        chips += status(f"Live {now_s}" if AUTO else f"Paused {now_s}", sh.BAND_COLORS["green"] if AUTO else sh.UNKNOWN_COLOR,
+                        pulse=bool(AUTO))
     st.markdown(
         f'<div class="page-head"><div class="page-title">'
         f'<div class="eyebrow">{icon(ico)} {html.escape(eyebrow or group)}</div><h1>{html.escape(title)}</h1>'
@@ -2162,13 +2171,9 @@ def backup_suggestion(mid: Any, n: int, s: dict) -> None:
             st.rerun()
 
 
-@st.fragment(run_every=AUTO)
-@st.fragment(run_every=AUTO)
-def page_flow() -> None:
-    """How an attack is handled, as one map with what each step is doing now. Click a step to open its page."""
-    show_flash()
-    if header("How it works", "how an attack is handled, step by step · click a step to open it") is None:
-        return
+def flow_data() -> dict:
+    """What every step of the pipeline is doing now (shaping.flow_map_data), for the overview map and the
+    live-numbers ribbon on each step's page."""
     risk, _ = fetch("risk", {})
     incidents, _ = fetch("incidents", [])
     agents, _ = fetch("agents", [])
@@ -2176,28 +2181,69 @@ def page_flow() -> None:
     exts, _ = fetch("extensions", [])
     records, valid, _ = audit_records()
     settings = {f.env: f.default for f in cfg.FIELDS.values()} | cfg.read()
-    data = sh.flow_map_data(risk, incidents, agents, blocklist, exts, records, settings, valid)
+    return sh.flow_map_data(risk, incidents, agents, blocklist, exts, records, settings, valid)
+
+
+@st.fragment(run_every=AUTO)
+def page_flow() -> None:
+    """The pipeline, as one live map of what each step is doing now. Only looks: click a step to open its page.
+    The policy it follows has its own page (Automation guardrails), which does not refresh under your typing."""
+    show_flash()
+    if header("Pipeline overview", "what each step is doing right now · point at a step for what it does, "
+              "click it to open it") is None:
+        return
+    data = flow_data()
     with st.container(border=True):
         if FLOW_MAP is None:
             st.caption("This Streamlit is too old to draw the map: run `pip install -r requirements.txt` in "
                        "mvp/dashboard. The same steps as a list:")
-            table(sh.pd.DataFrame([{"Step": n["title"], "Now": n["value"], "": n["note"]} for n in data["nodes"]]), "")
+            table(sh.pd.DataFrame([{"Step": n["title"], "Now": n["value"] if n["value"] is not None else n["badge"],
+                                    "": n["note"]} for n in data["nodes"]]), "")
             return
         picked = FLOW_MAP(key="flow_map", data=data, on_open_change=lambda: None).get("open")
         if picked in PAGES and page_allowed(picked):
             go(picked)
-    st.caption("Nothing on this map changes a setting. Each step's own page shows it in full.")
+    if st.button("Automation guardrails: what it may do on its own", icon=":material/policy:", key="flow_guardrails"):
+        go("guardrails")
+
+
+GUARDRAILS_NOTE = "guardrails-changed.json"  # who saved Automation guardrails last, and when; next to the settings
+
+
+def guardrails_chips(risk: dict | None) -> str:
+    """Automation guardrails' own header chips: whether the policy is in force, and who changed it last."""
+    note = cfg.config_path().parent / GUARDRAILS_NOTE
+    try:
+        meta = json.loads(note.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        meta = {}
+    try:
+        mtime = cfg.config_path().stat().st_mtime
+    except OSError:
+        mtime = None
+    watching = bool((risk or {}).get("monitor_only"))
+    return (status("Policy: watching only" if watching else "Policy: active",
+                   sh.BAND_COLORS["amber"] if watching else sh.BAND_COLORS["green"])
+            + status(sh.guardrails_changed(meta, mtime), sh.UNKNOWN_COLOR))
+
+
+def page_guardrails() -> None:
+    """What SentrAI may do without a person, as one policy to read and change. Not auto-refreshed, so a
+    refresh never redraws the page while someone types an address or drags an action."""
+    show_flash()
+    risk, _ = fetch("risk", {})
+    if header("Automation guardrails", "what SentrAI may do without asking, and what it never touches",
+              chips=guardrails_chips(risk)) is None:
+        return
     with st.container(border=True):
-        section("What it may do on its own", "drag an action between the lanes, change a number, then Save",
-                "smart_toy")
-        limits_map(settings)
+        limits_map({f.env: f.default for f in cfg.FIELDS.values()} | cfg.read())
 
 
 def limits_map(settings: dict[str, str]) -> None:
-    """The limits on acting without a person, as a map to change (sentrai_ui/limits_map.mjs). Saved to the
+    """The limits on acting without a person, as a policy to change (sentrai_ui/limits_map.mjs). Saved to the
     settings file like the Configuration page does; Owners and Admins only, everyone else looks."""
     if LIMITS_MAP is None:
-        st.caption("This Streamlit is too old to draw the map. The same settings are under 3. Responder on the "
+        st.caption("This Streamlit is too old to draw this page. The same settings are under 3. Responder on the "
                    "Configuration page.")
         return
     off = locked("configure")
@@ -2212,17 +2258,76 @@ def limits_map(settings: dict[str, str]) -> None:
         else:
             values = {f.env: f.default for f in cfg.FIELDS.values()} | cfg.read() | changed
             path = cfg.save(values)
+            try:
+                (Path(path).parent / GUARDRAILS_NOTE).write_text(json.dumps(
+                    {"at": datetime.now(timezone.utc).isoformat(), "by": ME["name"] if ME else st.session_state.operator}),
+                    encoding="utf-8")
+            except OSError:
+                pass  # the chip falls back to the settings file's time
             st.session_state["lm_result"] = {"id": save.get("id"), "ok": True,
                                              "message": f"Saved to {short_path(path)}. Restart SentrAI (run.sh or "
                                                         "run.ps1) so the core uses the new limits."}
-            st.session_state["flash"] = ("What SentrAI may do on its own: saved", OK_ICON)
-        st.rerun(scope="fragment")
+            st.session_state["flash"] = ("Automation guardrails: saved", OK_ICON)
+        st.rerun()
+
+
+# ------------------------------------------------------------------ "How this step works", on each step's page
+
+HELP_SEEN = "help-dismissed.json"  # who put away which step's "How this step works" panel; next to the settings
+
+
+def _help_seen() -> dict:
+    try:
+        seen = json.loads((cfg.config_path().parent / HELP_SEEN).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return seen if isinstance(seen, dict) else {}
+
+
+def help_dismissed(page: str) -> bool:
+    if page in st.session_state.get("help_dismissed", {}):  # this session's choice, even if the file is read-only
+        return st.session_state["help_dismissed"][page]
+    return page in (_help_seen().get(ME["email"] if ME else "_") or [])
+
+
+def set_help_dismissed(page: str, dismissed: bool) -> None:
+    st.session_state.setdefault("help_dismissed", {})[page] = dismissed
+    seen, who = _help_seen(), ME["email"] if ME else "_"
+    seen[who] = [p for p in seen.get(who) or [] if p != page] + ([page] if dismissed else [])
+    try:
+        (cfg.config_path().parent / HELP_SEEN).write_text(json.dumps(seen), encoding="utf-8")
+    except OSError:
+        pass  # remembered for this session only
+
+
+def step_help(page: str) -> None:
+    """A step's "How this step works": open for someone new to it, then, once put away, a slim line of the
+    pipeline's live numbers with the explanation one click away, so daily use gets the screen back."""
+    lines = sh.STEP_HELP[page]
+    if not help_dismissed(page):
+        with st.container(border=True, key=f"help_{page}"):
+            st.markdown(f'<div class="step-help"><div class="sec-title">{icon("info")}How this step works</div>'
+                        + "".join(f"<p>{html.escape(x)}</p>" for x in lines) + "</div>", unsafe_allow_html=True)
+            st.button("Got it, hide this", key=f"help_hide_{page}", icon=":material/visibility_off:",
+                      on_click=set_help_dismissed, args=(page, True))
+        return
+    cells = sh.pipeline_ribbon(flow_data())
+    ribbon, more = st.columns([6, 1.4], vertical_alignment="center")
+    ribbon.markdown('<div class="ribbon" role="group" aria-label="The pipeline now">'
+                    + f'<span class="arrow">{icon("arrow_forward")}</span>'.join(
+                        f'<span class="cell {html.escape(c["state"])}"><b>{html.escape(str(c["value"]))}</b> '
+                        f'{html.escape(c["label"])}</span>' for c in cells) + "</div>", unsafe_allow_html=True)
+    with more.popover("How this step works", icon=":material/help:", width="stretch"):
+        st.markdown("\n\n".join(lines))
+        st.button("Keep it open on this page", key=f"help_show_{page}", icon=":material/keep:",
+                  on_click=set_help_dismissed, args=(page, False))
 
 
 def page_collector() -> None:
     show_flash()
     if header("Collector", "Step 1 of 3 · reads your logs and turns each line into an event") is None:
         return
+    step_help("collector")
     records, _, _ = audit_records()
     agents, _ = fetch("agents", [])
     agents = agents or []
@@ -2416,6 +2521,7 @@ def scan_suggestion(s: dict) -> None:
 def page_classifier() -> None:
     if header("Classifier", "Step 2 of 3 · decides which events are attacks: rules first, then AI, then keywords") is None:
         return
+    step_help("classifier")
     records, _, _ = audit_records()
     agents, _ = fetch("agents", [])
     jev = next((a for a in agents or [] if a.get("name") == "Jev"), {})
@@ -2452,6 +2558,7 @@ def page_responder() -> None:
     show_flash()
     if header("Action taker", "Step 3 of 3 · temporary blocks that undo themselves unless a person keeps them") is None:
         return
+    step_help("responder")
     records, _, _ = audit_records()
     incidents, _ = fetch("incidents", [])
     blocklist, bl_err = fetch("blocklist", {"ips": [], "users": []})
@@ -3175,6 +3282,7 @@ if not page_allowed(st.session_state.page):
 {
     "config": page_config, "approvals": page_approvals, "incidents": page_incidents, "staff": page_staff, "chat": page_chat,
     "flow": page_flow, "collector": page_collector, "classifier": page_classifier, "responder": page_responder, "machines": page_machines,
+    "guardrails": page_guardrails,
     "review": page_review, "reports": page_reports, "audit": page_audit, "machine": page_machine,
     "backups": page_backups, "team": page_team, "extensions": page_extensions,
     "integrations": page_extensions,  # the page's name before extensions
