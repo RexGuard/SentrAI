@@ -1618,10 +1618,12 @@ class Saguaro(Agent):
             self.extensions.each("contacts", out["contacts"])  # Telegram: whether each person linked a chat
             return out
 
-    def routing_update(self, data: dict[str, Any], operator: str) -> dict[str, Any]:
-        """Replace the routing file (people, rules, follow-up) and use it from the next alert on."""
+    def routing_update(self, data: dict[str, Any], operator: str, summary: str = "") -> dict[str, Any]:
+        """Replace the routing file (people, rules, follow-up, map layout) and use it from the next alert on.
+        The audit record says which parts changed and, in the dashboard's words, what."""
         clean = routing.validate(data)  # ValueError: nothing is written
         with self.lock:
+            old = self.router.public()
             before = {c.id: c.name for c in self.router.contacts.values()}
             routing.save(self.routing_path, clean)
             self.router = routing.load(self.routing_path, *self.role_names.values())
@@ -1632,7 +1634,9 @@ class Saguaro(Agent):
                 "operator": operator, "file": str(self.routing_path),
                 "people": len(after), "rules": len(self.router.rules),
                 "added": sorted(after[i] for i in after.keys() - before.keys()),
-                "removed": sorted(before[i] for i in before.keys() - after.keys())})
+                "removed": sorted(before[i] for i in before.keys() - after.keys()),
+                "changed": routing.changed_parts(old, self.router.public()),
+                "summary": " ".join(str(summary or "").split())[:300]})
         return self.routing_public()
 
     # ---------------------------------------------------- who an alert reaches

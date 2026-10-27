@@ -17,7 +17,8 @@ TEAM_LEAD, IT_MANAGER, CXO) form a chain where each one backs up the one before.
         {"name": "Critical", "match": {"severity": "critical"}, "owner": "amir", "notify": ["lee", "it", "boss"]},
         {"name": "Everything else", "match": {}, "owner": "amir"}
       ],
-      "follow_up": {"escalate_after_reminders": 2, "max_escalations": 3, "resolve_within_hours": 24}
+      "follow_up": {"escalate_after_reminders": 2, "max_escalations": 3, "resolve_within_hours": 24},
+      "layout": {"incident": [0, 120], "rules": [[210, 0], [210, 90], [210, 180]], "contacts": {"amir": [620, 40]}}
     }
 
 A rule matches on any of category, severity, host and layer (a value, a list of values, or a
@@ -25,7 +26,8 @@ shell pattern such as ``web-*``); the first rule that matches wins. Its owner is
 incident and hears every reminder; the people under notify are told about it once.
 
 The dashboard edits this file through POST /routing: ``validate`` checks a whole new version and
-``save`` writes it in one go, so a half-written or broken file never reaches the router.
+``save`` writes it in one go, so a half-written or broken file never reaches the router. ``layout`` is
+only where the dashboard's map draws each box (rules in their order, people by id); routing ignores it.
 """
 
 from __future__ import annotations
@@ -33,6 +35,7 @@ from __future__ import annotations
 import fnmatch
 import json
 import logging
+import math
 import os
 import re
 import tempfile
@@ -40,7 +43,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .risk import CATEGORIES, SEVERITIES
+from .risk import SEVERITIES, SEVERITY
 import sentrai_paths
 
 log = logging.getLogger("sentrai.routing")
@@ -102,11 +105,12 @@ class Route:
 
 class Router:
     def __init__(self, contacts: dict[str, Contact], rules: list[Rule], follow_up: FollowUp,
-                 source: str = "defaults") -> None:
+                 source: str = "defaults", layout: dict[str, Any] | None = None) -> None:
         self.contacts = contacts
         self.rules = rules
         self.follow_up = follow_up
         self.source = source
+        self.layout = layout or {}  # the dashboard map's box positions; nothing here reads them
         first = next(iter(contacts.values()))
         if not rules or rules[-1].match:  # something always matches
             self.rules.append(Rule("Everything else", {}, first.id))
@@ -154,7 +158,8 @@ class Router:
 
     def public(self) -> dict[str, Any]:
         return {"source": self.source, "contacts": [c.public() for c in self.contacts.values()],
-                "rules": [r.public() for r in self.rules], "follow_up": self.follow_up.__dict__}
+                "rules": [r.public() for r in self.rules], "follow_up": self.follow_up.__dict__,
+                "layout": self.layout}
 
 
 # ---------------------------------------------------------------------- loading
@@ -236,6 +241,7 @@ def load(path: Path, on_duty: str, team_lead: str, it_manager: str, cxo: str) ->
         return base
     router = parse(data, base)
     router.source = str(path)
+    router.layout = clean_layout(data.get("layout"), router.contacts, len(router.rules))
     return router
 
 
@@ -252,6 +258,34 @@ def from_settings(s: Any) -> Router:
 
 CONTACT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,39}$")
 MAX_CONTACTS, MAX_RULES, MAX_TEXT = 200, 100, 120
+LAYOUT_LIMIT = 100_000  # map coordinates, in pixels either way from the middle
+
+
+def clean_layout(raw: Any, contacts: Any, rules: int) -> dict[str, Any]:
+    """The map positions worth keeping: {"incident": [x, y], "rules": [[x, y] or None, ...] (one per rule,
+    in order), "contacts": {id: [x, y]}}. Anything that is not a pair of plain numbers, or names someone
+    who is not in the file, is dropped; the dashboard lays those boxes out itself."""
+    def point(v: Any) -> list[int] | None:
+        if isinstance(v, (list, tuple)) and len(v) == 2 and all(
+                isinstance(n, (int, float)) and not isinstance(n, bool) and math.isfinite(n)
+                and abs(n) <= LAYOUT_LIMIT for n in v):
+            return [round(v[0]), round(v[1])]
+        return None
+
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, Any] = {}
+    if (p := point(raw.get("incident"))) is not None:
+        out["incident"] = p
+    if isinstance(raw.get("rules"), list):
+        pts = [point(v) for v in raw["rules"][:rules]]
+        if any(p is not None for p in pts):
+            out["rules"] = pts
+    if isinstance(raw.get("contacts"), dict):
+        keep = {cid: p for cid in contacts if (p := point(raw["contacts"].get(cid))) is not None}
+        if keep:
+            out["contacts"] = keep
+    return out
 
 
 def _text(v: Any, what: str, required: bool = False) -> str:
@@ -311,7 +345,8 @@ def validate(data: Any) -> dict[str, Any]:
                 raise ValueError(f"rule {name!r}: can only match on {', '.join(MATCH_KEYS)}")
             values = [_text(x, f"rule {name!r} {key}") for x in _as_list(v)]
             values = [x for x in values if x]
-            known = {"category": CATEGORIES, "severity": SEVERITIES}.get(key)
+            # Every incident type the core makes (staff reports too, which the classifier never picks).
+            known = {"category": SEVERITY, "severity": SEVERITIES}.get(key)
             bad = [x for x in values if known is not None and x not in known]
             if bad:
                 raise ValueError(f"rule {name!r}: unknown {key} {', '.join(bad)}")
@@ -335,7 +370,17 @@ def validate(data: Any) -> dict[str, Any]:
     if not (1 <= fu["escalate_after_reminders"] <= 20 and 0 <= fu["max_escalations"] <= 20
             and 0 <= fu["resolve_within_hours"] <= 24 * 30):
         raise ValueError("follow_up is out of range (1-20 reminders, 0-20 escalations, 0-720 hours)")
-    return {"contacts": contacts, "rules": rules, "follow_up": fu}
+    out = {"contacts": contacts, "rules": rules, "follow_up": fu}
+    layout = clean_layout(data.get("layout"), contacts, len(rules))
+    if layout:
+        out["layout"] = layout
+    return out
+
+
+def changed_parts(before: dict[str, Any], after: dict[str, Any]) -> list[str]:
+    """Which parts of the file a save changed: people, rules, follow_up and/or layout (the map only)."""
+    names = {"contacts": "people", "rules": "rules", "follow_up": "follow_up", "layout": "layout"}
+    return [label for key, label in names.items() if (before.get(key) or {}) != (after.get(key) or {})]
 
 
 def save(path: Path, data: dict[str, Any]) -> None:

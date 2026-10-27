@@ -69,6 +69,7 @@ class AssignIn(BaseModel):
 class RoutingIn(BaseModel):
     operator: str
     routing: dict[str, Any]
+    summary: str = ""  # what changed, in words, for the audit log
 
 
 class ResolveIn(BaseModel):
@@ -471,7 +472,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def post_routing(body: RoutingIn) -> dict[str, Any]:
         """Save a whole new routing file (people, rules, follow-up) from the dashboard's map."""
         try:
-            return core.routing_update(body.routing, body.operator)
+            return core.routing_update(body.routing, body.operator, body.summary)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         except OSError as exc:

@@ -479,7 +479,8 @@ ROUTING = {"source": "defaults", "contacts": [
                "owner": "on_duty", "notify": ["team_lead", "it_manager"]},
               {"name": "High", "match": {"severity": ["high"]}, "owner": "on_duty", "notify": ["team_lead"]},
               {"name": "Everything else", "match": {}, "owner": "on_duty", "notify": []}],
-    "follow_up": {"escalate_after_reminders": 2, "max_escalations": 3, "resolve_within_hours": 24}}
+    "follow_up": {"escalate_after_reminders": 2, "max_escalations": 3, "resolve_within_hours": 24},
+    "layout": {}}  # where the dashboard's map draws each box; empty: it lays them out itself
 
 
 @app.get("/routing")
@@ -503,10 +504,13 @@ def save_routing(body: dict = Body(...)):
                              for k, v in contacts.items()],
                    rules=[{"name": r.get("name"), "match": r.get("match") or {}, "owner": r.get("owner"),
                            "notify": [x for x in r.get("notify") or [] if x != r.get("owner")]}
-                          for r in new.get("rules") or []])
+                          for r in new.get("rules") or []],
+                   layout=new.get("layout") if isinstance(new.get("layout"), dict) else {})
     if not ROUTING["rules"] or ROUTING["rules"][-1]["match"]:
         ROUTING["rules"].append({"name": "Everything else", "match": {}, "owner": ROUTING["contacts"][0]["id"],
                                  "notify": []})
+    with lock:
+        audit("routing_changed", "Operator", operator=body.get("operator"), summary=body.get("summary") or "Routing saved")
     return routing()
 
 
