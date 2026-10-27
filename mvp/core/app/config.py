@@ -136,10 +136,6 @@ class Settings:
     id_year: int = field(default_factory=lambda: _i("ID_YEAR", 2026))
     id_start: int = field(default_factory=lambda: _i("ID_START", 81))
     history_len: int = 3600
-    jev_timeout_s: float = field(default_factory=lambda: _f("JEV_TIMEOUT_S", 3.0))
-    # Jev answers kept per log template (IPs, times and ids stripped); 0 turns the cache off.
-    jev_cache_size: int = field(default_factory=lambda: _i("JEV_CACHE_SIZE", 2048))
-    jev_cache_ttl_s: float = field(default_factory=lambda: _f("JEV_CACHE_TTL_S", 3600.0))
     needle_min_confidence: float = field(default_factory=lambda: _f("NEEDLE_MIN_CONFIDENCE", 0.6))
     # Never auto-block the demo machine itself (loopback), this machine's DNS servers and gateway
     # (INFRA_AUTODETECT=0 turns that off) or anything in INFRA_ALLOWLIST. Entries may be networks (10.0.0.0/24).
@@ -171,21 +167,8 @@ class Settings:
         if x.strip()))
     responder_webhook_secret: str = field(default_factory=lambda: _secret("SENTRAI_RESPONDER_WEBHOOK_SECRET"), repr=False)
     responder_webhook_timeout_s: float = field(default_factory=lambda: _f("SENTRAI_RESPONDER_WEBHOOK_TIMEOUT_S", 3.0))
-    # Cloudflare (app/cloudflare.py): block_ip also blocks at Cloudflare's edge. Off while the token is blank.
-    cloudflare_api_token: str = field(default_factory=lambda: _secret("CLOUDFLARE_API_TOKEN"), repr=False)
-    cloudflare_zone_id: str = field(default_factory=lambda: os.getenv("CLOUDFLARE_ZONE_ID", "").strip())
-    cloudflare_account_id: str = field(default_factory=lambda: os.getenv("CLOUDFLARE_ACCOUNT_ID", "").strip())
-    cloudflare_list_id: str = field(default_factory=lambda: os.getenv("CLOUDFLARE_LIST_ID", "").strip())
-    cloudflare_method: str = field(default_factory=lambda: os.getenv("CLOUDFLARE_METHOD", "access_rule").strip().lower()
-                                   or "access_rule")
-    cloudflare_mode: str = field(default_factory=lambda: os.getenv("CLOUDFLARE_MODE", "block").strip().lower() or "block")
-    cloudflare_timeout_s: float = field(default_factory=lambda: _f("CLOUDFLARE_TIMEOUT_S", 5.0))
-    # AbuseIPDB (app/reputation.py): look up each attacking address. Off while the key is blank.
-    abuseipdb_api_key: str = field(default_factory=lambda: _secret("ABUSEIPDB_API_KEY"), repr=False)
-    abuseipdb_cache_hours: float = field(default_factory=lambda: _f("ABUSEIPDB_CACHE_HOURS", 24.0))
-    # Slack incoming webhook: the notifier posts a copy of every alert there; the core only tests it.
-    slack_webhook_url: str = field(default_factory=lambda: _secret("SLACK_WEBHOOK_URL"), repr=False)
-    jev_budget_s: float = field(default_factory=lambda: _f("JEV_BUDGET_S", 2.0))
+    # Outside services (Cloudflare, AbuseIPDB, Slack, TypeSafe, Telegram) are extensions with their own
+    # settings: mvp/extensions/<name>/extension.json. SENTRAI_EXTENSIONS overrides which are on.
     # Protection switch override at start: "1"/"0", or unset to use the last choice saved in protection.json.
     monitor_only: str | None = field(default_factory=lambda: os.getenv("SENTRAI_MONITOR_ONLY"))
     public_url: str = field(default_factory=lambda: os.getenv("SENTRAI_PUBLIC_URL", "http://127.0.0.1:8000").rstrip("/"))

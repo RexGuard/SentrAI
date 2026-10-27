@@ -1,0 +1,23 @@
+{
+  "name": "cloudflare",
+  "title": "Cloudflare",
+  "kind": "Blocking",
+  "what": "Blocks attacking addresses at Cloudflare's edge, so they never reach your site. Removed again when SentrAI's block ends.",
+  "about": "Block attackers at Cloudflare too. Paste an API token and a zone or account id.",
+  "docs": "https://developers.cloudflare.com/fundamentals/api/get-started/create-token/",
+  "order": 30,
+  "on_when": ["CLOUDFLARE_API_TOKEN"],
+  "settings": [
+    {"env": "CLOUDFLARE_API_TOKEN", "prompt": "Cloudflare API token, blank for no Cloudflare blocking", "secret": true},
+    {"env": "CLOUDFLARE_ZONE_ID", "prompt": "Cloudflare zone id (one site)"},
+    {"env": "CLOUDFLARE_ACCOUNT_ID", "prompt": "Cloudflare account id (every site, or the IP list)"},
+    {"env": "CLOUDFLARE_METHOD", "prompt": "Block with IP Access rules or an IP list", "default": "access_rule",
+     "choices": ["access_rule", "list"]},
+    {"env": "CLOUDFLARE_LIST_ID", "prompt": "Cloudflare IP list id (only for the list method)"},
+    {"env": "CLOUDFLARE_MODE", "prompt": "What an access rule does", "default": "block",
+     "choices": ["block", "managed_challenge", "challenge", "js_challenge"]},
+    {"env": "CLOUDFLARE_TIMEOUT_S", "prompt": "Seconds to wait for Cloudflare's answer", "default": "5", "kind": "float",
+     "advanced": true}
+  ],
+  "requires": {"core": ["httpx"]}
+}

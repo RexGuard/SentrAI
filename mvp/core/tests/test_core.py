@@ -211,7 +211,8 @@ def test_helpdesk_and_agents(client):
     assert "RSK-2026-081" in client.get("/helpdesk/why", params={"target": "203.0.113.45"}).json()["incidents"]
     names = {a["name"] for a in client.get("/agents").json()}
     assert {"Cyanide", "Gatehouse", "Vault", "Garrison-Linux", "Garrison-Win", "Watchtower", "Countersign", "Watchdog",
-            "Scribe", "HelpDesk", "Jev"} <= names
+            "Scribe", "HelpDesk"} <= names
+    assert "Jev" not in names  # the AI classifier is an extension (mvp/extensions/typesafe), not added here
 
 
 def test_watchdog_flags_silent_collector(client):
@@ -235,41 +236,6 @@ def test_reset(client):
     assert audit["chain_valid"] and audit["count"] == 1
     brute_force(client, start=100)
     assert client.get("/incidents").json()[0]["id"] == "RSK-2026-081"
-
-
-def test_jev_path_and_parsing(client):
-    from types import SimpleNamespace
-
-    from app.jev_client import JevClient, JevResult
-
-    # Response parsing mirrors typesafe_sdk: choices[...].choice/.confidence/.probabilities, nouls[...].noul
-    resp = SimpleNamespace(
-        choices={"category": SimpleNamespace(choice="port_scan", confidence=0.91, probabilities={"port_scan": 0.91})},
-        nouls={"malicious": SimpleNamespace(noul=0.97)},
-    )
-    parsed = JevClient._parse(JevClient.__new__(JevClient), resp)
-    assert parsed.category == "port_scan" and parsed.confidence == 0.91 and parsed.malicious == 0.97
-
-    class FakeJev:
-        def __init__(self, result):
-            self.result = result
-
-        def classify(self, event):
-            return self.result
-
-    core = client.core
-    core.jev_step.jev = FakeJev(JevResult("port_scan", 0.3, 0.97, {}))
-    client.post("/events", json=ev(1, "SYN to 22,23,80,443,3306 in 2s", ip="198.51.100.20", layer="network"))
-    inc = client.get("/incidents").json()[0]
-    assert inc["classified_by"] == "jev" and inc["ai_confidence"] == 0.5  # clipped to 0.5-1.0
-    assert inc["needs_review"] is False and inc["analyzed_by"] == "Watchtower"
-    core.jev_step.jev = FakeJev(JevResult("misconfiguration", 0.8, 0.5, {}))  # malicious p in 0.4-0.6
-    client.post("/events", json=ev(2, "bucket settings changed", ip=None, user=None, host="cloud-01", layer="cloud"))
-    inc2 = [i for i in client.get("/incidents").json() if i["category"] == "misconfiguration"][0]
-    assert inc2["needs_review"] is True
-    core.jev_step.jev = FakeJev(None)  # Jev failure -> fallback
-    client.post("/events", json=ev(3, "GET /about 200 ok", ip="198.51.100.21"))
-    assert len(client.get("/incidents").json()) == 2
 
 
 def test_loopback_is_never_auto_blocked(client):

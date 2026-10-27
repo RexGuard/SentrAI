@@ -6,8 +6,8 @@ Scores each classifier step on its own and the chain as it runs in core:
 - fallback   FallbackClassifier (keyword heuristic) alone.
 - chain      rules -> fallback, which is what core runs when no TypeSafe key is set.
 - jev        Jev (TypeSafe System One) alone, and chain+jev (rules -> Jev -> fallback).
-             Only when TYPESAFE_API_KEY is set and typesafe_sdk imports; otherwise the
-             columns say "not run".
+             Only when the TypeSafe extension is installed (mvp/extensions/typesafe),
+             TYPESAFE_API_KEY is set and typesafe_sdk imports; otherwise the columns say "not run".
 
 Events are fed in file order with their own timestamps, so the brute-force threshold
 (5 failed logins from one source within 60 s) behaves as it does live.
@@ -34,17 +34,18 @@ from typing import Any, Callable
 
 EVAL_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(EVAL_DIR.parent / "core"))
+sys.path.insert(1, str(EVAL_DIR.parent))  # sentrai_extensions finds the TypeSafe extension
 
-from app.classifier import (  # noqa: E402
-    ClassifierChain,
-    FallbackClassifier,
-    JevCache,
-    JevClassifier,
-    RulesClassifier,
-)
-from app.jev_client import JevClient  # noqa: E402
+from app.classifier import ClassifierChain, FallbackClassifier, RulesClassifier  # noqa: E402
 from app.risk import CATEGORIES  # noqa: E402
 from app.rules import RulesEngine  # noqa: E402
+import sentrai_extensions  # noqa: E402
+
+
+def typesafe() -> Any:
+    """The TypeSafe extension's core part (JevClient, JevClassifier, JevCache), or None when it is not installed."""
+    m = sentrai_extensions.installed().get("typesafe")
+    return sentrai_extensions.load_part(m, "core") if m is not None else None
 
 EVENTS = EVAL_DIR / "events.jsonl"
 RESULTS = EVAL_DIR / "results"
@@ -69,7 +70,7 @@ def _out(c: Any) -> tuple[str, list[str]]:
     return c.category, list(related)
 
 
-def predictors(jev: JevClient | None) -> dict[str, Callable[[], Callable[[dict], str]]]:
+def predictors(jev: Any | None) -> dict[str, Callable[[], Callable[[dict], str]]]:
     """name -> factory giving a fresh predict(event) (fresh rules state per run)."""
 
     def rules_only():
@@ -86,6 +87,8 @@ def predictors(jev: JevClient | None) -> dict[str, Callable[[], Callable[[dict],
 
     out = {"rules": rules_only, "fallback": fallback_only, "chain": chain}
     if jev is not None:
+        ts = typesafe()
+        JevCache, JevClassifier = ts.JevCache, ts.JevClassifier
         # No template cache here: it only saves calls in production, and with it every repeat of
         # a line (e.g. a failed login, benign once and brute force later) would reuse the first answer.
         def jev_only():
@@ -135,7 +138,7 @@ def score(labels: list[str], preds: list[str], attached: set[int] | None = None,
     }
 
 
-def evaluate(events: list[dict[str, Any]], jev: JevClient | None = None) -> dict[str, Any]:
+def evaluate(events: list[dict[str, Any]], jev: Any | None = None) -> dict[str, Any]:
     labels = [ev["label"] for ev in events]
     runs: dict[str, Any] = {}
     for name, make in predictors(jev).items():
@@ -235,10 +238,11 @@ def main() -> None:
     ap.add_argument("--no-write", action="store_true", help="print the table, do not write eval/results/")
     args = ap.parse_args()
 
-    jev = JevClient(timeout_s=5.0)
-    res = evaluate(load_events(args.events), jev if jev.enabled else None)
-    if not jev.enabled:
-        res["jev_status"] = jev.status
+    ts = typesafe()
+    jev = ts.JevClient(timeout_s=5.0) if ts is not None else None
+    res = evaluate(load_events(args.events), jev if jev is not None and jev.enabled else None)
+    if jev is None or not jev.enabled:
+        res["jev_status"] = jev.status if jev is not None else "disabled: the TypeSafe extension is not installed"
     md = to_markdown(res)
     print(md)
     if not args.no_write:

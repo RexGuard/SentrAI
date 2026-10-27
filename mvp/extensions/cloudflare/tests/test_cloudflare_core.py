@@ -1,16 +1,16 @@
-"""Outside services: Cloudflare blocking, AbuseIPDB lookups, the Integrations endpoints."""
+"""Cloudflare extension: blocking at Cloudflare's edge, and adding or removing it while blocks are in force."""
 
-from fastapi.testclient import TestClient
+import json
 
-from app import cloudflare, integrations, reputation
-from app.cloudflare import CloudflareAPI, CloudflareResponder
-from app.config import Settings
-from app.main import create_app
+import pytest
+
+import sentrai_extensions as se
 from app.responders import BlocklistResponder
+from conftest import ATTACKER, brute_force
 
-from .conftest import AUTH, brute_force
-
-ATTACKER = "45.33.32.156"  # a public address (203.0.113.x is a documentation range, never sent out)
+cf = se.load_part(se.installed()["cloudflare"], "core")
+CloudflareAPI, CloudflareResponder = cf.CloudflareAPI, cf.CloudflareResponder
+KEYS = {"CLOUDFLARE_API_TOKEN": "cf-token", "CLOUDFLARE_ZONE_ID": "z1"}
 
 
 class FakeCloudflare:
@@ -26,7 +26,7 @@ class FakeCloudflare:
 
     def __call__(self, method, url, headers, params, body):
         assert headers["Authorization"] == "Bearer cf-token"
-        path = url.removeprefix(cloudflare.API)
+        path = url.removeprefix(cf.API)
         self.calls.append((method, path))
         if self.down:
             raise OSError("connection refused")
@@ -69,6 +69,14 @@ class FakeCloudflare:
         return 404, {"success": False, "errors": [{"code": 7003, "message": "no route"}]}
 
 
+@pytest.fixture
+def edge(monkeypatch):
+    """The fake Cloudflare every Cloudflare extension started in this test talks to."""
+    fake = FakeCloudflare()
+    monkeypatch.setattr(cf, "_httpx_requester", lambda timeout_s: fake)
+    return fake
+
+
 def responder(fake, method="access_rule", **kw):
     api = CloudflareAPI("cf-token", zone_id="" if method == "list" else "z1", account_id="a1", list_id="l1",
                         requester=fake)
@@ -78,6 +86,21 @@ def responder(fake, method="access_rule", **kw):
 def act(ip=ATTACKER, n=1):
     return {"action_id": f"act-{n}", "incident": f"RSK-{n}", "type": "block_ip", "target": ip}
 
+
+def contain(c, ip=ATTACKER, start=0):
+    brute_force(c, ip=ip, start=start)
+    iid = next(i["id"] for i in c.get("/incidents").json() if i["src_ip"] == ip)
+    c.post(f"/incidents/{iid}/decision", json={"operator": "erick", "decision": "approve"})
+    inc = c.get(f"/incidents/{iid}").json()
+    assert inc["status"] == "contained"
+    return inc
+
+
+def rows(c):
+    return {r["name"]: r for r in c.get("/extensions").json()}
+
+
+# ------------------------------------------------------------------ the responder on its own
 
 def test_block_and_undo_at_cloudflare():
     fake = FakeCloudflare()
@@ -188,89 +211,100 @@ def test_bad_settings_are_refused():
     assert "cf-token" not in repr(CloudflareAPI("cf-token", zone_id="z"))
 
 
-def test_core_blocks_at_cloudflare_and_undoes_on_rollback(tmp_path):
-    s = Settings(db_path=tmp_path / "c.db", background=False, cloudflare_api_token="cf-token", cloudflare_zone_id="z1")
-    app = create_app(s)
+def test_remove_all_takes_out_every_entry_it_made():
     fake = FakeCloudflare()
-    with TestClient(app, headers=AUTH) as c:
-        core = app.state.core
-        core.cloudflare.api.request = fake
-        assert core.responders.for_type("block_ip") is core.cloudflare
-        brute_force(c, ip=ATTACKER)
-        iid = c.get("/incidents").json()[0]["id"]
-        c.post(f"/incidents/{iid}/decision", json={"operator": "erick", "decision": "approve"})
-        inc = c.get(f"/incidents/{iid}").json()
-        assert inc["status"] == "contained" and len(fake.rules) == 1
-        assert ATTACKER in c.get("/blocklist").json()["ips"]
-        out = c.post(f"/incidents/{inc['id']}/rollback", json={"operator": "erick", "justification": "test"})
-        assert out.status_code == 200 and fake.rules == {}
-        rows = {r["name"]: r for r in c.get("/integrations").json()}
-        assert rows["cloudflare"]["configured"] is True and rows["slack"]["configured"] is False
-        assert "cf-token" not in str(rows)
-        assert c.post("/integrations/cloudflare/test").json()["ok"] is True
-        assert c.post("/integrations/nope/test").status_code == 404
+    r = responder(fake)
+    r.apply(act(n=1)), r.apply(act("45.33.32.157", n=2))
+    fake.rules["mine"] = {"id": "mine", "mode": "block", "notes": "blocked by hand",
+                          "configuration": {"target": "ip", "value": "45.33.32.158"}}
+    assert r.remove_all() == (2, []) and list(fake.rules) == ["mine"]
+    assert r.blocklist()["ips"] == [ATTACKER, "45.33.32.157"]  # local blocks are not touched
 
 
-def test_half_filled_cloudflare_settings_do_not_stop_the_core(tmp_path):
-    s = Settings(db_path=tmp_path / "c.db", background=False, cloudflare_api_token="cf-token")  # no zone/account
-    app = create_app(s)
-    with TestClient(app, headers=AUTH) as c:
-        rows = {r["name"]: r for r in c.get("/integrations").json()}
-        assert rows["cloudflare"]["configured"] is False and "CLOUDFLARE_ZONE_ID" in rows["cloudflare"]["error"]
-        assert c.post("/integrations/cloudflare/test").json()["ok"] is False
+# ------------------------------------------------------------------ inside the core
+
+def test_core_blocks_at_cloudflare_and_undoes_on_rollback(make_core, edge):
+    c = make_core(**KEYS)
+    core = c.core
+    ext = core.extensions.running["cloudflare"].ext
+    assert core.responders.for_type("block_ip") is ext.responder
+    inc = contain(c)
+    assert len(edge.rules) == 1 and ATTACKER in c.get("/blocklist").json()["ips"]
+    out = c.post(f"/incidents/{inc['id']}/rollback", json={"operator": "erick", "justification": "test"})
+    assert out.status_code == 200 and edge.rules == {}
+    r = rows(c)
+    assert r["cloudflare"]["added"] is True and r["cloudflare"]["added_by"] == "settings"
+    assert r["cloudflare"]["configured"] is True and r["slack"]["configured"] is False
+    assert "zone z1" in r["cloudflare"]["detail"] and "cf-token" not in json.dumps(r)
+    assert c.post("/extensions/cloudflare/test").json()["ok"] is True
+    assert c.post("/integrations/cloudflare/test").json()["ok"] is True  # the old name still answers
+    assert {x["name"] for x in c.get("/integrations").json()} == set(r)
 
 
-# ------------------------------------------------------------------ AbuseIPDB
-
-class FakeAbuseIPDB:
-    def __init__(self, status=200):
-        self.status, self.calls = status, []
-
-    def __call__(self, url, headers, params):
-        assert headers["Key"] == "ab-key"
-        self.calls.append(params["ipAddress"])
-        if self.status != 200:
-            return self.status, {"errors": [{"detail": "Daily rate limit of 1000 requests exceeded."}]}
-        return 200, {"data": {"ipAddress": params["ipAddress"], "abuseConfidenceScore": 100, "totalReports": 312,
-                              "countryCode": "US", "isp": "Linode", "isTor": False}}
+def test_half_filled_cloudflare_settings_do_not_stop_the_core(make_core, edge):
+    c = make_core(CLOUDFLARE_API_TOKEN="cf-token")  # no zone or account
+    row = rows(c)["cloudflare"]
+    assert row["added"] is True and row["running"] is False and row["configured"] is False
+    assert "CLOUDFLARE_ZONE_ID" in row["error"]
+    assert c.post("/extensions/cloudflare/test").json()["ok"] is False
+    assert c.core.responders.for_type("block_ip") is c.core.blocklist_responder
+    contain(c)  # the local block still works
+    assert edge.calls == []
 
 
-def test_abuseipdb_lookup_is_cached_and_never_sends_private_addresses():
-    fake = FakeAbuseIPDB()
-    client = reputation.AbuseIPDB("ab-key", getter=fake)
-    rep = client.check(ATTACKER)
-    assert rep["score"] == 100 and rep["reports"] == 312
-    assert client.check(ATTACKER)["cached"] is True and fake.calls == [ATTACKER]
-    assert "reported 312 time(s), 100% abuse confidence, Linode, US" in reputation.summary(rep)
-    seen = []
-    lookups = reputation.Lookups(client, lambda ip, r: seen.append(ip), {"45.33.32.0/24"}, background=False)
-    for ip in ("10.0.0.1", "127.0.0.1", "203.0.113.4", ATTACKER, None):
-        assert lookups.request(ip) is False
-    assert seen == [] and "ab-key" not in repr(client)
-    bad = reputation.AbuseIPDB("ab-key", getter=FakeAbuseIPDB(429))
-    assert "rate limit" in bad.check("1.1.1.1")["error"] and bad.test()["ok"] is False
+def test_adding_cloudflare_puts_the_blocks_in_force_at_the_edge(make_core, edge, tmp_path):
+    (tmp_path / "extensions.json").write_text(json.dumps(
+        {"extensions": {"cloudflare": {"added": False, "by": "erick", "at": "2026-10-27T09:00:00+08:00"}}}))
+    c = make_core(**KEYS)  # the key is saved, but someone removed it on the Extensions page
+    row = rows(c)["cloudflare"]
+    assert row["added"] is False and row["added_by"] == "dashboard" and row["changed_by"] == "erick"
+    contain(c)
+    assert edge.rules == {}  # blocked locally only
+    added = c.post("/extensions/cloudflare/add", json={"operator": "lee"})
+    assert added.status_code == 200 and added.json()["added"] is True and added.json()["running"] is True
+    assert [r["configuration"]["value"] for r in edge.rules.values()] == [ATTACKER]
+    assert c.core.responders.for_type("block_ip").name == "cloudflare"
+    rec = [r for r in c.get("/audit").json()["records"] if r["type"] == "extension_added"]
+    assert rec and rec[-1]["data"]["operator"] == "lee" and rec[-1]["data"]["started"] is True
 
 
-def test_core_notes_reputation_on_the_incident(tmp_path):
-    s = Settings(db_path=tmp_path / "c.db", background=False, abuseipdb_api_key="ab-key")
-    app = create_app(s)
-    with TestClient(app, headers=AUTH) as c:
-        core = app.state.core
-        core.reputation.get = FakeAbuseIPDB()
-        brute_force(c, ip=ATTACKER)
-        inc = c.get(f"/incidents/{c.get('/incidents').json()[0]['id']}").json()
-        assert inc["reputation"]["score"] == 100
-        assert any(t["kind"] == "reputation" and "312" in t["text"] for t in inc["timeline"])
-        rows = {r["name"]: r for r in c.get("/integrations").json()}
-        assert rows["abuseipdb"]["configured"] and "1 lookup" in rows["abuseipdb"]["detail"]
+def test_removing_cloudflare_takes_its_entries_out_and_keeps_the_local_block(make_core, edge):
+    c = make_core(**KEYS)
+    inc = contain(c)
+    assert len(edge.rules) == 1
+    out = c.post("/extensions/cloudflare/remove", json={"operator": "erick"})
+    assert out.status_code == 200
+    body = out.json()
+    assert body["added"] is False and body["running"] is False and body["added_by"] == "dashboard"
+    assert body["cleanup"]["released"] == 1 and body["cleanup"]["left_in_place"] == []
+    assert edge.rules == {} and ATTACKER in c.get("/blocklist").json()["ips"]
+    assert c.core.responders.for_type("block_ip") is c.core.blocklist_responder
+    assert rows(c)["cloudflare"]["detail"].startswith("Not added")
+    calls = len(edge.calls)
+    c.post(f"/incidents/{inc['id']}/rollback", json={"operator": "erick", "justification": "test"})
+    assert c.get("/blocklist").json()["ips"] == [] and len(edge.calls) == calls  # Cloudflare is left alone now
+    rec = [r for r in c.get("/audit").json()["records"] if r["type"] == "extension_removed"][-1]["data"]
+    assert rec["extension"] == "cloudflare" and rec["released"] == 1
+    c2 = make_core(**KEYS)  # a restart keeps the choice, although the key is still saved
+    assert rows(c2)["cloudflare"]["added"] is False and "cloudflare" not in c2.core.extensions.running
 
 
-# ------------------------------------------------------------------ Slack test
+def test_a_removal_cloudflare_refuses_is_reported_for_a_person(make_core, edge):
+    c = make_core(**KEYS)
+    inc = contain(c)
+    edge.fail_delete = True
+    cleanup = c.post("/extensions/cloudflare/remove", json={"operator": "erick"}).json()["cleanup"]
+    assert cleanup["released"] == 0 and cleanup["left_in_place"][0]["target"] == ATTACKER
+    assert cleanup["cloudflare_left"][0]["ip"] == ATTACKER and len(edge.rules) == 1
+    timeline = c.get(f"/incidents/{inc['id']}").json()["timeline"]
+    assert any(t["kind"] == "undo_failed" and "Remove it there by hand" in t["text"] for t in timeline)
 
-def test_slack_test_message():
-    sent = []
-    assert integrations.slack_test("https://hooks.slack.com/services/x",
-                                   lambda u, b, h: sent.append(b) or 200)["ok"] is True
-    assert b"SentrAI test message" in sent[0]
-    assert integrations.slack_test("http://insecure", lambda *a: 200)["ok"] is False
-    assert integrations.slack_test("https://hooks.slack.com/x", lambda *a: 404)["ok"] is False
+
+def test_sentrai_extensions_on_the_server_wins(make_core, edge):
+    c = make_core(SENTRAI_EXTENSIONS="none", **KEYS)
+    row = rows(c)["cloudflare"]
+    assert row["added"] is False and row["added_by"] == "SENTRAI_EXTENSIONS"
+    refused = c.post("/extensions/cloudflare/add", json={"operator": "erick"})
+    assert refused.status_code == 409 and "SENTRAI_EXTENSIONS" in refused.json()["detail"]
+    contain(c)
+    assert edge.calls == []

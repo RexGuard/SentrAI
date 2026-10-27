@@ -33,17 +33,17 @@ from .agents import (
     Watchdog,
     next_steps,
 )
-from . import cloudflare, firewall, reputation
-from . import anchor, remote_copy, routing, telegram_links
+from . import firewall
+from . import anchor, remote_copy, routing
 from . import summary as client_summary
 from .audit import AuditLog
-from .classifier import Classification, JevCache, default_chain
+from .classifier import Classification, default_chain
 from .clock import DemoClock, fmt_demo_hours
 from .config import Settings, sign
+from .extensions import Extension, Host
 from .integrity import IntegrityGuard
-from .jev_client import JevClient
 from .netlogs import enrich
-from .responders import Responders, SimulatedResponder, WebhookResponder
+from .responders import Responder, Responders, SimulatedResponder, WebhookResponder
 from .risk import SEVERITY, band, band_rank, inaction_penalty, risk_index
 from .rules import TRIPWIRE_REASONS, RulesEngine
 from .state import StateStore
@@ -248,8 +248,6 @@ class Saguaro(Agent):
         self.routing_path = routing.path_from_settings(s)
         self.role_names = {role: getattr(s, role) for role in ROLES}  # the settings' own, before the file renames them
         self.router = routing.load(self.routing_path, *self.role_names.values())
-        # The private Telegram chat linked to each contact, so their alerts go to them directly.
-        self.tg_links = telegram_links.from_settings(s)
         for role in ROLES:
             setattr(s, role, self.router.by_role(role, self.role_names[role]))
         self.clock = DemoClock(s.demo_speed)
@@ -259,32 +257,23 @@ class Saguaro(Agent):
                                  scan_4xx_count=s.web_scan_4xx_count, scan_window_s=s.web_scan_window_s,
                                  slow_count=s.slow_brute_force_count, slow_window_s=s.slow_brute_force_window_s,
                                  ssh_slow_count=s.ssh_slow_brute_force_count)
-        self.jev = JevClient(s.jev_timeout_s)
         # The three parts: events arrive from collectors via POST /events, the classifier
-        # chain labels them, and the responders carry out approved containment.
-        self.classifier, self.jev_step = default_chain(self.rules, self.jev, JevCache(s.jev_cache_size, s.jev_cache_ttl_s))
+        # chain labels them, and the responders carry out approved containment. Extensions
+        # (app/extensions.py) add classifier steps and responders to both while the core runs.
+        self.classifier = default_chain(self.rules)
+        self._own_steps = list(self.classifier.classifiers)  # the rules first, the keyword fallback last
         self.blocklist_responder = firewall.from_settings(s.firewall, s.firewall_enforce, s.protected_ips)
-        bl = self.blocklist_responder
-        # Cloudflare wraps the block_ip responder: the local block first, then the same address at the edge.
-        self.cloudflare, self.cloudflare_error = None, None
-        try:
-            self.cloudflare = cloudflare.from_settings(s, inner=bl)
-        except ValueError as exc:  # half-filled settings: run without it and say why on the Integrations page
-            self.cloudflare_error = str(exc)
-            log.warning("Cloudflare is off: %s", exc)
-        block_ip = self.cloudflare or bl
+        self._simulated = SimulatedResponder()
         self.webhook_responder: WebhookResponder | None = None
         if s.responder_webhook_url:
-            # Registered last, so it takes the listed types; the blocklist (and Cloudflare) still apply first.
+            # Always last, so it takes the listed types; the blocklist (and extensions such as Cloudflare)
+            # still apply first: rewire() sets what it wraps.
             self.webhook_responder = WebhookResponder(
                 s.responder_webhook_url, s.responder_webhook_actions, s.responder_webhook_secret,
-                s.responder_webhook_timeout_s,
-                inner=lambda t: block_ip if t == "block_ip" else bl if t in bl.actions else None)
-        self.responders = Responders(bl, SimulatedResponder(),
-                                     *(r for r in (self.cloudflare, self.webhook_responder) if r is not None))
-        self.reputation = reputation.from_settings(s)
-        self._lookups = reputation.Lookups(self.reputation, self._on_reputation, s.protected_ips, s.background) \
-            if self.reputation else None
+                s.responder_webhook_timeout_s)
+        self.responders = Responders(self.blocklist_responder, self._simulated)
+        self._ext_responders: dict[str, list[Responder]] = {}  # extension name -> the responders it added
+        self.extensions = Host(self)  # the installed extensions; the added ones start just before _restore()
         self.root = Root(self.classifier)
         self.reservoir = Reservoir(self.classifier)
         self.spinenet = SpineNet(self.classifier)
@@ -309,6 +298,7 @@ class Saguaro(Agent):
         self.store = StateStore(self.audit)
         self._init_state()
         self._configure()
+        self.extensions.start()  # their responders must be in place before the saved blocks are put back
         self.scribe.record(self.name, "core_started", self._config_summary())
         self._restore()
 
@@ -355,9 +345,95 @@ class Saguaro(Agent):
             "ttl_hours": s.ttl_hours,
             "limits": self.limits(),
             "on_duty": s.on_duty,
-            "jev": self.jev.status,
-            "block_ip_enforcement": (self.cloudflare or self.blocklist_responder).enforcement,
+            "extensions": self.extensions.summary(),
+            "block_ip_enforcement": self._enforced_by("block_ip").enforcement,
         }
+
+    # ------------------------------------------------------------ extensions
+    def _enforced_by(self, action_type: str) -> Responder:
+        """The responder that really puts an action type in force: the last one below the webhook."""
+        return next((r for r in reversed(self.responders.all) if action_type in r.actions
+                     and r is not self.webhook_responder), self.blocklist_responder)
+
+    def rewire(self) -> None:
+        """Puts the running extensions' classifier steps and responders in place (called by the Host)."""
+        own = [self.blocklist_responder]  # what really enforces, so what the webhook may wrap
+
+        def below(action_type: str) -> Responder | None:
+            return next((r for r in reversed(own) if action_type in r.actions), None)
+
+        steps, chain, by_ext = [], [self.blocklist_responder, self._simulated], {}
+        for name, ext in self.extensions.exts():
+            try:
+                added = list(ext.responders(below) or [])
+                steps += list(ext.classifiers() or [])
+            except Exception:  # a broken extension is left out, never the core
+                log.exception("extension %s could not be plugged in", name)
+                continue
+            by_ext[name] = added
+            chain += added
+            own += added
+        if self.webhook_responder is not None:
+            self.webhook_responder.inner = below
+            chain.append(self.webhook_responder)
+        self.classifier.classifiers = [self._own_steps[0], *steps, *self._own_steps[1:]]
+        self.responders.replace(*chain)
+        self._ext_responders = by_ext
+        self.needle.allowlist = self.responders.allowlist
+
+    def _in_force_for(self, responders: list[Responder]) -> list[tuple[Responder, dict[str, Any]]]:
+        return [(r, a) for a in self.actions if a["status"] in ("active", "permanent") and a.get("verified") is not False
+                for r in responders if a["type"] in r.actions]
+
+    def plug_in_extension(self, name: str, ext: Extension) -> None:
+        """An extension was added while the core runs: plug it in, and give it the actions already in
+        force that it handles (Cloudflare blocks the addresses SentrAI is blocking now)."""
+        with self.lock:
+            self.rewire()
+            for r, a in self._in_force_for(self._ext_responders.get(name, [])):
+                try:
+                    r.adopt(a)
+                except Exception:
+                    log.exception("extension %s could not take over %s", name, a.get("action_id"))
+            self._save()
+
+    def unplug_extension(self, name: str, ext: Extension) -> dict[str, Any]:
+        """An extension is being removed: take its part out of every action in force (the local block
+        stays), then close it. What did not come out is reported, since nothing will retry it."""
+        with self.lock:
+            released, failed = 0, []
+            for r, a in self._in_force_for(self._ext_responders.get(name, [])):
+                try:
+                    ok = r.release(a)
+                except Exception as exc:
+                    ok, a[f"{r.name}_revert"] = False, {"ok": False, "error": f"{type(exc).__name__}: {exc}"[:200]}
+                if ok is False:
+                    failed.append({"action_id": a["action_id"], "target": a["target"],
+                                   "error": (a.get(f"{r.name}_revert") or {}).get("error", "not confirmed")})
+                    inc = self.incidents.get(a["incident"])
+                    if inc is not None:
+                        self._timeline(inc, self.clock.now(), "undo_failed",
+                                       f"{name} was removed but could not take {a['type']} {a['target']} out of "
+                                       f"its service: {failed[-1]['error']}. Remove it there by hand.")
+                else:
+                    released += 1
+            try:
+                note = ext.close() or {}
+            except Exception as exc:
+                note = {"close_error": f"{type(exc).__name__}: {exc}"[:200]}
+            self._save()
+            return {"released": released, "left_in_place": failed, **note}
+
+    def note_on_incidents(self, src_ip: str, key: str, value: Any, text: str) -> None:
+        """An extension learned something about an address (AbuseIPDB's reputation): note it on every
+        open incident from it that has no such note yet. Context for the person deciding, never a score."""
+        with self.lock:
+            now = self.clock.now()
+            for inc in self.incidents.values():
+                if inc.get("src_ip") == src_ip and inc["status"] in MERGE_STATUSES and key not in inc:
+                    inc[key] = value
+                    self._timeline(inc, now, key, text)
+            self._save()
 
     def layer_agents(self) -> list[LayerAgent]:
         return [self.root, self.reservoir, self.spinenet, self.areole_linux, self.areole_win]
@@ -387,8 +463,8 @@ class Saguaro(Agent):
     def ingest(self, events: list[dict[str, Any]]) -> dict[str, Any]:
         accepted = 0
         tampering: list[dict[str, Any]] = []  # broken line chains and clock jumps, classified after this batch
-        # Cap the total time one request may spend waiting on Jev; the rest use the fallback.
-        self.jev_step.deadline = time.monotonic() + self.settings.jev_budget_s
+        # A classifier step with a time budget (TypeSafe's Jev) starts it now; the rest use the fallback.
+        self.classifier.begin()
         for raw_ev in events:
             ev = enrich(dict(raw_ev))
             now = self.clock.now()
@@ -420,7 +496,7 @@ class Saguaro(Agent):
                     self.events[ev["event_id"]].update(category="benign", classified_by="rules", reason="heartbeat")
                 continue
             agent = self._route(ev)
-            cls = agent.analyze(ev, now)  # may call Jev: done outside the lock
+            cls = agent.analyze(ev, now)  # may call an outside classifier (Jev): done outside the lock
             with self.lock:
                 self._apply_classification(ev, cls, agent, now)
         if tampering:
@@ -566,20 +642,8 @@ class Saguaro(Agent):
                 "recommended_action", "event_ids", "owner", "backup", "route", "notify")},
             "analyst": agent.name,
         })
-        if self._lookups is not None:
-            self._lookups.request(inc.get("src_ip"))
+        self.extensions.each("incident_opened", inc)  # AbuseIPDB looks the address up, in the background
         return inc
-
-    def _on_reputation(self, ip: str, rep: dict[str, Any]) -> None:
-        """An AbuseIPDB answer arrived: note it on every open incident from that address. Context only."""
-        with self.lock:
-            now = self.clock.now()
-            for inc in self.incidents.values():
-                if inc.get("src_ip") == ip and inc["status"] in MERGE_STATUSES and "reputation" not in inc:
-                    inc["reputation"] = rep
-                    self._timeline(inc, now, "reputation", reputation.summary(rep))
-            self.scribe.record(self.name, "reputation_lookup", {"ip": ip, **{k: v for k, v in rep.items()
-                                                                            if k in ("score", "reports", "country", "error")}})
 
     def _proposals(self, inc: dict[str, Any], agent: LayerAgent) -> list[Proposal]:
         """The containment steps for an incident. Cyanide overrides this with its own plan."""
@@ -1146,8 +1210,8 @@ class Saguaro(Agent):
     def _undo(self, a: dict[str, Any], attempt: int) -> None:
         try:
             ok = self.responders.revert(a)
-            failed = [a[k] for k in ("webhook_revert", "cloudflare_revert", "firewall_revert")
-                      if isinstance(a.get(k), dict) and a[k].get("ok") is False]
+            # Each responder notes its own undo under "<name>_revert" (webhook, cloudflare, firewall, ...).
+            failed = [v for k, v in a.items() if k.endswith("_revert") and isinstance(v, dict) and v.get("ok") is False]
             error = None if ok is not False else (failed[0] if failed else {}).get(
                 "error", "the responder could not confirm the action was removed")
         except Exception as exc:  # a broken responder must not stop the rest of the rollback
@@ -1550,8 +1614,7 @@ class Saguaro(Agent):
     def routing_public(self) -> dict[str, Any]:
         with self.lock:
             out = self.router.public()
-            for c in out["contacts"]:
-                c["telegram_linked"] = bool(self.tg_links.chat_for(c["id"], c.get("telegram") or ""))
+            self.extensions.each("contacts", out["contacts"])  # Telegram: whether each person linked a chat
             return out
 
     def routing_update(self, data: dict[str, Any], operator: str) -> dict[str, Any]:
@@ -1571,68 +1634,13 @@ class Saguaro(Agent):
                 "removed": sorted(before[i] for i in before.keys() - after.keys())})
         return self.routing_public()
 
-    # ---------------------------------------------------- personal Telegram alerts
+    # ---------------------------------------------------- who an alert reaches
     def _addresses(self, recipients: list[str]) -> list[dict[str, str]]:
-        """Each recipient's email and Telegram, plus the private chat that reaches them if they linked one."""
+        """Each recipient's email and Telegram, plus what extensions add (the private Telegram chat
+        that reaches them, once they linked one)."""
         out = self.router.addresses(recipients)
-        for a in out:
-            a["telegram_chat"] = self.tg_links.chat_for(a["id"], a.get("telegram") or "")
+        self.extensions.each("addresses", out)
         return out
-
-    def _contact(self, ref: str) -> routing.Contact:
-        c = self.router.contact(ref)
-        if c is None:
-            raise KeyError(ref)
-        return c
-
-    def telegram_link_code(self, contact: str, operator: str) -> dict[str, Any]:
-        """A one-time code the contact sends to the bot (/link CODE) to get their alerts in a private chat."""
-        with self.lock:
-            c = self._contact(contact)
-            code, expires = self.tg_links.new_code(c.id, operator)
-            self.scribe.record(self.name, "telegram_link_code", {"contact": c.id, "name": c.name, "operator": operator,
-                                                                 "expires_at": self.clock.iso(expires)})
-            return {"contact": c.id, "name": c.name, "code": code, "expires_at": self.clock.iso(expires),
-                    "valid_minutes": telegram_links.CODE_TTL_S // 60, "send": f"/link {code}"}
-
-    def telegram_link(self, code: str, chat_id: str, username: str = "") -> dict[str, Any]:
-        """The notifier passes on a /link CODE it received in a private chat."""
-        with self.lock:
-            now = self.clock.now()
-            link, replaced = self.tg_links.redeem(code, str(chat_id), username or "", self.clock.iso(now))
-            if link is None:
-                raise BadRequestError("That code is wrong, already used or expired. Ask for a new one.")
-            c = self._contact(link.contact_id)
-            self.scribe.record(self.name, "telegram_linked", {
-                "contact": c.id, "name": c.name, "chat_id": link.chat_id, "username": link.username,
-                "code_made_by": link.linked_by, "replaced_chat": replaced.chat_id if replaced else None})
-            return {**self._link_public(link), "replaced": bool(replaced)}
-
-    def telegram_unlink(self, contact: str | None, chat_id: str | None, operator: str) -> dict[str, Any]:
-        with self.lock:
-            link = self.tg_links.by_chat(chat_id) if chat_id else None
-            cid = link.contact_id if link else (self._contact(contact).id if contact else "")
-            gone = self.tg_links.unlink(cid) if cid else None
-            if gone is None:
-                raise KeyError(contact or chat_id or "")
-            self.scribe.record(self.name, "telegram_unlinked", {"contact": cid, "chat_id": gone.chat_id,
-                                                                "operator": operator})
-            return {"contact": cid, "unlinked": True}
-
-    def _link_public(self, link: telegram_links.Link) -> dict[str, Any]:
-        c = self.router.contact(link.contact_id)
-        return {**link.__dict__, "name": c.name if c else link.contact_id, "role": c.role if c else ""}
-
-    def telegram_links_public(self) -> list[dict[str, Any]]:
-        """Linked chats (by link code), then contacts whose routing entry is a chat id already."""
-        with self.lock:
-            out = [self._link_public(x) for x in self.tg_links.links.values()]
-            linked = {x["contact_id"] for x in out}
-            for c in self.router.contacts.values():
-                if c.id not in linked and telegram_links.is_chat_id(c.telegram):
-                    out.append({"contact_id": c.id, "chat_id": c.telegram, "username": "", "linked_at": "",
-                                "linked_by": "routing file", "name": c.name, "role": c.role})
-            return out
 
     def decision(self, iid: str, operator: str, decision: str, justification: str | None) -> dict[str, Any]:
         with self.lock:
@@ -1853,9 +1861,7 @@ class Saguaro(Agent):
             if isinstance(a, LayerAgent):
                 st["analyzed"] = a.analyzed
             out.append(st)
-        out.append({"name": "Jev", "role": "TypeSafe System One classifier", "status": self.jev.status,
-                    "calls": self.jev.calls, "failures": self.jev.failures, "last_error": self.jev.last_error,
-                    "cache": self.jev_step.cache.stats()})
+        out += self.extensions.agents()  # TypeSafe's Jev, when it is added
         return out
 
     # ------------------------------------------------------------------- demo
@@ -1870,7 +1876,7 @@ class Saguaro(Agent):
         with self.lock:
             archived = self.audit.archive_and_reset()
             self.rules.reset()
-            self.jev_step.cache.clear()
+            self.classifier.reset()
             self.responders.reset()
             self.watchdog.reset()
             self.clock._offset = 0.0

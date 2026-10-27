@@ -1,0 +1,16 @@
+{
+  "name": "abuseipdb",
+  "title": "AbuseIPDB",
+  "kind": "Lookups",
+  "what": "Shows how often other people have reported an attacking address, on each incident.",
+  "about": "Look up each attacking address. The free plan allows 1,000 lookups a day.",
+  "docs": "https://www.abuseipdb.com/account/api",
+  "order": 40,
+  "on_when": ["ABUSEIPDB_API_KEY"],
+  "settings": [
+    {"env": "ABUSEIPDB_API_KEY", "prompt": "AbuseIPDB API key, blank for no address lookups", "secret": true},
+    {"env": "ABUSEIPDB_CACHE_HOURS", "prompt": "Hours to keep each answer before asking again", "default": "24",
+     "kind": "float", "advanced": true}
+  ],
+  "requires": {"core": ["httpx"]}
+}

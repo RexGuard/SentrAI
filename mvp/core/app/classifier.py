@@ -2,7 +2,8 @@
 
 A classifier is any `Classifier` subclass: implement `classify()` and return a
 `Classification`, or None to hand the event to the next classifier. `ClassifierChain`
-runs them in order; the default chain is rules -> Jev -> fallback keywords.
+runs them in order: rules, then the steps added extensions bring (TypeSafe's Jev, in
+mvp/extensions/typesafe), then the fallback keywords.
 
 Output confidence is always clipped to 0.5-1.0 (the AI Confidence Factor).
 `malicious` is the probability that the event is part of an attack; 0.4-0.6 means
@@ -11,17 +12,12 @@ Output confidence is always clipped to 0.5-1.0 (the AI Confidence Factor).
 
 from __future__ import annotations
 
-import math
 import re
-import threading
-import time
 from abc import ABC, abstractmethod
-from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import unquote_plus
 
-from .jev_client import JevClient, JevResult
 from .risk import clip_confidence
 from .rules import RulesEngine
 
@@ -44,12 +40,26 @@ class Classifier(ABC):
     @abstractmethod
     def classify(self, event: dict[str, Any], now: float) -> Classification | None: ...
 
+    def begin(self) -> None:
+        """A new batch of events arrived (one POST /events): start its time budget, if it has one."""
+
+    def reset(self) -> None:
+        """Forget what it learned (demo reset)."""
+
 
 class ClassifierChain:
     """Asks each classifier in turn; the first answer wins."""
 
     def __init__(self, *classifiers: Classifier) -> None:
         self.classifiers = list(classifiers)
+
+    def begin(self) -> None:
+        for c in self.classifiers:
+            c.begin()
+
+    def reset(self) -> None:
+        for c in self.classifiers:
+            c.reset()
 
     def classify(self, event: dict[str, Any], now: float) -> Classification:
         for c in self.classifiers:
@@ -76,105 +86,6 @@ class RulesClassifier(Classifier):
         return Classification(hit.category, 1.0, malicious, hit.reason, hit.related_event_ids)
 
 
-# What varies between two copies of the same log line: addresses, times, ids, pids and ports.
-_TEMPLATE_RX = [
-    (re.compile(r"\b\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?(?:Z|[+-]\d{2}:?\d{2})?"), "<ts>"),
-    (re.compile(r"\[\d{1,2}/\w{3}/\d{4}:\d{2}:\d{2}:\d{2} [+-]\d{4}\]"), "<ts>"),  # nginx [19/Oct/2026:10:00:00 +0000]
-    (re.compile(r"\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\b"), "<ts>"),
-    (re.compile(r"\b\d{2}:\d{2}:\d{2}(?:[.,]\d+)?\b"), "<ts>"),
-    (re.compile(r"\b\d{9,13}(?:\.\d+)?\b"), "<ts>"),  # unix time
-    (re.compile(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", re.I), "<id>"),
-    (re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b"), "<ip>"),
-    (re.compile(r"(?<![\w:])(?:[0-9a-f]{0,4}:){2,7}[0-9a-f]{0,4}(?![\w:])", re.I), "<ip>"),
-    (re.compile(r"\b[0-9a-f]{16,}\b", re.I), "<hex>"),
-    (re.compile(r"\[\d+\]"), "[<pid>]"),
-    (re.compile(r"\bport\s+\d+\b", re.I), "port <n>"),
-]
-
-
-def log_template(event: dict[str, Any]) -> str:
-    """The cache key: where the line came from plus its text with the varying parts replaced, so
-    the same request from many IPs, or repeated over a day, is asked about once."""
-    text = str(event.get("raw") or "")
-    for rx, repl in _TEMPLATE_RX:
-        text = rx.sub(repl, text)
-    return f"{event.get('layer')}|{event.get('source')}|{' '.join(text.split())}"
-
-
-class JevCache:
-    """Least-recently-used answers from Jev, keyed on the log template. Thread-safe."""
-
-    def __init__(self, size: int = 2048, ttl_s: float = 3600.0) -> None:
-        self.size = max(0, size)
-        self.ttl_s = ttl_s
-        self.hits = 0
-        self.misses = 0
-        self._items: OrderedDict[str, tuple[float, JevResult]] = OrderedDict()
-        self._lock = threading.Lock()
-
-    def get(self, key: str) -> JevResult | None:
-        with self._lock:
-            item = self._items.get(key)
-            if item is not None and (self.ttl_s <= 0 or time.monotonic() - item[0] < self.ttl_s):
-                self._items.move_to_end(key)
-                self.hits += 1
-                return item[1]
-            if item is not None:
-                del self._items[key]  # expired
-            self.misses += 1
-            return None
-
-    def put(self, key: str, result: JevResult) -> None:
-        if self.size == 0:
-            return
-        with self._lock:
-            self._items[key] = (time.monotonic(), result)
-            self._items.move_to_end(key)
-            while len(self._items) > self.size:
-                self._items.popitem(last=False)
-
-    def clear(self) -> None:
-        with self._lock:
-            self._items.clear()
-
-    def __len__(self) -> int:
-        return len(self._items)
-
-    def stats(self) -> dict[str, Any]:
-        return {"size": len(self), "max": self.size, "hits": self.hits, "misses": self.misses}
-
-
-class JevClassifier(Classifier):
-    """TypeSafe System One. Skipped once the per-request time budget (`deadline`) is spent;
-    a cached answer for the same log template is used without calling Jev at all."""
-
-    name = "jev"
-
-    def __init__(self, jev: JevClient, cache: JevCache | None = None) -> None:
-        self.jev = jev
-        self.cache = cache if cache is not None else JevCache()
-        self.deadline = math.inf  # set per ingest request by Saguaro
-
-    def classify(self, event: dict[str, Any], now: float) -> Classification | None:
-        if not getattr(self.jev, "enabled", True):
-            return None  # no key: nothing was ever cached, skip the template work
-        key = log_template(event)
-        r = self.cache.get(key)
-        cached = r is not None
-        if r is None:
-            if time.monotonic() >= self.deadline:
-                return None
-            r = self.jev.classify(event)
-            if r is None:
-                return None
-            self.cache.put(key, r)
-        return Classification(
-            r.category, clip_confidence(r.confidence), round(r.malicious, 3),
-            f"Jev System One: {r.category} p={r.confidence:.2f}, malicious p={r.malicious:.2f}"
-            + (" (cached: same log template)" if cached else ""),
-        )
-
-
 # (patterns, category, confidence 0.5-0.8, malicious probability). Whole-word regexes so
 # ordinary text ("oracle", "scandal", a SELECT in a routine query log) does not trip them.
 FALLBACK_TABLE: list[tuple[tuple[str, ...], str, float, float]] = [
@@ -191,7 +102,7 @@ _FALLBACK_RX = [(tuple(re.compile(p, re.I) for p in pats), cat, conf, mal) for p
 
 
 class FallbackClassifier(Classifier):
-    """Keyword heuristic used when rules and Jev give no answer. Always answers."""
+    """Keyword heuristic used when the rules (and any classifier extension) give no answer. Always answers."""
 
     name = "fallback"
 
@@ -208,8 +119,6 @@ class FallbackClassifier(Classifier):
         return Classification("benign", 0.8, 0.1, "fallback heuristic: no suspicious markers")
 
 
-def default_chain(rules: RulesEngine, jev: JevClient,
-                  cache: JevCache | None = None) -> tuple[ClassifierChain, JevClassifier]:
-    """rules -> Jev -> fallback. Returns the Jev step too so Saguaro can set its time budget."""
-    jev_step = JevClassifier(jev, cache)
-    return ClassifierChain(RulesClassifier(rules), jev_step, FallbackClassifier()), jev_step
+def default_chain(rules: RulesEngine) -> ClassifierChain:
+    """rules -> fallback: what the core runs with no classifier extension added."""
+    return ClassifierChain(RulesClassifier(rules), FallbackClassifier())
