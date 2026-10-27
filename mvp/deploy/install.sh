@@ -161,11 +161,13 @@ if [ "$ASK" = 1 ] && [ -t 0 ]; then
     fi
     if [ "${#ALLOW[@]}" = 0 ] && [ "$DASH_LOCAL" = 0 ]; then
         cur="$(existing SENTRAI_DASHBOARD_ALLOW)"
-        if [ -z "$cur" ]; then
+        # A dashboard already kept local (often behind a reverse proxy such as Caddy) offers local again:
+        # Enter must not open it to this SSH session's address and turn on HTTPS under the proxy.
+        if [ -z "$cur" ] && ! grep -q '^SENTRAI_DASHBOARD_HOST=' "$ENV_FILE" 2>/dev/null; then
             for ip in "${PROTECT[@]}"; do case "$ip" in 127.*|::1|localhost) ;; *) cur="${cur:+$cur,}$ip" ;; esac; done
+            # The address this SSH session comes from is usually the admin's own.
+            if [ -z "$cur" ]; then cur="$(who -m 2>/dev/null | sed -n 's/.*(\([0-9a-fA-F.:]*\)).*/\1/p' | head -1 || true)"; fi
         fi
-        # The address this SSH session comes from is usually the admin's own.
-        if [ -z "$cur" ]; then cur="$(who -m 2>/dev/null | sed -n 's/.*(\([0-9a-fA-F.:]*\)).*/\1/p' | head -1 || true)"; fi
         echo "  Who may open the dashboard? Your IP address(es), comma-separated. Everyone else is"
         echo "  blocked. Or type local to keep it on this server (reach it through an SSH tunnel)."
         read -r -p "  Allowed IPs [${cur:-local}]: " a || a=""
