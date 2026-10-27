@@ -62,6 +62,11 @@ class AssignIn(BaseModel):
     note: Optional[str] = None
 
 
+class RoutingIn(BaseModel):
+    operator: str
+    routing: dict[str, Any]
+
+
 class ResolveIn(BaseModel):
     operator: str
     note: str
@@ -448,6 +453,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/routing")
     def get_routing() -> dict[str, Any]:
         return core.routing_public()
+
+    @app.post("/routing")
+    def post_routing(body: RoutingIn) -> dict[str, Any]:
+        """Save a whole new routing file (people, rules, follow-up) from the dashboard's map."""
+        try:
+            return core.routing_update(body.routing, body.operator)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail=f"could not write the routing file: {exc}")
 
     # Personal Telegram alerts (telegram_links.py): a contact links their private chat with a one-time code.
     @app.post("/telegram/link-codes")

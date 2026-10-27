@@ -316,3 +316,31 @@ def test_integrations_page_shows_each_service_and_its_test(fake_core, tmp_path, 
     assert any("fake core does not call outside services" in e.value for e in at.error)
     next(b for b in at.button if b.key == "set_cloudflare").click().run()
     assert at.session_state["page"] == "config" and at.session_state["cfg_search"] == "cloudflare"
+
+
+def test_approvals_rows_roll_back_in_one_click(fake_core, tmp_path, monkeypatch):
+    from streamlit.testing.v1 import AppTest
+
+    monkeypatch.setenv("SENTRAI_CONFIG", str(tmp_path / "config.json"))
+    requests.post(f"{fake_core}/dev/reset", timeout=3)
+    requests.post(f"{fake_core}/dev/trigger/brute_force", timeout=3)
+    iid = requests.get(f"{fake_core}/incidents", timeout=3).json()
+    iid = (iid.get("incidents") if isinstance(iid, dict) else iid)[-1]["id"]
+    requests.post(f"{fake_core}/incidents/{iid}/decision", json={"operator": "t", "decision": "approve"}, timeout=3)
+    import streamlit as st
+    st.cache_data.clear()
+    at = AppTest.from_file(APP, default_timeout=20)
+    at.session_state["core_url"] = fake_core
+    at.session_state["auto_refresh"] = False
+    at.session_state["operator"] = "erick"
+    at.session_state["page"] = "approvals"
+    at.run()
+    assert not at.exception, at.exception
+    quick = [b for b in at.button if b.key == f"qb_appr_{iid}"]
+    assert quick, [b.key for b in at.button]
+    quick[0].click().run()
+    # AppTest cannot rerun just a fragment, so run_action's refresh raises here; in a browser it reruns the page part.
+    assert all("fragment" in str(e.value) for e in at.exception), at.exception
+    inc = requests.get(f"{fake_core}/incidents/{iid}", timeout=3).json()
+    assert inc["actions"] and all(a["status"] != "active" for a in inc["actions"]), inc["actions"]
+    assert any(a["status"] == "rolled_back" for a in inc["actions"])
