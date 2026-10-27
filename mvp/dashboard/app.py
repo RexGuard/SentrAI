@@ -88,9 +88,10 @@ if _apply_streamlit_theme():
 def _client_ip() -> str:
     try:
         ip = st.context.ip_address
+        forwarded = st.context.headers.get("X-Forwarded-For") or ""
     except Exception:  # noqa: BLE001 - no browser behind this run
-        ip = None
-    return ip if isinstance(ip, str) and ip else "local"  # a test run has no real address
+        ip, forwarded = None, ""
+    return signin.client_address(ip, forwarded)
 
 
 def _base_url() -> str:
