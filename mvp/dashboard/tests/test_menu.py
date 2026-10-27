@@ -57,7 +57,7 @@ APP = str(Path(__file__).resolve().parents[1] / "app.py")
 
 
 @pytest.mark.parametrize("page", ["config", "approvals", "incidents", "chat", "collector", "classifier", "responder",
-                                  "machines", "review", "reports", "audit", "backups", "integrations"])
+                                  "machines", "review", "reports", "audit", "backups", "extensions"])
 def test_every_page_renders(fake_core, page, tmp_path, monkeypatch):
     from streamlit.testing.v1 import AppTest
 
@@ -298,24 +298,80 @@ def test_console_opens_on_what_needs_a_decision(fake_core, tmp_path, monkeypatch
     assert at.session_state["page"] == "approvals"
 
 
-def test_integrations_page_shows_each_service_and_its_test(fake_core, tmp_path, monkeypatch):
+def _extensions_page(fake_core, tmp_path, monkeypatch):
     from streamlit.testing.v1 import AppTest
 
     monkeypatch.setenv("SENTRAI_CONFIG", str(tmp_path / "config.json"))
     at = AppTest.from_file(APP, default_timeout=20)
     at.session_state["core_url"] = fake_core
     at.session_state["auto_refresh"] = False
-    at.session_state["page"] = "integrations"
+    at.session_state["page"] = "extensions"
     at.run()
+    assert not at.exception, at.exception
+    return at
+
+
+def test_extensions_page_shows_each_extension_and_its_test(fake_core, tmp_path, monkeypatch):
+    requests.post(f"{fake_core}/dev/reset", timeout=3)
+    at = _extensions_page(fake_core, tmp_path, monkeypatch)
     text = " ".join(m.value for m in at.markdown)
-    for name in ("Cloudflare", "AbuseIPDB", "Slack", "Telegram"):
+    for name in ("Cloudflare", "AbuseIPDB", "Slack", "Telegram", "TypeSafe", "Added", "Available", "Built in"):
         assert name in text
-    test = next(b for b in at.button if b.key == "test_cloudflare")
-    test.click().run()
+    next(b for b in at.button if b.key == "test_cloudflare").click().run()
     assert not at.exception, at.exception
     assert any("fake core does not call outside services" in e.value for e in at.error)
     next(b for b in at.button if b.key == "set_cloudflare").click().run()
     assert at.session_state["page"] == "config" and at.session_state["cfg_search"] == "cloudflare"
+    assert any("Cloudflare extension" in m.value for m in at.markdown)  # its settings show there
+
+
+def test_extensions_are_added_and_removed_after_a_confirm(fake_core, tmp_path, monkeypatch):
+    requests.post(f"{fake_core}/dev/reset", timeout=3)
+    at = _extensions_page(fake_core, tmp_path, monkeypatch)
+    next(b for b in at.button if b.key == "add_slack").click().run()
+    assert not at.exception, at.exception
+    assert next(r for r in requests.get(f"{fake_core}/extensions", timeout=3).json() if r["name"] == "slack")["added"]
+    next(b for b in at.button if b.key == "remove_cloudflare").click().run()
+    assert any("Blocks it added at Cloudflare are taken out" in m.value for m in at.markdown)
+    assert next(r for r in requests.get(f"{fake_core}/extensions", timeout=3).json() if r["name"] == "cloudflare")["added"]
+    next(b for b in at.button if b.key == "remove_yes_cloudflare").click().run()
+    assert not at.exception, at.exception
+    rows = {r["name"]: r for r in requests.get(f"{fake_core}/extensions", timeout=3).json()}
+    assert not rows["cloudflare"]["added"] and rows["cloudflare"]["changed_by"]
+    assert any(b.key == "add_cloudflare" for b in at.button)
+
+
+def test_telegram_link_codes_show_only_while_telegram_is_added(fake_core, tmp_path, monkeypatch):
+    from streamlit.testing.v1 import AppTest
+
+    requests.post(f"{fake_core}/dev/reset", timeout=3)
+    monkeypatch.setenv("SENTRAI_CONFIG", str(tmp_path / "config.json"))
+
+    def incidents():
+        import streamlit as st
+        st.cache_data.clear()
+        at = AppTest.from_file(APP, default_timeout=20)
+        at.session_state["core_url"] = fake_core
+        at.session_state["auto_refresh"] = False
+        at.session_state["page"] = "incidents"
+        at.run()
+        assert not at.exception, at.exception
+        return any(b.key == "tg_code" for b in at.button)
+
+    assert incidents()
+    requests.post(f"{fake_core}/extensions/telegram/remove", json={"operator": "t"}, timeout=3)
+    assert not incidents()
+
+
+def test_when_the_server_decides_the_buttons_are_off(fake_core, tmp_path, monkeypatch):
+    requests.post(f"{fake_core}/dev/reset", timeout=3)
+    requests.post(f"{fake_core}/dev/extensions/managed?on=1", timeout=3)
+    try:
+        at = _extensions_page(fake_core, tmp_path, monkeypatch)
+        assert any("SENTRAI_EXTENSIONS" in i.value for i in at.info)
+        assert all(b.disabled for b in at.button if b.key and b.key.startswith(("add_", "remove_")))
+    finally:
+        requests.post(f"{fake_core}/dev/reset", timeout=3)
 
 
 def test_approvals_rows_roll_back_in_one_click(fake_core, tmp_path, monkeypatch):

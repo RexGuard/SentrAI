@@ -169,6 +169,7 @@ def test_routing_tables_use_names():
     rules = sh.routing_rows(routing)
     assert list(rules["When"]) == ["severity is high", "anything else"] and list(rules["Also told"]) == ["Lee", "-"]
     assert list(sh.contact_rows(routing)["Backup"]) == ["Lee", "-"]
+    assert "Alerts in Telegram" not in sh.contact_rows(routing)  # Telegram not added: the core sends no link state
     routing["contacts"][0]["telegram_linked"] = True
     assert list(sh.contact_rows(routing)["Alerts in Telegram"]) == ["Own chat", "Team group"]
 

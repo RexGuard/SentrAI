@@ -440,7 +440,8 @@ AUDIT_WINDOW = 500  # latest records the dashboard reads; the core still verifie
 def _get(base_url: str, what: str) -> Any:
     c = CoreClient(base_url, token=TOKEN)
     return {"risk": c.risk, "incidents": c.incidents, "blocklist": c.blocklist, "agents": c.agents,
-            "machines": c.machines, "fleet": c.fleet_agents, "audit": lambda: c.audit(AUDIT_WINDOW)}[what]()
+            "machines": c.machines, "fleet": c.fleet_agents, "extensions": c.extensions,
+            "audit": lambda: c.audit(AUDIT_WINDOW)}[what]()
 
 
 def fetch(what: str, default: Any = None) -> tuple[Any, str | None]:
@@ -500,7 +501,7 @@ PAGES = {  # key: (Material icon, label, menu group)
     "audit": ("link", "Audit trail", "Oversight"),
     "backups": ("backup", "Backups", "Oversight"),
     "team": ("group", "Team", "Oversight"),  # Owners and Admins, when people sign in
-    "integrations": ("hub", "Integrations", "Settings"),
+    "extensions": ("extension", "Extensions", "Settings"),
     "config": ("tune", "Configuration", "Settings"),
 }
 
@@ -917,6 +918,7 @@ def page_config() -> None:
                 values[f.env] = cols[n % 2].text_input(
                     f.prompt, value=current[f.env], key=f"cfg_{f.env}", help=f"Environment variable {f.env}",
                     type="password" if f.secret else "default").strip()
+    shown += extension_settings(query, current, values)
     if not shown:
         st.markdown(f'<div class="search-none">{icon("search_off")} No setting matches "{html.escape(query)}". '
                     'Try a shorter word, like "email", "block" or "key".</div>', unsafe_allow_html=True)
@@ -937,8 +939,58 @@ def page_config() -> None:
             if err:
                 st.success(f"Saved to {path}. Start SentrAI (run.ps1 or run.sh) so the core picks them up.")
             else:
-                st.success(f"Saved to {path}. Cyanide switched to the new AI settings ({ai.get('chat')}). "
-                           "Restart SentrAI (stop, then run) for the other settings.")
+                _, ext_err = safe(client.reload_extensions)  # new keys and tokens take effect now
+                st.success(f"Saved to {path}. Cyanide switched to the new AI settings ({ai.get('chat')})"
+                           + ("" if ext_err else " and the extensions use theirs now")
+                           + ". Restart SentrAI (stop, then run) for the other settings.")
+
+
+def extension_settings(query: str, current: dict[str, str], values: dict[str, str]) -> int:
+    """Each added extension's settings, from its extension.json. One that is not added shows up when a search
+    finds it, with a word on what saving does. Returns how many sections it drew."""
+    rows, _ = safe(client.extensions, None)
+    by_name = {r.get("name"): r for r in rows or [] if not r.get("built_in")}
+    drawn = 0
+    for name, s in cfg.EXTENSION_SECTIONS.items():
+        row = by_name.get(name)
+        on = bool(row.get("added")) if row else any(current.get(e) for e in s.on_when)  # core away: the settings rule
+        if query:
+            hits = list(s.fields) if matches(query, s.title, s.about, "extension") else \
+                [f for f in s.fields if matches(query, f.prompt, f.env)]
+        else:
+            hits = list(s.fields) if on else []
+        if not hits:
+            continue
+        drawn += 1
+        with fold(f"{s.title} extension", bool(query), "extension"):
+            st.caption(s.about)
+            if not on:
+                by = (row or {}).get("added_by")
+                st.caption(":material/info: " + (
+                    "Off: the server's SENTRAI_EXTENSIONS decides which extensions are on." if by == "SENTRAI_EXTENSIONS"
+                    else "Removed on the Extensions page. Its settings are kept; add it there to use them."
+                    if by == "dashboard" else "Not added yet. Saving its key turns it on."))
+            plain, advanced = [f for f in hits if not f.advanced], [f for f in hits if f.advanced]
+            for group, label in ((plain, ""), (advanced, "Advanced")):
+                if not group:
+                    continue
+                if label:
+                    st.caption(label)
+                cols = st.columns(2)
+                for n, f in enumerate(group):
+                    values[f.env] = setting_input(cols[n % 2], f, current)
+    return drawn
+
+
+def setting_input(col, f, current: dict[str, str]) -> str:
+    """One setting's widget: a list when it has choices, a box otherwise (hidden for a key or token)."""
+    tip = f"Environment variable {f.env}"
+    if f.choices:
+        value = current.get(f.env) or f.default
+        options = list(f.choices) if value in f.choices else [value, *f.choices]
+        return col.selectbox(f.prompt, options, index=options.index(value), key=f"cfg_{f.env}", help=tip)
+    return col.text_input(f.prompt, value=current[f.env], key=f"cfg_{f.env}", help=tip,
+                          type="password" if f.secret else "default").strip()
 
 
 def _save_look() -> None:
@@ -1138,76 +1190,147 @@ def ai_connection(ai: dict[str, str]) -> None:
             st.caption(result["hint"])
 
 
-INTEGRATION_KINDS = (("Blocking", "block", "stop attackers outside this machine too"),
-                     ("Lookups", "travel_explore", "what the internet already knows about an address"),
-                     ("Alerts", "notifications", "where people hear about incidents"))
+EXTENSIONS_GUIDE = "https://rexguard.github.io/SentrAI/docs/extensions.html"
 NOT_SET = sh.UNKNOWN_COLOR
+EXTENSION_GROUPS = (("added", "Added", "extension", "on now: each one works while SentrAI runs"),
+                    ("available", "Available", "add_circle", "installed but not added: add one to use it"),
+                    ("built_in", "Built in", "deployed_code", "part of SentrAI itself, so always there"))
 
 
-def page_integrations() -> None:
+def page_extensions() -> None:
     show_flash()
-    if header("Integrations", "Outside services SentrAI works with · each stays off until its key is saved") is None:
+    if header("Extensions", "Outside services SentrAI works with · add or remove each one while SentrAI runs") is None:
         return
-    rows, err = safe(client.integrations, [])
+    rows, err = safe(client.extensions, [])
     if err:
-        st.warning(f"Could not ask the core which services are connected: {err}")
+        st.warning(f"Could not ask the core which extensions are added: {err}")
         return
-    on = [r for r in rows if r.get("configured")]
-    problems = [r for r in rows if r.get("last_error") or r.get("error")]
-    by_name = {r["name"]: r for r in rows}
-    stats(("Connected", f"{len(on)} of {len(rows)}", "services set up"),
-          ("Edge blocking", "On" if by_name.get("cloudflare", {}).get("configured") else "Off",
+    ext = [r for r in rows if not r.get("built_in")]
+    added = [r for r in ext if r.get("added")]
+    problems = [r for r in rows if r.get("added") and (r.get("last_error") or r.get("error"))]
+    edge = next((r for r in ext if r.get("name") == "cloudflare"), {})
+    stats(("Added", f"{len(added)} of {len(ext)}", "extensions on"),
+          ("Edge blocking", "On" if edge.get("added") and edge.get("configured") else "Off",
            "Cloudflare blocks what SentrAI blocks"),
           ("Problems", str(len(problems)), "last call failed" if problems else "none",
            sh.BAND_COLORS["amber"] if problems else None))
+    managed = any(r.get("added_by") == "SENTRAI_EXTENSIONS" for r in ext)
+    if managed:
+        st.info("The server's SENTRAI_EXTENSIONS setting decides which extensions are on, so they cannot be "
+                "added or removed here. Change it where SentrAI is started, then restart it.",
+                icon=":material/lock:")
     results = st.session_state.setdefault("integration_tests", {})
-    for kind, ico, note in INTEGRATION_KINDS:
-        group = [r for r in rows if r.get("kind") == kind]
+    groups = {"added": added, "available": [r for r in ext if not r.get("added")],
+              "built_in": [r for r in rows if r.get("built_in")]}
+    for key, title, ico, note in EXTENSION_GROUPS:
+        group = groups[key]
         if not group:
             continue
-        section(kind, note, ico)
+        section(title, note, ico)
         cols = st.columns(2)
         for n, r in enumerate(group):
             with cols[n % 2], st.container(border=True):
-                integration_card(r, results)
-    st.caption("Keys and tokens are saved in the settings file on this machine (never in the code), "
-               "and the core reads them when it starts. After saving a key, restart SentrAI (stop, then run).")
+                extension_card(r, results, managed)
+    st.caption("Removing an extension keeps its settings, so adding it back restores it. Installing one means "
+               "putting its folder in mvp/extensions (or a folder named in SENTRAI_EXTENSIONS_DIR) and restarting "
+               f"SentrAI; deleting the folder uninstalls it. See the [extensions guide]({EXTENSIONS_GUIDE}).")
 
 
-def integration_card(r: dict, results: dict) -> None:
+def extension_chip(r: dict) -> str:
     trouble = r.get("error") or r.get("last_error")
-    if r.get("configured") and trouble:
-        chip = pill("Problem", sh.BAND_COLORS["amber"])
-    elif r.get("configured"):
-        chip = pill("Connected", sh.BAND_COLORS["green"])
-    else:
-        chip = pill("Not set up", NOT_SET)
-    st.markdown(f'<div class="sec-title">{html.escape(r.get("title") or r["name"])} {chip}</div>',
+    if r.get("built_in"):
+        return pill("Built in", sh.BAND_COLORS["green"] if r.get("configured") else NOT_SET)
+    if not r.get("added"):
+        return pill("Available", NOT_SET)
+    if trouble:
+        return pill("Problem", sh.BAND_COLORS["amber"])
+    return pill("Added", sh.BAND_COLORS["green"]) if r.get("configured") else pill("Not set up", sh.BAND_COLORS["amber"])
+
+
+def removal_note(r: dict) -> str:
+    """What removing it will do, said before the person confirms."""
+    title = r.get("title") or r["name"]
+    what = {"Blocking": f"Blocks it added at {title} are taken out there again; SentrAI's own blocks stay.",
+            "Alerts": f"Alerts stop going to {title} within 15 seconds; the console and email still get them.",
+            "Classifier": f"Events are classified by the rules and the keyword fallback, without {title}.",
+            "Lookups": f"New incidents get no {title} lookups; what earlier ones show stays."}.get(r.get("kind"), "")
+    return f"{what} Its settings are kept, so adding it back restores it.".strip()
+
+
+def removed_message(r: dict, out: dict) -> tuple[str, str]:
+    title = r.get("title") or r["name"]
+    cleanup = out.get("cleanup") or {}
+    left = cleanup.get("left_in_place") or []
+    if left:
+        where = ", ".join(str(x.get("target")) for x in left[:3])
+        return (f"Removed {title}, but {sh.plural(len(left), 'block')} could not be taken out of it ({where}). "
+                "Remove them there by hand: each incident's timeline says which.", WARN_ICON)
+    gone = cleanup.get("released") or 0
+    return (f"Removed {title}" + (f". It took {sh.plural(gone, 'block')} out of {title}." if gone else "."), OK_ICON)
+
+
+def extension_card(r: dict, results: dict, managed: bool) -> None:
+    name, title = r["name"], r.get("title") or r["name"]
+    trouble = r.get("error") or r.get("last_error")
+    kind = html.escape(str(r.get("kind") or ""))
+    st.markdown(f'<div class="sec-title">{html.escape(title)} {extension_chip(r)} <small>{kind}</small></div>',
                 unsafe_allow_html=True)
     st.write(r.get("what") or "")
     st.caption(r.get("detail") or "")
-    if trouble:
+    if trouble and (r.get("added") or r.get("built_in")):
         st.caption(f":orange[:material/warning:] {trouble}")
+    if r.get("changed_by") and r.get("added_by") == "dashboard":
+        st.caption(f"{'Added' if r.get('added') else 'Removed'} by {r['changed_by']}, {sh.day_time(r.get('changed_at'))}")
     in_config = any(f in cfg.FIELDS for f in r.get("settings") or [])
-    slots = iter(st.columns(3))  # buttons fill from the left, so a card without a test has no gap
-    b1 = next(slots) if r.get("testable") else None
-    b2 = next(slots) if in_config else None
-    b3 = next(slots) if r.get("docs") else None
-    if b1 is not None and b1.button("Test", key=f"test_{r['name']}", icon=":material/power:", width="stretch",
-                                       disabled=not can("configure"),
-                                       help="One harmless call to the service with the saved key"):
-        with st.spinner(f"Testing {r.get('title')}..."):
-            out, test_err = safe(lambda: client.test_integration(r["name"]))
-        results[r["name"]] = out if not test_err else {"ok": False, "error": test_err}
-    if b2 is not None and b2.button(
-            "Settings", key=f"set_{r['name']}", icon=":material/tune:", width="stretch"):
-        st.session_state.cfg_search = str(r.get("title") or r["name"]).split()[0].lower()
+    no_change = None if not managed else "The server's SENTRAI_EXTENSIONS decides which extensions are on."
+    slots = iter(st.columns(4))  # buttons fill from the left, so a card without a test has no gap
+    if not r.get("built_in"):
+        b = next(slots)
+        if not r.get("added"):
+            if b.button("Add", key=f"add_{name}", icon=":material/add:", type="primary", width="stretch",
+                        disabled=managed or locked("configure"), help=no_change or why_locked("configure",
+                        f"Turn {title} on now. It uses the settings saved for it.")):
+                out, add_err = safe(lambda: client.add_extension(name, st.session_state.operator))
+                st.session_state["flash"] = ((f"Could not add {title}: {add_err}", WARN_ICON) if add_err else
+                                             (f"Added {title}" + ("" if (out or {}).get("configured") else
+                                              ". Save its settings on the Configuration page to set it up."), OK_ICON))
+                _get.clear()
+                st.rerun()
+        elif b.button("Remove", key=f"remove_{name}", icon=":material/remove:", width="stretch",
+                      disabled=managed or locked("configure"),
+                      help=no_change or why_locked("configure", f"Turn {title} off. Its settings are kept.")):
+            st.session_state["confirm_remove"] = name
+    if r.get("testable") and r.get("added"):
+        if next(slots).button("Test", key=f"test_{name}", icon=":material/power:", width="stretch",
+                              disabled=locked("configure"),
+                              help=why_locked("configure", "One harmless call to the service with the saved key")):
+            with st.spinner(f"Testing {title}..."):
+                out, test_err = safe(lambda: client.test_extension(name))
+            results[name] = out if not test_err else {"ok": False, "error": test_err}
+    if in_config and next(slots).button("Settings", key=f"set_{name}", icon=":material/tune:", width="stretch"):
+        st.session_state.cfg_search = str(title).split()[0].lower()
         go("config")
-    if b3 is not None:
-        b3.link_button("How to set up", r["docs"], icon=":material/open_in_new:", width="stretch")
-    if not in_config:
+    if r.get("docs"):
+        next(slots).link_button("How to set up", r["docs"], icon=":material/open_in_new:", width="stretch")
+    if not in_config and r.get("settings"):
         st.caption("Set with environment variables: " + ", ".join(f"`{f}`" for f in r.get("settings") or []))
-    result = results.get(r["name"])
+    if st.session_state.get("confirm_remove") == name and r.get("added"):
+        with st.container(border=True):
+            st.markdown(f"**Remove {html.escape(title)}?** {html.escape(removal_note(r))}")
+            c1, c2 = st.columns(2)
+            if c1.button(f"Remove {title}", key=f"remove_yes_{name}", icon=":material/remove:", type="primary",
+                         width="stretch", disabled=managed or locked("configure")):
+                st.session_state.pop("confirm_remove", None)
+                out, rm_err = safe(lambda: client.remove_extension(name, st.session_state.operator))
+                st.session_state["flash"] = ((f"Could not remove {title}: {rm_err}", WARN_ICON) if rm_err
+                                             else removed_message(r, out or {}))
+                results.pop(name, None)
+                _get.clear()
+                st.rerun()
+            if c2.button("Keep it", key=f"remove_no_{name}", width="stretch"):
+                st.session_state.pop("confirm_remove", None)
+                st.rerun()
+    result = results.get(name)
     if result and result.get("ok"):
         st.success(result.get("detail") or "Connected.")
     elif result:
@@ -1348,7 +1471,8 @@ def page_incidents() -> None:
             with st.expander("The same as tables"):
                 table(sh.routing_rows(routing), "", )
                 table(sh.contact_rows(routing), "")
-            telegram_links(contacts)
+            if any("telegram_linked" in c for c in contacts):  # the core says so only while Telegram is added
+                telegram_links(contacts)
 
 
 def routing_map(routing: dict) -> None:
@@ -2026,7 +2150,9 @@ def page_classifier() -> None:
     opened = sh.records_of(records, "incident_opened")
 
     by_rules = int((rows["Classified by"] == "Rules").sum()) if not rows.empty else 0
-    ai_value, ai_note = sh.ai_classifier_state(jev.get("status"))
+    exts, _ = fetch("extensions", [])
+    ai_value, ai_note = sh.ai_classifier_state(jev.get("status"),
+                                               next((r for r in exts or [] if r.get("name") == "typesafe"), None))
     stats(("Attacks identified", str(len(opened)), "incidents opened", sh.BAND_COLORS["critical"] if opened else None),
           ("Malicious events", str(len(rows)), "classified as an attack"),
           ("Settled by rules", str(by_rules), "certain, no AI needed"),
@@ -2607,5 +2733,6 @@ if not page_allowed(st.session_state.page):
     "config": page_config, "approvals": page_approvals, "incidents": page_incidents, "chat": page_chat,
     "collector": page_collector, "classifier": page_classifier, "responder": page_responder, "machines": page_machines,
     "review": page_review, "reports": page_reports, "audit": page_audit,
-    "backups": page_backups, "team": page_team, "integrations": page_integrations,
+    "backups": page_backups, "team": page_team, "extensions": page_extensions,
+    "integrations": page_extensions,  # the page's name before extensions
 }[st.session_state.page]()
