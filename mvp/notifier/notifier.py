@@ -11,7 +11,8 @@ Env:
                        unless nobody could be reached directly (see direct.py)
   SENTRAI_OPERATOR      fallback operator name (default "operator")
   NOTIFIER_POLL_SECONDS poll interval (default 2)
-  NOTIFIER_WITNESS_FILE where the last delivered audit fingerprint is kept (default notifier/data/last_witness.txt)
+  NOTIFIER_WITNESS_FILE where the last delivered audit fingerprint is kept (default: notifier/last_witness.txt
+                       in SentrAI's data root, see mvp/sentrai_paths.py)
   TELEGRAM_REPORT_FROM  who may send /report <what you saw>: "alert-chat" (default, only TELEGRAM_CHAT_ID),
                        "any" (anyone who messages the bot, e.g. all staff), or a comma list of chat ids
   SMTP_HOST, ALERT_EMAIL_TO, ...  email backup channel, see emailer.py
@@ -44,7 +45,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
-from core import Core, CoreError
+sys.path.append(str(Path(__file__).resolve().parents[1]))  # mvp/: sentrai_paths, sentrai_config
+import sentrai_paths  # noqa: E402
+
+from core import Core, CoreError  # noqa: E402
 from direct import Target, deliver, group_mode, plan, receipts
 from emailer import EmailConfig, email_sender
 from slack import slack_from_env, with_slack
@@ -54,7 +58,6 @@ from formatting import (APPROVE, REJECT, ROLLBACK, TAKE, button_specs, format_co
 log = logging.getLogger("sentrai.notifier")
 
 DEFAULT_CORE = "http://127.0.0.1:8000"
-DEFAULT_WITNESS = Path(__file__).resolve().parent / "data" / "last_witness.txt"
 
 
 # ------------------------------------------------------------------ audit witness
@@ -64,7 +67,7 @@ class WitnessStore:
     chat, where the server cannot change it; this copy lets /verify check it without pasting."""
 
     def __init__(self, path: Path | str | None = None) -> None:
-        self.path = Path(path or os.environ.get("NOTIFIER_WITNESS_FILE") or DEFAULT_WITNESS)
+        self.path = Path(path) if path else sentrai_paths.path("notifier.witness")  # NOTIFIER_WITNESS_FILE wins
 
     def save(self, line: str) -> None:
         try:

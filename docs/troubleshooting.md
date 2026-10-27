@@ -117,6 +117,19 @@ The agent installer prints why. The usual causes:
 - **"the panel no longer accepts this machine's key"**: the machine was revoked. Join it again with
   a new code.
 
+## Where are SentrAI's files?
+
+Everything SentrAI keeps is in one folder, with one sub-folder per part: `~/.sentrai` on a laptop
+(`%USERPROFILE%\.sentrai` on Windows), `/var/lib/sentrai` on a server, and
+`/var/lib/sentrai/agent` (`C:\ProgramData\SentrAI\agent` on Windows) on a machine with only the
+agent. `INDEX.md` in that folder lists every file, what writes it and what it holds. On a laptop,
+`python sentrai_paths.py` in the `mvp` folder prints the same list.
+
+Files from an older version are moved there the first time SentrAI starts. A file it could not
+move, because it was open or on another drive, stays in use where it is, and a warning names it
+when SentrAI starts. Nothing is deleted. See
+[where SentrAI keeps its data](https://github.com/RexGuard/SentrAI/blob/main/mvp/DATA.md).
+
 ## Still stuck?
 
 Open an [issue on GitHub](https://github.com/RexGuard/SentrAI/issues) with what you ran and what it

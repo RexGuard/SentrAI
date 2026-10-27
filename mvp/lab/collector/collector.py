@@ -12,9 +12,9 @@ every 10 seconds so Watchdog can tell the collector is alive.
 Server logs (nginx, sshd via syslog or journald, Suricata, MySQL/MariaDB, PostgreSQL, MongoDB) and
 the Windows Event Log (``WindowsEventSource``) are parsed by ``collector/parsers.py``: events carry
 the log's own timestamp and host name and a ``parsed`` object (see "Parsed fields" in
-``mvp/CONTRACT.md``). Read positions are saved in ``collector-state.json`` (next to the settings
-file, or ``SENTRAI_COLLECTOR_STATE``) once core has accepted the events, so a restart carries on
-where it stopped instead of re-sending whole files.
+``mvp/CONTRACT.md``). Read positions are saved in ``collector/state.json`` in the data root (or
+``SENTRAI_COLLECTOR_STATE``) once core has accepted the events, so a restart carries on where it
+stopped instead of re-sending whole files.
 
 Run:  python -m collector.collector           (from mvp/lab)
    or python collector/collector.py
@@ -53,6 +53,7 @@ import requests
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.append(str(Path(__file__).resolve().parents[2]))
 import sentrai_config  # noqa: E402
+import sentrai_paths  # noqa: E402
 
 if __name__ == "__main__":
     # First run on this machine: ask for the settings before any path or log name is read.
@@ -145,8 +146,8 @@ def heartbeat_event() -> dict[str, Any]:
 
 
 def state_file() -> Path:
-    env = os.environ.get("SENTRAI_COLLECTOR_STATE")
-    return Path(env) if env else sentrai_config.config_path().parent / "collector-state.json"
+    """collector/state.json in the data root (SENTRAI_COLLECTOR_STATE moves it)."""
+    return sentrai_paths.path("collector.state")
 
 
 def path_key(path: Path) -> str:

@@ -1,8 +1,8 @@
 """Where the collector finds the JSON-lines logs it tails.
 
-Paths are resolved relative to ``mvp/lab`` so the collector and tests agree on
-where the logs live. Locations can be overridden with environment variables or the settings file written by
-``mvp/sentrai_config.py`` (the pytest suite uses env vars to point at a temp directory).
+The folder is ``logs/`` in SentrAI's data root (``mvp/sentrai_paths.py``) unless ``SENTRAI_LAB_LOGS``,
+set in the environment or by the settings file written by ``mvp/sentrai_config.py``, names another
+one (the pytest suite uses env vars to point at a temp directory).
 """
 from __future__ import annotations
 
@@ -14,20 +14,16 @@ from pathlib import Path
 LAB_DIR = Path(__file__).resolve().parents[1]
 sys.path.append(str(LAB_DIR.parent))
 import sentrai_config  # noqa: E402
+import sentrai_paths  # noqa: E402
 
 sentrai_config.load()  # saved settings become env defaults for everything below
 
 
-def _dir_from_env(env_name: str, default: Path) -> Path:
-    value = os.environ.get(env_name)
-    path = Path(value) if value else default
+def logs_dir() -> Path:
+    """Directory holding the JSON-lines log files: SENTRAI_LAB_LOGS, else logs/ in the data root."""
+    path = sentrai_paths.path("logs")
     path.mkdir(parents=True, exist_ok=True)
     return path
-
-
-def logs_dir() -> Path:
-    """Directory holding the JSON-lines log files."""
-    return _dir_from_env("SENTRAI_LAB_LOGS", LAB_DIR / "logs")
 
 
 # Log file names, shared with the collector.

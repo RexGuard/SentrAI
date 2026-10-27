@@ -7,6 +7,7 @@ import contextlib
 import hmac
 import logging
 import os
+from pathlib import Path
 from typing import Any, Optional, Union
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request
@@ -14,6 +15,7 @@ from fastapi.responses import PlainTextResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from .config import Settings, sign
+import sentrai_paths
 from .reports import build_report, render_markdown, render_pdf
 from . import summary as client_summary
 from . import ai, anchor, fleet, integrations, jobs, webhook
@@ -327,8 +329,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     chat = OperatorChat(core, default_chat_provider() if isinstance(core, Cyanide) else None, discovery, threats,
                         backups)
     chat.off_reason = core.ai_off_reason = ai.why_off()
-    machines = fleet.Fleet(core.settings.db_path.parent / "fleet.json")
-    machine_jobs = jobs.Jobs(core.settings.db_path.parent / "jobs.json")
+    core_dir = Path(core.settings.db_path).parent  # machines/fleet.json and machines/jobs.json sit next to the database
+    machines = fleet.Fleet(sentrai_paths.path("core.fleet", core_dir))
+    machine_jobs = jobs.Jobs(sentrai_paths.path("core.jobs", core_dir))
     staff = StaffReports(core, lambda: chat.provider)  # follows /ai/reload
 
     def require_token(request: Request) -> None:

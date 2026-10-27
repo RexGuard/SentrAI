@@ -34,7 +34,7 @@ def test_a_link_code_puts_the_persons_chat_on_their_alerts(tmp_path):
 def test_links_survive_a_restart_and_unlink_removes_them(tmp_path):
     c = routed_client(tmp_path)
     assert link(c).status_code == 200
-    saved = json.loads((tmp_path / "telegram_links.json").read_text(encoding="utf-8"))
+    saved = json.loads((tmp_path / "people" / "telegram_links.json").read_text(encoding="utf-8"))
     assert saved["links"][0]["contact_id"] == "amir"
     c2 = routed_client(tmp_path)
     assert [x["name"] for x in c2.get("/telegram/links").json()] == ["Amir"]

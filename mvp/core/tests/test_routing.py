@@ -26,8 +26,14 @@ ROUTING = {
 }
 
 
+def routing_file(tmp_path):
+    """Where the core keeps routing.json: people/ next to its database (mvp/sentrai_paths.py)."""
+    return tmp_path / "people" / "routing.json"
+
+
 def routed_client(tmp_path, routing=ROUTING):
-    (tmp_path / "routing.json").write_text(json.dumps(routing), encoding="utf-8")
+    routing_file(tmp_path).parent.mkdir(parents=True, exist_ok=True)
+    routing_file(tmp_path).write_text(json.dumps(routing), encoding="utf-8")
     settings = Settings(db_path=tmp_path / "sentrai.db", background=False, demo_speed=60.0)
     app = create_app(settings)
     c = TestClient(app, headers=AUTH)
@@ -139,7 +145,8 @@ def test_owner_survives_a_restart(tmp_path):
 
 
 def test_a_broken_routing_file_falls_back_to_the_settings(tmp_path):
-    (tmp_path / "routing.json").write_text("{not json", encoding="utf-8")
+    routing_file(tmp_path).parent.mkdir(parents=True, exist_ok=True)
+    routing_file(tmp_path).write_text("{not json", encoding="utf-8")
     settings = Settings(db_path=tmp_path / "sentrai.db", background=False, demo_speed=60.0)
     with TestClient(create_app(settings), headers=AUTH) as c:
         brute_force(c)
@@ -167,7 +174,7 @@ def test_saving_new_routing_writes_the_file_and_routes_the_next_incident(tmp_pat
                             "notify": ["lee", "sam"]})
     r = c.post("/routing", json={"operator": "Erick", "routing": new})
     assert r.status_code == 200, r.text
-    saved = json.loads((tmp_path / "routing.json").read_text(encoding="utf-8"))
+    saved = json.loads(routing_file(tmp_path).read_text(encoding="utf-8"))
     assert saved["rules"][0] == {"name": "Web logins", "match": {"category": ["brute_force"]}, "owner": "sam",
                                  "notify": ["lee"]}  # the owner is not also "told"
     assert [x["name"] for x in r.json()["contacts"]][-1] == "Sam"
@@ -191,7 +198,7 @@ def test_removing_a_person_updates_the_role_names(tmp_path):
 
 def test_bad_routing_is_refused_and_nothing_is_written(tmp_path):
     c = routed_client(tmp_path)
-    before = (tmp_path / "routing.json").read_text(encoding="utf-8")
+    before = routing_file(tmp_path).read_text(encoding="utf-8")
     bad = json.loads(json.dumps(ROUTING))
     bad["rules"][0]["owner"] = "nobody"
     r = c.post("/routing", json={"operator": "Erick", "routing": bad})
@@ -203,7 +210,7 @@ def test_bad_routing_is_refused_and_nothing_is_written(tmp_path):
                          ({**ROUTING, "contacts": {"a": {"name": "A", "backup": "zed"}}, "rules": []}, "backup")):
         r = c.post("/routing", json={"operator": "Erick", "routing": broken})
         assert r.status_code == 400 and word in r.json()["detail"], (word, r.text)
-    assert (tmp_path / "routing.json").read_text(encoding="utf-8") == before
+    assert routing_file(tmp_path).read_text(encoding="utf-8") == before
 
 
 def test_saving_routing_needs_the_token(tmp_path):
@@ -254,7 +261,7 @@ def test_validate_keeps_a_cleaned_layout_and_leaves_out_an_empty_one():
 
 def test_layout_survives_save_and_load(tmp_path):
     from app import routing
-    path = tmp_path / "routing.json"
+    path = routing_file(tmp_path)
     layout = {"incident": [0, 120], "rules": [[210, 0], None, [210, 180]], "contacts": {"amir": [620, 40]}}
     routing.save(path, routing.validate({**ROUTING, "layout": layout}))
     r = routing.load(path, "a", "b", "c", "d")
@@ -297,7 +304,7 @@ def test_post_routing_records_the_summary_and_what_changed_and_saves_the_layout(
     words = "  Moved   Amir\n and\tLee  " + "x" * 400
     r = c.post("/routing", json={"operator": "Erick", "routing": {**ROUTING, "layout": layout}, "summary": words})
     assert r.status_code == 200, r.text
-    saved = json.loads((tmp_path / "routing.json").read_text(encoding="utf-8"))
+    saved = json.loads(routing_file(tmp_path).read_text(encoding="utf-8"))
     # The file keeps the three rules sent (the core's own "Everything else" is added on load, not written),
     # so the layout keeps one place per rule in the file and the fourth point goes.
     assert len(saved["rules"]) == 3 and len(saved["layout"]["rules"]) == 3
@@ -328,7 +335,7 @@ def test_a_layout_naming_someone_not_in_the_file_is_dropped_silently(tmp_path):
     layout = {"contacts": {"amir": [1, 2], "nobody": [3, 4]}}
     r = c.post("/routing", json={"operator": "Erick", "routing": {**ROUTING, "layout": layout}})
     assert r.status_code == 200, r.text
-    saved = json.loads((tmp_path / "routing.json").read_text(encoding="utf-8"))
+    saved = json.loads(routing_file(tmp_path).read_text(encoding="utf-8"))
     assert saved["layout"] == {"contacts": {"amir": [1, 2]}}
 
 
@@ -341,7 +348,7 @@ def test_an_oversized_or_malformed_layout_is_cleaned_not_a_server_error(tmp_path
                    {"contacts": {"amir": [[1], [2]]}, "rules": [["a", "b"], {}, [None, None]]}):
         r = c.post("/routing", json={"operator": "Erick", "routing": {**ROUTING, "layout": layout}})
         assert r.status_code == 200, (layout if not isinstance(layout, dict) else list(layout), r.text[:200])
-        saved = json.loads((tmp_path / "routing.json").read_text(encoding="utf-8"))
+        saved = json.loads(routing_file(tmp_path).read_text(encoding="utf-8"))
         assert all(p is None or (len(p) == 2 and all(isinstance(n, int) for n in p))
                    for p in saved.get("layout", {}).get("rules", []))
         assert "incident" not in saved.get("layout", {})
@@ -352,5 +359,5 @@ def test_an_oversized_or_malformed_layout_is_cleaned_not_a_server_error(tmp_path
         ', "layout": {"incident": [NaN, 1], "contacts": {"amir": [Infinity, 1], "lee": [1e999, 2], "it": [3, 4]}}}}'
     r = c.post("/routing", content=body, headers={**AUTH, "Content-Type": "application/json"})
     assert r.status_code == 200, r.text[:200]  # seen: 200, cleaned
-    saved = json.loads((tmp_path / "routing.json").read_text(encoding="utf-8"))
+    saved = json.loads(routing_file(tmp_path).read_text(encoding="utf-8"))
     assert saved["layout"] == {"contacts": {"it": [3, 4]}}

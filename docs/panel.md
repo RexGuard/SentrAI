@@ -136,7 +136,8 @@ runs set: `--protect` adds to the addresses already kept, and enforcing stays on
 | `--prefix DIR` / `--user NAME` | `-Prefix DIR` | install somewhere else, or run as another account |
 
 On Linux the settings are in `/etc/sentrai/agent.env` and the machine's key in
-`/var/lib/sentrai/agent/`. After editing `agent.env` by hand, run
+`/var/lib/sentrai/agent/`, where `INDEX.md` lists every file the agent keeps
+(`C:\ProgramData\SentrAI\agent\INDEX.md` on Windows). After editing `agent.env` by hand, run
 `sudo systemctl restart sentrai-agent`. On Windows, rerun the installer with the option you want to
 change; the others are kept.
 
@@ -157,9 +158,10 @@ On Windows use `.\.venv\Scripts\python.exe` in place of `.venv/bin/python`.
 | To | Do |
 | --- | --- |
 | See every machine, its risk and its services | dashboard, **Machines** |
-| See one machine's incidents | **Machines**, then **Look at one machine** |
-| Scan a machine for threats, or back it up | **Machines**, pick it, press **Scan for threats** or **Back up now** |
-| Remove a machine from the panel | **Machines**, **Joined machines**: pick it, tick **Yes, stop accepting its key**, press **Revoke** |
+| Open one machine's own page | **Machines**, click the machine. Its address (`?machine=<name>`) can be shared or bookmarked |
+| See one machine's incidents, blocks or services | on its page, the **Incidents**, **Blocks** or **Services** tab |
+| Scan a machine for threats, or back it up | on its page, press **Scan for threats** or **Back up now** |
+| Remove a machine from the panel | on its page, **Agent** tab: tick **Yes, stop accepting its key**, press **Revoke key** |
 | Remove the agent from a Linux machine | `sudo systemctl disable --now sentrai-agent && sudo rm /etc/systemd/system/sentrai-agent.service` |
 | Remove the agent from a Windows machine | `powershell -ExecutionPolicy Bypass -File .\mvp\deploy\uninstall-agent.ps1` (add `-Purge` to delete its key too) |
 

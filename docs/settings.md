@@ -21,6 +21,10 @@ The file is `~/.sentrai/config.json` (`%USERPROFILE%\.sentrai\config.json` on Wi
 in the environment always wins over the file. Restart SentrAI after a change, or on a server
 `sudo systemctl restart sentrai.target`.
 
+Every other file SentrAI keeps sits in the same folder as the settings file, one sub-folder per
+part. `INDEX.md` in that folder lists them all; see
+[where SentrAI keeps its data](https://github.com/RexGuard/SentrAI/blob/main/mvp/DATA.md).
+
 ## Security preset
 
 One choice sets how quickly SentrAI acts and how long a block lasts.

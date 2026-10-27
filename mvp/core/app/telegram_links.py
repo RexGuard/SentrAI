@@ -25,6 +25,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+import sentrai_paths
+
 log = logging.getLogger("sentrai.telegram_links")
 
 CODE_TTL_S = 30 * 60
@@ -133,5 +135,4 @@ class LinkBook:
 
 
 def from_settings(s: Any) -> LinkBook:
-    path = Path(os.getenv("SENTRAI_TELEGRAM_LINKS", "").strip() or s.db_path.parent / "telegram_links.json")
-    return LinkBook(path)
+    return LinkBook(sentrai_paths.path("core.telegram_links", Path(s.db_path).parent))

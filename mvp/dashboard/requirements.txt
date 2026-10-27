@@ -1,4 +1,4 @@
-streamlit>=1.51  # the "Who gets what" map editor needs components v2
+streamlit>=1.55  # tabs that remember which one is open (machine page); also covers components v2 for the "Who gets what" map editor
 requests>=2.31
 plotly>=5.20
 pandas>=2.0

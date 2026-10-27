@@ -21,6 +21,11 @@ mvp/
   run.ps1 / run.sh       owner: lead (integration)
 ```
 
+Runtime data is never written inside `mvp/`. Every file a part keeps goes in the data root described
+in [`DATA.md`](DATA.md), at the place `sentrai_paths.py` gives it (`sentrai_paths.path("<key>")`). A new
+file first gets an entry in `ENTRIES` there and a row in `DATA.md`. The launchers' `.run_logs/` and
+`.run_pids.json` are output, not data.
+
 ## Shared data (JSON over HTTP)
 
 ### Event (collector → core, `POST /events`)
@@ -98,7 +103,7 @@ defaults. Returns `{"accepted": n, "risk_index": int, "events": [event ids]}`.
 Every event the collector sends carries `chain: {"stream", "seq", "prev", "hash"}`:
 `hash = sha256(prev + json([event_id, timestamp, host, layer, source, raw]))` (compact JSON, `ensure_ascii=False`),
 `prev` is the previous event's hash (64 zeros for #1), `seq` counts up from 1 per `stream` (one per collector,
-kept in `collector-state.json` once delivered). The core checks each one (`integrity.py`): a changed line, a
+kept in the collector's `state.json` once delivered). The core checks each one (`integrity.py`): a changed line, a
 missing run of events or one that does not follow its predecessor becomes an `audit_integrity` event
 (log tampering). Events without `chain` are accepted as before.
 
@@ -149,7 +154,7 @@ that signature (HMAC of the path with the token), which fits that one report onl
 | GET | `/reports/{incident_id}` | evidence report JSON |
 | GET | `/reports/{incident_id}.md` | same report as Markdown |
 | GET | `/protection` | `{"protection": "on" \| "off", "monitor_only", "changed_at", "changed_by", "reason", "active_actions": [...ids]}` |
-| POST | `/protection` | `{"operator", "on": bool, "reason"}` (reason required to turn it off). Off = monitor-only: events are still collected, classified and scored, but no containment is applied, autonomous or approved (approve returns 409). Actions already in force stay until they expire or are rolled back. Kept across restarts in `core/data/protection.json`; `SENTRAI_MONITOR_ONLY=1/0` overrides it at start. Every switch is audited as `protection_changed`; each skipped containment as `containment_skipped`. `/risk` also carries `monitor_only`. |
+| POST | `/protection` | `{"operator", "on": bool, "reason"}` (reason required to turn it off). Off = monitor-only: events are still collected, classified and scored, but no containment is applied, autonomous or approved (approve returns 409). Actions already in force stay until they expire or are rolled back. Kept across restarts in `protection.json` next to the core database; `SENTRAI_MONITOR_ONLY=1/0` overrides it at start. Every switch is audited as `protection_changed`; each skipped containment as `containment_skipped`. `/risk` also carries `monitor_only`. |
 | GET | `/blocklist` | `{"ips": [...], "users": [...]}` active (non-expired) containment, polled by target app. `?host=` (token or that machine's key) gives only that machine's blocks in host scope; an agent key always gets its own |
 | GET | `/risk?host=` | one machine's own index, incidents and history (`"risk_scope"`: `fleet` adds every machine into one score, `host` scores each on its own; set with `SENTRAI_RISK_SCOPE`) |
 | GET | `/incidents?host=` | that machine's incidents |
@@ -227,8 +232,8 @@ The off-box copy. The core sends `POST /append {"stream", "items"}` with the app
 
 ## Target app (owner: lab)
 - Flask on :5000: `/` , `/login` (POST form user/password), `/search?q=` (deliberately naive, logs SQLi-looking queries; uses SQLite with a fake `members` table of synthetic data), `/export` (bulk export, triggers data_exfiltration events), `/admin/run?cmd=` simulated command endpoint that NEVER executes anything, only logs "shell spawned" style event.
-- Writes JSON-lines logs to `mvp/lab/logs/*.jsonl`. Honors core `/blocklist` (poll every 2 s; if core down, allow).
-- Tripwires (off unless `SENTRAI_SPINES=1`): honeypot `/admin-legacy`, a planted credential, bait `members` rows and a tarpit. Each touch goes to `mvp/lab/logs/deception.jsonl`; the collector sends it with `"source": "tripwire"` and a raw text starting `tripwire <kind>:` (the older `cactus_spine` / `cactus-spine` forms are still accepted), and core rules turn it into an incident at confidence 1.0 (only for that source).
+- Writes JSON-lines logs to `*.jsonl` in the collector's logs folder (`SENTRAI_LAB_LOGS`, by default `logs/` in the data root). Honors core `/blocklist` (poll every 2 s; if core down, allow).
+- Tripwires (off unless `SENTRAI_SPINES=1`): honeypot `/admin-legacy`, a planted credential, bait `members` rows and a tarpit. Each touch goes to `deception.jsonl` in that folder; the collector sends it with `"source": "tripwire"` and a raw text starting `tripwire <kind>:` (the older `cactus_spine` / `cactus-spine` forms are still accepted), and core rules turn it into an incident at confidence 1.0 (only for that source).
 - Because clients are local, the attacker IP is taken from header `X-Demo-Src-IP` when present (demo spoofing so different "attackers" can be shown), else remote_addr.
 
 ## Rules for all agents

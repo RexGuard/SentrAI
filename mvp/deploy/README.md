@@ -44,10 +44,14 @@ The demo portal and attack scripts are not installed as services.
 - Code: `/opt/sentrai/mvp` (owned by root; `--prefix` moves it).
 - Service settings: `/etc/sentrai/sentrai.env` (ports, addresses, paths, `PROTECTED_IPS`; readable
   by root and the `sentrai` group only). Restart `sentrai.target` after editing it.
-- State: `/var/lib/sentrai` (the settings you save on the dashboard, the list of watched log files,
-  Scout's pending proposals and trails), with the audit record in `/var/lib/sentrai/core` and the
-  collector's read positions in `/var/lib/sentrai/collector`. An upgrade moves both from their old
-  place in `/var/lib/sentrai` (it stops the services for that, even with `--no-start`).
+- State: `/var/lib/sentrai`, one folder per part. The settings you save on the dashboard and the
+  sign-in accounts sit at the top; `core/` holds the audit record and its `people/`, `machines/`,
+  `threats/` and `backups/` folders; `collector/` the collector's read positions; `scout/` the list
+  of watched log files, Scout's pending proposals and trails; `notifier/` the last fingerprint it
+  delivered; `lab-logs/` the JSON-lines logs to tail. `/var/lib/sentrai/INDEX.md` lists every file
+  ([`../DATA.md`](../DATA.md) explains them). An upgrade moves the audit record and the read
+  positions from their old place in `/var/lib/sentrai` (it stops the services for that, even with
+  `--no-start`).
 - The services run as the `sentrai` system user, which has no extra groups. See "Least privilege".
 - The clock runs in real time (`DEMO_SPEED=1`): a 2-hour block lasts 2 real hours.
 
@@ -80,8 +84,8 @@ record or switch SentrAI off. The limits are in the `sentrai-*.service` files:
 |---|---|---|---|---|
 | `sentrai-core` | yes | `core/`, `scout/` | yes (only with `SENTRAI_FIREWALL` on) | yes |
 | `sentrai-collector` | yes | `collector/` | no | no |
-| `sentrai-dashboard` | no | the settings file | no | no |
-| `sentrai-notifier` | no | nothing | no | no |
+| `sentrai-dashboard` | no | the settings and sign-in files | no | no |
+| `sentrai-notifier` | no | `notifier/` | no | no |
 
 The log groups (`adm`, `systemd-journal`) are given to the core and collector services only, not
 to the `sentrai` account; `sentrai-scout` gets them for its own run. Every service also runs with
@@ -245,9 +249,10 @@ sudo ./deploy/uninstall-agent.sh                  # remove it and its blocks (--
 
 Running `install-agent.sh` again from a newer checkout upgrades the agent and keeps the machine
 joined, its `--protect` addresses, enforcing or dry run, and anything added to
-`/etc/sentrai/agent.env` by hand. The CI job "Linux install" runs this whole path (panel with
-`--panel`, agent with the pin, a real attack, nftables and iptables blocks, uninstall) on Ubuntu
-22.04 and 24.04 for every pull request.
+`/etc/sentrai/agent.env` by hand. The agent keeps its machine key, read positions and backups in
+`/var/lib/sentrai/agent`, where `INDEX.md` lists every file. The CI job "Linux install" runs this
+whole path (panel with `--panel`, agent with the pin, a real attack, nftables and iptables blocks,
+uninstall) on Ubuntu 22.04 and 24.04 for every pull request.
 
 ### Windows machines (`install-agent.ps1`)
 
@@ -270,7 +275,8 @@ powershell -ExecutionPolicy Bypass -File .\mvp\deploy\uninstall-agent.ps1       
 - Settings: the `<env>` lines in `C:\Program Files\SentrAI\SentrAIAgent.xml`. Run the installer
   again with `-Enforce`, `-DryRun` or `-Protect IP` to change them; other options are kept.
 - Machine key, read positions and service output: `C:\ProgramData\SentrAI\agent` (SYSTEM and
-  Administrators only); the output is in `service\SentrAIAgent.out.log`.
+  Administrators only); the output is in `service\SentrAIAgent.out.log`, and `INDEX.md` there lists
+  every file the agent keeps.
 - Blocks are one inbound Windows Firewall rule per address, named `SentrAI-block-<ip>`. They are a
   dry run (only logged) until `-Enforce`. Uninstalling takes them all out (`-KeepBlocks` leaves them).
 - Options: `-Panel`, `-Code`, `-Name`, `-Pin sha256:...` (the panel's certificate pin), `-Ca FILE`, `-AllowHttp` (test networks
@@ -314,12 +320,12 @@ its own block list; revoke one with `POST /fleet/agents/<id>/revoke`. If the pan
   injection, XSS, port scans, privilege escalation, data theft, prompt injection), never private or
   protected addresses. `SENTRAI_AGENT_LOCAL_RULES=off` turns this off.
 - when the panel answers again the agent reports every local block (`POST /fleet/offline-report`):
-  it is written to the audit record, raises an alert, and the Machines page shows it under
-  "Last time offline"
+  it is written to the audit record, raises an alert, and the Machines page and the machine's
+  Agent tab show it under "Last time offline"
 
 ### Threat scans and backups from the panel
 
-On the Machines page, pick a machine and press **Scan for threats** or **Back up now**. The panel
+On the Machines page, click a machine and press **Scan for threats** or **Back up now**. The panel
 only queues the job; the machine's agent picks it up on its next call out (within about 15 s), runs
 it there and sends back a short result. Critical and high scan findings open a malware incident on
 that machine. Backups stay on the machine (restoring one is done there, by a person); the panel gets
