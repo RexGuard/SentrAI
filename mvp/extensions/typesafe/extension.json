@@ -1,0 +1,22 @@
+{
+  "name": "typesafe",
+  "title": "TypeSafe (Jev)",
+  "kind": "Classifier",
+  "what": "Asks TypeSafe System One (Jev) about log lines the rules cannot settle, before the keyword fallback.",
+  "about": "An AI classifier for what the rules cannot settle. Without it, a keyword fallback decides.",
+  "docs": "https://console.typesafe.ai/",
+  "order": 10,
+  "on_when": ["TYPESAFE_API_KEY"],
+  "settings": [
+    {"env": "TYPESAFE_API_KEY", "prompt": "TypeSafe (Jev) API key, blank to use rules only", "secret": true},
+    {"env": "JEV_TIMEOUT_S", "prompt": "Seconds one Jev call may take", "default": "3", "kind": "float",
+     "advanced": true},
+    {"env": "JEV_BUDGET_S", "prompt": "Seconds of Jev calls per batch of events (the rest use the fallback)",
+     "default": "2", "kind": "float", "advanced": true},
+    {"env": "JEV_CACHE_SIZE", "prompt": "Jev answers kept per log template (0 turns the cache off)", "default": "2048",
+     "kind": "int", "advanced": true},
+    {"env": "JEV_CACHE_TTL_S", "prompt": "Seconds a kept Jev answer is used", "default": "3600", "kind": "float",
+     "advanced": true}
+  ],
+  "requires": {"core": ["typesafe-sdk"]}
+}

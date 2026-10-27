@@ -11,12 +11,15 @@ import requests
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+sys.path.append(str(ROOT.parent))  # sentrai_config and sentrai_extensions, as notifier.py does
 os.environ["SENTRAI_CONFIG"] = str(ROOT / "tests" / "no-config.json")  # ignore this machine's saved settings
 os.environ["SENTRAI_HOME"] = tempfile.mkdtemp(prefix="sentrai-notifier-test-")  # data root: not the checkout
 # Never move a developer's own files (mvp/lab/scout, mvp/core/data ...) into a test's temp folder.
 os.environ["SENTRAI_MIGRATE"] = "off"
 os.environ["SENTRAI_API_TOKEN"] = "test-token"  # never generate (and save) a real token from tests
-os.environ.pop("SLACK_WEBHOOK_URL", None)  # never post to a real Slack from tests
+for _name in ("SLACK_WEBHOOK_URL", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "SENTRAI_EXTENSIONS",
+              "SENTRAI_EXTENSIONS_DIR"):
+    os.environ.pop(_name, None)  # never reach a real Telegram or Slack, nor this machine's extension choices
 FAKE = ROOT.parent / "dashboard" / "dev" / "fake_core.py"
 # fake_core needs fastapi/uvicorn, which live in the dashboard venv (not the notifier's).
 FAKE_PY = ROOT.parent / "dashboard" / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")

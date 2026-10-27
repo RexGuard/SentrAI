@@ -19,6 +19,7 @@ file at the root); else ``~/.sentrai``. deploy/install.sh uses /var/lib/sentrai,
         archive/                    Scribe: chains archived by a reset
         protection.json             Warden: the monitor-only switch
         summary.json                when the client summary goes out
+        extensions.json             extensions added or removed on the dashboard
         remote-copy.token           the witness's append token (install.sh --remote-copy)
         people/routing.json         who gets what: contacts, routing rules, escalation   SENTRAI_ROUTING
         people/telegram_links.json  contacts linked to Telegram chats                SENTRAI_TELEGRAM_LINKS
@@ -128,6 +129,8 @@ ENTRIES: dict[str, Entry] = {e.key: e for e in (
           kind="dir", optional=True),
     Entry("core.protection", "core", "protection.json", "the monitor-only switch, as an operator last set it", "Warden"),
     Entry("core.summary", "core", "summary.json", "when the client summary goes out (Reports page)", "Scribe"),
+    Entry("core.extensions", "core", "extensions.json", "extensions added or removed on the dashboard (Extensions page)",
+          "Extensions", optional=True, old=("part:extensions.json",)),
     Entry("core.remote_copy_token", "core", "remote-copy.token", "the witness's append token (install.sh --remote-copy)",
           "Scribe", "SENTRAI_REMOTE_COPY_TOKEN_FILE", optional=True),
     Entry("core.routing", "core", "people/routing.json", "who gets what: contacts, routing rules, escalation",

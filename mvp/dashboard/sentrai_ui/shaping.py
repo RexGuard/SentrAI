@@ -124,14 +124,24 @@ def mode_label(mode: Any) -> str:
     return MODE_LABELS.get(str(mode), str(mode).replace("_", " ").capitalize())
 
 
-def ai_classifier_state(status: Any) -> tuple[str, str]:
-    """The AI classifier's tile: ("On" | "Off" | "Unknown", why). Never claims "On" when the core said nothing."""
+def ai_classifier_state(status: Any, extension: dict | None = None) -> tuple[str, str]:
+    """The AI classifier's tile: ("On" | "Off" | "Unknown", why). Never claims "On" when the core said nothing.
+
+    `status` is the Jev agent's (GET /agents), there only while the TypeSafe extension is added;
+    `extension` is the TypeSafe row of GET /extensions, when the core sent one."""
     text = str(status or "").strip()
     if text.startswith("enabled"):
         return "On", "asked when the rules are unsure"
     if text.startswith("disabled"):
         why = text.split(":", 1)[1].split("(")[0].strip() if ":" in text else ""
         return "Off", why or "keyword fallback in use"
+    if extension:
+        if not extension.get("added"):
+            return "Off", "TypeSafe extension not added"
+        trouble = extension.get("error") or extension.get("last_error")
+        if trouble or not extension.get("configured"):
+            return "Off", str(trouble or "no TypeSafe key saved")
+        return "On", "asked when the rules are unsure"
     return "Unknown", "the core did not report it"
 
 
@@ -173,6 +183,12 @@ def parse_ts(value: Any) -> datetime | None:
 def short_time(value: Any) -> str:
     ts = parse_ts(value)
     return ts.strftime("%H:%M:%S") if ts else (str(value) if value else "-")
+
+
+def day_time(value: Any) -> str:
+    """"27 Oct 15:04", for a change that may be days old."""
+    ts = parse_ts(value)
+    return f"{ts.day} {ts.strftime('%b %H:%M')}" if ts else (str(value) if value else "-")
 
 
 def expires_label(value: Any, now: datetime | None = None) -> str:
@@ -1123,12 +1139,14 @@ def routing_rows(routing: dict | None) -> pd.DataFrame:
 def contact_rows(routing: dict | None) -> pd.DataFrame:
     contacts = (routing or {}).get("contacts") or []
     names = {c.get("id"): c.get("name") for c in contacts}
+    telegram = any("telegram_linked" in c for c in contacts)  # the core says so only while Telegram is added
     rows = [{"Contact": c.get("name"), "Role": str(c.get("role") or "-").replace("_", " "),
              "Email": c.get("email") or "-", "Telegram": c.get("telegram") or "-",
              # Linked: alerts go to the person's own chat; otherwise they are mentioned in the team group.
              "Alerts in Telegram": "Own chat" if c.get("telegram_linked") else "Team group",
              "Backup": names.get(c.get("backup"), "-") if c.get("backup") else "-"} for c in contacts]
-    return pd.DataFrame(rows, columns=["Contact", "Role", "Email", "Telegram", "Alerts in Telegram", "Backup"])
+    columns = ["Contact", "Role", "Email", "Telegram", *(["Alerts in Telegram"] if telegram else []), "Backup"]
+    return pd.DataFrame([{k: r[k] for k in columns} for r in rows], columns=columns)
 
 
 # ------------------------------------------------- "Who gets what" editor (routing_editor.mjs)

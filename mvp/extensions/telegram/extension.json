@@ -1,0 +1,19 @@
+{
+  "name": "telegram",
+  "title": "Telegram",
+  "kind": "Alerts",
+  "what": "Sends alerts with Approve, Reject and Take buttons to a Telegram group, and to each person's own chat once they link it.",
+  "about": "Alerts with buttons in Telegram. Make a bot with @BotFather and paste its token.",
+  "docs": "https://core.telegram.org/bots/tutorial",
+  "order": 20,
+  "on_when": ["TELEGRAM_BOT_TOKEN"],
+  "settings": [
+    {"env": "TELEGRAM_BOT_TOKEN", "prompt": "Telegram bot token, blank for no Telegram alerts", "secret": true},
+    {"env": "TELEGRAM_CHAT_ID", "prompt": "Telegram chat id of the team group"},
+    {"env": "TELEGRAM_GROUP_COPY", "prompt": "When the team group gets an alert that went to people directly",
+     "default": "fallback", "choices": ["fallback", "always", "off"], "advanced": true},
+    {"env": "TELEGRAM_REPORT_FROM", "prompt": "Who may send /report: alert-chat, any, or chat ids (comma-separated)",
+     "default": "alert-chat", "advanced": true}
+  ],
+  "requires": {"notifier": ["python-telegram-bot"]}
+}

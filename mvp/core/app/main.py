@@ -19,6 +19,7 @@ import sentrai_paths
 from .reports import build_report, render_markdown, render_pdf
 from . import summary as client_summary
 from . import ai, anchor, apidocs, fleet, integrations, jobs, webhook
+from .extensions import ExtensionError
 from .chat import OperatorChat, default_chat_provider
 from .discovery import Discovery
 from .staff_reports import RateLimited, ReportError, StaffReports
@@ -80,23 +81,6 @@ class DeliveredIn(BaseModel):
     channel: str
     message_id: Optional[Union[str, int]] = None
     to: Optional[str] = None  # the person a private message reached (direct Telegram message)
-
-
-class LinkCodeIn(BaseModel):
-    operator: str
-    contact: str
-
-
-class TelegramLinkIn(BaseModel):
-    code: str
-    chat_id: Union[str, int]
-    username: Optional[str] = ""
-
-
-class TelegramUnlinkIn(BaseModel):
-    operator: str
-    contact: Optional[str] = None
-    chat_id: Optional[Union[str, int]] = None
 
 
 class ProtectionIn(BaseModel):
@@ -494,35 +478,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except OSError as exc:
             raise HTTPException(status_code=503, detail=f"could not write the routing file: {exc}")
 
-    # Personal Telegram alerts (telegram_links.py): a contact links their private chat with a one-time code.
-    @app.post("/telegram/link-codes")
-    def post_link_code(body: LinkCodeIn) -> dict[str, Any]:
-        try:
-            return core.telegram_link_code(body.contact, body.operator)
-        except KeyError:
-            raise HTTPException(status_code=404, detail=f"no contact called {body.contact!r} in the routing file")
-
-    @app.post("/telegram/link")
-    def post_telegram_link(body: TelegramLinkIn) -> dict[str, Any]:
-        try:
-            return core.telegram_link(body.code, str(body.chat_id), body.username or "")
-        except BadRequestError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
-        except KeyError:
-            raise HTTPException(status_code=404, detail="that contact is no longer in the routing file")
-
-    @app.post("/telegram/unlink")
-    def post_telegram_unlink(body: TelegramUnlinkIn) -> dict[str, Any]:
-        try:
-            return core.telegram_unlink(body.contact, None if body.chat_id is None else str(body.chat_id),
-                                        body.operator)
-        except KeyError:
-            raise HTTPException(status_code=404, detail="no linked Telegram chat for that contact")
-
-    @app.get("/telegram/links")
-    def get_telegram_links() -> list[dict[str, Any]]:
-        return core.telegram_links_public()
-
     @app.post("/incidents/{iid}/ack")
     def post_ack(iid: str, body: AckIn) -> dict[str, Any]:
         return _verb(core.ack, iid, body.operator, body.channel or "dashboard")
@@ -827,16 +782,48 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def ai_test(body: Optional[AITestIn] = None) -> dict[str, Any]:
         return ai.test(core, chat, body.model_dump() if body else None)
 
+    # Extensions (app/extensions.py): outside services as parts that can be added and removed while the
+    # core runs. /integrations is the older name of the same list and still answers.
+    def _extension(fn, name: str, *args: Any) -> dict[str, Any]:
+        try:
+            return fn(name, *args)
+        except KeyError:
+            raise HTTPException(404, f"no extension called {name} is installed")
+        except ExtensionError as exc:
+            raise HTTPException(409, str(exc))
+
+    @app.get("/extensions")
+    def get_extensions() -> list[dict[str, Any]]:
+        return integrations.status(core)
+
     @app.get("/integrations")
     def get_integrations() -> list[dict[str, Any]]:
         return integrations.status(core)
 
+    @app.post("/extensions/{name}/add")
+    def add_extension(name: str, body: OperatorIn) -> dict[str, Any]:
+        return _extension(core.extensions.add, name, body.operator)
+
+    @app.post("/extensions/{name}/remove")
+    def remove_extension(name: str, body: OperatorIn) -> dict[str, Any]:
+        return _extension(core.extensions.remove, name, body.operator)
+
+    @app.post("/extensions/{name}/test")
+    def test_extension(name: str) -> dict[str, Any]:
+        return _extension(lambda n: integrations.test(core, n), name)
+
     @app.post("/integrations/{name}/test")
     def test_integration(name: str) -> dict[str, Any]:
-        try:
-            return integrations.test(core, name)
-        except KeyError as e:
-            raise HTTPException(404, str(e).strip("'\""))
+        return _extension(lambda n: integrations.test(core, n), name)
+
+    @app.post("/extensions/reload")
+    def reload_extensions() -> list[dict[str, Any]]:
+        return core.extensions.reload()
+
+    for _name in core.extensions.installed:  # each installed extension's own routes; 404 while it is not added
+        _mod = core.extensions.module(_name)
+        if _mod is not None and hasattr(_mod, "routes"):
+            _mod.routes(app, core.extensions.live(_name))
 
     @app.post("/heartbeat")
     def post_heartbeat(request: Request, body: HeartbeatIn) -> dict[str, Any]:

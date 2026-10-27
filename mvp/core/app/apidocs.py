@@ -49,8 +49,8 @@ GROUPS: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
      ("system", "threats", "quarantine", "backups")),
     ("Chat and AI", "chat", "Cyanide's chat, the guided setup and the AI model settings.",
      ("chat", "ai")),
-    ("Integrations", "integrations", "Outside services SentrAI works with.",
-     ("integrations", "extensions")),
+    ("Extensions", "integrations", "Outside services as extensions: add, remove and test them.",
+     ("extensions", "integrations")),
     ("Audit trail", "audit", "The hash-chained record of everything SentrAI did.",
      ("audit",)),
 )

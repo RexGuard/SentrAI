@@ -1,7 +1,10 @@
 """/report in Telegram: who may send it, and what the reporter is told back."""
 
+import sentrai_extensions as se
 from core import CoreError
-from notifier import report_allowed, staff_report_reply
+
+tg = se.load_part(se.installed()["telegram"], "notifier")
+report_allowed, staff_report_reply = tg.report_allowed, tg.staff_report_reply
 
 
 class FakeCore:

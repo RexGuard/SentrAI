@@ -209,8 +209,13 @@ the bot first. Linking does that once:
    From then on every alert routed to that person also goes to their own chat (`telegram_chat` in
    `deliver_to`).
 
-Links are kept in `telegram_links.json` next to the audit database (`SENTRAI_TELEGRAM_LINKS`
+Links are kept in `core/people/telegram_links.json` in SentrAI's data folder (`SENTRAI_TELEGRAM_LINKS`
 changes it), readable by its owner only.
+
+These endpoints belong to the Telegram extension. While Telegram is not added (see
+[Extensions](integrations.html)), each of them answers 404
+`Telegram is not added. Add it on the dashboard's Extensions page.`, `telegram_linked` is left out of
+the routing contacts, and the saved links are kept for when it is added again.
 
 ### `POST /telegram/link-codes`
 

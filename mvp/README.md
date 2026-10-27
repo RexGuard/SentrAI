@@ -148,7 +148,7 @@ behind an arrow.
 | `SENTRAI_BACKUP_KEEP` | `7` | core: how many backups to keep; the oldest go first |
 | `SENTRAI_BACKUP_DIR` | `backups` next to `SENTRAI_DB` | core: where backups are stored |
 | `SENTRAI_BACKUP_COPY_TO` | (none) | core: a second folder (another drive or a network share) that gets a copy of each backup |
-| `TYPESAFE_API_KEY` | unset | core: enables Jev (TypeSafe System One); otherwise rules + fallback heuristic |
+| `TYPESAFE_API_KEY` | unset | TypeSafe extension: enables Jev (TypeSafe System One); otherwise rules + fallback heuristic |
 | `JEV_TIMEOUT_S` / `JEV_BUDGET_S` | 3 / 2 | core: per-call timeout and per-request time budget for Jev |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | unset | notifier: console mode when unset |
 | `TELEGRAM_GROUP_COPY` | `fallback` | notifier: when the team group also gets an alert that went to people's own chats: `fallback` (only for people who have not linked a chat), `always`, `off` |

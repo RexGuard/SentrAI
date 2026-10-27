@@ -20,7 +20,7 @@ that machine, with its full path.
 
 ```text
 <root>/             INDEX.md, config.json, accounts.json
-  core/             sentrai.db, anchor.key, archive/, protection.json, summary.json, remote-copy.token
+  core/             sentrai.db, anchor.key, archive/, protection.json, summary.json, extensions.json, remote-copy.token
     people/         routing.json, telegram_links.json, staff_reports.json
     machines/       fleet.json, jobs.json
     threats/        threat_seen.json, quarantine/
@@ -52,6 +52,7 @@ or part the file belongs to. **Set with** is the variable that puts it somewhere
 | `core/archive/` | Scribe | audit chains set aside by a reset (never deleted) | |
 | `core/protection.json` | Warden | the monitor-only switch, as an operator last set it | |
 | `core/summary.json` | Scribe | when the client summary goes out (Reports page) | |
+| `core/extensions.json` | Extensions | extensions added or removed on the dashboard (Extensions page) | |
 | `core/remote-copy.token` | Scribe | the witness's append token (`install.sh --remote-copy`) | `SENTRAI_REMOTE_COPY_TOKEN_FILE` |
 | `core/people/routing.json` | Warden | who gets what: contacts, routing rules, escalation | `SENTRAI_ROUTING` |
 | `core/people/telegram_links.json` | Notifier | contacts linked to their Telegram chats | `SENTRAI_TELEGRAM_LINKS` |

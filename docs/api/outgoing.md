@@ -11,7 +11,7 @@ makes to you: what arrives, how to check it really came from SentrAI, and what t
 against these when you connect a firewall, WAF or SOAR, or run a witness.
 
 The outside services SentrAI talks to through their own APIs (Cloudflare, AbuseIPDB, Slack, Telegram,
-email) are set up on the [Integrations](integrations.html) page and are not described here.
+email) are set up on the [Extensions](integrations.html) page and are not described here.
 
 ## The responder webhook
 

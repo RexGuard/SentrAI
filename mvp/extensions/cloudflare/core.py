@@ -1,9 +1,12 @@
-"""Cloudflare blocking for `block_ip`: the attacker is stopped at Cloudflare's edge, before it reaches you.
+"""Cloudflare extension, core part: `block_ip` also stops the attacker at Cloudflare's edge, before it reaches you.
 
 `CloudflareResponder` wraps the `block_ip` responder the core already uses (the app blocklist, and the
 host firewall when that is on) and also puts each blocked address into Cloudflare. It is called at
 exactly the points every responder is, so the business limits, TTL expiry, rollback and recorded undo
 apply unchanged: the Cloudflare entry goes when SentrAI's block goes.
+
+Added while blocks are in force, it puts those addresses at Cloudflare too. Removed, it takes every entry
+it made out of Cloudflare again and leaves the local blocks in force.
 
 Two ways to block (CLOUDFLARE_METHOD):
 
@@ -38,10 +41,9 @@ from collections import Counter
 from collections.abc import Callable
 from typing import Any
 
-from .firewall import unsafe_reason
-from .responders import Action, Responder
+from app.extensions import Action, Context, Extension, NotSetUp, Responder, unsafe_reason, when
 
-log = logging.getLogger("sentrai.cloudflare")
+log = logging.getLogger("sentrai.ext.cloudflare")
 
 API = "https://api.cloudflare.com/client/v4"
 METHODS = ("access_rule", "list")
@@ -199,14 +201,17 @@ class CloudflareResponder(Responder):
         self.method = method
         self.mode = mode
         self.protected_ips = protected_ips if protected_ips is not None else set()
-        self.inner = inner
-        base = getattr(inner, "enforcement", "blocklist") if inner is not None else "blocklist"
-        self.enforcement = f"{base} + Cloudflare ({'IP list' if method == 'list' else mode})"
+        self.inner = inner  # set again by the core whenever an extension is added or removed
         # Counted like the blocklist: two incidents blocking one address need two reverts to unblock it.
         self._refs: Counter[str] = Counter()
         self._ids: dict[str, str] = {}  # address -> Cloudflare rule or list item id SentrAI made
         self.last_ok: float | None = None
         self.last_error: str | None = None
+
+    @property
+    def enforcement(self) -> str:  # type: ignore[override]
+        base = getattr(self.inner, "enforcement", "blocklist") if self.inner is not None else "blocklist"
+        return f"{base} + Cloudflare ({'IP list' if self.method == 'list' else self.mode})"
 
     def _note(self, action: Action) -> str:
         return f"{NOTE_PREFIX} {action.get('incident') or ''} {action.get('action_id') or ''}".strip()[:500]
@@ -246,15 +251,31 @@ class CloudflareResponder(Responder):
 
     def apply(self, action: Action) -> bool:
         ok = self.inner.apply(action) if self.inner is not None else True
+        self._edge_add(action)  # a Cloudflare failure never weakens the local block: it is noted on the action
+        return ok
+
+    def revert(self, action: Action) -> bool | None:
+        ok = self.inner.revert(action) if self.inner is not None else True
+        return False if self._edge_remove(action) is False else ok
+
+    def adopt(self, action: Action) -> None:
+        """Added while this block is already in force locally: block the address at Cloudflare too."""
+        self._edge_add(action)
+
+    def release(self, action: Action) -> bool | None:
+        """Removed: take this block out of Cloudflare only; the local block stays in force."""
+        return self._edge_remove(action)
+
+    def _edge_add(self, action: Action) -> None:
         ip = str(action.get("target") or "").strip()
         reason = unsafe_reason(ip, self.protected_ips) or ("private address" if _private(ip) else None)
         if reason:
             action["cloudflare"] = {"method": self.method, "skipped": reason}
-            return ok
+            return
         self._refs[ip] += 1
         if ip in self._ids or self._refs[ip] > 1:  # another incident already blocked it at Cloudflare
             action["cloudflare"] = {"method": self.method, "ok": True, "already_blocked": True}
-            return ok
+            return
         try:
             rid = self._add(ip, action)
         except CloudflareError as exc:
@@ -262,49 +283,62 @@ class CloudflareResponder(Responder):
             if self._refs[ip] <= 0:
                 del self._refs[ip]
             self._fail(action, "cloudflare", exc)
-            return ok  # the local block still counts; the Cloudflare failure is on the action
+            return
         if rid:
             self._ids[ip] = rid
         action["cloudflare"] = {"method": self.method, "mode": self.mode, "ok": True,
                                 **({"id": rid} if rid else {"note": "already blocked in Cloudflare by hand"})}
         self._ok()
-        return ok
 
-    def revert(self, action: Action) -> bool | None:
-        ok = self.inner.revert(action) if self.inner is not None else True
+    def _edge_remove(self, action: Action) -> bool:
+        """True when nothing of this block is left at Cloudflare, False when its removal failed."""
         ip = str(action.get("target") or "").strip()
         if ip not in self._refs:
-            return ok  # skipped, failed to add, or already reverted
+            return True  # skipped, failed to add, or already reverted
         self._refs[ip] -= 1
         if self._refs[ip] > 0:
-            return ok  # another incident still holds this block
+            return True  # another incident still holds this block
         del self._refs[ip]
         rid = self._ids.get(ip)
         if not rid:
-            return ok  # covered by an entry SentrAI did not make: leave it alone
+            return True  # covered by an entry SentrAI did not make: leave it alone
         try:
-            (self.api.delete_item if self.method == "list" else self.api.delete_rule)(rid)
+            self._delete(rid)
         except CloudflareError as exc:
             if getattr(exc, "status", None) == 404:  # already gone (removed by hand)
                 self._ids.pop(ip, None)
                 action["cloudflare_revert"] = {"method": self.method, "ok": True, "note": "already removed"}
-                return ok
+                return True
             self._refs[ip] += 1  # still in Cloudflare: keep tracking it so the retry tries again
             self._fail(action, "cloudflare_revert", exc, {"id": rid})
             return False
         self._ids.pop(ip, None)
         action["cloudflare_revert"] = {"method": self.method, "ok": True, "id": rid}
         self._ok()
-        return ok
+        return True
 
-    def reset(self) -> None:
+    def _delete(self, rid: str) -> None:
+        (self.api.delete_item if self.method == "list" else self.api.delete_rule)(rid)
+
+    def remove_all(self) -> tuple[int, list[dict[str, str]]]:
+        """Takes every entry SentrAI made out of Cloudflare: (how many, the ones that would not go)."""
+        removed, left = 0, []
         for ip, rid in sorted(self._ids.items()):
             try:
-                (self.api.delete_item if self.method == "list" else self.api.delete_rule)(rid)
+                self._delete(rid)
+                removed += 1
             except CloudflareError as exc:
-                log.warning("cloudflare reset could not remove %s: %s", ip, exc)
+                if getattr(exc, "status", None) == 404:
+                    removed += 1
+                    continue
+                left.append({"ip": ip, "id": rid, "error": str(exc)[:200]})
+                log.warning("cloudflare could not remove %s: %s", ip, exc)
         self._refs.clear()
         self._ids.clear()
+        return removed, left
+
+    def reset(self) -> None:
+        self.remove_all()
         if self.inner is not None:
             self.inner.reset()
 
@@ -325,10 +359,40 @@ class CloudflareResponder(Responder):
         return {"ok": True, "detail": f"Token works. SentrAI will block through {where}."}
 
 
-def from_settings(s: Any, inner: Responder, requester: Requester | None = None) -> CloudflareResponder | None:
-    """The Cloudflare responder, or None when no token is set. Bad settings raise ValueError."""
-    if not s.cloudflare_api_token:
-        return None
-    api = CloudflareAPI(s.cloudflare_api_token, s.cloudflare_zone_id, s.cloudflare_account_id, s.cloudflare_list_id,
-                        s.cloudflare_timeout_s, requester)
-    return CloudflareResponder(api, s.cloudflare_method, s.cloudflare_mode, s.protected_ips, inner=inner)
+def _n(n: int, word: str, many: str) -> str:
+    return f"{n} {word if n == 1 else many}"
+
+
+class Cloudflare(Extension):
+    def __init__(self, responder: CloudflareResponder) -> None:
+        self.responder = responder
+
+    def responders(self, below):
+        self.responder.inner = below("block_ip")  # the blocklist, or the host firewall when that is on
+        return [self.responder]
+
+    def status(self) -> dict[str, Any]:
+        r = self.responder
+        where = "account" if r.method == "list" or not r.api.zone_id else f"zone {r.api.zone_id}"
+        how = "IP list" if r.method == "list" else f"IP Access rules, {r.mode}"
+        return {"configured": True, "testable": True, "last_ok": when(r.last_ok), "last_error": r.last_error,
+                "detail": f"{how} on {where} · {_n(len(r.status()['blocked']), 'address', 'addresses')} blocked now"}
+
+    def test(self) -> dict[str, Any]:
+        return self.responder.test()
+
+    def close(self) -> dict[str, Any]:
+        removed, left = self.responder.remove_all()
+        return {"cloudflare_removed": removed, **({"cloudflare_left": left} if left else {})}
+
+
+def setup(ctx: Context, requester: Requester | None = None) -> Extension:
+    """Cloudflare, or a note of what is missing when no token is saved. Bad settings raise ValueError."""
+    token = ctx.setting("CLOUDFLARE_API_TOKEN")
+    if not token:
+        return NotSetUp("Paste an API token and a zone or account id to turn it on.")
+    api = CloudflareAPI(token, ctx.setting("CLOUDFLARE_ZONE_ID"), ctx.setting("CLOUDFLARE_ACCOUNT_ID"),
+                        ctx.setting("CLOUDFLARE_LIST_ID"), ctx.number("CLOUDFLARE_TIMEOUT_S", 5.0), requester)
+    method = (ctx.setting("CLOUDFLARE_METHOD") or "access_rule").lower()
+    mode = (ctx.setting("CLOUDFLARE_MODE") or "block").lower()
+    return Cloudflare(CloudflareResponder(api, method, mode, ctx.settings.protected_ips))

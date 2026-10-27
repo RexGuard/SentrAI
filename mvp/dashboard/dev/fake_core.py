@@ -9,7 +9,8 @@ Run:  .venv\\Scripts\\python dev\\fake_core.py   (serves http://127.0.0.1:8900)
 Env:  FAKE_CORE_PORT (8900, so it never collides with the real core on 8000), FAKE_DEMO_SPEED (120 = 30 real s per demo hour),
       FAKE_TTL_SECONDS (300 real s before containment expires),
       FAKE_AUTOPLAY (1), FAKE_THRESHOLD (80), FAKE_RISK_SCOPE (host: a central panel with two joined machines; fleet)
-Extra dev-only endpoints: POST /dev/trigger/{category}?src_ip=..&user=.., POST /dev/reset
+Extra dev-only endpoints: POST /dev/trigger/{category}?src_ip=..&user=.., POST /dev/reset,
+      POST /dev/extensions/managed?on=1 (act as if the server's SENTRAI_EXTENSIONS decides)
 """
 from __future__ import annotations
 
@@ -19,12 +20,17 @@ import math
 import os
 import secrets
 import threading
+import sys
 import time
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import uvicorn
 from fastapi import Body, FastAPI, HTTPException
 from fastapi.responses import PlainTextResponse
+
+sys.path.append(str(Path(__file__).resolve().parents[2]))
+import sentrai_extensions as se  # noqa: E402  the real manifests, so the Extensions page shows what ships
 
 SGT = timezone(timedelta(hours=8))
 DEMO_SPEED = float(os.environ.get("FAKE_DEMO_SPEED", "120"))
@@ -479,6 +485,8 @@ ROUTING = {"source": "defaults", "contacts": [
 
 @app.get("/routing")
 def routing():
+    if not EXT["telegram"]["added"]:  # like the real core: no Telegram, no telegram_linked
+        return {**ROUTING, "contacts": [dict(c) for c in ROUTING["contacts"]]}
     return {**ROUTING, "contacts": [{**c, "telegram_linked": c["id"] in TG_LINKS} for c in ROUTING["contacts"]]}
 
 
@@ -509,8 +517,14 @@ def save_routing(body: dict = Body(...)):
 TG_LINKS: dict = {}  # contact id -> chat id
 
 
+def _telegram_added() -> None:
+    if not EXT["telegram"]["added"]:
+        raise HTTPException(404, "The Telegram extension is not added. Add it on the Extensions page.")
+
+
 @app.post("/telegram/link-codes")
 def telegram_link_code(body: dict = Body(...)):
+    _telegram_added()
     contact = next((c for c in ROUTING["contacts"] if body.get("contact") in (c["id"], c["name"])), None)
     if contact is None:
         raise HTTPException(404, "no such contact")
@@ -521,6 +535,7 @@ def telegram_link_code(body: dict = Body(...)):
 
 @app.post("/telegram/unlink")
 def telegram_unlink(body: dict = Body(...)):
+    _telegram_added()
     if TG_LINKS.pop(str(body.get("contact")), None) is None:
         raise HTTPException(404, "not linked")
     return {"contact": body.get("contact"), "unlinked": True}
@@ -528,6 +543,7 @@ def telegram_unlink(body: dict = Body(...)):
 
 @app.get("/telegram/links")
 def telegram_links():
+    _telegram_added()
     return [{"contact_id": k, "chat_id": v} for k, v in TG_LINKS.items()]
 
 
@@ -662,41 +678,130 @@ def ai_reload():
     return FAKE_AI
 
 
-FAKE_INTEGRATIONS = [
-    {"name": "cloudflare", "title": "Cloudflare", "kind": "Blocking", "configured": True, "testable": True,
-     "what": "Blocks attacking addresses at Cloudflare's edge, so they never reach your site. "
-             "Removed again when SentrAI's block ends.",
-     "detail": "IP Access rules, block on zone 0123abcd · 2 address(es) blocked now", "last_ok": "2026-10-26 10:02:11",
-     "settings": ["CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ZONE_ID"],
-     "docs": "https://developers.cloudflare.com/fundamentals/api/get-started/create-token/"},
-    {"name": "webhook", "title": "Any other system (webhook)", "kind": "Blocking", "configured": False, "testable": False,
+# What each installed extension is doing in this pretend core: the rest of each row comes from its manifest.
+EXT_LIVE = {
+    "cloudflare": {"added": True, "configured": True, "testable": True, "last_ok": "2026-10-26 10:02:11",
+                   "detail": "IP Access rules, block on zone 0123abcd · 2 addresses blocked now"},
+    "abuseipdb": {"added": True, "configured": True, "testable": True, "detail": "14 lookups since start, answers kept 24 h"},
+    "typesafe": {"added": False, "configured": False, "testable": True,
+                 "detail": "Paste a TypeSafe API key on the Configuration page to turn it on."},
+    "telegram": {"added": True, "configured": True, "detail": "The notifier runs the bot · 1 personal chat linked"},
+    "slack": {"added": False, "configured": False, "testable": True,
+              "detail": "Create an incoming webhook in Slack and paste its URL."},
+}
+NOT_ADDED = "Not added. Add it to use it; its settings are kept either way."
+BUILT_IN = [
+    {"name": "webhook", "title": "Any other system (webhook)", "kind": "Blocking", "built_in": True, "added": True,
+     "added_by": "built_in", "running": True, "configured": False, "testable": False,
      "what": "Sends each block and its removal to a URL you choose: n8n, Zapier, a router, a SOAR.",
-     "detail": "Set a URL to hand blocks to another system.", "settings": ["SENTRAI_RESPONDER_WEBHOOK_URL"], "docs": ""},
-    {"name": "abuseipdb", "title": "AbuseIPDB", "kind": "Lookups", "configured": True, "testable": True,
-     "what": "Shows how often other people have reported an attacking address, on each incident.",
-     "detail": "14 lookup(s) since start, answers kept 24 h", "settings": ["ABUSEIPDB_API_KEY"],
-     "docs": "https://www.abuseipdb.com/account/api"},
-    {"name": "slack", "title": "Slack", "kind": "Alerts", "configured": False, "testable": False,
-     "what": "Posts a copy of every alert to a Slack channel, next to Telegram and email.",
-     "detail": "Create an incoming webhook in Slack and paste its URL.", "settings": ["SLACK_WEBHOOK_URL"],
-     "docs": "https://api.slack.com/messaging/webhooks"},
-    {"name": "telegram", "title": "Telegram", "kind": "Alerts", "configured": True, "testable": False,
-     "what": "Sends alerts with Approve / Reject buttons to a Telegram chat.", "detail": "Handled by the notifier.",
-     "settings": ["TELEGRAM_BOT_TOKEN"], "docs": "https://core.telegram.org/bots/tutorial"},
-    {"name": "email", "title": "Email", "kind": "Alerts", "configured": False, "testable": False,
-     "what": "Emails alerts, as a backup to Telegram or always.", "detail": "Handled by the notifier.",
-     "settings": ["SMTP_HOST", "ALERT_EMAIL_TO"], "docs": ""},
+     "detail": "Set a URL to hand blocks to another system.", "settings": ["SENTRAI_RESPONDER_WEBHOOK_URL"],
+     "docs": "", "last_error": None},
+    {"name": "email", "title": "Email", "kind": "Alerts", "built_in": True, "added": True, "added_by": "built_in",
+     "running": True, "configured": False, "testable": False,
+     "what": "Emails alerts, as a backup to Telegram or with every alert.", "detail": "Handled by the notifier.",
+     "settings": ["SMTP_HOST", "ALERT_EMAIL_TO"], "docs": "", "last_error": None},
 ]
+
+
+def _ext_state() -> dict[str, dict]:
+    return {name: {"added": EXT_LIVE.get(name, {}).get("added", False), "by": "settings", "at": None}
+            for name in se.installed()}
+
+
+EXT = _ext_state()
+EXT_MANAGED = {"on": False}
+
+
+def ext_row(name: str) -> dict:
+    m, live, state = se.installed()[name], EXT_LIVE.get(name, {}), EXT[name]
+    row = {**m.public(), "built_in": False, "added": state["added"],
+           "added_by": se.CHOICE_ENV if EXT_MANAGED["on"] else state["by"], "running": state["added"],
+           "configured": False, "detail": "", "last_ok": None, "last_error": None, "testable": False, "error": None,
+           "changed_by": state.get("operator"), "changed_at": state["at"]}
+    if state["added"]:
+        row.update({k: v for k, v in live.items() if k != "added"})
+    else:
+        row["detail"] = NOT_ADDED
+    return row
+
+
+def ext_rows() -> list[dict]:
+    return [ext_row(n) for n in se.installed()] + [dict(r) for r in BUILT_IN]
+
+
+def _ext(name: str) -> dict:
+    if name not in EXT:
+        raise HTTPException(404, f"no extension called {name} is installed")
+    return EXT[name]
+
+
+def _changeable() -> None:
+    if EXT_MANAGED["on"]:
+        raise HTTPException(409, "SENTRAI_EXTENSIONS is set on the server, so the extensions it lists are the "
+                                 "ones on. Change it there.")
+
+
+@app.get("/extensions")
+def extensions():
+    return ext_rows()
 
 
 @app.get("/integrations")
 def integrations():
-    return FAKE_INTEGRATIONS
+    return ext_rows()
+
+
+@app.post("/extensions/{name}/add")
+def add_extension(name: str, body: dict = Body(None)):
+    state = _ext(name)
+    _changeable()
+    operator = (body or {}).get("operator") or "operator"
+    with lock:
+        state.update(added=True, by="dashboard", operator=operator, at=iso(now()))
+        audit("extension_added", "Warden", extension=name, operator=operator)
+    return ext_row(name)
+
+
+@app.post("/extensions/{name}/remove")
+def remove_extension(name: str, body: dict = Body(None)):
+    state = _ext(name)
+    _changeable()
+    operator = (body or {}).get("operator") or "operator"
+    with lock:
+        was = state["added"]
+        state.update(added=False, by="dashboard", operator=operator, at=iso(now()))
+        cleanup = {"released": 0, "left_in_place": []} if was else {}
+        if was and name == "cloudflare":
+            cleanup = {"released": 2, "left_in_place": [], "cloudflare_removed": 2}
+        audit("extension_removed", "Warden", extension=name, operator=operator, **cleanup)
+    return {**ext_row(name), "cleanup": cleanup}
+
+
+@app.post("/extensions/{name}/test")
+def test_extension(name: str):
+    state = _ext(name)
+    if not state["added"]:
+        return {"ok": False, "error": f"{se.installed()[name].title} is not added."}
+    return {"ok": False, "error": "the fake core does not call outside services; start the real core to test"}
 
 
 @app.post("/integrations/{name}/test")
 def test_integration(name: str):
-    return {"ok": False, "error": "the fake core does not call outside services; start the real core to test"}
+    if name in {r["name"] for r in BUILT_IN}:
+        return {"ok": False, "error": "This built-in service has no test here yet."}
+    return test_extension(name)
+
+
+@app.post("/extensions/reload")
+def reload_extensions():
+    return ext_rows()
+
+
+@app.post("/dev/extensions/managed")
+def dev_extensions_managed(on: int = 1):
+    """Test helper: act as if the server's SENTRAI_EXTENSIONS decides which extensions are on."""
+    EXT_MANAGED["on"] = bool(on)
+    return {"managed": EXT_MANAGED["on"]}
 
 
 @app.post("/ai/test")
@@ -1019,6 +1124,10 @@ def reset():
     global S
     with lock:
         S = State()
+        EXT.clear()
+        EXT.update(_ext_state())
+        EXT_MANAGED["on"] = False
+        TG_LINKS.clear()
         audit("dev_reset", "Warden", summary="Fake core state cleared")
     return {"ok": True}
 

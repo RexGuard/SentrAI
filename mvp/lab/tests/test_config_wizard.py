@@ -42,7 +42,7 @@ def test_answers_are_saved_per_part_and_loaded_as_env_defaults(config_file, monk
 
     saved = json.loads(config_file.read_text())
     assert set(saved) == {"preset", "collector", "classifier", "responder", "notifications", "ai", "access",
-                          "integrations"}
+                          *(f"extension:{name}" for name in cfg.EXTENSION_SECTIONS)}
     assert saved["preset"]["SENTRAI_PRESET"] == "advanced"
     assert saved["collector"]["SENTRAI_LAB_LOGS"] == "/var/log/portal"
     assert saved["classifier"]["BRUTE_FORCE_COUNT"] == "3"
@@ -209,3 +209,106 @@ def test_settings_file_is_readable_by_its_owner_only(config_file):
     assert config_file.stat().st_mode & 0o777 == 0o600
     cfg.save_appearance("dark", "mono")
     assert config_file.stat().st_mode & 0o777 == 0o600
+
+
+# ------------------------------------------------------------------ extensions' settings
+
+def test_each_installed_extension_brings_its_own_section():
+    assert {"cloudflare", "typesafe", "telegram", "slack", "abuseipdb"} <= set(cfg.EXTENSION_SECTIONS)
+    cloudflare = cfg.EXTENSION_SECTIONS["cloudflare"]
+    assert cloudflare.key == "extension:cloudflare" and cloudflare.on_when == ("CLOUDFLARE_API_TOKEN",)
+    assert cfg.FIELDS["CLOUDFLARE_API_TOKEN"].secret and cfg.FIELDS["CLOUDFLARE_METHOD"].choices
+    assert cfg.FIELDS["CLOUDFLARE_TIMEOUT_S"].advanced and cfg.FIELDS["CLOUDFLARE_TIMEOUT_S"].kind is float
+    # none of them is part of SentrAI's own sections any more
+    own = {f.env for s in cfg.SECTIONS for f in s.fields}
+    assert not own & {"TYPESAFE_API_KEY", "TELEGRAM_BOT_TOKEN", "CLOUDFLARE_API_TOKEN", "SLACK_WEBHOOK_URL"}
+
+
+def test_settings_saved_before_extensions_keep_working_and_move_on_save(config_file, monkeypatch):
+    for name in cfg.FIELDS:
+        monkeypatch.delenv(name, raising=False)
+    config_file.write_text(json.dumps({
+        "classifier": {"BRUTE_FORCE_COUNT": "5", "TYPESAFE_API_KEY": "ts-key"},
+        "notifications": {"TELEGRAM_BOT_TOKEN": "123:abc", "TELEGRAM_CHAT_ID": "-1001", "SMTP_HOST": ""},
+        "integrations": {"CLOUDFLARE_API_TOKEN": "cf-token", "CLOUDFLARE_ZONE_ID": "zone",
+                         "SLACK_WEBHOOK_URL": "https://hooks.slack.com/services/T/B/x"},
+    }))
+    cfg.load()  # read as before: the extensions find their keys in the environment
+    assert os.environ["TYPESAFE_API_KEY"] == "ts-key" and os.environ["TELEGRAM_CHAT_ID"] == "-1001"
+    assert os.environ["CLOUDFLARE_API_TOKEN"] == "cf-token"
+
+    cfg.save(cfg.read())
+    saved = json.loads(config_file.read_text())
+    assert "integrations" not in saved and "TYPESAFE_API_KEY" not in saved["classifier"]
+    assert "TELEGRAM_BOT_TOKEN" not in saved["notifications"]
+    assert saved["extension:typesafe"]["TYPESAFE_API_KEY"] == "ts-key"
+    assert saved["extension:telegram"] == {"TELEGRAM_BOT_TOKEN": "123:abc", "TELEGRAM_CHAT_ID": "-1001",
+                                           "TELEGRAM_GROUP_COPY": "fallback", "TELEGRAM_REPORT_FROM": "alert-chat"}
+    assert saved["extension:cloudflare"]["CLOUDFLARE_ZONE_ID"] == "zone"
+    assert saved["extension:slack"]["SLACK_WEBHOOK_URL"].startswith("https://hooks.slack.com/")
+    assert cfg.read()["CLOUDFLARE_API_TOKEN"] == "cf-token"
+
+
+def test_an_uninstalled_extensions_settings_are_kept_when_saving(config_file):
+    config_file.write_text(json.dumps({"extension:acme": {"ACME_API_KEY": "k", "ACME_REGION": "eu"},
+                                       "integrations": {"OLD_THING_KEY": "x"},
+                                       "ai": {"SENTRAI_LLM_PROVIDER": "openai", "OPENAI_API_KEY": "sk-old"}}))
+    values = cfg.read()
+    assert values["ACME_API_KEY"] == "k"  # still loaded, for when it is installed again
+    cfg.save(values | {"SENTRAI_PRESET": "strict"})
+    saved = json.loads(config_file.read_text())
+    assert saved["extension:acme"] == {"ACME_API_KEY": "k", "ACME_REGION": "eu"}
+    assert saved["integrations"] == {"OLD_THING_KEY": "x"}
+    assert "OPENAI_API_KEY" not in saved["ai"] and saved["ai"]["SENTRAI_LLM_API_KEY"] == "sk-old"  # moved, not kept twice
+
+
+def test_wizard_skips_an_extension_without_its_key_and_never_asks_advanced(config_file):
+    asked = []
+
+    def ask(prompt):
+        asked.append(prompt)
+        return "zone-1" if "Cloudflare zone id" in prompt else ""
+
+    def ask_secret(prompt):
+        asked.append(prompt)
+        return "cf-token" if "Cloudflare API token" in prompt else ""
+
+    said = []
+    values = cfg.wizard(ask=ask, ask_secret=ask_secret, say=said.append)
+    assert values["CLOUDFLARE_API_TOKEN"] == "cf-token" and values["CLOUDFLARE_ZONE_ID"] == "zone-1"
+    assert any("Telegram bot token" in p for p in asked)
+    assert not any("Telegram chat id" in p for p in asked)  # no token, so no chat id question
+    advanced = [f for s in cfg.EXTENSION_SECTIONS.values() for f in s.fields if f.advanced]
+    assert advanced and not any(f.prompt in p for f in advanced for p in asked)
+    assert all(values[f.env] == f.default for f in advanced)
+    assert any(line.startswith("\nExtensions: ") for line in said)
+
+
+def test_without_the_extensions_module_there_are_no_extension_sections(monkeypatch):
+    monkeypatch.setattr(cfg, "sentrai_extensions", None)
+    assert cfg.extension_sections() == {}
+
+
+def test_an_extension_cannot_take_over_a_sentrai_setting(tmp_path):
+    folder = tmp_path / "acme"
+    folder.mkdir()
+    (folder / "extension.json").write_text(json.dumps({
+        "name": "acme", "title": "Acme", "kind": "Other", "what": "Test.", "on_when": ["ACME_KEY"],
+        "settings": [{"env": "SENTRAI_API_TOKEN", "prompt": "steal it"}, {"env": "ACME_KEY", "prompt": "key"},
+                     {"env": "CLOUDFLARE_API_TOKEN", "prompt": "and this"}]}))
+    (folder / "core.py").write_text("def setup(ctx):\n    return None\n")
+    sections = cfg.extension_sections({"SENTRAI_EXTENSIONS_DIR": str(tmp_path)})
+    assert [f.env for f in sections["acme"].fields] == ["ACME_KEY"]
+    assert [f.env for f in sections["cloudflare"].fields][0] == "CLOUDFLARE_API_TOKEN"  # bundled one keeps it
+
+
+def test_show_lists_the_extension_settings_and_get_reads_them(config_file, monkeypatch, capsys):
+    monkeypatch.delenv("CLOUDFLARE_MODE", raising=False)
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+    cfg.save({"TELEGRAM_BOT_TOKEN": "123:abc"})
+    cfg.mark_setup_done("test")
+    assert cfg.main([]) == 0
+    out = capsys.readouterr().out
+    assert "[Telegram extension]" in out and "TELEGRAM_BOT_TOKEN" in out and "123:abc" not in out
+    assert cfg.main(["get", "CLOUDFLARE_MODE"]) == 0
+    assert capsys.readouterr().out.strip() == "block"

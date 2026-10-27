@@ -160,3 +160,19 @@ def test_a_typed_log_file_or_folder_is_watched(tmp_path):
     assert sc.values()["SENTRAI_LAB_LOGS"] == str(tmp_path.resolve())
     assert sorted(Path(e["path"]).name for e in sc.notes["log_sources"]) == ["access.log", "auth.log"]
     assert setup_chat.save_log_sources(setup_chat.SetupChat(), "x") == []  # nothing picked, nothing written
+
+
+def test_telegram_is_offered_only_while_its_extension_is_installed(monkeypatch):
+    def at_alerts():
+        sc = run(setup_chat.SetupChat(), "office", "yes", "own", "none", "none", "Erick")
+        assert sc.step.key == "alerts"
+        return sc
+
+    assert [v for v, _ in at_alerts().options()] == ["telegram", "email", "both", "console"]
+    monkeypatch.setattr(cfg, "EXTENSION_SECTIONS", {k: v for k, v in cfg.EXTENSION_SECTIONS.items() if k != "telegram"})
+    sc = at_alerts()
+    assert [v for v, _ in sc.options()] == ["email", "console"]
+    sc.answer("telegram")
+    assert sc.step.key == "alerts"  # not an answer here any more
+    sc.answer("console")
+    assert sc.step.key == "ai" and "TELEGRAM_BOT_TOKEN" not in sc.answers

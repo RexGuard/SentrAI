@@ -13,6 +13,10 @@ from a preset: Strict, Moderate or Balanced, or Advanced to set each value yours
 file keeps the preset's name and every value. Values that no longer match their preset are saved
 as Advanced (see `settle_preset()`).
 
+Each installed extension (Cloudflare, TypeSafe, Telegram, ...: see sentrai_extensions.py) brings its
+own settings in its extension.json; they are saved under "extension:<name>" and asked last. Settings
+this version does not know (an uninstalled extension's, say) are kept as they are when saving.
+
 Run (any venv, stdlib only):
     python sentrai_config.py              set up if this is a new machine, then show settings
     python sentrai_config.py setup        run the wizard again (current values as defaults)
@@ -40,6 +44,11 @@ from typing import Callable
 import sentrai_env  # first: old CACTAI_* names still work
 import sentrai_llm
 import sentrai_paths  # where every part keeps its data
+
+try:
+    import sentrai_extensions
+except ImportError:  # an agent install copies only a few of these files, and runs no extensions
+    sentrai_extensions = None
 
 MVP_DIR = Path(__file__).resolve().parent
 
@@ -74,6 +83,7 @@ class Field:
     secret: bool = False
     choices: tuple[str, ...] = ()  # when set, the answer must be one of these
     generated: bool = False  # never asked: the wizard keeps the saved value or makes a new one
+    advanced: bool = False  # never asked by the wizard; set on the Configuration page
 
 
 @dataclass(frozen=True)
@@ -82,6 +92,7 @@ class Section:
     title: str
     about: str
     fields: tuple[Field, ...]
+    on_when: tuple[str, ...] = ()  # an extension's main settings: blank in the wizard skips the rest
 
 
 PRESET_ENV = "SENTRAI_PRESET"
@@ -131,7 +142,6 @@ SECTIONS = (
         Field("BRUTE_FORCE_COUNT", "Failed logins that count as brute force", "5", int),
         Field("BRUTE_FORCE_WINDOW_S", "...within how many seconds", "60", float),
         Field("EXPORT_ROWS_THRESHOLD", "Rows in one export that count as bulk exfiltration", "100", int),
-        Field("TYPESAFE_API_KEY", "TypeSafe (Jev) API key, blank to use rules only", secret=True),
     )),
     Section("responder", "3. Responder", "When SentrAI acts, for how long, and what it never touches.", (
         Field("RISK_THRESHOLD", "Risk index (0-100) at which temporary blocks start", "80", int),
@@ -147,10 +157,8 @@ SECTIONS = (
         Field("PROTECTED_USERS", "More accounts never to lock (admin and service accounts always are)"),
         Field("ON_DUTY", "On-duty responder shown in alerts (name, ID, shift)", "On-duty responder"),
     )),
-    Section("notifications", "4. Notifications", "Telegram alerts, with email as the backup. "
-            "Leave both blank to print alerts to the console.", (
-        Field("TELEGRAM_BOT_TOKEN", "Telegram bot token", secret=True),
-        Field("TELEGRAM_CHAT_ID", "Telegram chat id"),
+    Section("notifications", "4. Notifications", "Email alerts. Telegram and Slack alerts are extensions, "
+            "set up after these. With neither, alerts print to the console.", (
         Field("SENTRAI_OPERATOR", "Your name, as shown on approvals", "operator"),
         Field("SMTP_HOST", "Email: SMTP server, blank for no email alerts"),
         Field("SMTP_PORT", "Email: SMTP port (587 STARTTLS, 465 SSL)", "587", int),
@@ -159,7 +167,7 @@ SECTIONS = (
         Field("SMTP_PASSWORD", "Email: SMTP password or app password", secret=True),
         Field("ALERT_EMAIL_FROM", "Email: sender address, blank to use the login"),
         Field("ALERT_EMAIL_TO", "Email: recipients (comma-separated)"),
-        Field("SENTRAI_EMAIL_MODE", "Email: send when Telegram fails, or always", "backup",
+        Field("SENTRAI_EMAIL_MODE", "Email: send when the alert extension (Telegram) fails, or always", "backup",
               choices=("backup", "always")),
     )),
     Section("ai", "5. AI model", "Cyanide and Scout. Pick a provider and paste its key; "
@@ -174,25 +182,33 @@ SECTIONS = (
         Field("SENTRAI_API_TOKEN", "Core API token (shared by the collector, dashboard and Telegram bot)",
               secret=True, generated=True),
     )),
-    Section("integrations", "7. Integrations", "Outside services SentrAI works with. Each stays off while its "
-            "key is blank; the Integrations page tests them.", (
-        Field("CLOUDFLARE_API_TOKEN", "Cloudflare: API token, blank for no Cloudflare blocking", secret=True),
-        Field("CLOUDFLARE_ZONE_ID", "Cloudflare: zone id (one site)"),
-        Field("CLOUDFLARE_ACCOUNT_ID", "Cloudflare: account id (every site, or the IP list)"),
-        Field("CLOUDFLARE_METHOD", "Cloudflare: block with IP Access rules or an IP list", "access_rule",
-              choices=("access_rule", "list")),
-        Field("CLOUDFLARE_LIST_ID", "Cloudflare: IP list id (only for the list method)"),
-        Field("CLOUDFLARE_MODE", "Cloudflare: what an access rule does", "block",
-              choices=("block", "managed_challenge", "challenge", "js_challenge")),
-        Field("ABUSEIPDB_API_KEY", "AbuseIPDB: API key, blank for no address lookups", secret=True),
-        Field("SLACK_WEBHOOK_URL", "Slack: incoming webhook URL, blank for no Slack alerts", secret=True),
-    )),
 )
-FIELDS = {f.env: f for s in SECTIONS for f in s.fields}
+_KINDS = {"int": int, "float": float}
+
+
+def extension_sections(environ=None) -> dict[str, Section]:
+    """One section per installed extension, from its extension.json, in the Extensions page's order.
+
+    A setting that another section already has is left out, so an extension can never take over one of
+    SentrAI's own settings (or another extension's)."""
+    if sentrai_extensions is None:
+        return {}
+    taken = {f.env for s in SECTIONS for f in s.fields}
+    out: dict[str, Section] = {}
+    for name, m in sentrai_extensions.installed(environ).items():
+        fields = tuple(Field(x.env, x.prompt, x.default, _KINDS.get(x.kind, str), x.secret, x.choices,
+                             advanced=x.advanced) for x in m.settings if x.env not in taken)
+        taken |= {f.env for f in fields}
+        out[name] = Section(m.section, m.title, m.about or m.what, fields,
+                            tuple(e for e in m.on_when if any(f.env == e for f in fields)))
+    return out
+
+
+EXTENSION_SECTIONS = extension_sections()  # name -> Section, keyed "extension:<name>" in the file
+ALL_SECTIONS = (*SECTIONS, *EXTENSION_SECTIONS.values())
+FIELDS = {f.env: f for s in ALL_SECTIONS for f in s.fields}
 EMAIL_FIELDS = ("SMTP_PORT", "SMTP_SECURITY", "SMTP_USER", "SMTP_PASSWORD", "ALERT_EMAIL_FROM", "ALERT_EMAIL_TO",
                 "SENTRAI_EMAIL_MODE")  # asked only when SMTP_HOST is set
-CLOUDFLARE_FIELDS = ("CLOUDFLARE_ZONE_ID", "CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_METHOD", "CLOUDFLARE_LIST_ID",
-                     "CLOUDFLARE_MODE")  # asked only when CLOUDFLARE_API_TOKEN is set
 MODEL_ENV = "SENTRAI_LLM_MODEL"
 TOKEN_ENV = "SENTRAI_API_TOKEN"
 # Before accounts: one dashboard sign-in in the settings file. Read only to make it the first Owner account.
@@ -318,7 +334,9 @@ def save(values: dict[str, str]) -> Path:
     values = settle_preset(dict(values))
     if not values.get(TOKEN_ENV):  # a form that leaves the token out must not wipe it
         values[TOKEN_ENV] = read().get(TOKEN_ENV, "")
-    data = {s.key: {f.env: values.get(f.env, f.default) for f in s.fields} for s in SECTIONS}
+    data = {s.key: {f.env: values.get(f.env, f.default) for f in s.fields} for s in ALL_SECTIONS}
+    for key, kept in _unknown().items():  # an uninstalled extension's settings: kept, where they were
+        data.setdefault(key, {}).update({env: values.get(env, value) for env, value in kept.items()})
     if not accounts_path().exists():  # an old sign-in not yet made the Owner account: keep it until it is
         old = read()
         data["access"] |= {env: old[env] for env in (EMAIL_ENV, HASH_ENV) if old.get(env)}
@@ -357,6 +375,24 @@ def _raw() -> dict:
     return data if isinstance(data, dict) else {}
 
 
+# Saved keys that are no setting but are not lost either: read() turns them into others, or save() keeps them.
+_MIGRATED = {PASSWORD_ENV, EMAIL_ENV, HASH_ENV, *sentrai_llm.KEY_ENV.values()}
+
+
+def _unknown() -> dict[str, dict[str, str]]:
+    """The saved settings this version has no field for, by section: the settings of an extension that is
+    not installed any more (or not yet), so that saving keeps them for when it comes back."""
+    out: dict[str, dict[str, str]] = {}
+    for key, section in _raw().items():
+        if key == APPEARANCE_KEY or not isinstance(section, dict):
+            continue
+        for k, v in section.items():
+            env = sentrai_env.new_name(k)
+            if env not in FIELDS and env not in _MIGRATED:
+                out.setdefault(key, {})[env] = str(v)
+    return out
+
+
 def setup_done() -> bool:
     """True once someone has set this machine up: the wizard, the Configuration page or the Chat page
     saved, or the saved values differ from the defaults (files written before the marker existed).
@@ -365,7 +401,7 @@ def setup_done() -> bool:
         return True
     values = read()
     return any(not _same(values.get(f.env, f.default), f.default)
-               for s in SECTIONS if s.key != "access" for f in s.fields if f.env in values)
+               for s in ALL_SECTIONS if s.key != "access" for f in s.fields if f.env in values)
 
 
 def mark_setup_done(how: str) -> None:
@@ -469,23 +505,31 @@ def wizard(ask: Callable[[str], str] | None = None, ask_secret: Callable[[str], 
 
     A preset fills the detection and response values without asking them; Advanced asks each
     one, offering the values in use now.
+
+    The extensions come last. Each one's key is asked first; leaving it blank skips its other questions.
+    Advanced settings are never asked: they keep their value (the Configuration page sets them).
     """
     ask, ask_secret = ask or input, ask_secret or getpass.getpass
     current = {f.env: f.default for f in FIELDS.values()} | read()
     say("\nSentrAI setup. Press Enter to keep the value in [brackets].")
     values: dict[str, str] = {}
     preset, advanced = preset_values(DEFAULT_PRESET), False
-    for section in SECTIONS:
+    for section in ALL_SECTIONS:
+        if section is next(iter(EXTENSION_SECTIONS.values()), None):
+            say("\nExtensions: outside services SentrAI can work with. Each one is off while its key is "
+                "blank. A key turns it on; the dashboard's Extensions page adds and removes them.")
         say(f"\n{section.title}: {section.about}")
-        for f in section.fields:
+        # an extension's key first: its other questions only matter once it has one
+        for f in sorted(section.fields, key=lambda f: f.env not in section.on_when):
             if f.env in PRESET_FIELDS and not advanced:
                 values[f.env] = preset[f.env]
                 continue
             if f.env in EMAIL_FIELDS and not values.get("SMTP_HOST"):
                 values[f.env] = current[f.env]  # no SMTP server, so the other email questions are skipped
                 continue
-            if f.env in CLOUDFLARE_FIELDS and not values.get("CLOUDFLARE_API_TOKEN"):
-                values[f.env] = current[f.env]  # no Cloudflare token, so its other questions are skipped
+            if f.advanced or (section.on_when and f.env not in section.on_when
+                              and not any(values.get(e) for e in section.on_when)):
+                values[f.env] = current[f.env]  # no key for this extension, so its other questions are skipped
                 continue
             if f.generated:
                 values[f.env] = current[f.env] or new_token()
@@ -622,9 +666,12 @@ def main(argv: list[str]) -> int:
     ensure()
     values = read()
     print(f"SentrAI settings ({config_path()}):")
-    for f in FIELDS.values():
-        value = values.get(f.env, f.default)
-        print(f"  {f.env:<22} {('***' if value else '') if f.secret else value}")
+    for s in ALL_SECTIONS:
+        if s.key.startswith("extension:"):
+            print(f"  [{s.title} extension]")
+        for f in s.fields:
+            value = values.get(f.env, f.default)
+            print(f"  {f.env:<22} {('***' if value else '') if f.secret else value}")
     return 0
 
 

@@ -1,12 +1,12 @@
-"""What the internet already knows about an attacking address (AbuseIPDB).
+"""AbuseIPDB extension, core part: what the internet already knows about an attacking address.
 
 When an incident opens with a public source address, SentrAI asks AbuseIPDB how often other people have
 reported it, and writes the answer on the incident ("reported 312 times, 100% abuse confidence, ISP,
 country, Tor exit"). It is context for the person deciding, not evidence: it never opens, closes or scores
 an incident by itself.
 
-Settings: ABUSEIPDB_API_KEY (or ABUSEIPDB_API_KEY_FILE); blank turns lookups off. ABUSEIPDB_CACHE_HOURS
-(default 24) keeps each answer so a busy attacker costs one lookup a day (the free plan allows 1,000).
+Settings (extension.json): ABUSEIPDB_API_KEY (or ABUSEIPDB_API_KEY_FILE). ABUSEIPDB_CACHE_HOURS (default
+24) keeps each answer so a busy attacker costs one lookup a day (the free plan allows 1,000).
 
 Lookups run on one background thread, so a slow or missing AbuseIPDB never holds up detection. Private,
 loopback and protected addresses are never sent.
@@ -23,9 +23,9 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
-from . import protect
+from app.extensions import Context, Extension, NotSetUp, is_protected, when
 
-log = logging.getLogger("sentrai.reputation")
+log = logging.getLogger("sentrai.ext.abuseipdb")
 
 API = "https://api.abuseipdb.com/api/v2/check"
 CACHE_SIZE = 2048
@@ -54,7 +54,7 @@ def lookable(ip: str, protected: set[str] | None = None) -> bool:
         addr = ipaddress.ip_address(ip)
     except ValueError:
         return False
-    return addr.is_global and not protect.matches(ip, protected or set())
+    return addr.is_global and not is_protected(ip, protected or set())
 
 
 def summary(rep: dict[str, Any]) -> str:
@@ -140,6 +140,7 @@ class Lookups:
         self.on_result = on_result
         self.protected = protected or set()
         self._pool = ThreadPoolExecutor(1, thread_name_prefix="abuseipdb") if background else None
+        self.closed = False
 
     def request(self, ip: str | None) -> bool:
         """Queues a lookup for a public address. Returns False when the address is never sent."""
@@ -152,13 +153,54 @@ class Lookups:
         return True
 
     def _run(self, ip: str) -> None:
+        if self.closed:
+            return
         try:
             self.on_result(ip, self.client.check(ip))
         except Exception:  # a broken callback must not kill the worker
             log.exception("could not record the AbuseIPDB answer for %s", ip)
 
+    def close(self) -> None:
+        """Removed: queued lookups are dropped, a running one finishes without being recorded."""
+        self.closed = True
+        if self._pool is not None:
+            self._pool.shutdown(wait=False, cancel_futures=True)
 
-def from_settings(s: Any, getter: Getter | None = None) -> AbuseIPDB | None:
-    if not s.abuseipdb_api_key:
-        return None
-    return AbuseIPDB(s.abuseipdb_api_key, s.abuseipdb_cache_hours, getter=getter)
+
+def _n(n: int, word: str) -> str:
+    return f"{n} {word if n == 1 else word + 's'}"
+
+
+class Reputation(Extension):
+    def __init__(self, ctx: Context, client: AbuseIPDB) -> None:
+        self.ctx = ctx
+        self.client = client
+        self.lookups = Lookups(client, self._answer, ctx.settings.protected_ips, ctx.settings.background)
+
+    def incident_opened(self, inc: dict[str, Any]) -> None:
+        self.lookups.request(inc.get("src_ip"))
+
+    def _answer(self, ip: str, rep: dict[str, Any]) -> None:
+        if self.lookups.closed:
+            return
+        self.ctx.note(ip, "reputation", rep, summary(rep))
+        self.ctx.record("reputation_lookup", {"ip": ip, **{k: v for k, v in rep.items()
+                                                          if k in ("score", "reports", "country", "error")}})
+
+    def status(self) -> dict[str, Any]:
+        c = self.client
+        return {"configured": True, "testable": True, "last_ok": when(c.last_ok), "last_error": c.last_error,
+                "detail": f"{_n(c.lookups, 'lookup')} since start, answers kept {c.ttl_s / 3600:g} h"}
+
+    def test(self) -> dict[str, Any]:
+        return self.client.test()
+
+    def close(self) -> None:
+        self.lookups.close()
+
+
+def setup(ctx: Context, getter: Getter | None = None) -> Extension:
+    key = ctx.setting("ABUSEIPDB_API_KEY")
+    if not key:
+        return NotSetUp("Paste a free API key to turn it on.")
+    return Reputation(ctx, AbuseIPDB(key, ctx.number("ABUSEIPDB_CACHE_HOURS", 24.0), getter=getter))

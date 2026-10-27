@@ -8,8 +8,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import evaluate  # noqa: E402
-from app.jev_client import JevResult  # noqa: E402
 from app.risk import CATEGORIES  # noqa: E402
+
+JevResult = evaluate.typesafe().JevResult
 
 
 class FakeJev:

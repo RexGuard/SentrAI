@@ -17,7 +17,8 @@ mvp/
   core/                  owner: core agent      FastAPI on http://127.0.0.1:8000
   lab/                   owner: lab agent       collector, Scout
   dashboard/             owner: ui agent        Streamlit on http://127.0.0.1:8501
-  notifier/              owner: ui agent        Telegram bot (optional at runtime)
+  notifier/              owner: ui agent        alerts: console, email and the alert extensions
+  extensions/<name>/     one folder per extension: extension.json, core.py and/or notifier.py, tests/
   run.ps1 / run.sh       owner: lead (integration)
 ```
 
@@ -179,8 +180,17 @@ that signature (HMAC of the path with the token), which fits that one report onl
 | GET | `/ai` | the AI model Cyanide and the chat use now: `{"engine","planner","chat","online","provider","model","key_source","off_reason"}`; `off_reason` says why it is off (no key, missing model, package not installed...) |
 | POST | `/ai/reload` | reads the saved AI settings again and switches Cyanide and the chat to them (no restart); returns the same shape as `GET /ai` |
 | POST | `/ai/test` | one real request to the provider. Body `{"provider","api_key","base_url","model"}` tests those values (saved or not) without switching anything; no body tests what Cyanide uses now. Returns `{"ok","provider","model","ms","error","hint","tested"}` |
-| GET | `/integrations` | outside services (cloudflare, abuseipdb, slack, webhook, telegram, email): `[{"name","title","kind","what","configured","detail","last_ok","last_error","testable","settings","docs"}]`. Never returns keys |
-| POST | `/integrations/{name}/test` | one harmless call with the saved key (reads Cloudflare, looks up 1.1.1.1, posts a Slack test line) → `{"ok","detail"\|"error"}`; 404 for an unknown name |
+| GET | `/extensions` | every installed extension (Cloudflare, TypeSafe, Telegram, Slack, AbuseIPDB, ... from `mvp/extensions/*/extension.json`), then the built-in `webhook` and `email`. Extension row: `{"name","title","kind","what","about","docs","settings": [env names],"on_when","parts","source","requires","built_in": false,"added","added_by": "SENTRAI_EXTENSIONS" \| "dashboard" \| "settings","running","configured","detail","last_ok","last_error","testable","error","changed_by","changed_at"}`. Built-in rows have `"built_in": true, "added": true, "added_by": "built_in"`. Never returns keys |
+| POST | `/extensions/{name}/add` | `{"operator"}`: turns it on now and keeps the choice → the row. Audited as `extension_added`. 404 unknown name; 409 while `SENTRAI_EXTENSIONS` is set on the server |
+| POST | `/extensions/{name}/remove` | `{"operator"}`: turns it off now; its settings are kept → the row plus `"cleanup": {"released","left_in_place": [{"action_id","target","error"}], ...}` (what it took out of its service, e.g. `cloudflare_removed`). Audited as `extension_removed`. 404 / 409 as for add |
+| POST | `/extensions/{name}/test` | one harmless call with the saved settings (reads Cloudflare, looks up 1.1.1.1, posts a Slack test line, classifies one line with Jev) → `{"ok","detail"\|"error"}`; 404 for an unknown name |
+| POST | `/extensions/reload` | reads the settings file again and starts, stops or restarts each extension to match it → the rows. Audited as `extensions_reloaded` when something changed. The dashboard calls it after saving settings |
+| GET | `/integrations` | the same rows as `GET /extensions` (the name before extensions) |
+| POST | `/integrations/{name}/test` | the same as `POST /extensions/{name}/test`; a built-in name answers `{"ok": false, "error"}` |
+| POST | `/telegram/link-codes` | Telegram extension (404 while it is not added): `{"contact","operator"}` → `{"contact","name","code","expires_at","valid_minutes","send"}` |
+| POST | `/telegram/link` | Telegram extension, called by the bot: `{"code","chat_id","username"}` → the link |
+| POST | `/telegram/unlink` | Telegram extension: `{"chat_id"}` or `{"contact"}`, plus `"operator"` |
+| GET | `/telegram/links` | Telegram extension: linked private chats `[{"contact_id","chat_id","name",...}]` |
 | POST | `/threats/scan` | `{"operator", "paths": optional list}`: read-only threat scan of the folders in `threat_scan.paths` (or `paths`); returns `{"roots","files_checked","counts","findings":[{"id","path","entry","line","key","kind","severity","label","snippet","sha256"}],"new_alerts"}`. New critical/high findings are ingested as events with `source: "threat_scan"` (category `malware`), each once; audited as `threat_scan` |
 | GET | `/threats` | latest threat scan, same shape |
 | POST | `/threats/{id}/quarantine` | `{"operator", "reason": optional}`: moves that file (by finding id, only if unchanged since the scan) into quarantine; audited as `file_quarantined` |

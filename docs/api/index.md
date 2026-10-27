@@ -312,7 +312,7 @@ curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8000/openapi.json -o sen
 | [Central panel and agents](fleet.html) | Machines joining a central panel, and what their agents may call |
 | [Scans, quarantine and backups](scans.html) | Process and threat scans, quarantined files and backups |
 | [Chat and AI](chat.html) | Cyanide's chat, the guided setup and the AI model settings |
-| [Integrations](integrations.html) | Outside services SentrAI works with |
+| [Extensions](integrations.html) | Outside services as extensions: add, remove and test them |
 | [Audit trail](audit.html) | The hash-chained record of everything SentrAI did |
 | [What SentrAI sends out](outgoing.html) | The responder webhook, the witness protocol and signed links |
 

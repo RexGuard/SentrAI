@@ -1,0 +1,14 @@
+{
+  "name": "slack",
+  "title": "Slack",
+  "kind": "Alerts",
+  "what": "Posts a copy of every alert to a Slack channel. Decisions stay in Telegram and the dashboard.",
+  "about": "A copy of every alert in a Slack channel, through an incoming webhook.",
+  "docs": "https://api.slack.com/messaging/webhooks",
+  "order": 25,
+  "on_when": ["SLACK_WEBHOOK_URL"],
+  "settings": [
+    {"env": "SLACK_WEBHOOK_URL", "prompt": "Slack incoming webhook URL, blank for no Slack alerts", "secret": true}
+  ],
+  "requires": {"core": ["httpx"], "notifier": ["requests"]}
+}

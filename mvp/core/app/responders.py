@@ -7,7 +7,8 @@ responders can handle.
 
 Nothing here touches the host firewall, shell or OS: blocks are enforced by the target
 app polling GET /blocklist, and the other playbooks are recorded only, unless a
-`WebhookResponder` hands them to another system (a WAF, a router, a SOAR) by URL.
+`WebhookResponder` hands them to another system (a WAF, a router, a SOAR) by URL, or an
+extension adds a responder of its own (Cloudflare blocks at its edge: mvp/extensions/cloudflare).
 """
 
 from __future__ import annotations
@@ -44,6 +45,15 @@ class Responder(ABC):
 
     def reset(self) -> None:
         """Forget all state (demo reset)."""
+
+    def adopt(self, action: Action) -> None:
+        """Added while the core runs (an extension): `action` is already in force through the responder
+        this one wraps, so put only this responder's own part in place."""
+
+    def release(self, action: Action) -> bool | None:
+        """Removed while the core runs: take only this responder's own part of `action` out and leave the
+        wrapped responder's in force. Same answers as revert()."""
+        return True
 
 
 class BlocklistResponder(Responder):
@@ -185,6 +195,10 @@ class Responders:
     """Routes each action to the responder that handles its type."""
 
     def __init__(self, *responders: Responder) -> None:
+        self.replace(*responders)
+
+    def replace(self, *responders: Responder) -> None:
+        """A new chain (an extension was added or removed). Later responders take over their types."""
         self.all = list(responders)
         self._by_type = {t: r for r in responders for t in r.actions}
 

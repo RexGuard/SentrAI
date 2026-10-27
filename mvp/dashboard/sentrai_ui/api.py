@@ -233,12 +233,32 @@ class CoreClient:
         """Make the running core read the saved AI settings again (no restart)."""
         return self.post_json("/ai/reload", {})
 
-    def integrations(self) -> list[dict]:
-        """Outside services (Cloudflare, AbuseIPDB, Slack...): whether each is set up. Never their keys."""
-        return self.get_json("/integrations")
+    def extensions(self) -> list[dict]:
+        """The installed extensions (Cloudflare, TypeSafe, Telegram...) and the built-in services (webhook,
+        email): whether each is added, set up and working. Never their keys."""
+        return [r for r in self.get_json("/extensions") or [] if isinstance(r, dict)]
+
+    def add_extension(self, name: str, operator: str) -> dict:
+        """Turn an installed extension on, while SentrAI runs. 409: the server's SENTRAI_EXTENSIONS decides."""
+        return self.post_json(f"/extensions/{name}/add", {"operator": operator})
+
+    def remove_extension(self, name: str, operator: str) -> dict:
+        """Turn it off. Its settings stay; "cleanup" says what it took out of its service (blocks...)."""
+        return self.post_json(f"/extensions/{name}/remove", {"operator": operator})
+
+    def test_extension(self, name: str) -> dict:
+        """One harmless call to the service with the saved key: {"ok", "detail" | "error"}."""
+        return self.post_json(f"/extensions/{name}/test", timeout=AI_TEST_TIMEOUT)
+
+    def reload_extensions(self) -> list[dict]:
+        """After saving settings: the core reads them again and restarts each extension whose settings changed."""
+        return self.post_json("/extensions/reload", {})
+
+    def integrations(self) -> list[dict]:  # the name before extensions
+        return self.extensions()
 
     def test_integration(self, name: str) -> dict:
-        return self.post_json(f"/integrations/{name}/test", timeout=AI_TEST_TIMEOUT)
+        return self.test_extension(name)
 
     def ai_test(self, settings: dict | None = None) -> dict:
         """One real request to the AI provider: with settings, those; without, what Cyanide uses now."""

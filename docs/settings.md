@@ -59,8 +59,8 @@ else.
 1. In Telegram, message **@BotFather**, send `/newbot`, and copy the token it gives you.
 2. Send any message to your new bot. Then open
    `https://api.telegram.org/bot<TOKEN>/getUpdates` and copy the number after `"chat":{"id":`.
-3. Enter both under **Configuration**, section **4. Notifications** (`TELEGRAM_BOT_TOKEN` and
-   `TELEGRAM_CHAT_ID`).
+3. Enter both under **Configuration**, section **Telegram extension** (`TELEGRAM_BOT_TOKEN` and
+   `TELEGRAM_CHAT_ID`). Saving them turns the [Telegram extension](extensions.html#telegram) on.
 
 Only that chat can press the Approve and Reject buttons.
 
