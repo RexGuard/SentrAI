@@ -417,8 +417,8 @@ def why_locked(permission: str = "act", otherwise: str | None = None) -> str | N
 # ------------------------------------------------------------------ helpers
 
 def icon(name: str) -> str:
-    """A Material Symbols icon (the font ships with Streamlit, so it works offline)."""
-    return f'<span class="mi">{name}</span>'
+    """An icon from the bundled Lucide set, by the name sentrai_ui/icons/icons.json lists (works offline)."""
+    return f'<span class="mi" aria-hidden="true">{name}</span>'
 
 
 def pill(text: str, color: str, pulse: bool = False) -> str:
@@ -638,7 +638,7 @@ def side_risk() -> None:
         f'<div class="bar"><i style="width:{pct:.0f}%;background:{color}"></i><b style="left:{threshold:.0f}%"></b></div>'
         f'<div class="foot"><span>threshold {threshold:.0f}</span>'
         f'<span style="color:{chain[1]}">{icon("link")} {chain[0]}</span></div>'
-        + (f'<div class="side-off">{icon("shield")} Protection off · monitor only</div>' if risk.get("monitor_only") else "")
+        + (f'<div class="side-off">{icon("remove_moderator")} Protection off · monitor only</div>' if risk.get("monitor_only") else "")
         + '</div>',
         unsafe_allow_html=True,
     )
@@ -2951,7 +2951,7 @@ def page_team() -> None:
             try:
                 if b1.button("Change role", width="stretch", disabled=role == person["role"]):
                     acc.set_role(ME["email"], who, role)
-                    st.session_state.flash = (f"{who} is now {acc.ROLE_LABEL[role]}", "✅")
+                    st.session_state.flash = (f"{who} is now {acc.ROLE_LABEL[role]}", OK_ICON)
                     st.rerun()
                 if b2.button("Reset sign-in", width="stretch",
                              help="Forgot the password or lost the phone: their old password stops working "
@@ -2962,7 +2962,7 @@ def page_team() -> None:
                 sure = b3.checkbox("I'm sure", key="team_sure")
                 if b3.button("Remove", width="stretch", disabled=not sure):
                     acc.remove(ME["email"], who)
-                    st.session_state.flash = (f"{who} can no longer sign in", "✅")
+                    st.session_state.flash = (f"{who} can no longer sign in", OK_ICON)
                     st.rerun()
             except acc.AccountError as e:
                 st.error(str(e))
