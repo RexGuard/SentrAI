@@ -47,6 +47,16 @@ dashboard refuses the change before it reaches the core.
 Each sign-in shows when and from where your previous one happened, so a sign-in you did not make
 stands out. After five wrong passwords or codes from one address, that address waits five minutes.
 
+### Each person's own view
+
+On the **Incidents** page, everyone first sees **Your part**: the incidents they own or back up,
+the rules that send incidents to them, who takes over when they don't answer, and their own corner
+of the "Who gets what" map. You are a person on that map when your sign-in email is the email on
+your box there (click your box on the map and type it in, or ask an Owner or Admin to).
+
+Owners and Admins can pick **See it as** to check what anyone else sees, and change the whole map
+below it. Auditors see the whole map too, read-only, behind a switch.
+
 ## Reset a sign-in
 
 A forgotten password or a lost phone: an Owner or Admin opens the **Team** page, picks the person
