@@ -86,7 +86,7 @@ or part the file belongs to. **Set with** is the variable that puts it somewhere
   in use where it is if SentrAI can still write there, and one warning names it. Move it by hand
   while SentrAI is stopped, or set `SENTRAI_HOME` on that drive.
 - **Nothing is deleted or overwritten.** A file already at both places stays at both; the new one
-  is used.
+  is used, and one warning names the older copy so you can remove it or put it back by hand.
 
 ## Commands
 
