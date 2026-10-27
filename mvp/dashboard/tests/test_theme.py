@@ -92,7 +92,8 @@ def test_faint_text_meets_aa(theme):
 
 def test_bundled_fonts_inline_and_reach_streamlit():
     faces = th.font_css()
-    assert faces.count("@font-face") == 6 and "IBM Plex Sans" in faces and "JetBrains Mono" in faces
+    assert faces.count("@font-face") == 7 and "IBM Plex Sans" in faces and "JetBrains Mono" in faces
+    assert th.icon_css() in faces  # the icon font rides along (test_icons.py)
     opts = th.streamlit_options("dark")
     assert opts["theme.font"].startswith("'IBM Plex Sans'") and opts["theme.codeFont"].startswith("'JetBrains Mono'")
     assert "--mono:'JetBrains Mono'" in th.css("light")
