@@ -92,7 +92,7 @@ jobs:
     # joins a local panel, puts one real Windows Firewall block in place and uninstalls again.
     name: Windows agent installer
     runs-on: windows-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     defaults:
       run:
         shell: powershell
@@ -123,7 +123,7 @@ jobs:
     # uninstalls both again.
     name: Linux install (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:

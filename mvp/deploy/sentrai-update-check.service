@@ -1,0 +1,10 @@
+[Unit]
+Description=SentrAI: check whether a newer version is out (for the dashboard's notice; installs nothing)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/sentrai-update --check --quiet
+# 10 means "an update is available", not a failure.
+SuccessExitStatus=10

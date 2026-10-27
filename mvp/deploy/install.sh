@@ -40,6 +40,11 @@
 #                          each machine is scored on its own. That port only answers agents' machine
 #                          keys; the API and dashboard stay as set above. "--panel off" closes it.
 #   --panel-url URL        the address agents use (default https://<this server's name>:PORT)
+#   --update               what sudo sentrai-update runs: no questions, keeps the notifier choice and the
+#                          sign-in as they are (no new setup code), short summary
+#
+# Later updates: sudo sentrai-update (fetches the newest code, keeps every setting, rolls back if the
+# new version fails its checks; see deploy/update.sh).
 #
 # What it creates:
 #   /etc/sentrai/sentrai.env           ports, addresses and paths (root:sentrai 0640, kept on upgrade)
@@ -51,6 +56,8 @@
 #   /usr/local/bin/sentrai-scout      runs Scout as the service account (no terminal needed)
 #   /usr/local/bin/sentrai-admin      shows or resets the dashboard sign-in (sudo sentrai-admin --reset)
 #   /usr/local/sbin/sentrai-dashboard-firewall   the dashboard's firewall rule (run by its service)
+#   /usr/local/sbin/sentrai-update    updates SentrAI in place (sudo sentrai-update), plus a daily timer
+#                                     (sentrai-update-check.timer) that only checks for a newer version
 #   /etc/sentrai/tls/                 a self-signed HTTPS certificate, when the dashboard is opened
 # Least privilege: the account itself has no extra groups. Only the core and collector services
 # get the adm and systemd-journal groups (to read /var/log/auth.log, nginx logs and the journal);
@@ -76,6 +83,7 @@ REMOTE_TOKEN=""
 REMOTE_CA=""
 PANEL=""
 PANEL_URL=""
+UPDATE=0
 declare -A SET=()  # env values given on the command line
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -99,7 +107,8 @@ while [ $# -gt 0 ]; do
         --remote-copy-ca) REMOTE_CA="$2"; shift 2 ;;
         --panel) case "${2:-}" in [0-9]*|off) PANEL="$2"; shift 2 ;; *) PANEL=8443; shift ;; esac ;;
         --panel-url) PANEL_URL="$2"; shift 2 ;;
-        -h|--help) sed -n '2,60p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        --update) UPDATE=1; ASK=0; shift ;;
+        -h|--help) sed -n '2,67p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "Unknown option: $1 (see --help)" >&2; exit 2 ;;
     esac
 done
@@ -121,6 +130,10 @@ SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"  # the mvp/ folder of thi
 # An install from before the CactAI -> SentrAI rename moves to the new names first.
 . "$SRC/deploy/migrate-from-cactai.sh"
 migrate_from_cactai server
+. "$SRC/deploy/update-lib.sh"
+# An update keeps the notifier off when it was installed with --no-notifier.
+if [ "$UPDATE" = 1 ] && [ -f /etc/systemd/system/sentrai-notifier.service ] \
+    && ! systemctl is-enabled --quiet sentrai-notifier 2>/dev/null; then NOTIFIER=0; fi
 PYTHON="${PYTHON:-python3}"
 "$PYTHON" -c 'import sys; sys.exit(sys.version_info < (3, 10))' 2>/dev/null || die "python 3.10 or newer is required"
 "$PYTHON" -c 'import ensurepip, venv' 2>/dev/null \
@@ -348,6 +361,7 @@ tar -C "$SRC" -cf - \
     --exclude='./lab/scout/trails/[0-9]*' \
     --exclude=./research --exclude=./pitch --exclude=./deck --exclude=./assets \
     . | tar -C "$MVP" -xf - --no-same-owner
+record_version "$MVP" "$SRC"
 chown -R root:root "$MVP"
 chmod -R u=rwX,go=rX "$MVP"
 # Scout learns from the example trails too; copy them once, never over trails recorded here.
@@ -408,7 +422,10 @@ chmod 0755 /usr/local/bin/sentrai-admin
 admin_args=()
 if [ -n "$ADMIN_EMAIL" ]; then admin_args+=(--email "$ADMIN_EMAIL"); fi
 if [ "$RESET_PW" = 1 ]; then admin_args+=(--reset); fi
-if [ -n "$ADMIN_PASSWORD" ] && [ -n "$ADMIN_EMAIL" ]; then
+if [ "$UPDATE" = 1 ]; then
+    # Never a new setup code on an update: one shown earlier keeps working until it expires.
+    SIGN_IN="Sign-in:    unchanged (sudo sentrai-admin lists who may sign in)"
+elif [ -n "$ADMIN_PASSWORD" ] && [ -n "$ADMIN_EMAIL" ]; then
     SIGN_IN="$(printf '%s\n' "$ADMIN_PASSWORD" | /usr/local/bin/sentrai-admin "${admin_args[@]}" --password-stdin)" \
         || die "could not set up the dashboard sign-in"
 else
@@ -534,8 +551,12 @@ if [ "$NOTIFIER" = 0 ]; then
 else
     cp "$SRC/deploy/sentrai.target" /etc/systemd/system/sentrai.target
 fi
+# sudo sentrai-update, and a daily check that only feeds the dashboard's "Update available" notice.
+install_updater "$SRC"
+cp "$SRC/deploy/sentrai-update-check.service" "$SRC/deploy/sentrai-update-check.timer" /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable sentrai.target "${UNITS[@]:0:3}" >/dev/null
+systemctl enable --now sentrai-update-check.timer >/dev/null 2>&1 || true
 if [ "$NOTIFIER" = 1 ]; then systemctl enable sentrai-notifier >/dev/null
 else systemctl disable --now sentrai-notifier >/dev/null 2>&1 || true; fi
 
@@ -562,6 +583,11 @@ if [ "$START" = 1 ]; then
     systemctl --no-pager --lines=0 status "${UNITS[@]}" 2>/dev/null | grep -E '^[●○×] |Active:' || true
 fi
 
+if [ "$UPDATE" = 1 ]; then
+    echo "SentrAI's new code is installed ($(sed -n 's/^commit=//p' "$MVP/VERSION" | cut -c1-7)); settings and sign-in unchanged."
+    reinstall_other_after_cactai panel "$SRC/deploy"
+    exit 0
+fi
 cat <<EOF
 
 SentrAI is installed.
@@ -569,6 +595,7 @@ SentrAI is installed.
   Restart:    systemctl restart sentrai.target  (after editing $ENV_FILE)
   Core API:   $CORE_URL
   Find logs:  sudo sentrai-scout find --root /var/log "where are the login and web logs?"
+  Update:     sudo sentrai-update   (newest code, same settings; rolls back if it fails its checks)
 EOF
 if [ -f "$STATE/INDEX.md" ]; then echo "  Data:       $STATE/INDEX.md lists every file and where it is"; fi
 echo

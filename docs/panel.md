@@ -179,6 +179,30 @@ SENTRAI_BACKUP_PATHS=/srv/app/data
 The agent picks a job up within about 15 seconds. Serious scan findings open an incident on that
 machine, and backups stay on the machine.
 
+## Update the agents
+
+On each Linux machine, one command updates the agent to the newest code. It stays joined and
+keeps `--enforce`/dry run, `--protect` and its approved logs:
+
+```bash
+sudo sentrai-update
+```
+
+On Windows, from an Administrator PowerShell:
+
+```powershell
+& "C:\Program Files\SentrAI\update-agent.ps1"
+```
+
+Both save the running version first, check the agent runs and keeps running, and put the saved
+version back when it does not. `--check` (`-Check`) only says whether a newer version is out,
+and `--rollback` (`-Rollback`) goes back to the version before the last update. Update the panel
+first (also `sudo sentrai-update`, on the panel): a newer agent may need a newer panel.
+
+Agents installed before the updater was added get it with one last update the old way:
+`git pull`, then `sudo ./mvp/deploy/update.sh` (Linux) or the install command again without
+`--code` (Windows).
+
 ## When the panel cannot be reached
 
 - Blocks already in place stay for 24 hours (`SENTRAI_AGENT_OFFLINE_HOLD_H`) and are then removed,

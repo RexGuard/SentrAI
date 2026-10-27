@@ -68,11 +68,13 @@ if [ "$KEEP_BLOCKS" = 0 ] && [ "$PANEL" = 0 ] && command -v nft >/dev/null 2>&1;
 fi
 
 if [ "$PANEL" = 0 ] && [ -f "$MVP/lab/agent/agent.py" ]; then rm -rf "$PREFIX"; fi
+[ "$PANEL" = 1 ] || rm -f /usr/local/sbin/sentrai-update  # the panel's own install still uses it
 
 if [ "$PURGE" = 1 ]; then
     rm -rf "$STATE"
     rm -f "$ENV_FILE" /etc/sentrai/panel-ca.pem
     if [ "$PANEL" = 0 ]; then
+        rm -rf /etc/sentrai/update.env /var/backups/sentrai
         rmdir /etc/sentrai /var/lib/sentrai 2>/dev/null || true
         if id "$SVC_USER" >/dev/null 2>&1; then userdel "$SVC_USER"; fi
     fi

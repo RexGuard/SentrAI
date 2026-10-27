@@ -117,6 +117,16 @@ The agent installer prints why. The usual causes:
 - **"the panel no longer accepts this machine's key"**: the machine was revoked. Join it again with
   a new code.
 
+## An update says it rolled back
+
+`sudo sentrai-update` checks the new version before it keeps it. When a check fails it puts the
+version you had back, so SentrAI keeps running as before, and it names the check that failed.
+The whole run, with each service's last lines, is in `/var/log/sentrai-update.log`; open an issue
+with that part. To try again later, run `sudo sentrai-update` again. `sudo sentrai-update --rollback`
+goes back one version by hand, after an update that passed its checks but does not behave.
+
+An update that cannot fetch the code changes nothing: the server must reach github.com over HTTPS.
+
 ## Where are SentrAI's files?
 
 Everything SentrAI keeps is in one folder, with one sub-folder per part: `~/.sentrai` on a laptop

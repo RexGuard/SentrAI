@@ -30,6 +30,7 @@
 #   /etc/systemd/system/sentrai-agent.service
 # The agent also approves this machine's nginx, SSH login, Suricata and database logs (collector --add-system-logs).
 # Remove it with: sudo ./deploy/uninstall-agent.sh  (--purge also deletes the machine key)
+# Update it later with: sudo sentrai-update  (newest code, same join and settings; rolls back if it fails)
 set -euo pipefail
 
 PREFIX=/opt/sentrai
@@ -57,7 +58,7 @@ while [ $# -gt 0 ]; do
         --prefix) PREFIX="$2"; shift 2 ;;
         --user) SVC_USER="$2"; shift 2 ;;
         --no-start) START=0; shift ;;
-        -h|--help) sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,33p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "Unknown option: $1 (see --help)" >&2; exit 2 ;;
     esac
 done
@@ -70,6 +71,7 @@ SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # An install from before the CactAI -> SentrAI rename moves to the new names first.
 . "$SRC/deploy/migrate-from-cactai.sh"
 migrate_from_cactai server
+. "$SRC/deploy/update-lib.sh"
 PYTHON="${PYTHON:-python3}"
 "$PYTHON" -c 'import sys; sys.exit(sys.version_info < (3, 10))' 2>/dev/null || die "python 3.10 or newer is required"
 "$PYTHON" -c 'import ensurepip, venv' 2>/dev/null \
@@ -105,6 +107,7 @@ tar -C "$SRC" -cf - --exclude=.venv --exclude=__pycache__ --exclude=.pytest_cach
     --exclude='./lab/scout/trails/[0-9]*' \
     ./lab ./core/app ./sentrai_config.py ./sentrai_llm.py ./sentrai_env.py ./sentrai_paths.py ./sentrai_extensions.py \
     | tar -C "$MVP" -xf - --no-same-owner
+record_version "$MVP" "$SRC"
 chown -R root:root "$MVP"
 chmod -R u=rwX,go=rX "$MVP"
 PIP_HELP="could not download the Python packages (pip's message is above). This machine must reach pypi.org over HTTPS; fix that, then run this again."
@@ -186,6 +189,7 @@ as_agent "$MVP/sentrai_paths.py" index >/dev/null \
 # --- service ----------------------------------------------------------------
 sed -e "s|@PREFIX@|$PREFIX|g" -e "s|@USER@|$SVC_USER|g" -e "s|@LOGGROUPS@|${LOG_GROUPS[*]}|g" \
     "$SRC/deploy/sentrai-agent.service" > /etc/systemd/system/sentrai-agent.service
+install_updater "$SRC"
 systemctl daemon-reload
 systemctl enable sentrai-agent >/dev/null
 if [ "$START" = 1 ]; then

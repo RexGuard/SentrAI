@@ -176,6 +176,12 @@ div[data-testid="stMarkdownContainer"] ul.machines > li.machine.status { backgro
 .protect-off b { color: var(--ink); }
 .protect-off > div { font-size: .9rem; line-height: 1.5; }
 .protect-off small { color: var(--ink-muted); }
+.side-update { border: 1px solid color-mix(in srgb, var(--amber) 50%, transparent); background: color-mix(in srgb, var(--amber) 9%, transparent);
+               border-radius: var(--radius); padding: .6rem .75rem; margin: .5rem 0; display: flex; gap: .6rem; font-size: .82rem; line-height: 1.45; }
+.side-update .mi { color: var(--amber); font-size: 1.2rem; }
+.side-update b { color: var(--ink); }
+.side-update small { color: var(--ink-muted); }
+.side-update code { white-space: nowrap; }
 .side-off { margin-top: .45rem; font-size: .8rem; font-weight: 700; color: var(--amber); }
 
 /* ------------------------------------------------------------ incidents */

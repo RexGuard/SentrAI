@@ -614,3 +614,19 @@ def test_check_limits_tidies_a_save_and_refuses_what_the_core_could_not_use():
                 {"MAX_AUTO_ACTIONS_PER_HOUR": "-1"}, {"HOTPATCH_TTL_HOURS": "0"}, {"HOTPATCH_TTL_HOURS": "30"}):
         with pytest.raises(ValueError):
             sh.check_limits(LIMITS | bad)
+
+
+def test_update_status(tmp_path):
+    version, check = tmp_path / "VERSION", tmp_path / "update-check.json"
+    old, new = "a" * 40, "b" * 40
+    assert sh.update_status(version, check) == {"version": "", "available": False, "latest": "", "ref": "", "checked": ""}
+    version.write_text(f"commit={old}\nref=main\nrepo=https://github.com/RexGuard/SentrAI\n")
+    assert sh.update_status(version, check)["version"] == "aaaaaaa"
+    check.write_text(json.dumps({"installed": old, "latest": new, "available": True, "ref": "main"}))
+    u = sh.update_status(version, check)
+    assert u["available"] and u["latest"] == "bbbbbbb" and u["ref"] == "main"
+    # Installed since the check ran: the notice goes at once, before the next check.
+    version.write_text(f"commit={new}\n")
+    assert not sh.update_status(version, check)["available"]
+    check.write_text("not json")
+    assert not sh.update_status(version, check)["available"]

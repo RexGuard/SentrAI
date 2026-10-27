@@ -103,6 +103,52 @@ wait_for "sentrai-agent is running after the upgrade" 30 systemctl is-active --q
 n="$(api "$PANEL/fleet/agents" | python3 -c 'import json, sys; print(len(json.load(sys.stdin)))')"
 [ "$n" = 1 ] || fail "the upgrade joined a second time ($n agents)"
 
+# --- sudo sentrai-update: in place with every setting kept, then a broken version rolled back ---
+ROOT="$(cd .. && pwd)"
+HEAD="$(git -c safe.directory='*' -C "$ROOT" rev-parse HEAD)"
+git config --system --add safe.directory '*'  # root fetches from the runner's checkout (a real server fetches from GitHub)
+[ -x /usr/local/sbin/sentrai-update ] || fail "install.sh did not add sentrai-update"
+grep -qx "commit=$HEAD" /opt/sentrai/mvp/VERSION || fail "VERSION does not name the installed commit"
+systemctl is-enabled --quiet sentrai-update-check.timer || fail "the daily update check is not on"
+ENV_SUM="$(sha256sum < /etc/sentrai/sentrai.env)"
+ACCOUNTS_SUM="$(sha256sum < /var/lib/sentrai/accounts.json)"
+same_settings() {
+    [ "$(sha256sum < /etc/sentrai/sentrai.env)" = "$ENV_SUM" ] || fail "$1 changed sentrai.env"
+    [ "$(sha256sum < /var/lib/sentrai/accounts.json)" = "$ACCOUNTS_SUM" ] || fail "$1 changed the sign-in (a new setup code?)"
+    grep -q '^SENTRAI_FIREWALL_ENFORCE=1' /etc/sentrai/agent.env || fail "$1 lost the agent's --enforce"
+    grep -q "$ADMIN_IP" /etc/sentrai/agent.env || fail "$1 lost the agent's --protect"
+    n="$(api "$PANEL/fleet/agents" | python3 -c 'import json, sys; print(len(json.load(sys.stdin)))')"
+    [ "$n" = 1 ] || fail "$1 joined a second time ($n agents)"
+    for u in sentrai-core sentrai-collector sentrai-dashboard sentrai-notifier sentrai-agent; do
+        systemctl is-active --quiet "$u" || fail "$u is not running after $1"
+    done
+    echo "ok: settings, sign-in and the join are unchanged after $1"
+}
+out="$(sentrai-update --repo "file://$ROOT" --ref "$HEAD")"
+echo "$out" | grep -q "already up to date" || fail "an update to the installed commit did something: $out"
+sentrai-update --repo "file://$ROOT" --ref "$HEAD" --force || fail "sentrai-update --force failed"
+grep -qx "commit=$HEAD" /opt/sentrai/mvp/VERSION || fail "VERSION after the update"
+[ -n "$(ls -d /var/backups/sentrai/*/ 2>/dev/null)" ] || fail "the update saved no backup"
+same_settings "the update"
+sentrai-update --check || fail "--check says an update is available right after updating"
+python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); sys.exit(d["available"] or d["installed"] != sys.argv[2])' \
+    /var/lib/sentrai/update-check.json "$HEAD" || fail "update-check.json for the dashboard"
+
+# A version whose core cannot start: the update must fail its checks and put the old one back.
+BROKEN=/tmp/sentrai-broken
+rm -rf "$BROKEN" && mkdir -p "$BROKEN"
+git -c safe.directory='*' -C "$ROOT" archive HEAD | tar -C "$BROKEN" -xf -
+echo 'raise SystemExit("broken on purpose (CI)")' >> "$BROKEN/mvp/core/app/main.py"
+if sentrai-update --from "$BROKEN"; then fail "a broken version passed the update's checks"; fi
+grep -qx "commit=$HEAD" /opt/sentrai/mvp/VERSION || fail "the rollback did not bring back the old VERSION"
+! grep -q "broken on purpose" /opt/sentrai/mvp/core/app/main.py || fail "the broken code is still installed"
+wait_for "core answers after the rollback" 60 curl -sf "$PANEL/health"
+same_settings "the rollback"
+
+# And by hand: back to the version saved before the last good update.
+sentrai-update --rollback || fail "sentrai-update --rollback failed"
+same_settings "sentrai-update --rollback"
+
 # --- a real attack through the web log --------------------------------------------------------
 attack() {  # IP: SQL injection and XSS probes in nginx's combined format
     local ip="$1" d

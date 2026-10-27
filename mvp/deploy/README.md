@@ -200,6 +200,33 @@ sudo ./deploy/uninstall.sh            # keeps /etc/sentrai and /var/lib/sentrai;
                                       # (also removes the dashboard firewall rule)
 ```
 
+## Updating (`sentrai-update`)
+
+`install.sh` and `install-agent.sh` install `deploy/update.sh` as `/usr/local/sbin/sentrai-update`:
+
+```bash
+sudo sentrai-update                 # newest main (or the --ref saved earlier), same settings
+sudo sentrai-update --check         # exit 10 when a newer version is out; writes update-check.json
+sudo sentrai-update --rollback      # back to the version before the last update
+sudo sentrai-update --from DIR      # from a local checkout (no network)
+```
+
+It finds what is installed here (panel, agent or both, `--prefix`, `--user`) from the service
+files, fetches the code into `/opt/sentrai/source` (git, or GitHub's download when git is
+missing), stops SentrAI, saves the code with its venvs, `/etc/sentrai`, the service files and
+`/var/lib/sentrai` (without collected logs) to `/var/backups/sentrai/<time>/` (newest 2 kept),
+then runs the new `install.sh --update` and/or `install-agent.sh`. `--update` means no questions,
+the notifier stays as it was and the sign-in is left alone (no new setup code). Then it checks the
+core's `/health`, the dashboard's `/_stcore/health` and the agents' port, and that no service that
+was running before restarts within 20 seconds. On a failure it restores the backup and starts it.
+
+Which code is installed is in `/opt/sentrai/mvp/VERSION` (commit, branch, repository, time); where
+updates come from is in `/etc/sentrai/update.env` (`--repo` and `--ref` change it). The
+`sentrai-update-check.timer` runs `sentrai-update --check` once a day on the panel; the dashboard
+reads `/var/lib/sentrai/update-check.json` for its **Update available** notice. The log of every run
+is `/var/log/sentrai-update.log`. Windows agents have the same in `update-agent.ps1`, which
+`install-agent.ps1` copies next to the service.
+
 ## Upgrading from the CactAI names
 
 `migrate-from-cactai.sh` (run by every install and uninstall script) moves an install made before

@@ -689,8 +689,26 @@ def menu() -> None:
             go(key)
 
 
+def update_status() -> dict:
+    home = Path(os.environ.get("SENTRAI_HOME") or "/var/lib/sentrai")
+    return sh.update_status(Path(__file__).resolve().parent.parent / "VERSION", home / "update-check.json")
+
+
+def update_notice(u: dict) -> None:
+    """"Update available", once the daily check (sentrai-update --check) saw a newer version."""
+    if u["available"]:
+        st.markdown(
+            f'<div class="side-update">{icon("download")}<div><b>Update available</b><br>'
+            f'<small>{html.escape(u["latest"])} is out on {html.escape(u["ref"] or "main")}; this runs '
+            f'{html.escape(u["version"])}. On the server: <code>sudo sentrai-update</code></small></div></div>',
+            unsafe_allow_html=True,
+        )
+
+
 with st.sidebar:
     st.markdown(BRAND, unsafe_allow_html=True)
+    UPDATE = update_status()
+    update_notice(UPDATE)
     menu()
     st.markdown('<div class="side-sep"></div>', unsafe_allow_html=True)
     st.toggle(f"Auto-refresh every {REFRESH_SECONDS} s", key="auto_refresh")
@@ -699,6 +717,8 @@ with st.sidebar:
         if st.button("Sign out", icon=":material/logout:", width="stretch", help=f"Signed in as {ME['email']}"):
             st.session_state.signed_in = False
             st.rerun()
+    if UPDATE["version"]:
+        st.caption(f"Version {UPDATE['version']}")
     st.markdown('<div class="side-foot">A sentry doesn\'t chase you. It just guards the gate.</div>',
                 unsafe_allow_html=True)
 

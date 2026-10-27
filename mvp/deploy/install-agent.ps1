@@ -14,7 +14,9 @@
     Here:          powershell -ExecutionPolicy Bypass -File .\deploy\install-agent.ps1 `
                        -Panel https://panel.example.com:8443 -Code ABCD-EFGH-JKLM -Pin sha256:...
 
-  Run it again from a newer checkout to upgrade (no -Code needed: the machine stays joined).
+  Run it again from a newer checkout to upgrade (no -Code needed: the machine stays joined), or
+  let the updater it installs do that: & "C:\Program Files\SentrAI\update-agent.ps1"
+  (downloads the newest code, keeps the join and settings, rolls back if the agent fails to run).
   Remove it with deploy\uninstall-agent.ps1.
 
   What it creates:
@@ -179,6 +181,20 @@ function Copy-Tree([string]$From, [string]$To, [string[]]$Extra = @()) {
 Copy-Tree (Join-Path $Src "lab") (Join-Path $Mvp "lab") @((Join-Path $Src "lab\logs"), "/XF", "sources.json", "pending.json", "2*.jsonl")
 Copy-Tree (Join-Path $Src "core\app") (Join-Path $Mvp "core\app")
 foreach ($f in "sentrai_config.py", "sentrai_llm.py", "sentrai_env.py", "sentrai_paths.py", "sentrai_extensions.py") { Copy-Item -Force (Join-Path $Src $f) (Join-Path $Mvp $f) }
+# Which code is installed (update-agent.ps1 compares it with the newest), and the updater itself.
+function Git-Out([string[]]$GitArgs) {
+    if (-not (Get-Command git -ErrorAction SilentlyContinue)) { return "" }
+    $out = Native git -c safe.directory=* -C (Split-Path -Parent $Src) @GitArgs 2>$null
+    if ($LASTEXITCODE -eq 0 -and $out) { return ([string]$out).Trim() } else { return "" }
+}
+$commit = if ($env:SENTRAI_SOURCE_COMMIT) { $env:SENTRAI_SOURCE_COMMIT } else { Git-Out @("rev-parse", "HEAD") }
+$ref = if ($env:SENTRAI_SOURCE_REF) { $env:SENTRAI_SOURCE_REF } else { Git-Out @("rev-parse", "--abbrev-ref", "HEAD") }
+$repo = if ($env:SENTRAI_SOURCE_REPO) { $env:SENTRAI_SOURCE_REPO } else { Git-Out @("remote", "get-url", "origin") }
+$repo = $repo -replace '://[^@/]*@', '://'  # never keep a token from the clone URL
+if (-not $commit) { $commit = "unknown" }
+Set-Content -Path (Join-Path $Mvp "VERSION") -Encoding ASCII `
+    -Value "commit=$commit`r`nref=$ref`r`nrepo=$repo`r`ninstalled=$((Get-Date).ToUniversalTime().ToString('s'))Z"
+Copy-Item -Force (Join-Path $Src "deploy\update-agent.ps1") (Join-Path $Prefix "update-agent.ps1")
 
 if (-not (Test-Path $VenvPy)) {
     $python = Find-Python
