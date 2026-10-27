@@ -1,0 +1,26 @@
+# API reference pages, in reading order. Drives the API sidebar and its next/previous links, the way
+# docs.yml does for the install guide.
+- title: Overview
+  url: /docs/api/
+- title: Events and log sources
+  url: /docs/api/events.html
+- title: Incidents
+  url: /docs/api/incidents.html
+- title: Reports and summaries
+  url: /docs/api/reports.html
+- title: Risk and protection
+  url: /docs/api/status.html
+- title: Alerts and routing
+  url: /docs/api/alerts.html
+- title: Central panel and agents
+  url: /docs/api/fleet.html
+- title: Scans, quarantine and backups
+  url: /docs/api/scans.html
+- title: Chat and AI
+  url: /docs/api/chat.html
+- title: Integrations
+  url: /docs/api/integrations.html
+- title: Audit trail
+  url: /docs/api/audit.html
+- title: What SentrAI sends out
+  url: /docs/api/outgoing.html
