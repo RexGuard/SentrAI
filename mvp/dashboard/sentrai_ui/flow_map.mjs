@@ -1,15 +1,18 @@
 /* "How an attack is handled" map: the steps SentrAI takes, left to right, each with what it is doing
    right now. Read-only: click a step (or press Enter on it) to open the page that shows it in full.
+   A box keeps its face short (title, state dot, a live count or an On/Off badge, one note); the step
+   explained in full shows in a tip on hover or keyboard focus, so nothing is cut off with "...".
 
    Python (shaping.flow_map_data) sends the steps as nodes on a grid (col, row) and the wires between
    them; a wire whose two ends are both busy draws moving dashes, so an attack in progress shows as
    movement along its path. A Streamlit component (st.components.v2): no iframe, nothing fetched from the
    internet, colours from the console's CSS variables. */
 
-export const COL_W = 224; // one column: a box and the gap after it
-export const BOX_W = 184;
-export const ROW_H = 152;
-export const BOX_H = 132;
+export const COL_W = 176; // one column: a box and the gap after it; six fit a 1440 px screen unshrunk
+export const BOX_W = 156;
+export const ROW_H = 160;
+export const BOX_H = 140;
+export const MIN_SCALE = 0.85; // below this the text would drop under 12 px: scroll sideways instead
 
 const SVG = "http://www.w3.org/2000/svg";
 const maps = new WeakMap();
@@ -54,6 +57,13 @@ function s(tag, attrs) {
   for (const [k, v] of Object.entries(attrs || {})) el.setAttribute(k, String(v));
   return el;
 }
+
+/** Where the hover tip goes: under a box in the top rows, over the boxes lower down, kept inside the stage. */
+export function tipAt(box, stageWidth, tipWidth = TIP_W) {
+  const x = Math.max(0, Math.min(stageWidth - tipWidth, box.x + BOX_W / 2 - tipWidth / 2));
+  return box.y < ROW_H ? { x, y: box.y + BOX_H + 6, below: true } : { x, y: box.y - 6, below: false };
+}
+export const TIP_W = 236;
 
 const STATE_WORDS = { ok: "fine", busy: "busy", alert: "needs a look", off: "off", idle: "quiet", unknown: "not reported" };
 
@@ -115,33 +125,52 @@ class FlowMap {
       const { d } = wire(at[e.from], at[e.to]);
       this.svg.append(s("path", { d, class: `fm-wire${e.live ? " live" : ""}`, "marker-end": "url(#fm-arrow)" }));
     }
-    for (const el of [...this.stage.querySelectorAll(".fm-node")]) el.remove();
+    for (const el of [...this.stage.querySelectorAll(".fm-node, .fm-tip")]) el.remove();
+    this.tip = h("div", { class: "fm-tip", "aria-hidden": "true" });
+    this.tip.style.width = `${TIP_W}px`;
     for (const n of nodes) {
       const state = STATE_WORDS[n.state] ? n.state : "unknown";
       const open = () => this.setTrigger && n.page && this.setTrigger("open", n.page);
+      const hasValue = n.value !== null && n.value !== undefined && n.value !== "";
+      const said = [hasValue ? `${n.value}${n.unit ? ` ${n.unit}` : ""}` : "", n.badge || "", n.note || ""].filter(Boolean).join(", ");
+      const show = () => this.showTip(n, at[n.id], width);
+      const hide = () => this.tip.classList.remove("on");
       const el = h("div", {
-        class: `fm-node ${state}`, role: "button", tabindex: "0", "data-id": n.id,
-        "aria-label": `${n.title}: ${n.value}, ${n.note}. ${STATE_WORDS[state]}. Opens its page.`,
+        class: `fm-node ${state}${hasValue ? "" : " no-value"}`, role: "button", tabindex: "0", "data-id": n.id,
+        "aria-label": `${n.title}: ${said}. ${STATE_WORDS[state]}. ${n.what || ""} Opens its page.`,
         onclick: open, onkeydown: (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); open(); } },
+        onmouseenter: show, onmouseleave: hide, onfocus: show, onblur: hide,
       },
       h("div", { class: "fm-head" }, h("span", { class: "mi", "aria-hidden": "true" }, n.icon || "circle"),
-        h("span", { class: "fm-title" }, n.title), h("i", { class: "fm-dot", title: STATE_WORDS[state] })),
-      h("div", { class: "fm-value" }, String(n.value ?? "-")),
+        h("span", { class: "fm-title" }, n.title),
+        n.badge ? h("span", { class: `fm-badge ${n.badge === "On" ? "on" : "off"}` }, n.badge) : null,
+        h("i", { class: "fm-dot", title: STATE_WORDS[state] })),
+      hasValue ? h("div", { class: "fm-value" }, String(n.value), n.unit ? h("small", {}, ` ${n.unit}`) : null) : null,
       h("div", { class: "fm-note" }, n.note || ""),
-      h("div", { class: "fm-what" }, n.what || ""));
+      h("div", { class: "fm-more", "aria-hidden": "true" }, "View details", h("span", { class: "mi" }, "arrow_forward")));
       el.style.left = `${at[n.id].x}px`;
       el.style.top = `${at[n.id].y}px`;
-      el.title = n.what || "";
       this.stage.append(el);
     }
+    this.stage.append(this.tip);
     this.fit();
   }
 
-  /** Shrink the whole map to the width there is (never below 60 %: then it scrolls sideways instead). */
+  showTip(n, box, stageWidth) {
+    if (!n.what) return;
+    const p = tipAt(box, stageWidth);
+    this.tip.textContent = n.what;
+    this.tip.style.left = `${p.x}px`;
+    this.tip.style.top = `${p.y}px`;
+    this.tip.classList.toggle("above", !p.below);
+    this.tip.classList.add("on");
+  }
+
+  /** Shrink the whole map to the width there is (never below MIN_SCALE: then it scrolls sideways instead). */
   fit() {
     if (!this.size) return;
     const room = this.viewport.clientWidth || this.size.width;
-    const k = Math.max(0.6, Math.min(1, room / this.size.width));
+    const k = Math.max(MIN_SCALE, Math.min(1, room / this.size.width));
     this.stage.style.transform = `scale(${k})`;
     this.viewport.style.height = `${Math.ceil(this.size.height * k) + 4}px`;
   }
