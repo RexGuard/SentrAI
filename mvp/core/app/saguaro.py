@@ -31,9 +31,11 @@ from .agents import (
     Scribe,
     SpineNet,
     Watchdog,
+    next_steps,
 )
 from . import cloudflare, firewall, reputation
-from . import anchor, remote_copy, routing
+from . import anchor, remote_copy, routing, telegram_links
+from . import summary as client_summary
 from .audit import AuditLog
 from .classifier import Classification, JevCache, default_chain
 from .clock import DemoClock, fmt_demo_hours
@@ -41,16 +43,17 @@ from .config import Settings, sign
 from .integrity import IntegrityGuard
 from .jev_client import JevClient
 from .netlogs import enrich
-from .responders import BlocklistResponder, Responders, SimulatedResponder, WebhookResponder
+from .responders import Responders, SimulatedResponder, WebhookResponder
 from .risk import SEVERITY, band, band_rank, inaction_penalty, risk_index
 from .rules import TRIPWIRE_REASONS, RulesEngine
 from .state import StateStore
 
-log = logging.getLogger("cactai.saguaro")
+log = logging.getLogger("sentrai.saguaro")
 
 RISK_STATUSES = ("open", "acknowledged")  # count toward raw score
 MERGE_STATUSES = ("open", "acknowledged", "contained")  # new events attach to these
 CLOSED_STATUSES = ("resolved", "rejected")
+ROLES = ("on_duty", "team_lead", "it_manager", "cxo")  # the four people in the settings (routing.defaults)
 
 TITLES = {
     "brute_force": "Brute force",
@@ -242,9 +245,13 @@ class Saguaro(Agent):
         self.settings = s = settings or Settings()
         # Who owns, hears about and backs up each incident (routing.py). Names in a routing file
         # replace the four role names everywhere an alert goes to a role.
-        self.router = routing.from_settings(s)
-        for role in ("on_duty", "team_lead", "it_manager", "cxo"):
-            setattr(s, role, self.router.by_role(role, getattr(s, role)))
+        self.routing_path = routing.path_from_settings(s)
+        self.role_names = {role: getattr(s, role) for role in ROLES}  # the settings' own, before the file renames them
+        self.router = routing.load(self.routing_path, *self.role_names.values())
+        # The private Telegram chat linked to each contact, so their alerts go to them directly.
+        self.tg_links = telegram_links.from_settings(s)
+        for role in ROLES:
+            setattr(s, role, self.router.by_role(role, self.role_names[role]))
         self.clock = DemoClock(s.demo_speed)
         self.audit = AuditLog(s.db_path)
         self.rules = RulesEngine(s.brute_force_count, s.brute_force_window_s, s.export_rows_threshold,
@@ -297,6 +304,8 @@ class Saguaro(Agent):
         self.lock = threading.RLock()
         self._protection_file = s.db_path.parent / "protection.json"
         self._load_protection()
+        self._summary_file = s.db_path.parent / "summary.json"
+        self.summary_schedule = client_summary.load_schedule(self._summary_file, s, time.time())
         self.store = StateStore(self.audit)
         self._init_state()
         self._configure()
@@ -580,6 +589,7 @@ class Saguaro(Agent):
         proposals = self._proposals(inc, agent)
         inc["recommended_action"] = agent.recommended_text(proposals, self.settings.ttl_hours)
         inc["explanation"] = agent.explain(inc)
+        inc["next_steps"] = next_steps(inc)
         if inc.get("needs_review"):
             inc["explanation"] += " The classifier is uncertain: needs human review (never auto-contained)."
 
@@ -672,6 +682,7 @@ class Saguaro(Agent):
             self._evaluate(now)
             self._record_history(now)
             self._send_fingerprint(now)
+            self._send_summary(now)
             findings = self.integrity.check()
             if self.remote is not None:
                 refused, notes = self.remote.take()
@@ -696,6 +707,70 @@ class Saguaro(Agent):
                             f"Fingerprint of audit records 1 to {fp.seq}. Keep this message: if the audit log on "
                             f"the server is ever rebuilt, this line proves it (python -m app.anchor verify).\n"
                             f"{fp.line()}", [])
+
+    # ------------------------------------------------------- client summary
+    def _summary_url(self, period: str, until: int, ext: str = "pdf") -> str:
+        """Signed like the report links, so the client opens it from Telegram or email without the API token."""
+        path = f"/summary/{period}.{ext}"
+        return f"{self.settings.public_url}{path}?until={until}&sig={sign(self.settings.api_token, f'{path}?until={until}')}"
+
+    def _send_summary(self, now: float, force: bool = False, operator: str | None = None) -> dict[str, Any] | None:
+        """At each due time of the client's schedule, queue the one-page summary for the alert channels."""
+        sched = self.summary_schedule
+        slot = sched.last_slot(now)
+        if not force and (slot is None or (sched.last_sent_ts is not None and slot <= sched.last_sent_ts)):
+            return None
+        period = sched.every if sched.every in client_summary.PERIODS else "daily"
+        until = now if force else slot
+        r = client_summary.build_summary(self, period, until)
+        sched.last_sent_ts = now if force else slot
+        client_summary.save_schedule(self._summary_file, sched)
+        num = r["numbers"]
+        link = self._summary_url(period, r["until_ts"])
+        n = self._notify(now, "summary", None, [sched.to], f"{r['title']}: {r['headline']}",
+                         f"{r['period_text']}. Threats found: {num['threats']}, stopped automatically: "
+                         f"{num['stopped_automatically']}, handled by staff: {num['handled_by_staff']}, "
+                         f"need attention: {num['need_attention']}.", [])
+        n["report_url"] = link  # the alert channels show it as a link to the one-page PDF
+        self.scribe.record(self.scribe.name, "summary_sent", {
+            "summary_id": r["summary_id"], "period": period, "from": r["from"], "until": r["until"],
+            "numbers": num, "notification": n["id"], "recipients": [sched.to], "requested_by": operator,
+            "chain_head_hash": self.audit.head_hash()})
+        self._save()
+        return {"summary": r, "notification": public(n), "link": link}
+
+    def send_summary_now(self, operator: str) -> dict[str, Any]:
+        with self.lock:
+            return self._send_summary(self.clock.now(), force=True, operator=operator)  # type: ignore[return-value]
+
+    def summary_settings(self) -> dict[str, Any]:
+        with self.lock:
+            return self.summary_schedule.public(self.clock.now())
+
+    def set_summary_settings(self, operator: str, every: str | None = None, at: str | None = None,
+                             day: str | None = None, to: str | None = None) -> dict[str, Any]:
+        """The client's preference: daily or weekly (or off), what time, which weekday and who it goes to."""
+        with self.lock:
+            sched = self.summary_schedule
+            if every is not None and every.strip().lower() not in client_summary.EVERY:
+                raise BadRequestError(f"every must be one of {', '.join(client_summary.EVERY)}")
+            if day is not None and day.strip().lower()[:3] not in client_summary.DAYS:
+                raise BadRequestError("day must be a weekday such as mon or friday")
+            if at is not None and client_summary.clock_time(at) is None:
+                raise BadRequestError("at must be a time of day such as 08:00")
+            before = {k: getattr(sched, k) for k in ("every", "at", "day", "to")}
+            for k, v in (("every", every), ("at", at), ("day", day), ("to", to)):
+                if v is not None:
+                    setattr(sched, k, v)
+            sched.checked()
+            now = self.clock.now()
+            sched.changed_by, sched.changed_at = operator, self.clock.iso(now)
+            # A new schedule starts from now: no catch-up summary for a time that has already passed.
+            sched.last_sent_ts = max(sched.last_sent_ts or 0.0, now)
+            client_summary.save_schedule(self._summary_file, sched)
+            self.scribe.record(self.name, "summary_schedule_changed", {
+                "operator": operator, "before": before, "after": {k: getattr(sched, k) for k in ("every", "at", "day", "to")}})
+            return sched.public(now)
 
     def _evaluate(self, now: float) -> None:
         self._expire_actions(now)
@@ -754,7 +829,7 @@ class Saguaro(Agent):
         env = self.settings.monitor_only
         if env is not None and env.strip() != "":
             self.monitor_only = env.strip().lower() in ("1", "true", "yes", "on")
-            saved = {"changed_by": "CACTAI_MONITOR_ONLY", "reason": "set in the environment"}
+            saved = {"changed_by": "SENTRAI_MONITOR_ONLY", "reason": "set in the environment"}
         else:
             self.monitor_only = bool(saved.get("monitor_only", False))
         self._protection_meta = {k: saved.get(k) for k in ("changed_at", "changed_by", "reason")}
@@ -838,7 +913,7 @@ class Saguaro(Agent):
             "text": text,
             "recipients": recipients,
             # Each recipient's email / Telegram from the routing contacts, so the notifier can reach them.
-            "deliver_to": self.router.addresses(recipients),
+            "deliver_to": self._addresses(recipients),
             "owner": self.incidents[incident_id].get("owner") if incident_id in self.incidents else None,
             "risk_index": r["risk_index"],
             "band": r["band"],
@@ -1008,22 +1083,23 @@ class Saguaro(Agent):
         with self.lock:
             return public([n for n in self.notifications if not n["delivered"]])
 
-    def mark_delivered(self, nid: str, channel: str, message_id: str | None) -> dict[str, Any]:
+    def mark_delivered(self, nid: str, channel: str, message_id: str | None, to: str | None = None) -> dict[str, Any]:
         with self.lock:
             n = next((x for x in self.notifications if x["id"] == nid), None)
             if n is None:
                 raise KeyError(nid)
             now = self.clock.now()
             ts = self.clock.iso(now)
-            n["deliveries"].append({"channel": channel, "message_id": message_id, "delivered_at": ts})
+            # `to`: the one person a private message went to (a direct Telegram message); None = the whole channel.
+            n["deliveries"].append({"channel": channel, "message_id": message_id, "delivered_at": ts, "to": to})
             if not n["delivered"]:
                 n.update(delivered=True, delivered_at=ts, channel=channel, message_id=message_id)
             self.scribe.record(self.scribe.name, "notification_delivered", {
                 "notification": nid, "incident": n["incident"], "channel": channel, "message_id": message_id,
-                "recipients": n["recipients"], "kind": n["kind"]})
+                "recipients": [to] if to else n["recipients"], "kind": n["kind"]})
             if n["incident"] in self.incidents:
                 self._timeline(self.incidents[n["incident"]], now, "delivered",
-                               f"{nid} delivered via {channel} (message_id {message_id})")
+                               f"{nid} delivered via {channel}{' to ' + to if to else ''} (message_id {message_id})")
             self._save()
             return public(n)
 
@@ -1472,7 +1548,91 @@ class Saguaro(Agent):
             return self.incident_public(inc)
 
     def routing_public(self) -> dict[str, Any]:
-        return self.router.public()
+        with self.lock:
+            out = self.router.public()
+            for c in out["contacts"]:
+                c["telegram_linked"] = bool(self.tg_links.chat_for(c["id"], c.get("telegram") or ""))
+            return out
+
+    def routing_update(self, data: dict[str, Any], operator: str) -> dict[str, Any]:
+        """Replace the routing file (people, rules, follow-up) and use it from the next alert on."""
+        clean = routing.validate(data)  # ValueError: nothing is written
+        with self.lock:
+            before = {c.id: c.name for c in self.router.contacts.values()}
+            routing.save(self.routing_path, clean)
+            self.router = routing.load(self.routing_path, *self.role_names.values())
+            for role in ROLES:
+                setattr(self.settings, role, self.router.by_role(role, self.role_names[role]))
+            after = {c.id: c.name for c in self.router.contacts.values()}
+            self.scribe.record(self.name, "routing_changed", {
+                "operator": operator, "file": str(self.routing_path),
+                "people": len(after), "rules": len(self.router.rules),
+                "added": sorted(after[i] for i in after.keys() - before.keys()),
+                "removed": sorted(before[i] for i in before.keys() - after.keys())})
+        return self.routing_public()
+
+    # ---------------------------------------------------- personal Telegram alerts
+    def _addresses(self, recipients: list[str]) -> list[dict[str, str]]:
+        """Each recipient's email and Telegram, plus the private chat that reaches them if they linked one."""
+        out = self.router.addresses(recipients)
+        for a in out:
+            a["telegram_chat"] = self.tg_links.chat_for(a["id"], a.get("telegram") or "")
+        return out
+
+    def _contact(self, ref: str) -> routing.Contact:
+        c = self.router.contact(ref)
+        if c is None:
+            raise KeyError(ref)
+        return c
+
+    def telegram_link_code(self, contact: str, operator: str) -> dict[str, Any]:
+        """A one-time code the contact sends to the bot (/link CODE) to get their alerts in a private chat."""
+        with self.lock:
+            c = self._contact(contact)
+            code, expires = self.tg_links.new_code(c.id, operator)
+            self.scribe.record(self.name, "telegram_link_code", {"contact": c.id, "name": c.name, "operator": operator,
+                                                                 "expires_at": self.clock.iso(expires)})
+            return {"contact": c.id, "name": c.name, "code": code, "expires_at": self.clock.iso(expires),
+                    "valid_minutes": telegram_links.CODE_TTL_S // 60, "send": f"/link {code}"}
+
+    def telegram_link(self, code: str, chat_id: str, username: str = "") -> dict[str, Any]:
+        """The notifier passes on a /link CODE it received in a private chat."""
+        with self.lock:
+            now = self.clock.now()
+            link, replaced = self.tg_links.redeem(code, str(chat_id), username or "", self.clock.iso(now))
+            if link is None:
+                raise BadRequestError("That code is wrong, already used or expired. Ask for a new one.")
+            c = self._contact(link.contact_id)
+            self.scribe.record(self.name, "telegram_linked", {
+                "contact": c.id, "name": c.name, "chat_id": link.chat_id, "username": link.username,
+                "code_made_by": link.linked_by, "replaced_chat": replaced.chat_id if replaced else None})
+            return {**self._link_public(link), "replaced": bool(replaced)}
+
+    def telegram_unlink(self, contact: str | None, chat_id: str | None, operator: str) -> dict[str, Any]:
+        with self.lock:
+            link = self.tg_links.by_chat(chat_id) if chat_id else None
+            cid = link.contact_id if link else (self._contact(contact).id if contact else "")
+            gone = self.tg_links.unlink(cid) if cid else None
+            if gone is None:
+                raise KeyError(contact or chat_id or "")
+            self.scribe.record(self.name, "telegram_unlinked", {"contact": cid, "chat_id": gone.chat_id,
+                                                                "operator": operator})
+            return {"contact": cid, "unlinked": True}
+
+    def _link_public(self, link: telegram_links.Link) -> dict[str, Any]:
+        c = self.router.contact(link.contact_id)
+        return {**link.__dict__, "name": c.name if c else link.contact_id, "role": c.role if c else ""}
+
+    def telegram_links_public(self) -> list[dict[str, Any]]:
+        """Linked chats (by link code), then contacts whose routing entry is a chat id already."""
+        with self.lock:
+            out = [self._link_public(x) for x in self.tg_links.links.values()]
+            linked = {x["contact_id"] for x in out}
+            for c in self.router.contacts.values():
+                if c.id not in linked and telegram_links.is_chat_id(c.telegram):
+                    out.append({"contact_id": c.id, "chat_id": c.telegram, "username": "", "linked_at": "",
+                                "linked_by": "routing file", "name": c.name, "role": c.role})
+            return out
 
     def decision(self, iid: str, operator: str, decision: str, justification: str | None) -> dict[str, Any]:
         with self.lock:

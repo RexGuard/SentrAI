@@ -28,7 +28,7 @@ ROUTING = {
 
 def routed_client(tmp_path, routing=ROUTING):
     (tmp_path / "routing.json").write_text(json.dumps(routing), encoding="utf-8")
-    settings = Settings(db_path=tmp_path / "cactai.db", background=False, demo_speed=60.0)
+    settings = Settings(db_path=tmp_path / "sentrai.db", background=False, demo_speed=60.0)
     app = create_app(settings)
     c = TestClient(app, headers=AUTH)
     c.__enter__()
@@ -140,7 +140,7 @@ def test_owner_survives_a_restart(tmp_path):
 
 def test_a_broken_routing_file_falls_back_to_the_settings(tmp_path):
     (tmp_path / "routing.json").write_text("{not json", encoding="utf-8")
-    settings = Settings(db_path=tmp_path / "cactai.db", background=False, demo_speed=60.0)
+    settings = Settings(db_path=tmp_path / "sentrai.db", background=False, demo_speed=60.0)
     with TestClient(create_app(settings), headers=AUTH) as c:
         brute_force(c)
         assert c.get("/incidents/RSK-2026-081").json()["owner"] == settings.on_duty
@@ -155,3 +155,65 @@ def test_the_sample_routing_file_loads():
     assert r.source == str(path) and r.by_role("team_lead", "?") == "Lee (team lead)"
     assert r.route({"host": "db-01", "severity": "high"}).owner.name == "Dana (database)"
     assert r.route({"host": "web-01", "severity": "medium"}).rule == "Everything else"
+
+
+# ------------------------------------------------------- editing from the dashboard (POST /routing)
+
+def test_saving_new_routing_writes_the_file_and_routes_the_next_incident(tmp_path):
+    c = routed_client(tmp_path)
+    new = json.loads(json.dumps(ROUTING))
+    new["contacts"]["sam"] = {"name": "Sam", "email": "sam@example.test", "backup": "lee"}
+    new["rules"].insert(0, {"name": "Web logins", "match": {"category": ["brute_force"]}, "owner": "sam",
+                            "notify": ["lee", "sam"]})
+    r = c.post("/routing", json={"operator": "Erick", "routing": new})
+    assert r.status_code == 200, r.text
+    saved = json.loads((tmp_path / "routing.json").read_text(encoding="utf-8"))
+    assert saved["rules"][0] == {"name": "Web logins", "match": {"category": ["brute_force"]}, "owner": "sam",
+                                 "notify": ["lee"]}  # the owner is not also "told"
+    assert [x["name"] for x in r.json()["contacts"]][-1] == "Sam"
+    brute_force(c)
+    inc = c.get("/incidents/RSK-2026-081").json()
+    assert (inc["owner"], inc["backup"], inc["route"]) == ("Sam", "Lee", "Web logins")
+    changed = [x for x in c.core.audit.records() if x["type"] == "routing_changed"]
+    assert changed and changed[-1]["data"]["added"] == ["Sam"] and changed[-1]["data"]["operator"] == "Erick"
+
+
+def test_removing_a_person_updates_the_role_names(tmp_path):
+    c = routed_client(tmp_path)
+    new = json.loads(json.dumps(ROUTING))
+    del new["contacts"]["dba"]
+    new["rules"] = [r for r in new["rules"] if r["owner"] != "dba"]
+    new["contacts"]["amir"]["name"] = "Amir Q"
+    assert c.post("/routing", json={"operator": "Erick", "routing": new}).status_code == 200
+    assert c.core.settings.on_duty == "Amir Q"
+    assert "Dana" not in [x["name"] for x in c.get("/routing").json()["contacts"]]
+
+
+def test_bad_routing_is_refused_and_nothing_is_written(tmp_path):
+    c = routed_client(tmp_path)
+    before = (tmp_path / "routing.json").read_text(encoding="utf-8")
+    bad = json.loads(json.dumps(ROUTING))
+    bad["rules"][0]["owner"] = "nobody"
+    r = c.post("/routing", json={"operator": "Erick", "routing": bad})
+    assert r.status_code == 400 and "owner" in r.json()["detail"]
+    for broken, word in (({"contacts": {}}, "at least one"),
+                         ({**ROUTING, "rules": [{"name": "X", "match": {"category": "hacking"}, "owner": "amir"}]},
+                          "unknown category"),
+                         ({**ROUTING, "contacts": {**ROUTING["contacts"], "x": {"name": "amir"}}}, "two people"),
+                         ({**ROUTING, "contacts": {"a": {"name": "A", "backup": "zed"}}, "rules": []}, "backup")):
+        r = c.post("/routing", json={"operator": "Erick", "routing": broken})
+        assert r.status_code == 400 and word in r.json()["detail"], (word, r.text)
+    assert (tmp_path / "routing.json").read_text(encoding="utf-8") == before
+
+
+def test_saving_routing_needs_the_token(tmp_path):
+    c = routed_client(tmp_path)
+    r = c.post("/routing", json={"operator": "x", "routing": ROUTING}, headers={"Authorization": "Bearer nope"})
+    assert r.status_code == 401
+
+
+def test_saved_routing_starts_from_defaults_when_there_was_no_file(client, tmp_path):
+    out = client.post("/routing", json={"operator": "Erick", "routing": {
+        "contacts": {c["id"]: c for c in client.get("/routing").json()["contacts"]},
+        "rules": [{"name": "Everything else", "match": {}, "owner": "on_duty"}]}})
+    assert out.status_code == 200 and out.json()["source"].endswith("routing.json")

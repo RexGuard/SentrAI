@@ -1,13 +1,13 @@
 """Backups: copy chosen folders (and SentrAI's own data) on a schedule, so a damaged system can be put back.
 
 What is copied:
-* The folders named in ``backup.paths`` in the system profile (or ``CACTAI_BACKUP_PATHS``, separated
+* The folders named in ``backup.paths`` in the system profile (or ``SENTRAI_BACKUP_PATHS``, separated
   by the OS path separator): a website, a game server, an upload folder.
 * SentrAI's own data, always (``backup.include_sentrai`` false turns it off): the settings file, the
   data folder (protection switch, signing key, threat state) and a consistent snapshot of the audit
   database taken with SQLite's own backup call, so it is never copied half-written.
 
-Each backup is one ``.tar.gz`` in ``backups`` beside the database (``CACTAI_BACKUP_DIR``) with a ``manifest.json``
+Each backup is one ``.tar.gz`` in ``backups`` beside the database (``SENTRAI_BACKUP_DIR``) with a ``manifest.json``
 inside listing every file and its SHA-256, plus a ``.json`` note beside it. The archive's SHA-256 is
 written to the audit trail, so a backup that was swapped or edited later fails ``verify``. Archives
 and notes are readable by this account only (they hold the settings file and the signing key).
@@ -40,7 +40,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Iterator
 
 from .config import CORE_DIR
-import cactai_config
+import sentrai_config
 from . import procscan
 from .procscan import hide_home
 
@@ -103,14 +103,14 @@ class BackupWatch:
 
     # ------------------------------------------------------------ settings
     def config(self) -> dict[str, Any]:
-        """``backup`` from the system profile; CACTAI_BACKUP_* fill in what the profile leaves out."""
+        """``backup`` from the system profile; SENTRAI_BACKUP_* fill in what the profile leaves out."""
         profile = getattr(self.core, "profile", None) or {}
         cfg = dict(profile.get("backup") or {})
         env = os.environ
-        if not cfg.get("paths") and env.get("CACTAI_BACKUP_PATHS"):
-            cfg["paths"] = [p for p in env["CACTAI_BACKUP_PATHS"].split(os.pathsep) if p.strip()]
-        for key, name in (("every_hours", "CACTAI_BACKUP_EVERY_HOURS"), ("keep", "CACTAI_BACKUP_KEEP"),
-                          ("copy_to", "CACTAI_BACKUP_COPY_TO")):
+        if not cfg.get("paths") and env.get("SENTRAI_BACKUP_PATHS"):
+            cfg["paths"] = [p for p in env["SENTRAI_BACKUP_PATHS"].split(os.pathsep) if p.strip()]
+        for key, name in (("every_hours", "SENTRAI_BACKUP_EVERY_HOURS"), ("keep", "SENTRAI_BACKUP_KEEP"),
+                          ("copy_to", "SENTRAI_BACKUP_COPY_TO")):
             if cfg.get(key) in (None, "") and env.get(name, "").strip():
                 cfg[key] = env[name].strip()
         return cfg
@@ -139,7 +139,7 @@ class BackupWatch:
 
     def _dir(self) -> Path:
         """Next to the database by default: the one place a hardened install lets the core write."""
-        return Path(os.environ.get("CACTAI_BACKUP_DIR") or self._data_dir() / "backups")
+        return Path(os.environ.get("SENTRAI_BACKUP_DIR") or self._data_dir() / "backups")
 
     # ------------------------------------------------------------- listing
     def _metas(self) -> list[dict[str, Any]]:
@@ -267,7 +267,7 @@ class BackupWatch:
                 snap = snap_dir / db.name
                 self._snapshot_db(snap)
                 plan.append((snap, f"sentrai/data/{db.name}"))
-                conf = cactai_config.config_path()
+                conf = sentrai_config.config_path()
                 if conf.is_file():
                     plan.append((conf, "sentrai/config.json"))
             if not plan:
@@ -338,7 +338,7 @@ class BackupWatch:
                 shutil.rmtree(snap_dir, ignore_errors=True)
 
     def _quarantine_dir(self) -> Path:
-        return Path(os.environ.get("CACTAI_QUARANTINE", str(CORE_DIR / "data" / "quarantine")))
+        return Path(os.environ.get("SENTRAI_QUARANTINE", str(CORE_DIR / "data" / "quarantine")))
 
     def _snapshot_db(self, target: Path) -> None:
         """A consistent copy of the audit database while it stays in use (SQLite's online backup)."""

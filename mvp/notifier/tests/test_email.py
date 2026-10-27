@@ -17,7 +17,7 @@ INCIDENT = {"id": "INC-7", "category": "brute_force", "host": "portal", "status"
             "severity": "high", "ai_confidence": 0.91, "classified_by": "rules",
             "recommended_action": "block_ip 203.0.113.9", "inaction_penalty": 10, "sla_breached": True}
 ENV = {"SMTP_HOST": "smtp.example.test", "ALERT_EMAIL_TO": "soc@example.test, lead@example.test",
-       "SMTP_USER": "cactai@example.test", "SMTP_PASSWORD": "pw"}
+       "SMTP_USER": "sentrai@example.test", "SMTP_PASSWORD": "pw"}
 
 
 class FakeSMTP:
@@ -64,8 +64,8 @@ def test_config_defaults_from_env():
     cfg = EmailConfig.from_env(ENV)
     assert cfg.port == 587 and cfg.security == "starttls" and cfg.mode == "backup"
     assert cfg.recipients == ("soc@example.test", "lead@example.test")
-    assert cfg.sender == "cactai@example.test"
-    ssl_cfg = EmailConfig.from_env(ENV | {"SMTP_SECURITY": "ssl", "SMTP_PORT": "", "CACTAI_EMAIL_MODE": "bogus"})
+    assert cfg.sender == "sentrai@example.test"
+    ssl_cfg = EmailConfig.from_env(ENV | {"SMTP_SECURITY": "ssl", "SMTP_PORT": "", "SENTRAI_EMAIL_MODE": "bogus"})
     assert ssl_cfg.port == 465 and ssl_cfg.mode == "backup"
 
 
@@ -83,7 +83,7 @@ def test_send_uses_starttls_login_and_both_parts():
     send_email(cfg, build_message(cfg, NOTE, INCIDENT, None))
     conn, msg = FakeSMTP.sent[0]
     assert (conn.host, conn.port) == ("smtp.example.test", 587)
-    assert conn.calls == ["starttls", ("login", "cactai@example.test")]
+    assert conn.calls == ["starttls", ("login", "sentrai@example.test")]
     assert msg["To"] == "soc@example.test, lead@example.test"
     assert [p.get_content_type() for p in msg.iter_parts()] == ["text/plain", "text/html"]
 
@@ -113,7 +113,7 @@ def test_backup_mode_emails_only_when_telegram_fails():
 
 
 def test_always_mode_sends_both_and_survives_email_failure():
-    email = email_sender(EmailConfig.from_env(ENV | {"CACTAI_EMAIL_MODE": "always"}))
+    email = email_sender(EmailConfig.from_env(ENV | {"SENTRAI_EMAIL_MODE": "always"}))
     channel, mid = with_email(ok_telegram, "telegram", email, always=True)(NOTE, INCIDENT, None)
     assert channel == "telegram+email" and mid.startswith("4242 email-")
     FakeSMTP.fail = True

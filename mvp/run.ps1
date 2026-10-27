@@ -13,19 +13,24 @@
 .EXAMPLE
   .\run.ps1                     # real time: one real hour is one hour on the timers
   .\run.ps1 -Speed 60           # faster timers for testing (1 real minute = 1 hour)
-  .\run.ps1 -CoreBind 0.0.0.0   # let machines on the network reach the core (agents joining this panel); private networks only
-  .\run.ps1 -CorePort 8100      # when 8000 is taken (or set CACTAI_CORE_PORT / CACTAI_DASHBOARD_PORT)
+  .\run.ps1 -CoreBind 0.0.0.0   # let machines on the network reach the core (agents joining this panel); private networks only (or set SENTRAI_CORE_HOST)
+  .\run.ps1 -CorePort 8100      # when 8000 is taken (or set SENTRAI_CORE_PORT / SENTRAI_DASHBOARD_PORT)
 #>
 param(
     [Alias("DemoSpeed")] [double]$Speed = $(if ($env:DEMO_SPEED) { [double]$env:DEMO_SPEED } else { 1 }),
     [switch]$NoDashboard,
     [switch]$NoBrowser,
-    [string]$CoreBind = $(if ($env:CACTAI_CORE_HOST) { $env:CACTAI_CORE_HOST } else { "127.0.0.1" }),
-    [int]$CorePort = $(if ($env:CACTAI_CORE_PORT) { [int]$env:CACTAI_CORE_PORT } else { 8000 }),
-    [int]$DashboardPort = $(if ($env:CACTAI_DASHBOARD_PORT) { [int]$env:CACTAI_DASHBOARD_PORT } else { 8501 })
+    [string]$CoreBind = $(if ($env:SENTRAI_CORE_HOST) { $env:SENTRAI_CORE_HOST } elseif ($env:CACTAI_CORE_HOST) { $env:CACTAI_CORE_HOST } else { "127.0.0.1" }),
+    [int]$CorePort = $(if ($env:SENTRAI_CORE_PORT) { [int]$env:SENTRAI_CORE_PORT } elseif ($env:CACTAI_CORE_PORT) { [int]$env:CACTAI_CORE_PORT } else { 8000 }),
+    [int]$DashboardPort = $(if ($env:SENTRAI_DASHBOARD_PORT) { [int]$env:SENTRAI_DASHBOARD_PORT } elseif ($env:CACTAI_DASHBOARD_PORT) { [int]$env:CACTAI_DASHBOARD_PORT } else { 8501 })
 )
 
 $ErrorActionPreference = "Stop"
+# Settings named before the CactAI -> SentrAI rename still count: CACTAI_X fills in an unset SENTRAI_X.
+Get-ChildItem env: | Where-Object { $_.Name -like "CACTAI_*" } | ForEach-Object {
+    $new = "SENTRAI_" + $_.Name.Substring(7)
+    if (-not (Test-Path "env:$new")) { Set-Item "env:$new" $_.Value }
+}
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $PidFile = Join-Path $Root ".run_pids.json"
 if ($CorePort -eq $DashboardPort) {
@@ -82,23 +87,23 @@ $pyNotif = Ensure-Venv "notifier"
 
 # First run on this machine: ask for the settings (logs, rules, responder, alerts) once.
 # Every component reads the saved file itself; explicit env vars below still win.
-& $pyLab (Join-Path $Root "cactai_config.py")
+& $pyLab (Join-Path $Root "sentrai_config.py")
 if ($LASTEXITCODE -ne 0) { exit 1 }
 
 # The core API token (made and saved on first use). Every window gets the same one.
-$env:CACTAI_API_TOKEN = (& $pyLab (Join-Path $Root "cactai_config.py") token | Select-Object -Last 1).Trim()
-if (-not $env:CACTAI_API_TOKEN) { Write-Host "Could not read the API token (python cactai_config.py token)." -ForegroundColor Red; exit 1 }
+$env:SENTRAI_API_TOKEN = (& $pyLab (Join-Path $Root "sentrai_config.py") token | Select-Object -Last 1).Trim()
+if (-not $env:SENTRAI_API_TOKEN) { Write-Host "Could not read the API token (python sentrai_config.py token)." -ForegroundColor Red; exit 1 }
 # Who may sign in to the dashboard; on a new machine, a one-time setup code for creating the Owner.
-$signIn = & $pyLab (Join-Path $Root "cactai_config.py") admin
+$signIn = & $pyLab (Join-Path $Root "sentrai_config.py") admin
 if ($LASTEXITCODE -ne 0) { Write-Host "Could not set up the dashboard sign-in." -ForegroundColor Red; exit 1 }
-$authHeader = @{ Authorization = "Bearer $($env:CACTAI_API_TOKEN)" }
+$authHeader = @{ Authorization = "Bearer $($env:SENTRAI_API_TOKEN)" }
 
 # Shared environment for every child window.
 $env:PYTHONUTF8 = "1"
 $env:PYTHONIOENCODING = "utf-8"
 $env:DEMO_SPEED = "$Speed"
-$env:CACTAI_CORE_URL = $Core
-if (-not $env:CACTAI_PUBLIC_URL) { $env:CACTAI_PUBLIC_URL = $Core }
+$env:SENTRAI_CORE_URL = $Core
+if (-not $env:SENTRAI_PUBLIC_URL) { $env:SENTRAI_PUBLIC_URL = $Core }
 
 $started = @()
 

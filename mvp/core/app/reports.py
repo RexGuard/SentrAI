@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 from .clock import fmt_demo_hours, fmt_offset
 from .pdfdoc import ACCENT, BLACK, BOLD, EDGE, MONO, MUTED, PAGE_W, SOFT_ON_DARK, Column, PdfDoc, text_width
 from .saguaro import public
+from .summary import PLAIN_ACTIONS, plain_names, plain_title
 
 if TYPE_CHECKING:
     from .saguaro import Saguaro
@@ -79,10 +80,14 @@ def build_report(core: "Saguaro", iid: str) -> dict[str, Any]:
                 line = f"Delivered {n['delivered_at']} via {n['channel']} (message_id {n['message_id']}) to {', '.join(n['recipients'])}, {ack_text}"
             else:
                 line = f"Queued {n['created_at']} for {', '.join(n['recipients'])}; not delivered yet, no proof of delivery"
+            reached = _reached(n)
+            if any(d.get("to") for d in n.get("deliveries") or []):
+                # Sent to people one by one: say exactly who got it where, not one channel for everyone.
+                line = f"For {', '.join(n['recipients'])}. Delivered: {'; '.join(reached)}. {ack_text}"
             deliveries.append({"notification": n["id"], "kind": n["kind"], "recipients": n["recipients"],
                                "created_at": n["created_at"], "delivered": n["delivered"],
                                "delivered_at": n["delivered_at"], "channel": n["channel"],
-                               "message_id": n["message_id"], "line": line})
+                               "message_id": n["message_id"], "reached": reached, "line": line})
 
         chain_valid, bad_seq = core.audit.verify()
         records = [r for r in core.audit.records() if r["data"].get("incident") == iid]
@@ -98,6 +103,10 @@ def build_report(core: "Saguaro", iid: str) -> dict[str, Any]:
             approvals.append({"ts": d.get("at"), "by": d.get("operator"), "decision": d.get("decision"),
                               "note": d.get("justification") or ""})
         approvals.sort(key=lambda a: a["ts"] or "")
+        handling = _handling(inc, records, deliveries)
+        plain = _plain_words(inc, s, auto, op, breached)
+        if handling["story"]:
+            plain["story"] += " " + handling["story"]
         report = {
             "report_id": f"ER-{iid}",
             "title": "Security Evidence Report",
@@ -106,7 +115,19 @@ def build_report(core: "Saguaro", iid: str) -> dict[str, Any]:
             "incident": {k: inc[k] for k in (
                 "category", "severity", "status", "host", "layer", "src_ip", "user", "opened_at", "classified_by",
                 "ai_confidence", "base_points", "points", "inaction_penalty", "recommended_action", "explanation")},
-            "responsible_entity": s.on_duty,
+            "in_plain_words": plain["story"],
+            "outcome": plain["outcome"],
+            "next_steps": list(inc.get("next_steps") or []),
+            "how_to_check": [
+                "Every line of this report comes from the activity record on the server. Each record holds a "
+                "fingerprint of the one before it, so a changed or deleted record breaks every one after it.",
+                "Your technical staff can re-check the whole record at any time (GET /audit, or GET /audit/verify "
+                "with a fingerprint line from any alert you received).",
+                "Each alert carried a fingerprint off the server when it was sent. If the server's record was "
+                "rebuilt later, those fingerprints no longer match.",
+            ],
+            "responsible_entity": inc.get("owner") or s.on_duty,
+            "handling": handling,
             "sla": {
                 "policy_hours": s.sla_hours,
                 "time_unaddressed_demo_hours": round(unaddressed, 2),
@@ -147,7 +168,135 @@ def build_report(core: "Saguaro", iid: str) -> dict[str, Any]:
         return report
 
 
+CHANNEL_WORDS = {"telegram-direct": "directly in Telegram", "telegram": "in the team Telegram group",
+                 "email": "by email", "console": "on the console"}
+
+
+def _reached(n: dict[str, Any]) -> list[str]:
+    """Each place one alert landed: a person's own chat, the group, email (from the delivery receipts)."""
+    out = []
+    for d in n.get("deliveries") or []:
+        for ch in str(d.get("channel") or "").split("+"):
+            where = CHANNEL_WORDS.get(ch, f"via {ch}")
+            out.append(f"{d['to']} {where} at {d.get('delivered_at')}" if d.get("to")
+                       else f"{where} at {d.get('delivered_at')}")
+    return out
+
+
+def _handling(inc: dict[str, Any], records: list[dict[str, Any]], deliveries: list[dict[str, Any]]) -> dict[str, Any]:
+    """Who owned the incident, who it was handed to and why, and who closed it, from the audit records.
+
+    Every step is a hash-chained record, so this part of the report can be checked like the rest."""
+    history: list[dict[str, Any]] = []
+    first_owner = None
+    for r in records:
+        d, kind, text = r["data"], r["type"], ""
+        if kind == "incident_opened" and d.get("owner"):
+            first_owner = d["owner"]
+            told = f"; also told: {', '.join(d['notify'])}" if d.get("notify") else ""
+            text = f"Given to {d['owner']} by the routing rule \"{d.get('route') or '?'}\"" + \
+                   (f" (backup: {d['backup']})" if d.get("backup") else "") + told
+        elif kind == "incident_assigned":
+            took = str(d.get("operator") or "").lower().lstrip("@") == str(d.get("to") or "").lower().lstrip("@")
+            text = (f"Taken by {d.get('to')}" if took else f"Handed from {d.get('from') or 'nobody'} to {d.get('to')} "
+                    f"by {d.get('operator')}") + (f": {d['note']}" if d.get("note") else "")
+        elif kind == "incident_escalated":
+            text = f"Escalated from {d.get('from')} to the backup {d.get('to')} (level {d.get('level')}): {d.get('why')}"
+        elif kind == "acknowledged":
+            text = f"Acknowledged by {d.get('operator')} via {d.get('channel')}"
+        elif kind == "decision" and d.get("decision") == "reject":
+            text = f"Closed as not a real threat by {d.get('operator')}: {d.get('justification')}"
+        elif kind == "incident_resolved":
+            text = f"Resolved by {d.get('operator')}: {d.get('note')}"
+        elif kind == "incident_auto_closed":
+            text = f"Closed automatically after {d.get('quiet_minutes')} quiet minutes"
+        if text:
+            history.append({"ts": r["ts"], "seq": r["seq"], "kind": kind, "event": text})
+
+    escalations = list(inc.get("escalations") or [])
+    status = inc.get("status")
+    if status == "resolved":
+        resolution = {"by": inc.get("resolved_by"), "at": inc.get("closed_at"), "note": inc.get("resolution") or
+                      ("closed automatically: no new events" if inc.get("resolved_by") == "auto-close" else "")}
+    elif status == "rejected":
+        rej = next((h for h in reversed(history) if h["kind"] == "decision"), None)
+        resolution = {"by": (inc.get("decisions") or [{}])[-1].get("operator"), "at": inc.get("closed_at"),
+                      "note": rej["event"] if rej else "rejected"}
+    else:
+        resolution = None
+    direct = sorted({line.split(" directly in Telegram")[0] for d in deliveries for line in d.get("reached") or []
+                     if " directly in Telegram" in line})
+
+    story = []
+    if first_owner and inc.get("route"):
+        story.append(f"It was given to {first_owner} under the rule \"{inc['route']}\".")
+    for e in escalations:
+        story.append(f"{e.get('from')} did not answer, so it moved to the backup, {e.get('to')}.")
+    if direct:
+        story.append(f"Alerts reached {', '.join(direct)} in their own Telegram chat.")
+    if resolution and resolution.get("by") and resolution["by"] != "auto-close":
+        note = str(resolution.get("note") or "").rstrip(".") if status == "resolved" else ""
+        story.append(f"{resolution['by']} closed it" + (f": {note}." if note else "."))
+    return {
+        "owner": inc.get("owner"),
+        "backup": inc.get("backup"),
+        "route": inc.get("route"),
+        "assigned_by": inc.get("assigned_by"),
+        "assigned_at": inc.get("assigned_at"),
+        "also_told": list(inc.get("notify") or []),
+        "escalation_level": int(inc.get("escalation_level") or 0),
+        "escalations": escalations,
+        "resolution": resolution,
+        "reached_directly": direct,
+        "history": history,
+        "story": " ".join(story),
+    }
+
+
+def _handling_rows(h: dict[str, Any]) -> list[list[str]]:
+    res = h["resolution"]
+    return [
+        ["Owner now", f"{h['owner'] or 'nobody'}" + (f" (backup: {h['backup']})" if h["backup"] else "")],
+        ["Routing rule", h["route"] or "-"],
+        ["Escalations", str(h["escalation_level"]) if h["escalation_level"] else "None"],
+        ["Reached directly", ", ".join(h["reached_directly"]) or "Nobody (team group or email only)"],
+        ["Closed", f"{res['by']} at {_ts(res['at'])}: {res['note']}" if res else "Not yet"],
+    ]
+
+
+def _plain_words(inc: dict[str, Any], s: Any, auto: list, op: list, breached: bool) -> dict[str, str]:
+    """The incident in two or three everyday sentences, and where it stands now (plan items 2 and 11)."""
+    where = f" on {inc['host']}" if inc.get("host") else ""
+    who = f" from {inc['src_ip']}" if inc.get("src_ip") else ""
+    story = [f"{plain_title(inc['category'])}{where}{who}, first seen {inc['opened_at'].replace('T', ' ')[:16]}."]
+    steps = sorted({PLAIN_ACTIONS.get(a["type"], a["type"].replace("_", " ")) for a in auto or op})
+    if auto:
+        story.append(f"Nobody had responded and the risk was high, so SentrAI stepped in on its own: it "
+                     f"{' and '.join(steps)}, for {s.ttl_hours:g} hours only, and each step can be undone.")
+    elif op:
+        story.append(f"Your staff approved the protective steps: SentrAI {' and '.join(steps)}.")
+    else:
+        story.append("No protective step was taken.")
+    if inc["acked"]:
+        story.append(f"{inc['acked_by']} responded" + (" after the agreed response time had passed." if breached
+                                                       else " within the agreed response time."))
+    else:
+        story.append("Nobody has responded yet" + (f", and the agreed response time ({s.sla_hours:g} h) has passed."
+                                                   if breached else "."))
+    status = inc["status"]
+    if status == "resolved":
+        outcome = f"Closed{' at ' + str(inc.get('closed_at')).replace('T', ' ')[:16] if inc.get('closed_at') else ''}."
+    elif status == "rejected":
+        outcome = "Closed by your staff as not a real threat."
+    elif status == "contained":
+        outcome = "Contained: the protective steps are in force until they expire or your staff decide."
+    else:
+        outcome = "Still open: it needs a decision from your staff."
+    return {"story": " ".join(story), "outcome": outcome}
+
+
 def render_markdown(r: dict[str, Any]) -> str:
+    r = plain_names(r)
     inc = r["incident"]
     fa, nr, chain_ok = r["forced_action"], r["non_repudiation"], r["audit_proof"]["chain_valid"]
     status = " · ".join([
@@ -166,6 +315,18 @@ def render_markdown(r: dict[str, Any]) -> str:
         f"**Report:** {r['report_id']}  ",
         f"**Incident:** {r['incident_id']} ({inc['category']}, {inc['severity']}, status {inc['status']})  ",
         f"**Generated:** {r['generated_at']}",
+        "",
+        "## In plain words",
+        "",
+        r["in_plain_words"],
+        "",
+        f"**Where it stands:** {r['outcome']}",
+        "",
+        "**What to do next:**",
+        "",
+        *[f"{n}. {t}" for n, t in enumerate(r["next_steps"], 1)],
+        "",
+        "## The record",
         "",
         "| Report Field | Value |",
         "| --- | --- |",
@@ -192,6 +353,12 @@ def render_markdown(r: dict[str, Any]) -> str:
     for t in r["timeline_of_inaction"]:
         pts = "" if t["points"] is None else (f"+{t['points']:g}" if t["points"] >= 0 else f"{t['points']:g}")
         lines.append(f"| {t['ts']} | {t['demo_time']} | {t['event'].replace('|', '/')} | {pts} |")
+    h = r["handling"]
+    lines += ["", "## Who handled it", "", "| | |", "| --- | --- |"]
+    lines += [f"| {k} | {str(v).replace('|', '/')} |" for k, v in _handling_rows(h)]
+    if h["history"]:
+        lines += ["", "| Time | Step | Record |", "| --- | --- | --- |"]
+        lines += [f"| {e['ts']} | {e['event'].replace('|', '/')} | #{e['seq']} |" for e in h["history"]]
     lines += ["", "## Alerts and acknowledgement (non-repudiation)", ""]
     if r["non_repudiation"]["deliveries"]:
         for d in r["non_repudiation"]["deliveries"]:
@@ -215,6 +382,7 @@ def render_markdown(r: dict[str, Any]) -> str:
         lines += [f"- {line}" for line in action_outcomes(r["forced_action"]["actions"])]
     else:
         lines.append("None.")
+    lines += ["", "## How to check this report", ""] + [f"- {t}" for t in r["how_to_check"]]
     lines += ["", "## Hash-chain proof", "", "| Seq | Time | Type | Agent | Hash |", "| --- | --- | --- | --- | --- |"]
     for rec in r["audit_proof"]["records"]:
         lines.append(f"| {rec['seq']} | {rec['ts']} | {rec['type']} | {rec['agent']} | `{rec['hash'][:16]}...` |")
@@ -249,6 +417,7 @@ def _ts(ts: Any) -> str:
 
 def render_pdf(r: dict[str, Any]) -> bytes:
     """The same content as the Markdown report, laid out for printing and sharing."""
+    r = plain_names(r)
     inc = r["incident"]
     proof = r["audit_proof"]
     doc = PdfDoc(title=f"{r['title']} {r['report_id']}",
@@ -278,6 +447,15 @@ def render_pdf(r: dict[str, Any]) -> bytes:
          else "Operator" if r["forced_action"]["actions"] else "None", ACCENT),
         ("Audit chain", "Valid" if chain_ok else "Broken", GREEN if chain_ok else RED),
     ])
+    doc.heading("In plain words")
+    doc.paragraph(r["in_plain_words"], size=10)
+    doc.paragraph(f"Where it stands: {r['outcome']}", BOLD, 9.5)
+    if r["next_steps"]:
+        doc.paragraph("What to do next:", BOLD, 9.5)
+        for t in r["next_steps"]:
+            doc.bullet(t)
+
+    doc.heading("The record")
     doc.table([Column("Field", 1.1, BOLD), Column("Record", 3.4)], [
         ["Responsible entity", r["responsible_entity"]],
         ["SLA", r["sla"]["summary"]],
@@ -300,6 +478,13 @@ def render_pdf(r: dict[str, Any]) -> bytes:
         pts = "" if t["points"] is None else (f"+{t['points']:g}" if t["points"] >= 0 else f"{t['points']:g}")
         rows.append([_ts(t["ts"]), t["demo_time"], t["event"], pts])
     doc.table([Column("Time", 1.2), Column("Elapsed", 0.7), Column("Event", 3.75), Column("Points", 0.5)], rows)
+
+    doc.heading("Who handled it")
+    h = r["handling"]
+    doc.table([Column("Field", 1.1, BOLD), Column("Record", 3.4)], _handling_rows(h), size=9)
+    if h["history"]:
+        doc.table([Column("Time", 1.2), Column("Step", 4.3), Column("Record", 0.6)],
+                  [[_ts(e["ts"]), e["event"], f"#{e['seq']}"] for e in h["history"]], size=8.5)
 
     doc.heading("Alerts and acknowledgement")
     if r["non_repudiation"]["deliveries"]:
@@ -329,6 +514,10 @@ def render_pdf(r: dict[str, Any]) -> bytes:
             doc.bullet(line)
     else:
         doc.paragraph("None.")
+
+    doc.heading("How to check this report")
+    for t in r["how_to_check"]:
+        doc.bullet(t, size=9)
 
     doc.heading("Hash-chain proof")
     doc.paragraph("Each audit record stores the hash of the one before it, so changing or deleting any record breaks "

@@ -2,11 +2,11 @@
 
   python -m app.serve            (from mvp/core; the systemd unit runs this)
 
-  CACTAI_CORE_HOST / CACTAI_CORE_PORT    the local API as before (default 127.0.0.1:8000): the dashboard,
+  SENTRAI_CORE_HOST / SENTRAI_CORE_PORT    the local API as before (default 127.0.0.1:8000): the dashboard,
                                          collector and notifier on this machine talk to it
-  CACTAI_PANEL_PORT                      the agents' HTTPS port (off when empty; install.sh --panel uses 8443)
-  CACTAI_PANEL_HOST                      its address (default 0.0.0.0)
-  CACTAI_PANEL_CERT / CACTAI_PANEL_KEY   its certificate and key (install.sh --panel makes a self-signed pair;
+  SENTRAI_PANEL_PORT                      the agents' HTTPS port (off when empty; install.sh --panel uses 8443)
+  SENTRAI_PANEL_HOST                      its address (default 0.0.0.0)
+  SENTRAI_PANEL_CERT / SENTRAI_PANEL_KEY   its certificate and key (install.sh --panel makes a self-signed pair;
                                          agents pin it, so it need not come from a public authority)
 
 The agents' listener only answers what a machine key may do (main.AGENT_ROUTES) plus /fleet/enrol and
@@ -64,16 +64,16 @@ class _Follower(uvicorn.Server):
 
 
 def panel_config(app: Any, env: dict[str, str]) -> uvicorn.Config | None:
-    port = (env.get("CACTAI_PANEL_PORT") or "").strip()
+    port = (env.get("SENTRAI_PANEL_PORT") or "").strip()
     if not port or port in ("0", "off"):
         return None
-    cert, key = (env.get("CACTAI_PANEL_CERT") or "").strip(), (env.get("CACTAI_PANEL_KEY") or "").strip()
+    cert, key = (env.get("SENTRAI_PANEL_CERT") or "").strip(), (env.get("SENTRAI_PANEL_KEY") or "").strip()
     if not (cert and key):
-        raise SystemExit("CACTAI_PANEL_PORT is set but CACTAI_PANEL_CERT / CACTAI_PANEL_KEY are not: agents only "
+        raise SystemExit("SENTRAI_PANEL_PORT is set but SENTRAI_PANEL_CERT / SENTRAI_PANEL_KEY are not: agents only "
                          "talk HTTPS (sudo ./deploy/install.sh --panel makes a certificate)")
     from .main import AGENT_ROUTES
 
-    return uvicorn.Config(agents_only(app, AGENT_ROUTES), host=env.get("CACTAI_PANEL_HOST") or "0.0.0.0",
+    return uvicorn.Config(agents_only(app, AGENT_ROUTES), host=env.get("SENTRAI_PANEL_HOST") or "0.0.0.0",
                           port=int(port), ssl_certfile=cert, ssl_keyfile=key, lifespan="off",
                           proxy_headers=False, server_header=False)
 
@@ -82,8 +82,8 @@ async def serve(env: dict[str, str] | None = None) -> None:
     env = dict(os.environ if env is None else env)
     from .main import app
 
-    local = uvicorn.Server(uvicorn.Config(app, host=env.get("CACTAI_CORE_HOST") or "127.0.0.1",
-                                          port=int(env.get("CACTAI_CORE_PORT") or 8000)))
+    local = uvicorn.Server(uvicorn.Config(app, host=env.get("SENTRAI_CORE_HOST") or "127.0.0.1",
+                                          port=int(env.get("SENTRAI_CORE_PORT") or 8000)))
     cfg = panel_config(app, env)
     if cfg is None:
         await local.serve()

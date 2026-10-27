@@ -12,22 +12,22 @@ opened on the machine. Every call checks the panel's certificate against the pin
 join code (pinning.py), so a self-signed panel needs no certificate file and a look-alike is refused.
 
 If the panel cannot be reached:
-  * blocks already in place stay for CACTAI_AGENT_OFFLINE_HOLD_H hours (default 24) and are then
+  * blocks already in place stay for SENTRAI_AGENT_OFFLINE_HOLD_H hours (default 24) and are then
     removed, so a lost panel never leaves a block in force forever
   * the logs wait in the collector and are sent when the panel answers again
   * after 30 s, local rules (offline.py) score the logs here and block clear attacks for an hour at a
     time; when the panel is back it gets a report of every local block
 
   python -m agent join --panel https://panel.example.com:8443 --code ABCD-EFGH-JKLM --pin sha256:... [--name web-01]
-  python -m agent run                 send logs and enforce blocks (dry run unless CACTAI_FIREWALL_ENFORCE=1)
+  python -m agent run                 send logs and enforce blocks (dry run unless SENTRAI_FIREWALL_ENFORCE=1)
   python -m agent status              what this machine joined as, and what it has blocked
   python -m agent pin [sha256:...]    show the panel's pin, or set a new one after its certificate was renewed
 
-Settings: CACTAI_FIREWALL (auto | nftables | iptables | netsh | off), CACTAI_FIREWALL_ENFORCE (0 = only
+Settings: SENTRAI_FIREWALL (auto | nftables | iptables | netsh | off), SENTRAI_FIREWALL_ENFORCE (0 = only
 log the commands), PROTECTED_IPS (never blocked; the panel's own address is always added),
-CACTAI_AGENT_FILE (where the key is kept, default next to the settings file, mode 0600),
-CACTAI_AGENT_CA (the panel's certificate file, instead of a pin), CACTAI_AGENT_LOCAL_RULES (on),
-CACTAI_AGENT_LOCAL_TTL_MIN (60), CACTAI_AGENT_LOCAL_MAX_PER_HOUR (10).
+SENTRAI_AGENT_FILE (where the key is kept, default next to the settings file, mode 0600),
+SENTRAI_AGENT_CA (the panel's certificate file, instead of a pin), SENTRAI_AGENT_LOCAL_RULES (on),
+SENTRAI_AGENT_LOCAL_TTL_MIN (60), SENTRAI_AGENT_LOCAL_MAX_PER_HOUR (10).
 """
 from __future__ import annotations
 
@@ -50,13 +50,13 @@ MVP_DIR = LAB_DIR.parent
 sys.path.insert(0, str(LAB_DIR))
 sys.path.append(str(MVP_DIR))
 sys.path.append(str(MVP_DIR / "core"))
-import cactai_config  # noqa: E402
+import sentrai_config  # noqa: E402
 from app import firewall, protect  # noqa: E402  (the core's firewall commands and safety checks)
 from agent import offline, pinning  # noqa: E402
 
 POLL_S = 5.0
 SERVICES_EVERY_S = 60.0
-OFFLINE_HOLD_H = float(os.environ.get("CACTAI_AGENT_OFFLINE_HOLD_H", "24") or 24)
+OFFLINE_HOLD_H = float(os.environ.get("SENTRAI_AGENT_OFFLINE_HOLD_H", "24") or 24)
 
 
 class AgentError(Exception):
@@ -64,8 +64,8 @@ class AgentError(Exception):
 
 
 def agent_file() -> Path:
-    env = os.environ.get("CACTAI_AGENT_FILE", "").strip()
-    return Path(env) if env else cactai_config.config_path().parent / "agent.json"
+    env = os.environ.get("SENTRAI_AGENT_FILE", "").strip()
+    return Path(env) if env else sentrai_config.config_path().parent / "agent.json"
 
 
 def load() -> dict[str, Any]:
@@ -112,7 +112,7 @@ def panel_ips(url: str) -> set[str]:
 
 
 def _verify(data: dict[str, Any]) -> str | bool:
-    return data.get("ca") or os.environ.get("CACTAI_AGENT_CA") or True
+    return data.get("ca") or os.environ.get("SENTRAI_AGENT_CA") or True
 
 
 def panel_session(data: dict[str, Any]) -> requests.Session:
@@ -125,14 +125,14 @@ def join(panel: str, code: str, name: str | None = None, allow_http: bool = Fals
          post: Callable[..., Any] | None = None, pin: str | None = None) -> dict[str, Any]:
     """Swap a one-time join code for this machine's own key and keep it in the agent file."""
     panel = check_panel_url(panel, allow_http)
-    host = (name or os.environ.get("CACTAI_HOST") or socket.gethostname() or "").strip()
+    host = (name or os.environ.get("SENTRAI_HOST") or socket.gethostname() or "").strip()
     try:
         pin = pinning.normalise(pin) if pin else None
     except pinning.PinError as exc:
         raise AgentError(str(exc)) from exc
     if pin and not panel.startswith("https://"):
         raise AgentError("--pin is for an https:// panel")
-    session = pinning.session(panel, pin, ca or os.environ.get("CACTAI_AGENT_CA") or True)
+    session = pinning.session(panel, pin, ca or os.environ.get("SENTRAI_AGENT_CA") or True)
     try:
         r = (post or session.post)(f"{panel}/fleet/enrol", json={"code": code, "host": host}, timeout=10,
                                    verify=session.verify)
@@ -192,7 +192,7 @@ class Enforcer:
             self.log.append(f"not blocking {ip}: {reason}")
             return False
         if self.backend is None:
-            self.log.append(f"would block {ip} (no firewall chosen: CACTAI_FIREWALL=off)")
+            self.log.append(f"would block {ip} (no firewall chosen: SENTRAI_FIREWALL=off)")
             return True
         add, check, _ = firewall.block_commands(self.backend, ip)
         if not self._setup():
@@ -226,8 +226,8 @@ class Enforcer:
 
 
 def make_enforcer(data: dict[str, Any], runner: firewall.Runner = firewall.run_command) -> Enforcer:
-    backend = firewall.resolve_backend(os.environ.get("CACTAI_FIREWALL", "auto"))
-    enforce = os.environ.get("CACTAI_FIREWALL_ENFORCE", "0").strip().lower() in ("1", "true", "yes", "on")
+    backend = firewall.resolve_backend(os.environ.get("SENTRAI_FIREWALL", "auto"))
+    enforce = os.environ.get("SENTRAI_FIREWALL_ENFORCE", "0").strip().lower() in ("1", "true", "yes", "on")
     protected = (protect.split(os.environ.get("PROTECTED_IPS", "127.0.0.1,::1,localhost"))
                  | protect.split(os.environ.get("INFRA_ALLOWLIST", "")) | panel_ips(data["panel"]))
     return Enforcer(backend, enforce, protected, runner, applied=data.get("blocked"), last_ok=data.get("last_ok"),
@@ -320,7 +320,7 @@ def run(data: dict[str, Any]) -> None:
     enforcer = make_enforcer(data)
     guard = make_guard(data, enforcer)
     mode = (f"{enforcer.backend}, {'enforcing' if enforcer.enforce else 'dry run'}" if enforcer.backend
-            else "no firewall (CACTAI_FIREWALL=off)")
+            else "no firewall (SENTRAI_FIREWALL=off)")
     trust = "pinned certificate" if data.get("pin") else ("plain http" if data["panel"].startswith("http:")
                                                            else "certificate authorities")
     print(f"[agent] {data['host']} -> {data['panel']} ({trust}; blocks: {mode}; "
@@ -369,7 +369,7 @@ def set_pin(data: dict[str, Any], pin: str | None) -> int:
     save(data)
     print(f"[agent] pin set to {data['pin']}" + ("" if data["pin"] == now else
           f"; note the panel shows {now} right now, so calls fail until they match"))
-    print("[agent] restart the agent to use it: systemctl restart cactai-agent")
+    print("[agent] restart the agent to use it: systemctl restart sentrai-agent")
     return 0
 
 

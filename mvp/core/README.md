@@ -40,26 +40,29 @@ Tests:
 | `AUTO_ACTIONS` | `block_ip,rate_limit,waf_rule` | Action types SentrAI may take on its own. Anything else (lock an account, kill a process, revoke access) waits for a person to approve it. Making any action permanent always needs a person. |
 | `MAX_AUTO_ACTIONS_PER_HOUR` | `10` | Business limit on automatic actions in any rolling hour; past it a person decides (0 = never act alone). |
 | `CHECK_AFTER_MIN` | `10` | After-action check, this many minutes after an action starts: did the target still get through, and did everyone else's traffic, server errors or the health page get worse? Problems are alerted to the on-duty person. |
-| `CACTAI_HEALTH_URL` | unset | A page that should keep answering while SentrAI blocks things (probed when an action starts and at its check). |
+| `SENTRAI_HEALTH_URL` | unset | A page that should keep answering while SentrAI blocks things (probed when an action starts and at its check). |
 | `UNDO_RETRY_S`, `UNDO_RETRIES` | `60`, `3` | A failed undo (the firewall rule or webhook did not confirm removal) is retried this often, this many times, then left to a person. Every undo is recorded as `action_undone` or `action_undo_failed`. |
-| `ON_DUTY` | `John Doe (SEC-409) / Shift Bravo` | The responsible entity named in reports and notifications. |
+| `ON_DUTY` | `On-duty responder` | The responsible entity named in reports and notifications, e.g. `Amir Tan (SEC-409) / Night shift`. |
 | `TEAM_LEAD`, `IT_MANAGER`, `CXO` | role names | Escalation recipients. |
-| `CACTAI_ROUTING` | `routing.json` next to the database | Contacts, routing rules and follow-up policy (see "Owners, routing and escalation"). Without the file, the four names above form the chain. |
+| `SENTRAI_ROUTING` | `routing.json` next to the database | Contacts, routing rules and follow-up policy (see "Owners, routing and escalation"). Without the file, the four names above form the chain. |
+| `SENTRAI_SUMMARY` | `daily` | How often the one-page client summary goes out on the alert channels: `daily`, `weekly` or `off`. A choice saved on the dashboard (Reports page, kept in `summary.json` next to the database) wins over this. |
+| `SENTRAI_SUMMARY_AT` / `SENTRAI_SUMMARY_DAY` | `08:00` / `mon` | Local time it goes out, and the weekday for `weekly`. |
+| `SENTRAI_SUMMARY_TO` | `Client` | Who the summary is addressed to (shown on the page). |
 | `TYPESAFE_API_KEY` | unset | Turns on Jev (TypeSafe System One). Without it the fallback classifier is used. |
 | `JEV_TIMEOUT_S` | `3` | Timeout for each Jev call. After 3 failures in a row a 60 s circuit breaker opens. |
 | `JEV_CACHE_SIZE` / `JEV_CACHE_TTL_S` | `2048` / `3600` | Jev answers kept per log template (the line with IPs, times, ids, pids and ports replaced), so the same request from many addresses is asked about once. Size `0` turns the cache off. |
 | `PROTECTED_IPS` | `127.0.0.1,::1,localhost` | Addresses never blocked, by the portal or the firewall. Add your own admin IP before turning the firewall on, e.g. `PROTECTED_IPS=127.0.0.1,::1,localhost,198.51.100.200`. |
-| `CACTAI_FIREWALL` | `off` | Mirror `block_ip` into the host firewall: `auto`, `nftables`, `iptables` (Linux) or `netsh` (Windows). `off` keeps blocking portal-only. |
-| `CACTAI_WEBHOOK_MAPS` | unset | Field maps for `POST /webhook/<name>` (inline JSON or a file path), e.g. `{"wazuh": {"src_ip": "data.srcip", "raw": "full_log", "layer": "=os"}}`. Without a map, common key names are guessed. See CONTRACT.md. |
-| `CACTAI_RESPONDER_WEBHOOK_URL` | unset | Also hand approved actions to another system (a firewall API, WAF or SOAR) as JSON POSTs `{"op": "apply"\|"revert", "type", "target", ...}`. An action counts as in force only on a 2xx answer. Blocks still go on `/blocklist` too. |
-| `CACTAI_RESPONDER_WEBHOOK_ACTIONS` | all six | Which action types go to the webhook (`block_ip,lock_user,rate_limit,waf_rule,kill_process,revoke_public_acl`). |
-| `CACTAI_RESPONDER_WEBHOOK_SECRET` | unset | Sent as `Authorization: Bearer` and used to sign each body (`X-SentrAI-Signature: sha256=<HMAC>`). `_FILE` works too. |
+| `SENTRAI_FIREWALL` | `off` | Mirror `block_ip` into the host firewall: `auto`, `nftables`, `iptables` (Linux) or `netsh` (Windows). `off` keeps blocking portal-only. |
+| `SENTRAI_WEBHOOK_MAPS` | unset | Field maps for `POST /webhook/<name>` (inline JSON or a file path), e.g. `{"wazuh": {"src_ip": "data.srcip", "raw": "full_log", "layer": "=os"}}`. Without a map, common key names are guessed. See CONTRACT.md. |
+| `SENTRAI_RESPONDER_WEBHOOK_URL` | unset | Also hand approved actions to another system (a firewall API, WAF or SOAR) as JSON POSTs `{"op": "apply"\|"revert", "type", "target", ...}`. An action counts as in force only on a 2xx answer. Blocks still go on `/blocklist` too. |
+| `SENTRAI_RESPONDER_WEBHOOK_ACTIONS` | all six | Which action types go to the webhook (`block_ip,lock_user,rate_limit,waf_rule,kill_process,revoke_public_acl`). |
+| `SENTRAI_RESPONDER_WEBHOOK_SECRET` | unset | Sent as `Authorization: Bearer` and used to sign each body (`X-SentrAI-Signature: sha256=<HMAC>`). `_FILE` works too. |
 | `CLOUDFLARE_API_TOKEN` | unset | Also block each `block_ip` address at Cloudflare (app/cloudflare.py) and remove it when the block ends. `_FILE` works too. Needs `CLOUDFLARE_ZONE_ID` (one site) or `CLOUDFLARE_ACCOUNT_ID` (every site). A Cloudflare failure never weakens the local block; a failed removal is a failed undo (retried, on-duty told). |
 | `CLOUDFLARE_METHOD` / `CLOUDFLARE_MODE` | `access_rule` / `block` | `list` puts addresses in an account IP list (`CLOUDFLARE_LIST_ID`) for your own WAF custom rule. Mode: `block`, `managed_challenge`, `challenge`, `js_challenge`. |
 | `ABUSEIPDB_API_KEY` | unset | Look up each public attacking address on AbuseIPDB in the background and note it on the incident (context only, no score change). Answers kept `ABUSEIPDB_CACHE_HOURS` (24). |
 | `SLACK_WEBHOOK_URL` | unset | The notifier posts a copy of every alert there. The core only uses it for `POST /integrations/slack/test`. |
-| `CACTAI_FIREWALL_ENFORCE` | `0` | `0` is a dry run: the command is logged and written to the audit trail, never run. `1` runs it (admin/root). Loopback, link-local, multicast and `PROTECTED_IPS` are never sent to the firewall. |
-| `CACTAI_DB` | `data/cactai.db` | SQLite audit chain. |
+| `SENTRAI_FIREWALL_ENFORCE` | `0` | `0` is a dry run: the command is logged and written to the audit trail, never run. `1` runs it (admin/root). Loopback, link-local, multicast and `PROTECTED_IPS` are never sent to the firewall. |
+| `SENTRAI_DB` | `data/sentrai.db` | SQLite audit chain. |
 | `BRUTE_FORCE_COUNT` / `BRUTE_FORCE_WINDOW_S` | `5` / `60` | Brute-force rule: this many failed logins from the same IP within this many seconds. |
 | `EXPORT_ROWS_THRESHOLD` | `100` | `/export` with at least this many rows counts as data exfiltration. |
 | `SSH_BRUTE_FORCE_COUNT` / `SSH_BRUTE_FORCE_WINDOW_S` | `5` / `600` | SSH brute force: this many failed guesses (not log lines) from one IP within this many seconds. |
@@ -71,12 +74,12 @@ Tests:
 | `INTEGRITY_CHECK_S` | `30` | How often the integrity guard re-checks the audit chain and the clock. |
 | `CLOCK_JUMP_S` | `120` | A clock change bigger than this (core host or a collector) counts as log tampering. |
 | `ANCHOR_EVERY_MIN` | `60` | Send the signed record fingerprint to the alert channels this often (real minutes, only when new records exist; 0 = never). |
-| `CACTAI_ANCHOR_KEY` | (made on first use) | Fingerprint signing key. Default: `anchor.key` next to the audit database, mode 0600. |
+| `SENTRAI_ANCHOR_KEY` | (made on first use) | Fingerprint signing key. Default: `anchor.key` next to the audit database, mode 0600. |
 
 ### Owners, routing and escalation
 
 Every incident gets an owner the moment it opens. `app/routing.py` reads a routing file
-(`CACTAI_ROUTING`, sample `profiles/routing.example.json`) with:
+(`SENTRAI_ROUTING`, sample `profiles/routing.example.json`) with:
 
 - **contacts**: name, role (`on_duty`, `team_lead`, `it_manager`, `cxo`), email, Telegram handle and a **backup** contact.
 - **rules**: match on `category`, `severity`, `host` (patterns like `db-*`) and `layer`. The first match wins: its
@@ -92,14 +95,43 @@ unanswered reminders, the incident is handed to the owner's backup (`escalated` 
 `incident_escalated` audit record), up to `max_escalations` times. Acknowledging stops it. An acknowledged incident
 that is still not resolved after `resolve_within_hours` gets a `resolve_reminder` to its owner (up to 3).
 
+The dashboard's **Incidents > Who gets what** draws this as a map (incident, rules, owner, also told, backup) and has
+forms to add or remove people, change which incident types go to whom, reorder rules and set the follow-up. They save
+through `POST /routing`, which checks the whole file first (owners and backups must be people in it, categories and
+severities must be known ones) and writes it in one step, so a bad edit never half-applies. Owners and Admins can edit;
+Auditors see the forms greyed out. Each save is a `routing_changed` audit record with who did it.
+
 Each notification carries `deliver_to` (the recipients' email and Telegram from the contacts): the notifier
-emails those addresses instead of `ALERT_EMAIL_TO` and names the Telegram handles in the alert. The Telegram
-**Take it** button makes whoever pressed it the owner.
+emails those addresses instead of `ALERT_EMAIL_TO`. The Telegram **Take it** button makes whoever pressed it the owner.
+
+### Alerts in each person's own Telegram chat
+
+A Telegram bot can only message someone who has opened a private chat with it, so each contact links their
+chat once (`app/telegram_links.py`):
+
+1. On the dashboard's Incidents page (Who gets what), pick the person and press **Make link code**
+   (or `POST /telegram/link-codes {"operator", "contact"}`). The code works once, for 30 minutes.
+2. The person sends `/link CODE` to the bot in a private chat (`/start CODE` from a `t.me/<bot>?start=CODE` link works too).
+3. The notifier passes the code and the chat on to `POST /telegram/link`. Links are kept in `telegram_links.json`
+   next to the database (`SENTRAI_TELEGRAM_LINKS` to move it). A contact whose `telegram` in the routing file is a
+   numeric chat id counts as linked already. `/unlink` in that chat, or the dashboard's Unlink button, stops it.
+
+From then on `deliver_to` carries each person's `telegram_chat`, and the notifier sends the alert, with its buttons,
+to each of them directly. A button pressed there is recorded under the contact's name. The team group
+(`TELEGRAM_CHAT_ID`) still gets notices that are for nobody in particular, and alerts for anyone who has not
+linked a chat yet (they are @mentioned there); `TELEGRAM_GROUP_COPY=always` gives the group a copy of everything,
+`off` keeps it quiet unless nobody could be reached. A direct message that fails (the person blocked the bot) goes
+to the group instead. Each delivery is recorded per person (`deliveries[].to`), and linking, codes and unlinking
+are audited (`telegram_link_code`, `telegram_linked`, `telegram_unlinked`).
+
+The evidence report has a **Who handled it** section: the owner and backup, the routing rule, every hand-over,
+escalation and the resolution from the audit records (each step with its record number), and who was reached in
+their own chat. The plain-words summary tells the same story in a few sentences.
 
 ### Off-box copy
 
-With `CACTAI_REMOTE_COPY_URL` (and the append token in `CACTAI_REMOTE_COPY_TOKEN` or a file named by
-`CACTAI_REMOTE_COPY_TOKEN_FILE`; `CACTAI_REMOTE_COPY_CA` for a self-signed certificate), the core sends every
+With `SENTRAI_REMOTE_COPY_URL` (and the append token in `SENTRAI_REMOTE_COPY_TOKEN` or a file named by
+`SENTRAI_REMOTE_COPY_TOKEN_FILE`; `SENTRAI_REMOTE_COPY_CA` for a self-signed certificate), the core sends every
 audit record and every sealed log line to a SentrAI witness on another machine as it happens (about 4 ms from
 append to stored, measured locally). The witness can only add, and the core's token cannot read the copy back.
 If the witness refuses a record because the chain here no longer continues its copy, the core opens a
@@ -140,19 +172,19 @@ pass it with `--db`.
 | `INFRA_ALLOWLIST` | empty | Infrastructure never blocked. The DNS servers and default gateway are added automatically unless `INFRA_AUTODETECT=0`. |
 | `PROTECTED_USERS` | empty | Extra accounts never auto-locked. Admin and service accounts are always protected. |
 | `CONTAIN_MIN_SEVERITY` / `CONTAIN_MIN_POINTS` | `high` / `20` | The incident's own bar for autonomous containment, on top of the overall risk threshold. Lower incidents wait for a person. |
-| `CACTAI_ENGINE` | `cyanide` | Orchestrator. `cyanide` plans with Claude when a key is set; `saguaro` keeps the fixed playbooks only. |
-| `CACTAI_LLM_API_KEY` | unset | The one AI key the setup wizard saves; used by whichever provider `CACTAI_LLM_PROVIDER` names. With no key, Cyanide behaves exactly like Warden. A provider's own variable (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, `COMMANDCODE_API_KEY`) still works and wins when set. |
-| `CACTAI_LLM_PROVIDER` | `auto` | `anthropic`, `openai`, `deepseek`, `commandcode` (also set `CACTAI_LLM_MODEL`), or `compatible` (any OpenAI-compatible API: also set `CACTAI_LLM_BASE_URL` and `CACTAI_LLM_MODEL`). `auto` uses the first provider-specific key set. The dashboard's Configuration page has a Fetch models button that lists the models your key can use. |
+| `SENTRAI_ENGINE` | `cyanide` | Orchestrator. `cyanide` plans with Claude when a key is set; `saguaro` keeps the fixed playbooks only. |
+| `SENTRAI_LLM_API_KEY` | unset | The one AI key the setup wizard saves; used by whichever provider `SENTRAI_LLM_PROVIDER` names. With no key, Cyanide behaves exactly like Warden. A provider's own variable (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, `COMMANDCODE_API_KEY`) still works and wins when set. |
+| `SENTRAI_LLM_PROVIDER` | `auto` | `anthropic`, `openai`, `deepseek`, `commandcode` (also set `SENTRAI_LLM_MODEL`), or `compatible` (any OpenAI-compatible API: also set `SENTRAI_LLM_BASE_URL` and `SENTRAI_LLM_MODEL`). `auto` uses the first provider-specific key set. The dashboard's Configuration page has a Fetch models button that lists the models your key can use. |
 | `CYANIDE_PROFILE` | unset | Path to the system profile JSON, e.g. `profiles\tuition_centre.json`. |
 | `CYANIDE_MODEL` / `CYANIDE_EFFORT` / `CYANIDE_TIMEOUT_S` | provider default / `low` / `20` | Model, effort level (Anthropic only) and per-call timeout for planning. Defaults: `claude-opus-5`, `gpt-5`, `deepseek-chat`. |
 | `CYANIDE_ENABLED` | `1` | Set to `0` to switch the planner off without removing the key (tests do this). |
-| `CACTAI_BACKGROUND` | `1` | Set to `0` to turn off the 1 s background tick (tests do this). |
+| `SENTRAI_BACKGROUND` | `1` | Set to `0` to turn off the 1 s background tick (tests do this). |
 
 ## Cyanide (the orchestrator)
 
 Cyanide (`app/cyanide.py`) replaces Warden's fixed judgement with Claude, and keeps everything that must stay predictable.
 
-- **What the model decides.** Claude by default; OpenAI, DeepSeek or any OpenAI-compatible API also work (`mvp/cactai_llm.py`, keys in `python cactai_config.py setup`, section 5). When an incident opens, Cyanide sends the model the system profile, the incident, its log lines and the list of installed actions. The model answers with an assessment in plain words, the containment steps that fit this system, and whether SentrAI may act alone or must wait for a human.
+- **What the model decides.** Claude by default; OpenAI, DeepSeek or any OpenAI-compatible API also work (`mvp/sentrai_llm.py`, keys in `python sentrai_config.py setup`, section 5). When an incident opens, Cyanide sends the model the system profile, the incident, its log lines and the list of installed actions. The model answers with an assessment in plain words, the containment steps that fit this system, and whether SentrAI may act alone or must wait for a human.
 - **What stays fixed.** The risk index, SLA, inaction penalty, notifications, TTLs and the audit chain are Warden's code, unchanged. Countersign still reviews every autonomous action.
 - **Guardrails.** Claude can only pick installed action types. IP, account and host targets must appear in the incident's own events; anything else is dropped and logged. Accounts and IPs listed as protected in the profile go to Countersign, which refuses them. A plan can make SentrAI more careful ("hold: exam week, the admin account is shared") but never bypass the threshold or the TTL.
 - **Fallback.** No key, a timeout or a bad answer means the default playbook is used, and the timeline says so.
@@ -170,7 +202,7 @@ Audit records: `cyanide_plan` (actions, reasons, dropped steps), `cyanide_hold` 
    - `network` and `cloud` go to Watchtower
 2. **Classify**:
    - **Rules first**, always with confidence 1.0. They cover SQLi, XSS, a shell being spawned, `/export` bulk exports, port scans, misconfigurations, and 5 or more failed logins from one IP within 60 s. Failed logins below that threshold are held as benign; when the threshold is reached, all of them are attached to the incident.
-   - **Log tampering** (`log_tampering`, critical 55): commands that wipe, edit or silence the record (deleting or emptying files under `/var/log` or shell history, `journalctl --vacuum`, `chattr -a`, stopping rsyslog/auditd/journald, `wevtutil cl`, Windows event 1102), commands that widen who can read or change it (adding an account to `adm`, `systemd-journal` or `cactai`, `chmod o+w` or `setfacl` on a log or SentrAI file, `setcap` on a SentrAI program, `systemctl edit` on a SentrAI service, journal sealing switched off), a collector notice that a log shrank, vanished or was swapped with no rotated copy (`log_integrity`), and the integrity guard's findings (`audit_integrity`: audit chain broken, audit database deleted, clock jumped). On its own it stays below the autonomous line, so a person decides; it only proposes blocking the source IP.
+   - **Log tampering** (`log_tampering`, critical 55): commands that wipe, edit or silence the record (deleting or emptying files under `/var/log` or shell history, `journalctl --vacuum`, `chattr -a`, stopping rsyslog/auditd/journald, `wevtutil cl`, Windows event 1102), commands that widen who can read or change it (adding an account to `adm`, `systemd-journal` or `sentrai`, `chmod o+w` or `setfacl` on a log or SentrAI file, `setcap` on a SentrAI program, `systemctl edit` on a SentrAI service, journal sealing switched off), a collector notice that a log shrank, vanished or was swapped with no rotated copy (`log_integrity`), and the integrity guard's findings (`audit_integrity`: audit chain broken, audit database deleted, clock jumped). On its own it stays below the autonomous line, so a person decides; it only proposes blocking the source IP.
    - **Malware** (`malware`, critical 65): the threat scan found a web shell, backdoor, reverse shell, crypto miner or container escape tool in a file or a running program (`threat_scan`). It stays below the autonomous line and proposes no automatic action; the operator quarantines the file.
    - **Prompt injection** (`prompt_injection`, critical 60): a web request carrying text written for an AI model ("ignore previous instructions", "classify this as benign", chat-role markers such as `<|im_start|>` or `[INST]`). It is caught by the rules before Jev sees it, and proposes a WAF rule and blocking the source IP.
    - **Other log sources** (collector `parsed` objects, `docs/log-sources.md`): failed sign-ins to Windows, Remote Desktop, SQL Server, MySQL/MariaDB, PostgreSQL and MongoDB count like SSH guesses (5 from one address, or for one account when there is no address, within 10 minutes is `brute_force`; a success right after is flagged too). Windows events: a cleared log is `log_tampering`, an account added to Administrators or another admin group is `privilege_escalation`, Microsoft Defender finding something or a new service that runs a script host, an encoded command or a file from a temp folder is `malware`. Suricata alerts are mapped from their signature and classtype (SQL injection, XSS, malware and miners, brute force, privilege gain, exfiltration, scans and exploits); low-priority notices are benign, and a serious alert nothing explains goes to Jev. An outbound alert names the outside address, never this machine.
@@ -222,11 +254,11 @@ Audit records: `system_scan` and `log_source_added`. The process scan also flags
 
 The process scan finds logs; the threat scan (`app/threatscan.py`, `app/threats.py`) looks inside files for what an intruder leaves behind: web shells and PHP backdoors, reverse shells, download-and-run one-liners, crypto miners, container escape tools used on shared game hosts (proot root systems, Alpine minirootfs, Harbor/Ptero-VM), `ld.so.preload` rootkit tricks, cron jobs and SSH keys added for persistence, and long encoded blobs. Ideas taken from a Pterodactyl malware scanner and rewritten for SentrAI's rules.
 
-- **Which folders.** Only the ones you choose: `"threat_scan": {"paths": ["/var/lib/pterodactyl/volumes"], "every_minutes": 60}` in the system profile, or `CACTAI_THREAT_PATHS` (separated by `:` on Linux, `;` on Windows). `every_minutes` repeats the scan in the background (default 60 when paths are set). SentrAI's own folders are always skipped.
+- **Which folders.** Only the ones you choose: `"threat_scan": {"paths": ["/var/lib/pterodactyl/volumes"], "every_minutes": 60}` in the system profile, or `SENTRAI_THREAT_PATHS` (separated by `:` on Linux, `;` on Windows). `every_minutes` repeats the scan in the background (default 60 when paths are set). SentrAI's own folders are always skipped.
 - **What it reads.** Scripts and web pages (`.php`, `.sh`, `.py`, `.js`, `.jsp`, `.asp`, `.ps1`, ...), configuration files (including `config.yml`), extensionless scripts that start with `#!`, cron files, and the text and class files inside `.jar` plugins (only strong signs count there: miners, reverse shells, escape tools). `tmp/` and `logs/` are scanned on purpose, since that is where malware hides. Package caches (`node_modules`, `.git`, virtualenvs) and minified bundles are skipped. Files over `max_file_mb` (default 10) are skipped.
 - **Tuning.** `"allow": ["*/plugins/dynmap/*"]` skips known-good paths; `"known_bad_sha256": [...]` flags exact files.
-- **Each finding is raised once.** Critical and high findings become events (`source: "threat_scan"`) that the rules classify as `malware` (critical, 65), so they open an incident and notify like any other. A fingerprint of the file contents and signature is kept in `data/threat_seen.json` (`CACTAI_THREAT_STATE`), so an hourly scan does not repeat the same alert; a file that changes is new again. Medium findings are only listed.
-- **Nothing is deleted, and nothing happens on its own.** There is no auto-delete and no auto-suspend. An operator quarantines a file by its finding id (dashboard Collector page, or Cyanide's `suggest_quarantine` button). The file must be unchanged since the scan; it moves to `data/quarantine` (`CACTAI_QUARANTINE`), read-only, with a note of where it came from, and `POST /quarantine/{id}/restore` puts it back.
+- **Each finding is raised once.** Critical and high findings become events (`source: "threat_scan"`) that the rules classify as `malware` (critical, 65), so they open an incident and notify like any other. A fingerprint of the file contents and signature is kept in `data/threat_seen.json` (`SENTRAI_THREAT_STATE`), so an hourly scan does not repeat the same alert; a file that changes is new again. Medium findings are only listed.
+- **Nothing is deleted, and nothing happens on its own.** There is no auto-delete and no auto-suspend. An operator quarantines a file by its finding id (dashboard Collector page, or Cyanide's `suggest_quarantine` button). The file must be unchanged since the scan; it moves to `data/quarantine` (`SENTRAI_QUARANTINE`), read-only, with a note of where it came from, and `POST /quarantine/{id}/restore` puts it back.
 - **Private details stay out.** Matched lines are cut to 160 characters with secrets masked and home folders shown as `~`; the model sees them labelled as untrusted text.
 
 Audit records: `threat_scan`, `file_quarantined`, `file_restored`.
@@ -235,12 +267,12 @@ Audit records: `threat_scan`, `file_quarantined`, `file_restored`.
 
 `app/backups.py` copies chosen folders, plus SentrAI's own data, on a schedule, so a defaced site or a wiped game server can be put back.
 
-- **What.** The folders in `"backup": {"paths": ["/var/www"], "every_hours": 24, "keep": 7}` in the system profile, or `CACTAI_BACKUP_PATHS`. SentrAI's own settings file, data folder (protection switch, signing key, threat state) and a consistent snapshot of the audit database are always included (`"include_sentrai": false` turns that off). `"exclude": ["*.log", "cache/*"]` skips files; `max_total_mb` (default 5120) refuses a backup that would fill the disk.
-- **Where.** One `.tar.gz` per backup in `backups/` next to the database (`CACTAI_BACKUP_DIR`), readable by SentrAI's account only, with a note beside it. `"copy_to": "/mnt/usb/sentrai"` (or `CACTAI_BACKUP_COPY_TO`) puts a second copy on another drive or share. The newest `keep` are kept.
+- **What.** The folders in `"backup": {"paths": ["/var/www"], "every_hours": 24, "keep": 7}` in the system profile, or `SENTRAI_BACKUP_PATHS`. SentrAI's own settings file, data folder (protection switch, signing key, threat state) and a consistent snapshot of the audit database are always included (`"include_sentrai": false` turns that off). `"exclude": ["*.log", "cache/*"]` skips files; `max_total_mb` (default 5120) refuses a backup that would fill the disk.
+- **Where.** One `.tar.gz` per backup in `backups/` next to the database (`SENTRAI_BACKUP_DIR`), readable by SentrAI's account only, with a note beside it. `"copy_to": "/mnt/usb/sentrai"` (or `SENTRAI_BACKUP_COPY_TO`) puts a second copy on another drive or share. The newest `keep` are kept.
 - **Proof.** Inside each archive, `manifest.json` lists every file with its SHA-256. The archive's own SHA-256 goes into the audit trail (`backup_made`), so **Check** (`POST /backups/{id}/verify`) catches a backup that was edited or swapped later.
 - **Alerts.** A failed backup (or a failed second copy) sends a `backup_failed` notice to the on-duty contact; a failed scheduled one is retried after an hour, not every minute.
 - **Restore needs a person**, and checks the backup first. By default files go into `restores/<id>-<time>/` next to the database and nothing live changes. Putting them back in place needs `in_place` and the backup id typed as `confirm`, and first takes a `before_restore` safety backup of the folders it will overwrite, so the restore can itself be undone. SentrAI's own data is never written over while the core runs; it is unpacked with a note on how to swap it in. The chat can show backups and offer a **Back up now** button, but cannot restore.
-- **On a hardened server** (`deploy/install.sh`), the core runs as its own account and may only write under `/var/lib/cactai/core`. Files it cannot read are skipped and listed on the backup. To restore in place there, add the folders to `ReadWritePaths=` in `cactai-core.service`, or restore into a new folder and copy back by hand.
+- **On a hardened server** (`deploy/install.sh`), the core runs as its own account and may only write under `/var/lib/sentrai/core`. Files it cannot read are skipped and listed on the backup. To restore in place there, add the folders to `ReadWritePaths=` in `sentrai-core.service`, or restore into a new folder and copy back by hand.
 - **With the central panel** (planned agents on each machine), each agent runs this same code on its own machine and reports its backups to the panel.
 
 Audit records: `backup_made`, `backup_failed`, `backup_verified`, `backup_restored`, `backup_pruned`.
@@ -262,6 +294,9 @@ These follow the contract:
 
 Additions that do not change the contract:
 - `GET /incidents/{id}/why`: HelpDesk explanation.
+- `GET /summary/{daily|weekly}` (JSON), `.md` and `.pdf`: the one-page client summary for the last 24 hours or 7 days, in plain words, with counts, what needs attention and what to do next, a per-machine table and the audit fingerprint to check it by. `?until=<unix time>` ends the period earlier. The link sent to the client is signed (`?until=...&sig=...`) so it opens without the API token, for that period only.
+- `GET /summary/schedule`, `POST /summary/schedule` (`{"operator", "every", "at", "day", "to"}`): the client's preference. `POST /summary/send` (`{"operator"}`) sends one now. Each send is audited as `summary_sent`, each change as `summary_schedule_changed`.
+- Each incident carries `next_steps`: what a person should do next, in everyday words. The evidence report adds `in_plain_words`, `outcome`, `next_steps` and `how_to_check`, and its Markdown and PDF name each internal part by its job ("safety check", "record keeper") instead of its code name.
 - `GET /helpdesk/why?target=<ip|user>`: "why was my IP blocked?"
 - `GET /agents`: status of each agent and of Jev.
 - `GET /limits`: the business limits on protective actions (what may run on its own, expiry per type, hourly cap and how much of it is used, after-action check delay).
@@ -271,7 +306,12 @@ Additions that do not change the contract:
 - `POST /threats/scan {"operator": "erick"}`, `GET /threats`, `POST /threats/{id}/quarantine`, `GET /quarantine`, `POST /quarantine/{id}/restore`: threat scan and quarantine.
 - `POST /incidents/{id}/assign {"operator", "assignee", "note"?}`: give the incident to a contact (id, name, role or Telegram handle) or anyone by name.
 - `POST /incidents/{id}/resolve {"operator", "note"}`: close it with a note on what was done (400 without one). Blocks in force stay until they expire or are rolled back.
-- `GET /routing`: the contacts, rules and follow-up policy in use.
+- `GET /routing`: the contacts, rules and follow-up policy in use; each contact has `telegram_linked`.
+- `POST /routing` `{"operator", "routing": {"contacts", "rules", "follow_up"}}`: replace the routing file (same shape as
+  `profiles/routing.example.json`). 400 with a plain reason when it does not check out; nothing is written then.
+- `POST /telegram/link-codes {"operator", "contact"}`, `POST /telegram/link {"code", "chat_id", "username"}`,
+  `POST /telegram/unlink {"operator", "contact" | "chat_id"}`, `GET /telegram/links`: personal Telegram chats (see above).
+- `POST /notifications/{id}/delivered` takes an optional `"to"`: the one person a direct message reached.
 - `GET /backups`, `POST /backups`, `POST /backups/{id}/verify`, `POST /backups/{id}/restore`: backups and restore.
 - `GET /log-sources` and `POST /log-sources {"operator", "file_id", "layer"?}`: extra log files the collector watches; a file is added only by its id from the latest scan.
 

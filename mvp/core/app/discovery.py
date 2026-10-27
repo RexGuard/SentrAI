@@ -3,10 +3,10 @@
 The scanner (``procscan``) only suggests. A log file is watched only after an operator approves
 it, by its id from the latest scan, so neither the model nor a crafted request can point the
 collector at an arbitrary file. Approved files go to the same list Scout writes
-(``lab/scout/sources.json``, or ``CACTAI_SCOUT_SOURCES``); the collector re-reads it while running.
+(``lab/scout/sources.json``, or ``SENTRAI_SCOUT_SOURCES``); the collector re-reads it while running.
 Every scan and approval is written to the audit trail.
 
-Scout's proposals wait in ``pending.json`` next to that list (``CACTAI_SCOUT_PENDING``) until an
+Scout's proposals wait in ``pending.json`` next to that list (``SENTRAI_SCOUT_PENDING``) until an
 operator approves or rejects them here, by id, so Scout can run without a terminal.
 """
 
@@ -28,11 +28,11 @@ LAYERS = ("web", "db", "os", "network", "cloud")
 
 
 def sources_file() -> Path:
-    return Path(os.environ.get("CACTAI_SCOUT_SOURCES", str(MVP_DIR / "lab" / "scout" / "sources.json")))
+    return Path(os.environ.get("SENTRAI_SCOUT_SOURCES", str(MVP_DIR / "lab" / "scout" / "sources.json")))
 
 
 def pending_file() -> Path:
-    return Path(os.environ.get("CACTAI_SCOUT_PENDING") or sources_file().with_name("pending.json"))
+    return Path(os.environ.get("SENTRAI_SCOUT_PENDING") or sources_file().with_name("pending.json"))
 
 
 def _read(f: Path) -> list[dict[str, Any]]:
@@ -60,7 +60,7 @@ def load_pending() -> list[dict[str, Any]]:
 
 
 def lab_logs_dir() -> Path:
-    return Path(os.environ.get("CACTAI_LAB_LOGS") or MVP_DIR / "lab" / "logs")
+    return Path(os.environ.get("SENTRAI_LAB_LOGS") or MVP_DIR / "lab" / "logs")
 
 
 class Discovery:
@@ -73,7 +73,7 @@ class Discovery:
 
     def watched(self) -> set[str]:
         lab = lab_logs_dir()
-        names = [os.environ.get(f"CACTAI_LOG_{k}", n) for k, n in zip(("ACCESS", "AUTH", "DB", "OS"), LAB_LOG_NAMES)]
+        names = [os.environ.get(f"SENTRAI_LOG_{k}", n) for k, n in zip(("ACCESS", "AUTH", "DB", "OS"), LAB_LOG_NAMES)]
         return {str(lab / n) for n in names} | {s["path"] for s in load_sources()}
 
     def scan(self, by: str = "operator") -> dict[str, Any]:

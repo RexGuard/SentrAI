@@ -1,7 +1,7 @@
 ---
 title: Settings
 nav: docs
-description: Change SentrAI's security preset, protected IPs, alerts, AI key and firewall blocking.
+description: Change SentrAI's security preset, protected IPs, alerts, AI key, firewall blocking, action limits and backups.
 ---
 
 # Settings
@@ -13,13 +13,13 @@ every part reads it when it starts.
 - **A guided chat:** on a new machine the dashboard opens on **Chat** with a **Set up** offer. It
   asks plain questions (what SentrAI guards, which IPs never to touch, how to alert you) and
   saves nothing until you confirm the summary. Keys and passwords go in a hidden box.
-- **The command line:** `python cactai_config.py setup` asks the same questions in the terminal.
-  `python cactai_config.py` shows the current settings.
+- **The command line:** `python sentrai_config.py setup` asks the same questions in the terminal.
+  `python sentrai_config.py` shows the current settings.
 
-The file is `~/.cactai/config.json` (`%USERPROFILE%\.cactai\config.json` on Windows), or
-`/var/lib/cactai` on a server. It holds your keys, so it is readable by you only. A variable set
+The file is `~/.sentrai/config.json` (`%USERPROFILE%\.sentrai\config.json` on Windows), or
+`/var/lib/sentrai` on a server. It holds your keys, so it is readable by you only. A variable set
 in the environment always wins over the file. Restart SentrAI after a change, or on a server
-`sudo systemctl restart cactai.target`.
+`sudo systemctl restart sentrai.target`.
 
 ## Security preset
 
@@ -79,24 +79,41 @@ By default a block only goes on SentrAI's own blocklist (`/blocklist`, for your 
 go step by step:
 
 1. Make sure your own IP is in `PROTECTED_IPS`.
-2. Set `CACTAI_FIREWALL=auto` (or `nftables`, `iptables`, or `netsh` on Windows). SentrAI now
+2. Set `SENTRAI_FIREWALL=auto` (or `nftables`, `iptables`, or `netsh` on Windows). SentrAI now
    only **logs** the command it would run. Watch the log for a while.
-3. When the commands look right, set `CACTAI_FIREWALL_ENFORCE=1`. This needs root or
+3. When the commands look right, set `SENTRAI_FIREWALL_ENFORCE=1`. This needs root or
    administrator rights.
 
-On a server these go in `/etc/cactai/cactai.env`; restart `cactai.target` afterwards.
+On a server these go in `/etc/sentrai/sentrai.env`; restart `sentrai.target` afterwards. On a
+[central panel](panel.html) keep `SENTRAI_FIREWALL=off`: each added machine applies its own blocks.
+
+## Limits on automatic actions
+
+SentrAI keeps every action it takes on its own small, temporary and recorded, so it can be undone.
+These settings set the limits:
+
+| Setting | Default | What it does |
+|---|---|---|
+| `AUTO_ACTIONS` | `block_ip,rate_limit,waf_rule` | what SentrAI may do without asking. Anything else, like locking an account, waits for a person |
+| `MAX_AUTO_ACTIONS_PER_HOUR` | `10` | at most this many actions on its own in any hour; after that a person decides |
+| `MAX_TTL_HOURS` | `24` | no temporary action lasts longer than this |
+| `ACTION_TTL_HOURS` | none | hours per type, for example `lock_user=1,block_ip=4` |
+| `SENTRAI_HEALTH_URL` | none | a page that must keep answering while SentrAI blocks things, like your site's home page |
+
+About 10 minutes after each action, SentrAI checks that it worked and that it did not break the
+page above. A failed undo is tried again a few times, then handed to a person.
 
 ## Backups
 
 SentrAI backs up its own settings and records every 24 hours from the start. To back up your own
-folders too (a website, a game server), list them in `CACTAI_BACKUP_PATHS`, for example
-`CACTAI_BACKUP_PATHS=/var/www:/srv/minecraft` (on Windows use `;` between folders).
+folders too (a website, a game server), list them in `SENTRAI_BACKUP_PATHS`, for example
+`SENTRAI_BACKUP_PATHS=/var/www:/srv/minecraft` (on Windows use `;` between folders).
 
 | Setting | Default | What it does |
 |---|---|---|
-| `CACTAI_BACKUP_EVERY_HOURS` | `24` | hours between backups; `0` turns the schedule off |
-| `CACTAI_BACKUP_KEEP` | `7` | how many backups to keep |
-| `CACTAI_BACKUP_COPY_TO` | none | a second place for each backup, like a USB drive or network share |
+| `SENTRAI_BACKUP_EVERY_HOURS` | `24` | hours between backups; `0` turns the schedule off |
+| `SENTRAI_BACKUP_KEEP` | `7` | how many backups to keep |
+| `SENTRAI_BACKUP_COPY_TO` | none | a second place for each backup, like a USB drive or network share |
 
 The dashboard's **Backups** page shows the last and next backup, has **Back up now** and **Check**,
 and restores a backup. A restore goes into a new folder unless you choose "back where they came
@@ -107,3 +124,6 @@ undo it.
 
 The full list, with every default, is in the
 [MVP README](https://github.com/RexGuard/SentrAI/blob/main/mvp/README.md#variables).
+
+Every variable starts with `SENTRAI_`. Names from before the rename (`CACTAI_FIREWALL` and the
+like) still work when the new name is not set; SentrAI prints a reminder to rename them.

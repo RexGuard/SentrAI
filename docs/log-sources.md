@@ -62,7 +62,7 @@ the outside address, never your own machine.
 **Reading rights on Linux.** The collector (or the agent) runs as its own account, which is in the
 `adm` and `systemd-journal` groups. On Debian and Ubuntu that already covers the nginx, SSH, MySQL
 and PostgreSQL logs. Suricata and MongoDB logs are often readable by root only; let SentrAI read
-one with `sudo setfacl -m u:cactai:r /var/log/suricata/eve.json` (and `u:cactai:rx` on its
+one with `sudo setfacl -m u:sentrai:r /var/log/suricata/eve.json` (and `u:sentrai:rx` on its
 folder). A log it cannot read is skipped with a message, never a crash.
 
 ## Logs SentrAI does not have a reader for

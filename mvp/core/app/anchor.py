@@ -14,7 +14,7 @@ record, which fails if any record up to it was changed or removed since:
     python -m app.anchor verify "SENTRAI-FP v1 seq=1234 head=... at=... sig=..."
 
 The signature (HMAC-SHA256 with the anchor key) shows the line came from this SentrAI; the
-key is ``anchor.key`` next to the audit database (mode 0600), or ``CACTAI_ANCHOR_KEY``.
+key is ``anchor.key`` next to the audit database (mode 0600), or ``SENTRAI_ANCHOR_KEY``.
 """
 
 from __future__ import annotations
@@ -42,8 +42,8 @@ def key_path(db_path: Path) -> Path:
 
 
 def load_key(db_path: Path, create: bool = True) -> bytes | None:
-    """The signing key: CACTAI_ANCHOR_KEY, else anchor.key next to the database (made on first use)."""
-    env = os.getenv("CACTAI_ANCHOR_KEY", "").strip()
+    """The signing key: SENTRAI_ANCHOR_KEY, else anchor.key next to the database (made on first use)."""
+    env = os.getenv("SENTRAI_ANCHOR_KEY", "").strip()
     if env:
         return env.encode()
     path = key_path(db_path)
@@ -126,7 +126,7 @@ def main(argv: list[str] | None = None) -> int:
     v = sub.add_parser("verify", help="check a fingerprint line (from Telegram or email) against the chain on disk")
     v.add_argument("line", help='the whole line, e.g. "SENTRAI-FP v1 seq=12 head=... at=... sig=..."')
     sub.add_parser("show", help="print the current fingerprint")
-    ap.add_argument("--db", type=Path, help="audit database (default: CACTAI_DB / the core's default)")
+    ap.add_argument("--db", type=Path, help="audit database (default: SENTRAI_DB / the core's default)")
     args = ap.parse_args(argv)
     db = args.db or Settings().db_path
     if not Path(db).exists():

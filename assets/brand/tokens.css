@@ -1,6 +1,6 @@
 /* SentrAI brand tokens. Two themes, Black and White, with a monochrome brand: the brand colour is the ink
    itself (black on White, white on Black). Violet, the logo's colour, is the optional accent.
-   Values match the Risk Console (mvp/dashboard/cactai_ui/theme.py, Mono accent).
+   Values match the Risk Console (mvp/dashboard/sentrai_ui/theme.py, Mono accent).
    Risk colours (green / amber / red) are for risk bands and status only, never for branding.
    Use: <link rel="stylesheet" href="assets/brand/tokens.css">, then var(--sn-*). */
 :root {

@@ -33,7 +33,7 @@ class CoreClient:
         self.timeout = timeout
         self.read_only = read_only  # an Auditor's console: every change is refused before it leaves
         self.session = requests.Session()
-        if token:  # the core's API token (cactai_config.api_token())
+        if token:  # the core's API token (sentrai_config.api_token())
             self.session.headers["Authorization"] = f"Bearer {token}"
 
     def _url(self, path: str) -> str:
@@ -117,6 +117,10 @@ class CoreClient:
     def fleet_agents(self) -> list[dict]:
         return list(self.get_json("/fleet/agents") or [])
 
+    def fleet_panel(self) -> dict:
+        """The HTTPS address and certificate pin new machines use (the core's SENTRAI_PANEL_URL)."""
+        return dict(self.get_json("/fleet/panel") or {})
+
     def join_code(self, operator: str, name: str | None = None) -> dict:
         return self.post_json("/fleet/join-codes", {"operator": operator, "name": name or None})
 
@@ -142,6 +146,21 @@ class CoreClient:
     def report_pdf(self, incident_id: str) -> bytes:
         return self._request("GET", f"/reports/{incident_id}.pdf").content
 
+    def summary_md(self, period: str) -> str:
+        return self.get_text(f"/summary/{period}.md")
+
+    def summary_pdf(self, period: str) -> bytes:
+        return self._request("GET", f"/summary/{period}.pdf").content
+
+    def summary_schedule(self) -> dict:
+        return self.get_json("/summary/schedule")
+
+    def set_summary_schedule(self, operator: str, every: str, at: str, day: str, to: str) -> dict:
+        return self.post_json("/summary/schedule", {"operator": operator, "every": every, "at": at, "day": day, "to": to})
+
+    def send_summary(self, operator: str) -> dict:
+        return self.post_json("/summary/send", {"operator": operator})
+
     def decision(self, incident_id: str, operator: str, decision: str, justification: str = "") -> Any:
         return self.post_json(
             f"/incidents/{incident_id}/decision",
@@ -160,6 +179,16 @@ class CoreClient:
 
     def routing(self) -> dict:
         return self.get_json("/routing")
+
+    def save_routing(self, routing: dict, operator: str) -> dict:
+        """Replace the whole routing file (people, rules, follow-up); the core checks it before writing."""
+        return self.post_json("/routing", {"routing": routing, "operator": operator})
+
+    def telegram_link_code(self, contact: str, operator: str) -> dict:
+        return self.post_json("/telegram/link-codes", {"contact": contact, "operator": operator})
+
+    def telegram_unlink(self, contact: str, operator: str) -> Any:
+        return self.post_json("/telegram/unlink", {"contact": contact, "operator": operator})
 
     def rollback(self, incident_id: str, operator: str, justification: str) -> Any:
         return self.post_json(

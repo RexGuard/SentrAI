@@ -12,7 +12,7 @@ lab/
   requirements.txt        requests, psutil, pytest (+ optional AI packages for Scout)
   collector/collector.py  tails logs/*.jsonl + approved server logs -> POST core /events
   collector/parsers.py    nginx, syslog (sshd), journald, Windows Event Log, Suricata, MySQL, PostgreSQL, MongoDB parsers
-  collector/paths.py      where the JSON-lines logs live (CACTAI_LAB_LOGS, CACTAI_LOG_*)
+  collector/paths.py      where the JSON-lines logs live (SENTRAI_LAB_LOGS, SENTRAI_LOG_*)
   scout/                  finds log files on a new system and learns from expert trails
   logs/                   JSON-lines logs (access/auth/db/os/deception) from the app being guarded
   tests/                  pytest suite
@@ -36,7 +36,7 @@ All commands below use the venv python. Run them **from `mvp\lab`**.
 .\.venv\Scripts\python.exe -m collector.collector   # tails logs, batches events to core every 1s, heartbeat every 10s
 ```
 
-Point it at a different core with `--core` / the `CACTAI_CORE_URL` env var (default
+Point it at a different core with `--core` / the `SENTRAI_CORE_URL` env var (default
 `http://127.0.0.1:8000`).
 
 ## Scout: find the security logs on a new system
@@ -51,7 +51,7 @@ On a real network nobody hands you a list of log files. Scout finds them for a n
 
 Each proposal is saved to `scout/pending.json` the moment Scout makes it, so stopping Scout part way keeps what it found. With no terminal attached (a service, cron, `ssh` without `-t`) or with `--no-input`, Scout never waits for keyboard answers: it decides on its own and leaves its proposals pending. Approve or dismiss them on the dashboard's Collector page ("Scout proposals"), or with `python -m scout pending`, `python -m scout approve <id>` and `python -m scout reject <id> --why "..."`.
 
-Scout can only read files under the `--root` folders, never write. It masks `password=`, `token=` and similar values before the AI sees a line, and treats log text as data, never as instructions. Two example trails (a Linux web server and Windows IIS) ship in `scout/trails/`. `python -m scout list` shows what the collector will watch. Scout needs one AI key: Anthropic, OpenAI, DeepSeek or another OpenAI-compatible service (`python cactai_config.py setup`, section 5). `SCOUT_MODEL` overrides the model.
+Scout can only read files under the `--root` folders, never write. It masks `password=`, `token=` and similar values before the AI sees a line, and treats log text as data, never as instructions. Two example trails (a Linux web server and Windows IIS) ship in `scout/trails/`. `python -m scout list` shows what the collector will watch. Scout needs one AI key: Anthropic, OpenAI, DeepSeek or another OpenAI-compatible service (`python sentrai_config.py setup`, section 5). `SCOUT_MODEL` overrides the model.
 
 ## Real server logs (nginx, SSH, Windows, Suricata, databases)
 
@@ -67,12 +67,12 @@ python -m collector.collector
 - nginx and sshd lines become events with the log's own time, the real host name and a `parsed`
   object (method, path, status, user agent; or ssh_event, user, port). Fields: `mvp/CONTRACT.md`,
   "Parsed fields".
-- Read positions are saved in `~/.cactai/collector-state.json` (`CACTAI_COLLECTOR_STATE`) after core
+- Read positions are saved in `~/.sentrai/collector-state.json` (`SENTRAI_COLLECTOR_STATE`) after core
   accepts each batch, so a restart resumes where it stopped. A rotated file's last lines are read
   from `<name>.1` first. The first time a file is seen, only its last 256 KB are read
-  (`CACTAI_COLLECTOR_BACKFILL_KB`).
-- Lines with no time zone (auth.log, nginx error.log) use this computer's zone, or `CACTAI_LOG_TZ`
-  (`Asia/Singapore`, `+08:00`, `UTC`). `CACTAI_HOST` overrides the host name.
+  (`SENTRAI_COLLECTOR_BACKFILL_KB`).
+- Lines with no time zone (auth.log, nginx error.log) use this computer's zone, or `SENTRAI_LOG_TZ`
+  (`Asia/Singapore`, `+08:00`, `UTC`). `SENTRAI_HOST` overrides the host name.
 - Windows: `winevent:<channel>` entries are read through the built-in Windows Event Log API every 5 s and resume
   from the last record number. Suricata keeps only `alert` records. Database logs get the client
   address of an earlier line of the same connection. What each source catches, and the settings

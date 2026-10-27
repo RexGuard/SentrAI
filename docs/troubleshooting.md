@@ -33,6 +33,14 @@ Then delete the half-made `.venv` folders and start again:
 rm -rf core/.venv lab/.venv dashboard/.venv notifier/.venv
 ```
 
+## "Could not download the Python packages"
+
+The installer fetches its Python packages from pypi.org, so the machine needs outgoing HTTPS. Check
+with `curl -sI https://pypi.org/simple/ | head -1` (it should print a `200` line). Behind a proxy, set
+`HTTPS_PROXY` when you run the installer, for example `sudo HTTPS_PROXY=http://proxy:3128 ./mvp/deploy/install.sh`.
+On Windows, run `$env:HTTPS_PROXY = "http://proxy:3128"` in the same PowerShell first.
+Then run the same install command again: it carries on where it stopped.
+
 ## PowerShell says running scripts is disabled
 
 Start SentrAI with the policy switch shown in [Run on a laptop](laptop.html#on-windows):
@@ -47,7 +55,7 @@ to PATH** on the first screen of the installer. Close and reopen PowerShell afte
 
 Work through these in order:
 
-1. **Is it running?** On the server: `systemctl status cactai-dashboard`.
+1. **Is it running?** On the server: `systemctl status sentrai-dashboard`.
 2. **Is your IP allowed?** Your public IP may have changed. Check it, then
    `sudo ./deploy/install.sh --dashboard-allow <your IP>`.
 3. **Are you using https?** A server dashboard opened to other computers only answers on
@@ -65,8 +73,8 @@ also lets you in once without your phone. If no one else can sign in, reset from
 the new password is printed once:
 
 ```bash
-python cactai_config.py admin --reset     # laptop
-sudo cactai-admin --reset                  # server
+python sentrai_config.py admin --reset     # laptop
+sudo sentrai-admin --reset                  # server
 ```
 
 Add `--email you@example.com` for an account other than the first Owner.
@@ -79,7 +87,7 @@ try again, or reset the sign-in as above.
 ## No alerts arrive in Telegram
 
 Without a bot token, alerts go to the notifier's window (Windows) or `.run_logs/notifier.log`
-(Linux, macOS), or `journalctl -u cactai-notifier` on a server. Check the token and chat ID under
+(Linux, macOS), or `journalctl -u sentrai-notifier` on a server. Check the token and chat ID under
 **Configuration**, section **4. Notifications**, and make sure you sent your bot a message first.
 
 ## Nothing shows up on the dashboard
@@ -89,6 +97,25 @@ Without a bot token, alerts go to the notifier's window (Windows) or `.run_logs/
 - Make sure SentrAI is still running. Each part writes its output to `.run_logs/` on Linux and
   macOS, or to its own window on Windows.
 - The timers run in real time. Use `--speed 60` (`-Speed 60`) to see escalations within minutes.
+
+## A machine will not join the panel
+
+The agent installer prints why. The usual causes:
+
+- **"the panel must be reached over https://"**: use the agents' address, `https://…:8443`, not
+  `http://…:8000`. The panel needs `install.sh --panel` first; see
+  [Install the panel](panel.html#1-install-the-panel).
+- **"could not reach the panel"**: from the new machine, try
+  `curl -k https://panel.example.com:8443/health`. If it fails, allow port 8443 from that machine in
+  the panel's firewall and in your cloud provider's.
+- **"could not reach the panel … SSLError"**: the certificate does not match the pin. Copy the
+  command again from **Add machine**, with its `--pin`. After the panel's certificate changed, give
+  an installed machine the new pin with `sudo ./mvp/deploy/install-agent.sh --pin sha256:...`
+  (`-Pin sha256:...` on Windows); the dashboard shows it with every join code.
+- **"the panel refused to join this machine"**: the join code was already used or is more than 24
+  hours old. Make a new one under **Machines**, **Add machine**.
+- **"the panel no longer accepts this machine's key"**: the machine was revoked. Join it again with
+  a new code.
 
 ## Still stuck?
 

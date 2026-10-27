@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .config import Settings, sign
 from .reports import build_report, render_markdown, render_pdf
+from . import summary as client_summary
 from . import ai, anchor, fleet, integrations, jobs, webhook
 from .chat import OperatorChat, default_chat_provider
 from .discovery import Discovery
@@ -23,7 +24,7 @@ from .backups import BackupWatch
 from .cyanide import Cyanide, default_planner
 from .saguaro import BadRequestError, ConflictError, Saguaro
 
-log = logging.getLogger("cactai.core")
+log = logging.getLogger("sentrai.core")
 
 
 class EventIn(BaseModel):
@@ -61,6 +62,11 @@ class AssignIn(BaseModel):
     note: Optional[str] = None
 
 
+class RoutingIn(BaseModel):
+    operator: str
+    routing: dict[str, Any]
+
+
 class ResolveIn(BaseModel):
     operator: str
     note: str
@@ -69,12 +75,38 @@ class ResolveIn(BaseModel):
 class DeliveredIn(BaseModel):
     channel: str
     message_id: Optional[Union[str, int]] = None
+    to: Optional[str] = None  # the person a private message reached (direct Telegram message)
+
+
+class LinkCodeIn(BaseModel):
+    operator: str
+    contact: str
+
+
+class TelegramLinkIn(BaseModel):
+    code: str
+    chat_id: Union[str, int]
+    username: Optional[str] = ""
+
+
+class TelegramUnlinkIn(BaseModel):
+    operator: str
+    contact: Optional[str] = None
+    chat_id: Optional[Union[str, int]] = None
 
 
 class ProtectionIn(BaseModel):
     operator: str
     on: bool
     reason: Optional[str] = None
+
+
+class SummaryScheduleIn(BaseModel):
+    operator: str
+    every: Optional[str] = None  # daily | weekly | off
+    at: Optional[str] = None     # local time, HH:MM
+    day: Optional[str] = None    # weekday for weekly: mon..sun
+    to: Optional[str] = None     # who the summary is addressed to
 
 
 class ChatIn(BaseModel):
@@ -209,14 +241,15 @@ AGENT_ROUTES = frozenset({("POST", "/events"), ("POST", "/heartbeat"), ("GET", "
 
 # Open without a token: the launchers' readiness check, and the list the fake portal enforces
 # (it holds no personal data). A report opens with the signed link from its alert (?sig=). Every other endpoint needs "Authorization: Bearer <token>" or
-# the X-CactAI-Token header; the token is CACTAI_API_TOKEN from the setup wizard.
+# the X-SentrAI-Token header; the token is SENTRAI_API_TOKEN from the setup wizard.
 OPEN_PATHS = frozenset({"/health", "/blocklist", "/docs", "/openapi.json", "/fleet/enrol"})
-TOKEN_HEADER = "x-cactai-token"
+TOKEN_HEADER = "x-sentrai-token"
+OLD_TOKEN_HEADER = "x-cactai-token"  # sent by scripts written before the CactAI -> SentrAI rename
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
-    # Cyanide (Claude-planned) is the default orchestrator; CACTAI_ENGINE=saguaro keeps the fixed playbooks.
-    if os.getenv("CACTAI_ENGINE", "cyanide").lower() == "saguaro":
+    # Cyanide (Claude-planned) is the default orchestrator; SENTRAI_ENGINE=saguaro keeps the fixed playbooks.
+    if os.getenv("SENTRAI_ENGINE", "cyanide").lower() == "saguaro":
         core: Saguaro = Saguaro(settings or Settings())
     else:
         core = Cyanide(settings or Settings(), planner=default_planner())
@@ -282,7 +315,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         path = request.url.path
         request.state.agent = None
         auth = request.headers.get("authorization", "")
-        sent = auth[7:].strip() if auth[:7].lower() == "bearer " else request.headers.get(TOKEN_HEADER, "")
+        header = request.headers.get(TOKEN_HEADER) or request.headers.get(OLD_TOKEN_HEADER, "")
+        sent = auth[7:].strip() if auth[:7].lower() == "bearer " else header
         # One machine's block list (?host=) is only for that machine's agent or the operator,
         # and an agent asking for the open list still gets only its own.
         if path in OPEN_PATHS and not (path == "/blocklist" and ("host" in request.query_params
@@ -292,6 +326,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if sig and request.method == "GET" and path.startswith("/reports/") and path.endswith(".md") \
                 and hmac.compare_digest(sig, sign(core.settings.api_token, path)):
             return  # the signed report link from an alert
+        if sig and request.method == "GET" and path.startswith("/summary/") and path.endswith((".md", ".pdf")) \
+                and hmac.compare_digest(sig, sign(core.settings.api_token,
+                                                  f"{path}?until={request.query_params.get('until', '')}")):
+            return  # the signed one-page summary link sent to the client
         if sent.startswith(fleet.KEY_PREFIX):
             agent = machines.check(sent)
             if agent is None:
@@ -306,7 +344,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return
         if not (sent and hmac.compare_digest(sent.encode(), core.settings.api_token.encode())):
             raise HTTPException(status_code=401, detail="missing or wrong API token "
-                                "(python cactai_config.py token shows it)",
+                                "(python sentrai_config.py token shows it)",
                                 headers={"WWW-Authenticate": "Bearer"})
 
     app = FastAPI(title="SentrAI core", version="0.1.0", lifespan=lifespan, dependencies=[Depends(require_token)])
@@ -357,7 +395,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/risk")
     def get_risk(history: int = Query(600, ge=0, le=3600), host: Optional[str] = Query(None)) -> dict[str, Any]:
-        """The headline index, or one machine's own with ?host= (see CACTAI_RISK_SCOPE)."""
+        """The headline index, or one machine's own with ?host= (see SENTRAI_RISK_SCOPE)."""
         return core.risk(history=history, host=host)
 
     @app.get("/machines")
@@ -416,6 +454,45 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def get_routing() -> dict[str, Any]:
         return core.routing_public()
 
+    @app.post("/routing")
+    def post_routing(body: RoutingIn) -> dict[str, Any]:
+        """Save a whole new routing file (people, rules, follow-up) from the dashboard's map."""
+        try:
+            return core.routing_update(body.routing, body.operator)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail=f"could not write the routing file: {exc}")
+
+    # Personal Telegram alerts (telegram_links.py): a contact links their private chat with a one-time code.
+    @app.post("/telegram/link-codes")
+    def post_link_code(body: LinkCodeIn) -> dict[str, Any]:
+        try:
+            return core.telegram_link_code(body.contact, body.operator)
+        except KeyError:
+            raise HTTPException(status_code=404, detail=f"no contact called {body.contact!r} in the routing file")
+
+    @app.post("/telegram/link")
+    def post_telegram_link(body: TelegramLinkIn) -> dict[str, Any]:
+        try:
+            return core.telegram_link(body.code, str(body.chat_id), body.username or "")
+        except BadRequestError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except KeyError:
+            raise HTTPException(status_code=404, detail="that contact is no longer in the routing file")
+
+    @app.post("/telegram/unlink")
+    def post_telegram_unlink(body: TelegramUnlinkIn) -> dict[str, Any]:
+        try:
+            return core.telegram_unlink(body.contact, None if body.chat_id is None else str(body.chat_id),
+                                        body.operator)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="no linked Telegram chat for that contact")
+
+    @app.get("/telegram/links")
+    def get_telegram_links() -> list[dict[str, Any]]:
+        return core.telegram_links_public()
+
     @app.post("/incidents/{iid}/ack")
     def post_ack(iid: str, body: AckIn) -> dict[str, Any]:
         return _verb(core.ack, iid, body.operator, body.channel or "dashboard")
@@ -472,6 +549,44 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except KeyError:
             raise not_found(iid)
 
+    # One-page client summary (summary.py). The schedule routes come before /summary/{period}.
+    @app.get("/summary/schedule")
+    def get_summary_schedule() -> dict[str, Any]:
+        return core.summary_settings()
+
+    @app.post("/summary/schedule")
+    def post_summary_schedule(body: SummaryScheduleIn) -> dict[str, Any]:
+        try:
+            return core.set_summary_settings(body.operator, body.every, body.at, body.day, body.to)
+        except BadRequestError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @app.post("/summary/send")
+    def post_summary_send(body: OperatorIn) -> dict[str, Any]:
+        """Send the summary to the client now (for the client's chosen period), outside the schedule."""
+        return core.send_summary_now(body.operator)
+
+    def _summary(period: str, until: Optional[int]) -> dict[str, Any]:
+        try:
+            return client_summary.build_summary(core, period, float(until) if until else None)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+
+    @app.get("/summary/{period}.pdf")
+    def get_summary_pdf(period: str, until: Optional[int] = None) -> Response:
+        r = _summary(period, until)
+        return Response(client_summary.render_pdf(r), media_type="application/pdf",
+                        headers={"Content-Disposition": f'attachment; filename="{r["summary_id"]}.pdf"'})
+
+    @app.get("/summary/{period}.md", response_class=PlainTextResponse)
+    def get_summary_md(period: str, until: Optional[int] = None) -> PlainTextResponse:
+        return PlainTextResponse(client_summary.render_markdown(_summary(period, until)),
+                                 media_type="text/markdown; charset=utf-8")
+
+    @app.get("/summary/{period}")
+    def get_summary(period: str, until: Optional[int] = None) -> dict[str, Any]:
+        return _summary(period, until)
+
     @app.get("/protection")
     def get_protection() -> dict[str, Any]:
         return core.protection()
@@ -510,7 +625,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def post_delivered(nid: str, body: DeliveredIn) -> dict[str, Any]:
         try:
             mid = None if body.message_id is None else str(body.message_id)
-            return core.mark_delivered(nid, body.channel, mid)
+            return core.mark_delivered(nid, body.channel, mid, body.to)
         except KeyError:
             raise HTTPException(status_code=404, detail=f"notification {nid} not found")
 
@@ -681,7 +796,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/fleet/panel")
     def get_fleet_panel() -> dict[str, Any]:
-        """The address and certificate pin new machines use (CACTAI_PANEL_URL, CACTAI_PANEL_CERT)."""
+        """The address and certificate pin new machines use (SENTRAI_PANEL_URL, SENTRAI_PANEL_CERT)."""
         return fleet.panel_info()
 
     @app.post("/fleet/enrol")

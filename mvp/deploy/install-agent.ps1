@@ -36,6 +36,7 @@
 .PARAMETER Pin
   The panel's certificate pin (sha256:...), shown with the join code: the agent then talks to that
   certificate and nothing else.
+  On a machine that already joined, sets the new pin after the panel's certificate changed.
 .PARAMETER Ca
   The panel's certificate file, instead of a pin.
 .PARAMETER AllowHttp
@@ -94,6 +95,8 @@ function Die([string]$Message) {
     Write-Host "install-agent.ps1: $Message" -ForegroundColor Red
     exit 1
 }
+
+$PipHelp = "could not download the Python packages (pip's message is above). This machine must reach pypi.org over HTTPS (behind a proxy, set `$env:HTTPS_PROXY first); then run the installer again."
 
 # --- checks -----------------------------------------------------------------
 $me = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
@@ -173,7 +176,7 @@ function Copy-Tree([string]$From, [string]$To, [string[]]$Extra = @()) {
 }
 Copy-Tree (Join-Path $Src "lab") (Join-Path $Mvp "lab") @((Join-Path $Src "lab\logs"), "/XF", "sources.json", "pending.json")
 Copy-Tree (Join-Path $Src "core\app") (Join-Path $Mvp "core\app")
-foreach ($f in "cactai_config.py", "cactai_llm.py") { Copy-Item -Force (Join-Path $Src $f) (Join-Path $Mvp $f) }
+foreach ($f in "sentrai_config.py", "sentrai_llm.py", "sentrai_env.py") { Copy-Item -Force (Join-Path $Src $f) (Join-Path $Mvp $f) }
 
 if (-not (Test-Path $VenvPy)) {
     $python = Find-Python
@@ -187,6 +190,7 @@ if (-not (Test-Path $VenvPy)) {
     Native $python -m venv $Venv
     if ($LASTEXITCODE -ne 0) { Die "could not create the venv" }
     Native $VenvPy -m pip install -q --upgrade pip
+    if ($LASTEXITCODE -ne 0) { Remove-Item -Recurse -Force $Venv -ErrorAction SilentlyContinue; Die $PipHelp }
 }
 # The service runs the venv's base interpreter with the venv's packages on PYTHONPATH. The venv's
 # own python.exe on Windows is only a launcher that starts the base one as a child, and that child
@@ -201,7 +205,7 @@ $have = if (Test-Path $stamp) { (Get-Content $stamp -Raw).Trim() } else { "" }
 if ($want -ne $have) {
     Write-Host "Installing packages ..."
     Native $VenvPy -m pip install -q -r $req
-    if ($LASTEXITCODE -ne 0) { Die "pip could not install the agent's packages (see above)" }
+    if ($LASTEXITCODE -ne 0) { Die $PipHelp }
     Set-Content -Path $stamp -Value $want -Encoding ASCII
 }
 
@@ -232,12 +236,16 @@ if ($download) {
 # --- settings (kept in the service's XML; options passed now change them) ---
 function Read-Setting([string]$Key, [string]$Default) {
     if (Test-Path $ServiceXml) {
-        $node = ([xml](Get-Content $ServiceXml -Raw)).service.env | Where-Object { $_.name -eq $Key }
+        # A service installed before the CactAI -> SentrAI rename saved CACTAI_* names.
+        $old = $Key -replace "^SENTRAI_", "CACTAI_"
+        $envs = ([xml](Get-Content $ServiceXml -Raw)).service.env
+        $node = $envs | Where-Object { $_.name -eq $Key }
+        if (-not $node) { $node = $envs | Where-Object { $_.name -eq $old } }
         if ($node) { return $node.value }
     }
     return $Default
 }
-$enforceValue = Read-Setting "CACTAI_FIREWALL_ENFORCE" "0"
+$enforceValue = Read-Setting "SENTRAI_FIREWALL_ENFORCE" "0"
 if ($Enforce) { $enforceValue = "1" }
 if ($DryRun) { $enforceValue = "0" }
 $protected = Read-Setting "PROTECTED_IPS" "127.0.0.1,::1,localhost"
@@ -252,13 +260,13 @@ if ($Ca) {
 }
 
 $settings = [ordered]@{
-    CACTAI_AGENT_FILE       = $AgentFile
-    CACTAI_CONFIG           = (Join-Path $State "config.json")
-    CACTAI_COLLECTOR_STATE  = (Join-Path $State "collector-state.json")
-    CACTAI_SCOUT_SOURCES    = (Join-Path $State "sources.json")
-    CACTAI_LAB_LOGS         = (Join-Path $State "logs")
-    CACTAI_FIREWALL         = "netsh"
-    CACTAI_FIREWALL_ENFORCE = $enforceValue
+    SENTRAI_AGENT_FILE       = $AgentFile
+    SENTRAI_CONFIG           = (Join-Path $State "config.json")
+    SENTRAI_COLLECTOR_STATE  = (Join-Path $State "collector-state.json")
+    SENTRAI_SCOUT_SOURCES    = (Join-Path $State "sources.json")
+    SENTRAI_LAB_LOGS         = (Join-Path $State "logs")
+    SENTRAI_FIREWALL         = "netsh"
+    SENTRAI_FIREWALL_ENFORCE = $enforceValue
     PROTECTED_IPS           = $protected
     PYTHONPATH              = (Join-Path $Venv "Lib\site-packages")
     PYTHONUNBUFFERED        = "1"
@@ -305,6 +313,10 @@ try {
         if ($AllowHttp) { $joinArgs += "--allow-http" }
         Native $VenvPy @joinArgs
         if ($LASTEXITCODE -ne 0) { Die "could not join the panel (see the message above)" }
+    } elseif ($Pin) {
+        # Already joined: take the panel's new certificate pin (after the panel's certificate changed).
+        Native $VenvPy -m agent pin $Pin
+        if ($LASTEXITCODE -ne 0) { Die "could not set the new pin (see the message above)" }
     }
     Native $VenvPy -m collector.collector --add-system-logs
     if ($LASTEXITCODE -ne 0) { Write-Host "No known logs found yet; approve logs later with Scout." }

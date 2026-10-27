@@ -17,7 +17,7 @@ from typing import Any
 
 from .risk import CATEGORIES
 
-log = logging.getLogger("cactai.jev")
+log = logging.getLogger("sentrai.jev")
 
 # Choice criteria: label -> description string (SDK accepts str or None per label).
 CATEGORY_DESCRIPTIONS: dict[str, str] = {

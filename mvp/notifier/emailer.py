@@ -9,7 +9,7 @@ Telegram or the console as before):
   SMTP_PASSWORD        login password or app password  (never hardcode it)
   ALERT_EMAIL_FROM     sender address (default SMTP_USER)
   ALERT_EMAIL_TO       recipients, comma-separated
-  CACTAI_EMAIL_MODE    backup: only when Telegram fails (default) | always: next to Telegram
+  SENTRAI_EMAIL_MODE    backup: only when Telegram fails (default) | always: next to Telegram
 
 Email has no buttons, so each message points the operator to the dashboard to act.
 """
@@ -27,9 +27,9 @@ from email.utils import make_msgid
 from typing import Callable
 
 from formatting import (BAND_COLORS, BAND_EMOJI, BRAND_BUTTON, BRAND_ON_DARK, BRAND_DARK, TAGLINE, alert_fields,
-                        button_specs, is_notice, notice_lines, risk_meter)
+                        button_specs, is_notice, LINK_TEXT, notice_lines, risk_meter)
 
-log = logging.getLogger("cactai.notifier.email")
+log = logging.getLogger("sentrai.notifier.email")
 
 SECURITY = ("starttls", "ssl", "none")
 MODES = ("backup", "always")
@@ -61,9 +61,9 @@ class EmailConfig:
         if security not in SECURITY:
             log.warning("SMTP_SECURITY=%r is not one of %s; using starttls", security, "/".join(SECURITY))
             security = "starttls"
-        mode = e.get("CACTAI_EMAIL_MODE", "backup").strip().lower() or "backup"
+        mode = e.get("SENTRAI_EMAIL_MODE", "backup").strip().lower() or "backup"
         if mode not in MODES:
-            log.warning("CACTAI_EMAIL_MODE=%r is not one of %s; using backup", mode, "/".join(MODES))
+            log.warning("SENTRAI_EMAIL_MODE=%r is not one of %s; using backup", mode, "/".join(MODES))
             mode = "backup"
         try:
             port = int(e.get("SMTP_PORT", "").strip() or (465 if security == "ssl" else 587))
@@ -71,9 +71,9 @@ class EmailConfig:
             port = 465 if security == "ssl" else 587
         user = e.get("SMTP_USER", "").strip()
         return cls(host=host, port=port, security=security, user=user, password=e.get("SMTP_PASSWORD", ""),
-                   sender=e.get("ALERT_EMAIL_FROM", "").strip() or user or f"cactai@{host}",
+                   sender=e.get("ALERT_EMAIL_FROM", "").strip() or user or f"sentrai@{host}",
                    recipients=recipients, mode=mode,
-                   dashboard_url=e.get("CACTAI_DASHBOARD_URL", "").strip() or DEFAULT_DASHBOARD)
+                   dashboard_url=e.get("SENTRAI_DASHBOARD_URL", "").strip() or DEFAULT_DASHBOARD)
 
     def describe(self) -> str:
         return (f"{', '.join(self.recipients)} via {self.host}:{self.port} ({self.security}), "
@@ -89,8 +89,12 @@ def format_email(notification: dict, incident: dict | None = None, risk: dict | 
         icon, header, lines = notice_lines(notification)
         subject = f"[SentrAI] {lines[0] if lines else header}"
         text = "\n".join([f"{icon} {header}", *lines, "", f"-- SentrAI · {TAGLINE}"])
+        url = notification.get("report_url")
         body = "".join(f"<p style=\"margin:0 0 8px 0;font-family:{'monospace' if ln.startswith('SENTRAI-FP') else 'Arial,sans-serif'};"
-                       f"font-size:14px;word-break:break-all\">{html.escape(ln)}</p>" for ln in lines)
+                       f"font-size:14px;word-break:break-all\">"
+                       + (f"<a href=\"{html.escape(ln, quote=True)}\" style=\"color:{BRAND_BUTTON}\">"
+                          f"{html.escape(LINK_TEXT.get(notification.get('kind'), 'Open'))}</a>" if url and ln == url
+                          else html.escape(ln)) + "</p>" for ln in lines)
         html_body = (f"<div style=\"max-width:640px\"><div style=\"background:{BRAND_DARK};color:#fff;padding:12px 16px;"
                      f"font-family:Arial,sans-serif;font-weight:bold\">{icon} {html.escape(header)} · SentrAI</div>"
                      f"<div style=\"padding:16px\">{body}</div></div>")
@@ -147,7 +151,7 @@ def _email_html(f: dict, rows: list[tuple[str, str]], act: str, note: str, dashb
             f"letter-spacing:.8px;padding:3px 9px;border-radius:10px'>{e(f['band'].upper())}</span>"
             "<table role='presentation' width='100%' cellpadding='0' cellspacing='0' style='margin-top:8px'><tr>"
             + (f"<td width='{filled}%' style='background:{band};height:8px;border-radius:4px 0 0 4px'></td>" if filled else "")
-            + (f"<td style='background:#e4e9f1;height:8px'></td>" if filled < 100 else "")
+            + ("<td style='background:#e4e9f1;height:8px'></td>" if filled < 100 else "")
             + "</tr></table></td></tr></table>")
     body_rows = "".join(
         f"<tr><td style='{font};padding:9px 14px 9px 0;color:#626f86;font-size:13px;white-space:nowrap;"
@@ -203,7 +207,7 @@ def build_message(cfg: EmailConfig, notification: dict, incident: dict | None, r
     msg["Subject"] = subject
     msg["From"] = cfg.sender
     msg["To"] = ", ".join(recipients_for(cfg, notification))
-    msg["Message-ID"] = make_msgid(domain="cactai.local")
+    msg["Message-ID"] = make_msgid(domain="sentrai.local")
     msg.set_content(text)
     msg.add_alternative(html_body, subtype="html")
     return msg

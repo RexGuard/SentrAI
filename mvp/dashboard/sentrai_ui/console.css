@@ -1,10 +1,10 @@
 /* SentrAI Risk Console. Black or White theme with one accent colour; risk bands keep their own
-   green / amber / red in both. Fonts are bundled (cactai_ui/fonts), so the console looks the same offline.
+   green / amber / red in both. Fonts are bundled (sentrai_ui/fonts), so the console looks the same offline.
    Direction: an instrument panel, not a marketing page. Flat surfaces, hairlines instead of shadows,
    colour only where something needs attention, numbers in tabular figures. */
 :root {
   /* Streamlit's root font size is 15 px: .8rem (12 px) is the smallest text size used here.
-     Colours come from cactai_ui/theme.py (Black or White theme plus the accent picked in Configuration),
+     Colours come from sentrai_ui/theme.py (Black or White theme plus the accent picked in Configuration),
      injected before this file as a :root block. Only shape and type live here. */
   --radius: 10px;
 }
@@ -96,12 +96,23 @@ div[data-testid="stVerticalBlockBorderWrapper"], div[data-testid="stForm"] { bor
 }
 
 /* Machine list: one row per SentrAI program, like a server-status screen. More rows appear as
-   machines are added (CACTAI_PEERS), so the rows carry no fixed height. */
+   machines are added (SENTRAI_PEERS), so the rows carry no fixed height. */
 /* Streamlit's markdown indents lists and pads list items, hence the stronger selectors. */
 div[data-testid="stMarkdownContainer"] ul.machines { list-style: none; margin: 0 0 .3rem; padding: 0; display: flex;
            flex-direction: column; gap: .6rem; }
 div[data-testid="stMarkdownContainer"] ul.machines > li.machine { display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
            align-items: center; gap: 1rem; background: var(--surface-2); border-radius: 8px; padding: 1.05rem 1.2rem; margin: 0; }
+div[data-testid="stMarkdownContainer"] ul.machines > li.machine.clickable { grid-template-columns: auto minmax(0, 1fr) auto auto;
+           transition: background-color .15s ease-out; }
+.m-more { color: var(--ink-muted); font-size: 1.4rem; }
+/* A clickable machine row: its button is stretched invisibly over the whole card (app.py machine_list). */
+div[class*="st-key-mrow-"] { position: relative; gap: 0; }
+div[class*="st-key-mrow-"] [data-testid="stElementContainer"]:has(.stButton) { position: absolute; inset: 0; margin: 0; z-index: 1; }
+div[class*="st-key-mrow-"] [data-testid="stElementContainer"]:has(.stButton) *, div[class*="st-key-mrow-"] .stButton button { width: 100%; height: 100%; }
+div[class*="st-key-mrow-"] .stButton button { opacity: 0; cursor: pointer; }
+div[class*="st-key-mrow-"]:hover li.machine.clickable { background: var(--surface-3); }
+div[class*="st-key-mrow-"]:hover li.machine.clickable .m-bar { background: var(--line); }
+div[class*="st-key-mrow-"]:has(button:focus-visible) li.machine.clickable { outline: 2px solid var(--brand); outline-offset: 2px; }
 .m-icon { font-size: 1.9rem; font-variation-settings: "FILL" 1; padding-right: 1rem; border-right: 1px solid var(--line);
           vertical-align: 0; }
 .m-main { display: flex; flex-direction: column; gap: .3rem; min-width: 0; }
@@ -132,6 +143,11 @@ div[data-testid="stMarkdownContainer"] ul.machines > li.machine { display: grid;
 .offline .mi { font-size: 1.6rem; color: var(--critical); }
 .offline b { color: var(--ink); }
 .offline small { color: var(--ink-muted); }
+/* One sentence that answers the page's question before the details (Approvals). */
+.lead { display: flex; gap: .7rem; align-items: center; padding: .75rem 1rem; margin-bottom: 1rem;
+        border: 1px solid var(--line); border-left: 3px solid var(--amber); border-radius: var(--radius);
+        color: var(--ink); font-size: .95rem; line-height: 1.45; }
+.lead .mi { color: var(--amber); font-size: 1.3rem; }
 .protect-off { border: 1px solid color-mix(in srgb, var(--amber) 50%, transparent); background: color-mix(in srgb, var(--amber) 9%, transparent);
                border-radius: var(--radius); padding: .9rem 1.2rem; margin-bottom: 1rem; color: var(--ink-soft); display: flex; gap: .9rem; }
 .protect-off .mi { font-size: 1.6rem; color: var(--amber); }
@@ -148,6 +164,10 @@ div[data-testid="stMarkdownContainer"] ul.machines > li.machine { display: grid;
 .detail-grid div { background: var(--surface); padding: .55rem .8rem; }
 .detail-grid b { display: block; color: var(--ink); font-size: .95rem; font-weight: 600; overflow-wrap: anywhere; }
 .detail-grid span { color: var(--ink-muted); font-size: .8rem; font-weight: 500; }
+/* A short incident row: id, severity, what; one muted line under it. */
+.inc-row .inc-head { margin-bottom: .15rem; }
+.inc-row .inc-head b { color: var(--ink); font-weight: 600; }
+.inc-sub { color: var(--ink-muted); font-size: .85rem; overflow-wrap: anywhere; }
 .explain { color: var(--ink-soft); font-size: .88rem; margin: 0 0 .6rem 0; }
 /* The recommended action is the answer on an incident card: larger text and an accent edge. */
 .reco { border: 1px solid var(--brand-line); background: var(--brand-soft); padding: .8rem 1rem;
@@ -215,3 +235,19 @@ div[data-testid="stButtonGroup"] button[aria-checked="true"] { background: var(-
         color: var(--on-brand) !important; border-color: var(--brand-fill) !important; font-weight: 600; }
 div[data-testid="stButtonGroup"] button[aria-checked="true"] * { color: var(--on-brand); }
 .stCheckbox label:has(input[role="switch"])[data-selected="true"] > div:first-of-type > div { background: var(--on-brand); }
+/* Inline code in captions (setting names): Streamlit's green code ink at 0.75em failed AA contrast and the 12 px floor. */
+[data-testid="stCaptionContainer"] code { color: inherit; opacity: 1; font-size: 1em; }
+/* Multiselect chips: Streamlit fills them with the accent and writes white on it, unreadable on Mono's white. */
+[data-testid="stMultiSelect"] [data-tag] { background-color: var(--brand-soft) !important;
+  border: 1px solid var(--brand-line); }
+[data-testid="stMultiSelect"] [data-tag] * { color: var(--ink) !important; }
+
+/* ------------------------------------------------------------ chat */
+/* The pinned "Ask Cyanide…" box lines up with the page content above it instead of the whole window. */
+[data-testid="stBottomBlockContainer"] { max-width: 1480px; }
+/* Quick replies under a Cyanide message: compact, left-aligned, like chips in a messenger. */
+[class*="st-key-quick_"] .stButton button { min-height: 2rem; padding: .25rem .8rem;
+  font-size: .9rem; border-radius: 999px; }
+/* The conversation grows with the window, down to just above the pinned input. */
+:is(.st-key-chat_log, div:has(> .st-key-chat_log)) { height: max(540px, calc(100vh - 420px)) !important;
+  flex-basis: auto !important; }

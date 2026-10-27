@@ -2,7 +2,7 @@
 
 import json
 
-import cactai_llm
+import sentrai_llm
 import pytest
 from app import procscan
 from app.chat import OperatorChat
@@ -110,7 +110,7 @@ def test_linux_scan_of_this_machine_is_read_only_and_works():
 
 
 def test_approve_by_id_writes_the_collector_list_and_audits(client, machine, tmp_path, monkeypatch):
-    monkeypatch.setenv("CACTAI_SCOUT_SOURCES", str(tmp_path / "sources.json"))
+    monkeypatch.setenv("SENTRAI_SCOUT_SOURCES", str(tmp_path / "sources.json"))
     d = Discovery(client.core)
     monkeypatch.setattr(procscan, "list_processes", lambda system=None: machine["procs"])
     monkeypatch.setattr(procscan.platform, "system", lambda: "Windows")
@@ -132,7 +132,7 @@ def test_approve_by_id_writes_the_collector_list_and_audits(client, machine, tmp
 
 
 def test_scan_and_approve_over_http(client, tmp_path, monkeypatch):
-    monkeypatch.setenv("CACTAI_SCOUT_SOURCES", str(tmp_path / "sources.json"))
+    monkeypatch.setenv("SENTRAI_SCOUT_SOURCES", str(tmp_path / "sources.json"))
     log = tmp_path / "srv" / "logs"
     log.mkdir(parents=True)
     (log / "app.log").write_text("hello\n")
@@ -149,7 +149,7 @@ def test_scan_and_approve_over_http(client, tmp_path, monkeypatch):
 
 
 def test_cyanide_scans_and_suggests_a_log_but_cannot_add_it(client, machine, tmp_path, monkeypatch):
-    monkeypatch.setenv("CACTAI_SCOUT_SOURCES", str(tmp_path / "sources.json"))
+    monkeypatch.setenv("SENTRAI_SCOUT_SOURCES", str(tmp_path / "sources.json"))
     monkeypatch.setattr(procscan, "list_processes", lambda system=None: machine["procs"])
     monkeypatch.setattr(procscan.platform, "system", lambda: "Windows")
     d = Discovery(client.core)
@@ -157,10 +157,10 @@ def test_cyanide_scans_and_suggests_a_log_but_cannot_add_it(client, machine, tmp
     nginx = next(s for s in first["suggestions"] if s["program"] == "nginx web server")
     fid = next(f["id"] for f in nginx["files"] if f["name"] == "access.log")
     provider = FakeProvider([
-        cactai_llm.Turn(tool_calls=[call("scan_system")], stop="tool_use"),
-        cactai_llm.Turn(tool_calls=[call("suggest_log_source", file_id=fid, reason="Web requests to the portal")],
+        sentrai_llm.Turn(tool_calls=[call("scan_system")], stop="tool_use"),
+        sentrai_llm.Turn(tool_calls=[call("suggest_log_source", file_id=fid, reason="Web requests to the portal")],
                         stop="tool_use"),
-        cactai_llm.Turn(texts=["nginx is running; press the button to watch its access log."]),
+        sentrai_llm.Turn(texts=["nginx is running; press the button to watch its access log."]),
     ])
     reply = OperatorChat(client.core, provider, d).ask("erick", "what should I monitor?")
     assert reply["looked_at"] == ["running processes"]
@@ -181,7 +181,7 @@ def test_chat_without_a_key_scans_when_asked(client, machine, monkeypatch):
 
 
 def test_latest_scan_shows_an_approved_file_as_watched(client, tmp_path, monkeypatch):
-    monkeypatch.setenv("CACTAI_SCOUT_SOURCES", str(tmp_path / "sources.json"))
+    monkeypatch.setenv("SENTRAI_SCOUT_SOURCES", str(tmp_path / "sources.json"))
     (tmp_path / "srv" / "logs").mkdir(parents=True)
     (tmp_path / "srv" / "logs" / "app.log").write_text("x\n")
     procs = [procscan.Proc(7, "python3", "/usr/bin/python3", ["python3", "app.py"], "root", str(tmp_path / "srv"))]
@@ -194,7 +194,7 @@ def test_latest_scan_shows_an_approved_file_as_watched(client, tmp_path, monkeyp
 
 
 def test_scout_proposals_wait_for_an_operator_over_http(client, tmp_path, monkeypatch):
-    monkeypatch.setenv("CACTAI_SCOUT_SOURCES", str(tmp_path / "sources.json"))
+    monkeypatch.setenv("SENTRAI_SCOUT_SOURCES", str(tmp_path / "sources.json"))
     log = tmp_path / "auth.log"
     log.write_text("Sep 28 10:00:01 web sshd[1]: Failed password for admin from 203.0.113.45\n")
     gone = tmp_path / "gone.log"

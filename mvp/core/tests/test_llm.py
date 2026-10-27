@@ -1,15 +1,15 @@
-"""The provider layer (mvp/cactai_llm.py): picking a provider and speaking each API's format."""
+"""The provider layer (mvp/sentrai_llm.py): picking a provider and speaking each API's format."""
 
 import json
 from types import SimpleNamespace as NS
 
 import pytest
 
-import cactai_llm
-from cactai_llm import AnthropicProvider, OpenAIProvider
+import sentrai_llm
+from sentrai_llm import AnthropicProvider, OpenAIProvider
 
-KEYS = ("CACTAI_LLM_PROVIDER", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "DEEPSEEK_API_KEY",
-        "COMMANDCODE_API_KEY", "CACTAI_LLM_API_KEY", "CACTAI_LLM_BASE_URL", "CACTAI_LLM_MODEL")
+KEYS = ("SENTRAI_LLM_PROVIDER", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "DEEPSEEK_API_KEY",
+        "COMMANDCODE_API_KEY", "SENTRAI_LLM_API_KEY", "SENTRAI_LLM_BASE_URL", "SENTRAI_LLM_MODEL")
 SCHEMA = {"type": "object", "properties": {"ok": {"type": "boolean"}}, "required": ["ok"], "additionalProperties": False}
 TOOLS = [{"name": "list_dir", "description": "List a folder",
           "input_schema": {"type": "object", "properties": {"path": {"type": "string"}},
@@ -23,38 +23,38 @@ def clean_env(monkeypatch):
 
 
 def test_auto_picks_the_first_key_that_is_set(monkeypatch):
-    assert cactai_llm.provider_name() is None
+    assert sentrai_llm.provider_name() is None
     monkeypatch.setenv("DEEPSEEK_API_KEY", "d")
-    assert cactai_llm.provider_name() == "deepseek"
+    assert sentrai_llm.provider_name() == "deepseek"
     monkeypatch.setenv("OPENAI_API_KEY", "o")
-    assert cactai_llm.provider_name() == "openai"
+    assert sentrai_llm.provider_name() == "openai"
     monkeypatch.setenv("ANTHROPIC_API_KEY", "a")
-    assert cactai_llm.provider_name() == "anthropic"
-    monkeypatch.setenv("CACTAI_LLM_PROVIDER", "deepseek")
-    assert cactai_llm.provider_name() == "deepseek"
+    assert sentrai_llm.provider_name() == "anthropic"
+    monkeypatch.setenv("SENTRAI_LLM_PROVIDER", "deepseek")
+    assert sentrai_llm.provider_name() == "deepseek"
     monkeypatch.delenv("DEEPSEEK_API_KEY")
-    assert cactai_llm.provider_name() is None  # chosen provider without its key: off, not a silent switch
+    assert sentrai_llm.provider_name() is None  # chosen provider without its key: off, not a silent switch
 
 
 def test_from_env_builds_each_provider(monkeypatch):
     monkeypatch.setenv("DEEPSEEK_API_KEY", "d")
-    p = cactai_llm.from_env()
+    p = sentrai_llm.from_env()
     assert (p.name, p.model, str(p.client.base_url).rstrip("/")) == ("deepseek", "deepseek-chat", "https://api.deepseek.com")
-    monkeypatch.setenv("CACTAI_LLM_PROVIDER", "commandcode")
+    monkeypatch.setenv("SENTRAI_LLM_PROVIDER", "commandcode")
     monkeypatch.setenv("COMMANDCODE_API_KEY", "cc")
-    with pytest.raises(cactai_llm.LLMError):
-        cactai_llm.from_env()  # no default model: the name must be set
-    monkeypatch.setenv("CACTAI_LLM_MODEL", "cc-model")
-    p = cactai_llm.from_env()
+    with pytest.raises(sentrai_llm.LLMError):
+        sentrai_llm.from_env()  # no default model: the name must be set
+    monkeypatch.setenv("SENTRAI_LLM_MODEL", "cc-model")
+    p = sentrai_llm.from_env()
     assert (p.name, str(p.client.base_url).rstrip("/")) == ("commandcode", "https://api.commandcode.ai/provider/v1")
-    monkeypatch.delenv("CACTAI_LLM_MODEL")
-    monkeypatch.setenv("CACTAI_LLM_PROVIDER", "compatible")
-    monkeypatch.setenv("CACTAI_LLM_API_KEY", "c")
-    with pytest.raises(cactai_llm.LLMError):
-        cactai_llm.from_env()  # needs a base URL and a model
-    monkeypatch.setenv("CACTAI_LLM_BASE_URL", "https://llm.example.com/v1")
-    monkeypatch.setenv("CACTAI_LLM_MODEL", "some-model")
-    assert cactai_llm.from_env().label == "compatible:some-model"
+    monkeypatch.delenv("SENTRAI_LLM_MODEL")
+    monkeypatch.setenv("SENTRAI_LLM_PROVIDER", "compatible")
+    monkeypatch.setenv("SENTRAI_LLM_API_KEY", "c")
+    with pytest.raises(sentrai_llm.LLMError):
+        sentrai_llm.from_env()  # needs a base URL and a model
+    monkeypatch.setenv("SENTRAI_LLM_BASE_URL", "https://llm.example.com/v1")
+    monkeypatch.setenv("SENTRAI_LLM_MODEL", "some-model")
+    assert sentrai_llm.from_env().label == "compatible:some-model"
 
 
 class FakeOpenAI:
@@ -106,9 +106,9 @@ def test_errors_become_llm_error():
         def create(self, **kw):
             raise RuntimeError("connection refused")
 
-    with pytest.raises(cactai_llm.LLMError):
+    with pytest.raises(sentrai_llm.LLMError):
         OpenAIProvider(client=Broken()).complete_json("s", "u", SCHEMA)
-    with pytest.raises(cactai_llm.LLMError):
+    with pytest.raises(sentrai_llm.LLMError):
         AnthropicProvider(client=Broken()).complete_json("s", "u", SCHEMA)
 
 
@@ -127,22 +127,22 @@ def test_cyanide_planner_uses_whichever_provider_is_set(monkeypatch):
 
 
 def test_one_shared_key_serves_whichever_provider_is_chosen(monkeypatch):
-    monkeypatch.setenv("CACTAI_LLM_API_KEY", "shared")
-    monkeypatch.setenv("CACTAI_LLM_PROVIDER", "deepseek")
-    p = cactai_llm.from_env()
+    monkeypatch.setenv("SENTRAI_LLM_API_KEY", "shared")
+    monkeypatch.setenv("SENTRAI_LLM_PROVIDER", "deepseek")
+    p = sentrai_llm.from_env()
     assert (p.name, p.client.api_key) == ("deepseek", "shared")
-    monkeypatch.setenv("CACTAI_LLM_PROVIDER", "anthropic")
-    p = cactai_llm.from_env()
+    monkeypatch.setenv("SENTRAI_LLM_PROVIDER", "anthropic")
+    p = sentrai_llm.from_env()
     assert (p.name, p.client.api_key) == ("anthropic", "shared")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "own")  # a provider's own variable still wins
-    assert cactai_llm.from_env().client.api_key == "own"
+    assert sentrai_llm.from_env().client.api_key == "own"
 
 
 def test_auto_reads_a_claude_key_in_the_shared_field_as_anthropic(monkeypatch):
-    monkeypatch.setenv("CACTAI_LLM_API_KEY", "sk-ant-api03-x")
-    assert cactai_llm.provider_name() == "anthropic"
-    monkeypatch.setenv("CACTAI_LLM_BASE_URL", "https://llm.example.com/v1")
-    assert cactai_llm.provider_name() == "compatible"
+    monkeypatch.setenv("SENTRAI_LLM_API_KEY", "sk-ant-api03-x")
+    assert sentrai_llm.provider_name() == "anthropic"
+    monkeypatch.setenv("SENTRAI_LLM_BASE_URL", "https://llm.example.com/v1")
+    assert sentrai_llm.provider_name() == "compatible"
 
 
 @pytest.fixture
@@ -186,21 +186,21 @@ def models_api():
 
 def test_list_models_reads_every_page_and_keeps_chat_models(models_api):
     base, seen = models_api
-    assert cactai_llm.list_models("anthropic", "k", base) == ["claude-new", "claude-mid", "claude-old"]
+    assert sentrai_llm.list_models("anthropic", "k", base) == ["claude-new", "claude-mid", "claude-old"]
     assert seen[0][1]["x-api-key"] == "k"
-    assert cactai_llm.list_models("openai", "k", base + "/openai") == ["gpt-4.1", "gpt-5"]
+    assert sentrai_llm.list_models("openai", "k", base + "/openai") == ["gpt-4.1", "gpt-5"]
     assert seen[-1][1]["Authorization"] == "Bearer k"
 
 
 def test_list_models_explains_what_went_wrong(models_api):
     base, _ = models_api
-    with pytest.raises(cactai_llm.LLMError, match="rejected this API key"):
-        cactai_llm.list_models("openai", "bad", base + "/openai")
-    with pytest.raises(cactai_llm.LLMError, match="does not list its models"):
-        cactai_llm.list_models("compatible", "k", base + "/nothing-here")
-    with pytest.raises(cactai_llm.LLMError, match="base URL"):
-        cactai_llm.list_models("compatible", "k")
-    with pytest.raises(cactai_llm.LLMError, match="API key first"):
-        cactai_llm.list_models("openai", "")
-    with pytest.raises(cactai_llm.LLMError, match="could not reach"):
-        cactai_llm.list_models("openai", "k", "http://127.0.0.1:9")
+    with pytest.raises(sentrai_llm.LLMError, match="rejected this API key"):
+        sentrai_llm.list_models("openai", "bad", base + "/openai")
+    with pytest.raises(sentrai_llm.LLMError, match="does not list its models"):
+        sentrai_llm.list_models("compatible", "k", base + "/nothing-here")
+    with pytest.raises(sentrai_llm.LLMError, match="base URL"):
+        sentrai_llm.list_models("compatible", "k")
+    with pytest.raises(sentrai_llm.LLMError, match="API key first"):
+        sentrai_llm.list_models("openai", "")
+    with pytest.raises(sentrai_llm.LLMError, match="could not reach"):
+        sentrai_llm.list_models("openai", "k", "http://127.0.0.1:9")

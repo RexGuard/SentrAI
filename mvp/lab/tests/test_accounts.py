@@ -1,4 +1,4 @@
-"""Dashboard accounts (mvp/cactai_accounts.py): setup code, roles, invites, authenticator, recovery codes."""
+"""Dashboard accounts (mvp/sentrai_accounts.py): setup code, roles, invites, authenticator, recovery codes."""
 from __future__ import annotations
 
 import io
@@ -9,16 +9,16 @@ import pytest
 
 from collector import paths  # noqa: F401 - puts mvp/ on sys.path
 
-import cactai_accounts as acc  # noqa: E402
-import cactai_config as cfg  # noqa: E402
+import sentrai_accounts as acc  # noqa: E402
+import sentrai_config as cfg  # noqa: E402
 
 GOOD = "a-long-password-1"
 
 
 @pytest.fixture(autouse=True)
 def files(tmp_path, monkeypatch):
-    monkeypatch.setenv("CACTAI_CONFIG", str(tmp_path / "config.json"))
-    monkeypatch.delenv("CACTAI_ACCOUNTS", raising=False)
+    monkeypatch.setenv("SENTRAI_CONFIG", str(tmp_path / "config.json"))
+    monkeypatch.delenv("SENTRAI_ACCOUNTS", raising=False)
     for name in (cfg.EMAIL_ENV, cfg.HASH_ENV, cfg.PASSWORD_ENV):  # left behind by load() in other tests
         monkeypatch.delenv(name, raising=False)
     return tmp_path

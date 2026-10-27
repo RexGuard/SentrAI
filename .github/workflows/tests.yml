@@ -56,6 +56,11 @@ jobs:
         working-directory: mvp/core
         run: .venv/${{ runner.os == 'Windows' && 'Scripts/python.exe' || 'bin/python' }} -m pytest -q
 
+      - name: Classifier evaluation tests
+        if: ${{ !cancelled() }}
+        working-directory: mvp/eval
+        run: ../core/.venv/${{ runner.os == 'Windows' && 'Scripts/python.exe' || 'bin/python' }} -m pytest -q
+
       - name: Lab tests
         if: ${{ !cancelled() }}
         working-directory: mvp/lab
@@ -100,3 +105,39 @@ jobs:
 
       - name: Install, enforce, uninstall
         run: ..\.github\scripts\windows-agent-smoke.ps1
+
+  linux-install:
+    # Installs the panel (install.sh) and the agent (install-agent.sh) as real systemd services on
+    # Ubuntu, sends an attack through a web log, checks the real nftables and iptables blocks, and
+    # uninstalls both again.
+    name: Linux install (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-22.04]
+    defaults:
+      run:
+        working-directory: mvp
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      # The system Python, as on a fresh server (Ubuntu 22.04 ships 3.10, 24.04 ships 3.12).
+      - name: Server packages
+        run: sudo apt-get update -q && sudo apt-get install -yq python3-venv nftables iptables
+
+      - name: Install, attack, block, uninstall
+        run: sudo PYTHON=/usr/bin/python3 ../.github/scripts/linux-smoke.sh
+
+      # A server installed before the CactAI -> SentrAI rename, upgraded with today's install.sh.
+      - name: Upgrade from the CactAI names
+        env:
+          OLD_SHA: 3ed7261a9b519d391ac75f8aafcf1eb155996589  # main just before the rename
+          OLD: /tmp/sentrai-before-rename
+        run: |
+          git fetch -q --depth 1 origin "$OLD_SHA"
+          mkdir -p "$OLD" && git -C .. archive "$OLD_SHA" mvp | tar -C "$OLD" -xf -  # from the repo root: this step runs in mvp/
+          sudo PYTHON=/usr/bin/python3 OLD="$OLD" ../.github/scripts/linux-upgrade-smoke.sh

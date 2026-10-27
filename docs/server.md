@@ -98,7 +98,7 @@ With an AI key set (see [Settings](settings.html#ai-key)), SentrAI can also sear
 plain request:
 
 ```bash
-sudo cactai-scout find --root /var/log "where are the login and web server logs?"
+sudo sentrai-scout find --root /var/log "where are the login and web server logs?"
 ```
 
 Its suggestions appear under **Collector**, then **Scout proposals**, where you press **Watch** or
@@ -119,7 +119,8 @@ Its suggestions appear under **Collector**, then **Scout proposals**, where you 
 | `--no-start` | install and enable the services without starting them |
 | `--seal-journal` | sign the system journal so old entries cannot be rewritten unnoticed. Prints a key once: keep it off the server |
 | `--remote-copy URL` | send every record to a second machine that keeps a copy root on this server cannot change. See the [server README](https://github.com/RexGuard/SentrAI/blob/main/mvp/deploy/README.md#off-box-copy---remote-copy) |
-| `--prefix DIR` / `--user NAME` | install somewhere other than `/opt/cactai`, or run as another account |
+| `--panel [PORT]` / `--panel-url URL` | make this server a [central panel](panel.html) that agents on other machines join (port 8443 by default); `--panel off` closes it |
+| `--prefix DIR` / `--user NAME` | install somewhere other than `/opt/sentrai`, or run as another account |
 
 A setup with no questions, for a script:
 
@@ -131,23 +132,23 @@ sudo ./deploy/install.sh --protect 203.0.113.10 --admin-email you@example.com --
 
 | What | Where |
 | --- | --- |
-| Program | `/opt/cactai/mvp` |
-| Service settings (ports, addresses, protected IPs) | `/etc/cactai/cactai.env` |
-| Dashboard certificate | `/etc/cactai/tls/` |
-| Saved settings, watched logs, the audit record | `/var/lib/cactai/` |
-| Services | `cactai-core`, `cactai-collector`, `cactai-dashboard`, `cactai-notifier`, grouped as `cactai.target` |
+| Program | `/opt/sentrai/mvp` |
+| Service settings (ports, addresses, protected IPs) | `/etc/sentrai/sentrai.env` |
+| Dashboard certificate | `/etc/sentrai/tls/` |
+| Saved settings, watched logs, the audit record | `/var/lib/sentrai/` |
+| Services | `sentrai-core`, `sentrai-collector`, `sentrai-dashboard`, `sentrai-notifier`, grouped as `sentrai.target` |
 
-The services run as the `cactai` account, each locked down to what its job needs. After editing
-`cactai.env` by hand, restart them with `sudo systemctl restart cactai.target`.
+The services run as the `sentrai` account, each locked down to what its job needs. After editing
+`sentrai.env` by hand, restart them with `sudo systemctl restart sentrai.target`.
 
 ## Everyday commands
 
 ```bash
-systemctl status 'cactai-*'                # are they running?
-journalctl -u cactai-core -f               # follow one service's output
-sudo systemctl restart cactai.target       # restart all four
-sudo cactai-admin                          # who may sign in; a setup code on a new machine
-sudo cactai-admin --reset                  # the first Owner: new password, printed once
+systemctl status 'sentrai-*'                # are they running?
+journalctl -u sentrai-core -f               # follow one service's output
+sudo systemctl restart sentrai.target       # restart all four
+sudo sentrai-admin                          # who may sign in; a setup code on a new machine
+sudo sentrai-admin --reset                  # the first Owner: new password, printed once
 ```
 
 ## Upgrade
@@ -162,11 +163,20 @@ sudo ./deploy/install.sh
 Your settings, sign-in and records are kept. Only the options you pass change, and Python
 packages are reinstalled only when they changed.
 
+### Upgrading a server set up before the SentrAI name
+
+Servers installed before October 2026 used the old name CactAI in their folders and services
+(`/etc/cactai`, `/var/lib/cactai`, `cactai-core`, the `cactai` account). The same install command
+moves all of it to the SentrAI names the first time it runs: settings, records, sign-in, the
+API token, the machine key of an agent on the same server and any blocks already in the firewall
+come along. An agent installed on the same server is upgraded with it. Settings written with the
+old `CACTAI_` names still work, and SentrAI prints a reminder to rename them to `SENTRAI_`.
+
 ## Uninstall
 
 ```bash
 sudo ./deploy/uninstall.sh            # removes the services, keeps settings and records
-sudo ./deploy/uninstall.sh --purge    # also removes /etc/cactai and /var/lib/cactai
+sudo ./deploy/uninstall.sh --purge    # also removes /etc/sentrai and /var/lib/sentrai
 ```
 
 Both remove the dashboard's firewall rule. A sealed journal stays sealed.
@@ -178,3 +188,8 @@ less at first. Blocks go on SentrAI's own blocklist by default. Blocking in the
 server's own firewall is built but off: once turned on it starts as a dry run that only logs the
 command it would run. Turn it on step by step in [Settings](settings.html#firewall-blocking),
 after your own IP is protected.
+
+## Next
+
+To watch more machines from this server's dashboard, make it a
+[central panel](panel.html) and add them with the agent.

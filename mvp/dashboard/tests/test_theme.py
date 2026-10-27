@@ -4,11 +4,11 @@ from pathlib import Path
 
 import pytest
 
-from cactai_ui import shaping as sh
-from cactai_ui import theme as th
+from sentrai_ui import shaping as sh
+from sentrai_ui import theme as th
 
 sys.path.append(str(Path(__file__).resolve().parents[2]))
-import cactai_config as cfg  # noqa: E402
+import sentrai_config as cfg  # noqa: E402
 
 
 @pytest.mark.parametrize("theme", list(th.THEMES))
@@ -23,7 +23,7 @@ def test_brand_text_and_button_text_stay_readable(theme, accent):
 
 
 def test_every_primary_button_kind_uses_the_readable_text_colour():
-    css = (Path(__file__).resolve().parents[1] / "cactai_ui" / "console.css").read_text(encoding="utf-8")
+    css = (Path(__file__).resolve().parents[1] / "sentrai_ui" / "console.css").read_text(encoding="utf-8")
     for selector in ('.stButton button[kind="primary"]', '.stFormSubmitButton button[kind="primaryFormSubmit"]',
                      '.stDownloadButton button[kind="primary"]', '.stLinkButton a[kind="primary"]'):
         assert selector in css
@@ -69,12 +69,12 @@ def test_set_palette_switches_chart_colours():
 
 
 def test_appearance_is_kept_apart_from_settings(tmp_path, monkeypatch):
-    monkeypatch.setenv("CACTAI_CONFIG", str(tmp_path / "config.json"))
+    monkeypatch.setenv("SENTRAI_CONFIG", str(tmp_path / "config.json"))
     assert cfg.appearance() == {}
     cfg.save_appearance("light", "#14b8a6")
-    cfg.save({"CACTAI_OPERATOR": "erick"})  # saving the settings keeps the look
+    cfg.save({"SENTRAI_OPERATOR": "erick"})  # saving the settings keeps the look
     assert cfg.appearance() == {"theme": "light", "accent": "#14b8a6"}
-    assert "theme" not in cfg.read() and cfg.read()["CACTAI_OPERATOR"] == "erick"
+    assert "theme" not in cfg.read() and cfg.read()["SENTRAI_OPERATOR"] == "erick"
 
 
 def test_agent_colours_never_look_like_risk_colours():

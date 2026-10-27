@@ -17,27 +17,28 @@ import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import streamlit as st
 
-from cactai_ui import shaping as sh
-from cactai_ui import signin
-from cactai_ui import theme as th
-from cactai_ui.api import READ_ONLY_MESSAGE, CoreClient, CoreError
+from sentrai_ui import shaping as sh
+from sentrai_ui import signin
+from sentrai_ui import theme as th
+from sentrai_ui.api import READ_ONLY_MESSAGE, CoreClient, CoreError
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
-import cactai_accounts as acc  # noqa: E402
-import cactai_config as cfg  # noqa: E402
+import sentrai_accounts as acc  # noqa: E402
+import sentrai_config as cfg  # noqa: E402
 import setup_chat  # noqa: E402
 
 cfg.load()
 
-DEFAULT_CORE = os.environ.get("CACTAI_CORE_URL", "http://127.0.0.1:8000")
-DEFAULT_OPERATOR = os.environ.get("CACTAI_OPERATOR", "operator")
-# The machine list on Review: this computer first, then any other SentrAI cores listed in CACTAI_PEERS
+DEFAULT_CORE = os.environ.get("SENTRAI_CORE_URL", "http://127.0.0.1:8000")
+DEFAULT_OPERATOR = os.environ.get("SENTRAI_OPERATOR", "operator")
+# The machine list on Review: this computer first, then any other SentrAI cores listed in SENTRAI_PEERS
 # ("Office PC=http://10.0.0.5:8000, Web server=https://web:8000"). They share this console's API token.
-NODE_NAME = os.environ.get("CACTAI_NODE_NAME") or "This computer"
-PEERS = sh.parse_peers(os.environ.get("CACTAI_PEERS"))
+NODE_NAME = os.environ.get("SENTRAI_NODE_NAME") or "This computer"
+PEERS = sh.parse_peers(os.environ.get("SENTRAI_PEERS"))
 REFRESH_SECONDS = 2
 
 # Look: Black or White theme plus an accent, picked under Configuration > Appearance and saved with the settings.
@@ -47,9 +48,9 @@ ACCENT = LOOK.get("accent") or th.DEFAULT_ACCENT
 sh.set_palette(th.chart_colors(THEME))
 
 
-# SentrAI logo: assets/brand/mark.svg and wordmark.svg, copied into cactai_ui so the console needs no other folder.
+# SentrAI logo: assets/brand/mark.svg and wordmark.svg, copied into sentrai_ui so the console needs no other folder.
 def _logo_svg(name: str) -> str:
-    svg = (Path(__file__).parent / "cactai_ui" / name).read_text(encoding="utf-8")
+    svg = (Path(__file__).parent / "sentrai_ui" / name).read_text(encoding="utf-8")
     svg = re.sub(r'\s*<title>.*?</title>|\s(width|height)="[\d.]+"', "", svg)
     return svg.replace('role="img" aria-label="SentrAI"', 'aria-hidden="true"').replace("\n", "")
 
@@ -62,7 +63,7 @@ _FAVICON = Path(__file__).resolve().parents[2] / "assets" / "brand" / "favicon-3
 PAGE_ICON = str(_FAVICON) if _FAVICON.exists() else "🛡️"
 st.set_page_config(page_title="SentrAI · Risk Console", page_icon=PAGE_ICON, layout="wide",
                    initial_sidebar_state="auto")  # collapsed on a phone, so the page shows first
-CSS = (Path(__file__).parent / "cactai_ui" / "console.css").read_text(encoding="utf-8")
+CSS = (Path(__file__).parent / "sentrai_ui" / "console.css").read_text(encoding="utf-8")
 st.markdown(f"<style>{th.font_css()}{th.css(THEME, ACCENT)}{CSS}</style>", unsafe_allow_html=True)
 
 
@@ -146,8 +147,8 @@ def _register_owner(box) -> None:
     with box.form("register"):
         st.markdown(BRAND, unsafe_allow_html=True)
         st.markdown("#### Create your Owner account")
-        st.caption("This machine has no accounts yet. Type the setup code that `python cactai_config.py admin` "
-                   "(on a server: `sudo cactai-admin`) printed. It works once.")
+        st.caption("This machine has no accounts yet. Type the setup code that `python sentrai_config.py admin` "
+                   "(on a server: `sudo sentrai-admin`) printed. It works once.")
         code = st.text_input("Setup code", placeholder="ABCD-EFGH-JKLM")
         name = st.text_input("Your name", autocomplete="name")
         email = st.text_input("Email", autocomplete="username")
@@ -284,9 +285,9 @@ def _code_step(box, email: str) -> None:
 def login() -> dict | None:
     """Who is using the console: their account ({email, name, role, ...}), or None with the sign-in off.
 
-    A new machine opens on the register screen (setup code from `cactai_config.py admin`); an invite
+    A new machine opens on the register screen (setup code from `sentrai_config.py admin`); an invite
     link (?invite=...) opens the join screen; everyone else signs in with email, password and an
-    authenticator code. CACTAI_DASHBOARD_LOGIN=off skips all of it, for local testing and recordings.
+    authenticator code. SENTRAI_DASHBOARD_LOGIN=off skips all of it, for local testing and recordings.
     """
     if not cfg.login_required():
         return None
@@ -313,8 +314,8 @@ def login() -> dict | None:
         else:
             with box.container(border=True):
                 st.markdown(BRAND, unsafe_allow_html=True)
-                st.warning("No one can sign in yet. On this machine, run `python cactai_config.py admin` "
-                           "(on a server: `sudo cactai-admin`) for a one-time setup code, then reload this page.")
+                st.warning("No one can sign in yet. On this machine, run `python sentrai_config.py admin` "
+                           "(on a server: `sudo sentrai-admin`) for a one-time setup code, then reload this page.")
     else:
         if invite_code:
             box.error("This invite link is wrong or has expired. Ask whoever invited you for a new one.")
@@ -337,34 +338,6 @@ def locked(permission: str = "act") -> bool:
 
 def why_locked(permission: str = "act", otherwise: str | None = None) -> str | None:
     return READ_ONLY_MESSAGE if locked(permission) else otherwise
-    _, mid, _ = st.columns([1, 1.2, 1])
-    brand = BRAND
-    if not account["hash"] and not account["plain"]:
-        with mid.container(border=True):
-            st.markdown(brand, unsafe_allow_html=True)
-            st.warning("No dashboard sign-in is set up yet. On this machine, run "
-                       "`python cactai_config.py admin` (on a server: `sudo cactai-admin`), then reload this page.")
-        st.stop()
-    with mid.form("login"):
-        st.markdown(brand, unsafe_allow_html=True)
-        email = st.text_input("Email", autocomplete="username",
-                              placeholder=account["email"] if account["email"].endswith(".local") else "")
-        typed = st.text_input("Password", type="password", autocomplete="current-password")
-        if st.form_submit_button("Sign in", type="primary", width="stretch"):
-            ip = _client_ip()
-            wait = signin.wait_seconds(ip)
-            if wait:
-                st.error(f"Too many wrong tries. Wait {int(wait) // 60 + 1} min and try again.")
-            elif check_login(email, typed, account):
-                signin.succeeded(ip)
-                st.session_state.signed_in = account["email"]
-                st.rerun()
-            else:
-                signin.failed(ip)
-                st.error("Wrong email or password.")
-    st.stop()
-
-login()
 
 
 # ------------------------------------------------------------------ helpers
@@ -489,13 +462,13 @@ def audit_records() -> tuple[list[dict], bool | None, str | None]:
 
 
 def panel_mode(risk: Any) -> bool:
-    """This core is a central panel: it scores each joined machine on its own (CACTAI_RISK_SCOPE=host)."""
+    """This core is a central panel: it scores each joined machine on its own (SENTRAI_RISK_SCOPE=host)."""
     return isinstance(risk, dict) and risk.get("risk_scope") == "host"
 
 
 def machines() -> list[dict]:
     """Every SentrAI machine this console watches: on a central panel, the machines that joined it;
-    otherwise this computer first, then the cores listed in CACTAI_PEERS."""
+    otherwise this computer first, then the cores listed in SENTRAI_PEERS."""
     risk, err = fetch("risk")
     if panel_mode(risk):
         found, _ = fetch("machines", [])
@@ -658,7 +631,7 @@ def protection_banner() -> None:
     who = f" by {p['changed_by']}" if p.get("changed_by") else ""
     why = f": {p['reason']}" if p.get("reason") else ""
     left = len(p.get("active_actions") or [])
-    kept = f" {left} action(s) already in force stay until they expire or are rolled back." if left else ""
+    kept = f" {sh.plural(left, 'action')} already in force stay until they expire or are rolled back." if left else ""
     st.markdown(
         f'<div class="protect-off">{icon("remove_moderator")}<div><b>Protection is off: monitor-only mode</b><br>'
         f'<small>Turned off{html.escape(who)}{html.escape(why)}</small><br>'
@@ -676,11 +649,14 @@ def table(df, empty_text: str, **kwargs) -> None:
         st.dataframe(df, hide_index=True, width="stretch", **kwargs)
 
 
+def severity_color(inc: dict) -> str:
+    return {"low": sh.BAND_COLORS["green"], "medium": sh.BAND_COLORS["amber"], "high": sh.BAND_COLORS["red"],
+            "critical": sh.BAND_COLORS["critical"]}.get(str(inc.get("severity")), sh.UNKNOWN_COLOR)
+
+
 def incident_summary(inc: dict) -> None:
     inc_id = str(inc.get("id"))
-    sev_color = {"low": sh.BAND_COLORS["green"], "medium": sh.BAND_COLORS["amber"], "high": sh.BAND_COLORS["red"],
-                 "critical": sh.BAND_COLORS["critical"]}.get(
-        str(inc.get("severity")), sh.UNKNOWN_COLOR)
+    sev_color = severity_color(inc)
     st.markdown(
         f'<div class="inc-head">'
         f'<span class="inc-id">{html.escape(inc_id)}</span>'
@@ -710,7 +686,7 @@ def incident_summary(inc: dict) -> None:
         st.markdown(f'<p class="explain">{html.escape(str(inc["explanation"]))}</p>', unsafe_allow_html=True)
     rep = inc.get("reputation") or {}
     if rep and not rep.get("error"):  # AbuseIPDB: context for the person deciding, not evidence
-        seen = f"reported {rep.get('reports', 0)} time(s) by others, {rep.get('score', 0)}% abuse confidence"
+        seen = f"reported {sh.plural(rep.get('reports', 0), 'time')} by others, {rep.get('score', 0)}% abuse confidence"
         where = " · ".join(re.sub(r"[\[\]()*_`<>#|~\\$]", "", str(x)) for x in (rep.get("isp"), rep.get("country")) if x)
         st.caption(f":material/travel_explore: AbuseIPDB: {seen}" + (f" · {where}" if where else "")
                    + (" · Tor exit node" if rep.get("tor") else ""))
@@ -777,6 +753,70 @@ def decision_controls(inc: dict) -> None:
                        lambda: client.permanent(inc_id, op, just.strip() or "Made permanent by operator from dashboard"))
     else:
         st.caption(f"No operator action available (status: {inc.get('status')}).")
+
+
+def quick_actions(inc: dict, where: str) -> None:
+    """The one or two buttons an incident row needs. Justification is optional here, and the full form is in Details."""
+    inc_id, op = str(inc.get("id")), st.session_state.operator
+    can, off, ro = sh.available_actions(inc), locked(), why_locked()
+    k = f"{where}_{inc_id}"
+    c1, c2 = st.columns(2)
+    if can["decide"]:
+        no_patch = protection_off()
+        if c1.button("Approve", icon=":material/check:", type="primary", key=f"qa_{k}", width="stretch",
+                     disabled=off or no_patch,
+                     help=ro or ("Protection is off (monitor only): turn it on in Configuration to apply a hotpatch."
+                                 if no_patch else "Approve & patch, written to the audit log")):
+            def _approve() -> None:
+                if can["ack"]:
+                    client.ack(inc_id, op)
+                client.decision(inc_id, op, "approve", "")
+            run_action(f"Approved & patched {inc_id}", _approve)
+        with c2.popover("Reject", icon=":material/block:", width="stretch", disabled=off, help=ro):
+            just = st.text_input("Why (required, written to the audit log)", key=f"qrj_{k}",
+                                 placeholder="e.g. False positive: our penetration tester")
+            if st.button("Reject", key=f"qr_{k}", width="stretch", disabled=not just.strip()):
+                def _reject() -> None:
+                    if can["ack"]:
+                        client.ack(inc_id, op)
+                    client.decision(inc_id, op, "reject", just.strip())
+                run_action(f"Rejected {inc_id}", _reject)
+    elif can["contain_controls"]:
+        # Rollback is the safe default, so it is one click; keeping a block forever asks once more.
+        if c1.button("Roll back", icon=":material/undo:", type="primary", key=f"qb_{k}", width="stretch",
+                     disabled=off, help=ro or "Undo the block now"):
+            run_action(f"Rolled back {inc_id}",
+                       lambda: client.rollback(inc_id, op, "Rolled back by operator from dashboard"))
+        with c2.popover("Make permanent", icon=":material/push_pin:", width="stretch", disabled=off, help=ro):
+            st.caption("The block will no longer expire on its own.")
+            just = st.text_input("Why (optional, written to the audit log)", key=f"qpj_{k}",
+                                 placeholder="e.g. Verified attacker")
+            if st.button("Keep this block forever", key=f"qp_{k}", type="primary", width="stretch"):
+                run_action(f"Made permanent {inc_id}", lambda: client.permanent(
+                    inc_id, op, just.strip() or "Made permanent by operator from dashboard"))
+    elif can["ack"]:
+        if c1.button("Acknowledge", icon=":material/visibility:", key=f"qk_{k}", width="stretch", disabled=off,
+                     help=ro or "Records that you have seen this alert"):
+            run_action(f"Acknowledged {inc_id}", lambda: client.ack(inc_id, op))
+
+
+def incident_row(inc: dict, where: str, note: str = "", details=None) -> None:
+    """One short line per incident with its quick buttons; everything else waits behind Details."""
+    with st.container(border=True):
+        a, b = st.columns([3, 2], vertical_alignment="center")
+        sev = str(inc.get("severity") or "unknown").capitalize()
+        a.markdown(
+            f'<div class="inc-row"><div class="inc-head">'
+            f'<span class="inc-id">{html.escape(str(inc.get("id")))}</span>{pill(sev, severity_color(inc))}'
+            f'<b>{html.escape(sh.category_label(inc.get("category")))}</b></div>'
+            f'<div class="inc-sub">{html.escape(sh.incident_target(inc))} · {sh.incident_contribution(inc)} pts'
+            + (f' · {html.escape(note)}' if note else "") + '</div></div>',
+            unsafe_allow_html=True)
+        with b:
+            quick_actions(inc, where)
+        if details is not None:
+            with st.expander("Details", icon=":material/info:"):
+                details()
 
 
 # ------------------------------------------------------------------ pages
@@ -872,7 +912,7 @@ def page_config() -> None:
                 if f.generated:  # shown, never edited here: every part must restart with the same value
                     cols[n % 2].text_input(f.prompt, value=current[f.env], key=f"cfg_{f.env}", type="password",
                                            disabled=True, help=f"Environment variable {f.env}. Generated by setup; "
-                                           "python cactai_config.py token prints it.")
+                                           "python sentrai_config.py token prints it.")
                     continue
                 values[f.env] = cols[n % 2].text_input(
                     f.prompt, value=current[f.env], key=f"cfg_{f.env}", help=f"Environment variable {f.env}",
@@ -996,7 +1036,7 @@ def preset_settings(current: dict[str, str]) -> dict[str, str]:
 
     name = st.segmented_control("Preset", cfg.PRESET_CHOICES, key=pick, required=True, on_change=fill,
                                 format_func=cfg.preset_label,
-                                help="Environment variable CACTAI_PRESET. A preset fills in the values below; "
+                                help="Environment variable SENTRAI_PRESET. A preset fills in the values below; "
                                      "changing any of them by hand switches to Advanced.")
     advanced = name == cfg.ADVANCED
     st.caption(cfg.ADVANCED_ABOUT + " Pick a preset to go back to its values." if advanced
@@ -1018,36 +1058,36 @@ def preset_settings(current: dict[str, str]) -> dict[str, str]:
 
 def ai_settings(current: dict[str, str]) -> dict[str, str]:
     """Section 5: one provider list, one key, and a button that asks the provider for its models."""
-    keys = {env: f"cfg_{env}" for env in ("CACTAI_LLM_PROVIDER", "CACTAI_LLM_API_KEY", "CACTAI_LLM_BASE_URL",
+    keys = {env: f"cfg_{env}" for env in ("SENTRAI_LLM_PROVIDER", "SENTRAI_LLM_API_KEY", "SENTRAI_LLM_BASE_URL",
                                           cfg.MODEL_ENV)}
     for env, key in keys.items():  # widgets take their start value from session state, so a pick can fill the model
         st.session_state.setdefault(key, current[env])
     c1, c2 = st.columns(2)
-    provider = c1.selectbox("Provider", cfg.cactai_llm.PROVIDERS, key=keys["CACTAI_LLM_PROVIDER"],
-                            format_func=lambda p: cfg.cactai_llm.LABEL[p],
-                            help="Environment variable CACTAI_LLM_PROVIDER")
-    api_key = c2.text_input("API key", key=keys["CACTAI_LLM_API_KEY"], type="password",
-                            help="Environment variable CACTAI_LLM_API_KEY. Leave blank to run on fixed playbooks.").strip()
+    provider = c1.selectbox("Provider", cfg.sentrai_llm.PROVIDERS, key=keys["SENTRAI_LLM_PROVIDER"],
+                            format_func=lambda p: cfg.sentrai_llm.LABEL[p],
+                            help="Environment variable SENTRAI_LLM_PROVIDER")
+    api_key = c2.text_input("API key", key=keys["SENTRAI_LLM_API_KEY"], type="password",
+                            help="Environment variable SENTRAI_LLM_API_KEY. Leave blank to run on fixed playbooks.").strip()
     if provider == "compatible":
-        base_url = st.text_input("Base URL", key=keys["CACTAI_LLM_BASE_URL"], placeholder="https://llm.example.com/v1",
-                                 help="Environment variable CACTAI_LLM_BASE_URL").strip()
+        base_url = st.text_input("Base URL", key=keys["SENTRAI_LLM_BASE_URL"], placeholder="https://llm.example.com/v1",
+                                 help="Environment variable SENTRAI_LLM_BASE_URL").strip()
     else:
-        base_url = st.session_state[keys["CACTAI_LLM_BASE_URL"]].strip()
-        st.caption(f"Endpoint: {base_url or cfg.cactai_llm.BASE_URL.get(provider, '')}")
+        base_url = st.session_state[keys["SENTRAI_LLM_BASE_URL"]].strip()
+        st.caption(f"Endpoint: {base_url or cfg.sentrai_llm.BASE_URL.get(provider, '')}")
 
-    default = cfg.cactai_llm.DEFAULT_MODEL.get(provider) or "none, type one"
+    default = cfg.sentrai_llm.DEFAULT_MODEL.get(provider) or "none, type one"
     m1, m2 = st.columns([3, 1], vertical_alignment="bottom")
     model = m1.text_input("Model", key=keys[cfg.MODEL_ENV], placeholder=f"blank for the default ({default})",
-                          help="Environment variable CACTAI_LLM_MODEL; a value set in the environment "
+                          help="Environment variable SENTRAI_LLM_MODEL; a value set in the environment "
                                "before SentrAI starts wins over this one.").strip()
-    ai = {"CACTAI_LLM_PROVIDER": provider, "CACTAI_LLM_API_KEY": api_key, "CACTAI_LLM_BASE_URL": base_url,
+    ai = {"SENTRAI_LLM_PROVIDER": provider, "SENTRAI_LLM_API_KEY": api_key, "SENTRAI_LLM_BASE_URL": base_url,
           cfg.MODEL_ENV: model}
     if m2.button("Fetch models", icon=":material/refresh:", width="stretch", disabled=not api_key,
                  help="Ask the provider which models this key can use"):
         with st.spinner("Asking the provider for its models..."):
             try:
                 st.session_state.ai_models = (provider, cfg.fetch_models(ai), None)
-            except cfg.cactai_llm.LLMError as exc:
+            except cfg.sentrai_llm.LLMError as exc:
                 st.session_state.ai_models = (provider, [], str(exc))
 
     fetched_for, models, error = st.session_state.get("ai_models") or ("", [], None)
@@ -1076,8 +1116,8 @@ def ai_connection(ai: dict[str, str]) -> None:
                    f" · key from {now.get('key_source') or 'unknown'}")
     else:
         t1.caption(f"Cyanide now: :red[:material/radio_button_unchecked: offline] · {now.get('off_reason') or now.get('chat')}")
-    body = {"provider": ai["CACTAI_LLM_PROVIDER"], "api_key": ai["CACTAI_LLM_API_KEY"],
-            "base_url": ai["CACTAI_LLM_BASE_URL"], "model": ai[cfg.MODEL_ENV]}
+    body = {"provider": ai["SENTRAI_LLM_PROVIDER"], "api_key": ai["SENTRAI_LLM_API_KEY"],
+            "base_url": ai["SENTRAI_LLM_BASE_URL"], "model": ai[cfg.MODEL_ENV]}
     if t2.button("Test connection", icon=":material/power:", width="stretch", disabled=bool(err),
                  help="Send one short request to the provider with the settings above (saved or not), "
                       "through the same code Cyanide uses"):
@@ -1186,14 +1226,16 @@ def page_approvals() -> None:
     if not waiting:
         empty("Nothing waiting for a decision. All quiet at the gate.", "check_circle", good=True)
         return
-    for n, inc in enumerate(waiting):
-        can = sh.available_actions(inc)
-        verb = "Approve or reject" if can["decide"] else "Keep or roll back"
-        title = f"{verb} · {inc.get('id')} · {sh.category_label(inc.get('category'))} · {sh.incident_contribution(inc)} pts"
-        with st.expander(title, expanded=n == 0):
+    st.markdown(f'<div class="lead">{icon("pending_actions")}<span>{html.escape(sh.approvals_headline(waiting))}</span></div>',
+                unsafe_allow_html=True)
+    for inc in waiting:
+        verb = "Approve or reject" if sh.available_actions(inc)["decide"] else "Keep or roll back"
+
+        def details(inc=inc) -> None:
             incident_summary(inc)
             decision_controls(inc)
             table(sh.action_rows(inc), "No containment actions yet.")
+        incident_row(inc, "appr", verb, details)
 
 
 def owner_controls(inc: dict, contacts: list[dict]) -> None:
@@ -1276,11 +1318,9 @@ def page_incidents() -> None:
         todo = sh.needs_attention(incidents)
         if not todo:
             empty("Nothing needs a person right now. Every open incident is in hand.", "check_circle", good=True)
-        for n, inc in enumerate(todo):
-            title = (f"{inc.get('id')} · {sh.category_label(inc.get('category'))} · {inc.get('owner') or 'no owner'}"
-                     f" · {'; '.join(sh.attention(inc))}")
-            with st.expander(title, expanded=n == 0):
-                incident_card(inc, contacts)
+        for inc in todo:
+            note = f"{inc.get('owner') or 'no owner'} · {'; '.join(sh.attention(inc))}"
+            incident_row(inc, "todo", note, lambda inc=inc: incident_card(inc, contacts))
 
     with st.container(border=True):
         section("All incidents", "owner, backup and what each one still needs", "assignment_ind")
@@ -1304,12 +1344,215 @@ def page_incidents() -> None:
         else:
             st.caption(f"From {routing.get('source')}. Unanswered alerts go to the owner's backup after "
                        f"{(routing.get('follow_up') or {}).get('escalate_after_reminders', '?')} reminders.")
-            table(sh.routing_rows(routing), "", )
-            table(sh.contact_rows(routing), "")
+            routing_map(routing)
+            with st.expander("The same as tables"):
+                table(sh.routing_rows(routing), "", )
+                table(sh.contact_rows(routing), "")
+            telegram_links(contacts)
+
+
+def routing_map(routing: dict) -> None:
+    """Who gets what as a mind map, with forms beside it to add or remove people and change the rules."""
+    st.graphviz_chart(sh.routing_dot(routing, th.palette(THEME, ACCENT)), width="stretch")
+    st.caption("Read left to right: a new incident takes the first rule it matches (1 first). "
+               "**owns** (solid) = gets it and every reminder · dashed = also told, once · "
+               "**backup** (dotted) = takes over when the owner does not answer.")
+    with st.container(border=True):
+        st.markdown("**Change who gets what**")
+        if locked("configure"):
+            st.caption(why_locked("configure"))
+        people, rules, follow = st.tabs(["People", "Which incidents go where", "Follow-up"])
+        with people:
+            routing_people(routing)
+        with rules:
+            routing_rules(routing)
+        with follow:
+            routing_follow_up(routing)
+
+
+def _pick_next(key: str, options: list) -> None:
+    """Select what was just saved (or "new" after a delete): a widget's value can only be set before it is drawn."""
+    want = st.session_state.pop(f"{key}_next", None)
+    if want is not None and want in options:
+        st.session_state[key] = want
+    elif st.session_state.get(key) not in options:
+        st.session_state.pop(key, None)
+
+
+def _save_routing(doc: dict, label: str) -> None:
+    run_action(label, lambda: client.save_routing(doc, st.session_state.operator))
+
+
+def routing_people(routing: dict) -> None:
+    doc = sh.routing_doc(routing)
+    people = doc["contacts"]
+    new = "+ Add a person"
+    _pick_next("rt_person", [new, *people])
+    pick = st.selectbox("Person", [new, *people], key="rt_person",
+                        format_func=lambda cid: cid if cid == new else people[cid]["name"])
+    cur = people.get(pick, {})
+    off = locked("configure")
+    with st.form(f"rt_person_{pick}", border=False):
+        l, r = st.columns(2)
+        name = l.text_input("Name", cur.get("name", ""), max_chars=120, disabled=off)
+        role = r.selectbox("Role", sh.ROLE_CHOICES, disabled=off,
+                            index=sh.ROLE_CHOICES.index(cur.get("role", "")) if cur.get("role", "") in sh.ROLE_CHOICES else 0,
+                            format_func=lambda r: r.replace("_", " ") or "none",
+                            help="On duty, team lead, IT manager and CXO stand in for the four names in the settings.")
+        email = l.text_input("Email", cur.get("email", ""), max_chars=120, disabled=off)
+        telegram = r.text_input("Telegram", cur.get("telegram", ""), max_chars=120, disabled=off,
+                                 placeholder="@handle")
+        others = [c for c in people if c != pick]
+        backup = l.selectbox("Backup (takes over when they do not answer)", ["", *others], disabled=off,
+                              index=([""] + others).index(cur.get("backup", "")) if cur.get("backup", "") in others else 0,
+                              format_func=lambda cid: people[cid]["name"] if cid else "nobody")
+        a, b, _ = st.columns([1, 1, 2])
+        saved = a.form_submit_button("Add person" if pick == new else "Save", icon=":material/save:",
+                                     type="primary", width="stretch", disabled=off, help=why_locked("configure"))
+        removed = pick != new and b.form_submit_button("Remove", icon=":material/person_remove:", width="stretch",
+                                                       disabled=off, help=why_locked("configure"))
+    if saved:
+        if not name.strip():
+            st.warning("Give the person a name.")
+            return
+        cid = sh.new_contact_id(doc, name) if pick == new else pick
+        st.session_state["rt_person_next"] = cid
+        for k, p in people.items():  # one person per settings role: it moves to whoever was given it last
+            if role and k != cid and p.get("role") == role:
+                p["role"] = ""
+        people[cid] = {"name": name.strip(), "role": role, "email": email.strip(), "telegram": telegram.strip(),
+                       "backup": backup}
+        _save_routing(doc, f"{name.strip()} {'added' if pick == new else 'saved'}")
+    if removed:
+        try:
+            notes = sh.remove_contact(doc, pick)
+        except ValueError as exc:
+            st.warning(str(exc))
+            return
+        st.session_state["rt_person_next"] = new
+        _save_routing(doc, f"{cur.get('name')} removed" + (f" ({'; '.join(notes)})" if notes else ""))
+
+
+def routing_rules(routing: dict) -> None:
+    doc = sh.routing_doc(routing)
+    people, rules = doc["contacts"], doc["rules"]
+    new = -1
+    _pick_next("rt_rule", [new, *range(len(rules))])
+    pick = st.selectbox("Rule", [new, *range(len(rules))], key="rt_rule",
+                        format_func=lambda i: "+ New rule" if i == new else f"{i + 1}. {rules[i]['name']}")
+    cur = rules[pick] if pick != new else {"name": "", "match": {}, "owner": next(iter(people), ""), "notify": []}
+    match = cur.get("match") or {}
+    off = locked("configure")
+    ids = list(people)
+    with st.form(f"rt_rule_{pick}", border=False):
+        l, r = st.columns(2)
+        name = l.text_input("Rule name", cur["name"], max_chars=120, disabled=off, placeholder="Web attacks")
+        cats = r.multiselect("Incident types", list(sh.CATEGORY_LABELS), default=match.get("category", []),
+                              format_func=sh.category_label, disabled=off, placeholder="any type")
+        sevs = l.multiselect("Severity", sh.SEVERITY_CHOICES, disabled=off, placeholder="any severity",
+                              default=[x for x in match.get("severity", []) if x in sh.SEVERITY_CHOICES])
+        hosts = r.text_input("Machines", ", ".join(match.get("host", [])), disabled=off, placeholder="any machine",
+                              help="Names or patterns such as web-* or db-01, separated by commas.")
+        owner = l.selectbox("Owner", ids, disabled=off or not ids,
+                             index=ids.index(cur["owner"]) if cur["owner"] in ids else 0,
+                             format_func=lambda cid: people[cid]["name"])
+        told = r.multiselect("Also tell", ids, default=[x for x in cur["notify"] if x in ids], disabled=off,
+                              format_func=lambda cid: people[cid]["name"], placeholder="nobody else")
+        order = l.number_input("Order (the first rule that matches wins)", 1, len(rules) + (pick == new),
+                                value=(pick + 1) if pick != new else max(1, len(rules)), disabled=off)
+        a, b, _ = st.columns([1, 1, 2])
+        saved = a.form_submit_button("Add rule" if pick == new else "Save", icon=":material/save:", type="primary",
+                                     width="stretch", disabled=off, help=why_locked("configure"))
+        removed = pick != new and b.form_submit_button("Delete", icon=":material/delete:", width="stretch",
+                                                       disabled=off, help=why_locked("configure"))
+    st.caption("Leave the types, severity and machines empty to catch everything that no rule above took.")
+    if saved:
+        if not name.strip():
+            st.warning("Give the rule a name.")
+            return
+        m = {"category": cats, "severity": sevs, "host": [h.strip() for h in hosts.split(",") if h.strip()]}
+        rule = {"name": name.strip(), "match": {k: v for k, v in m.items() if v} | (
+                {"layer": match["layer"]} if match.get("layer") else {}),
+                "owner": owner, "notify": [x for x in told if x != owner]}
+        if pick != new:
+            rules.pop(pick)
+        rules.insert(int(order) - 1, rule)
+        st.session_state["rt_rule_next"] = int(order) - 1
+        _save_routing(doc, f"Rule {rule['name']} {'added' if pick == new else 'saved'}")
+    if removed:
+        gone = rules.pop(pick)
+        st.session_state["rt_rule_next"] = new
+        _save_routing(doc, f"Rule {gone['name']} deleted")
+
+
+def routing_follow_up(routing: dict) -> None:
+    doc = sh.routing_doc(routing)
+    fu = doc["follow_up"]
+    off = locked("configure")
+    with st.form("rt_follow", border=False):
+        after = st.number_input("Unanswered reminders before the backup takes over", 1, 20,
+                                int(fu.get("escalate_after_reminders", 2)), disabled=off)
+        most = st.number_input("Hand it on at most this many times", 0, 20, int(fu.get("max_escalations", 3)),
+                               disabled=off)
+        hours = st.number_input("Remind the owner when acknowledged but not resolved after (hours, 0 = never)",
+                                0.0, 720.0, float(fu.get("resolve_within_hours", 24)), step=1.0, disabled=off)
+        if st.form_submit_button("Save", icon=":material/save:", type="primary", disabled=off,
+                                 help=why_locked("configure")):
+            doc["follow_up"] = {"escalate_after_reminders": int(after), "max_escalations": int(most),
+                                "resolve_within_hours": float(hours)}
+            _save_routing(doc, "Follow-up saved")
+
+
+def telegram_links(contacts: list[dict]) -> None:
+    """Make a one-time code a person sends to the bot, so their alerts reach them in their own chat."""
+    if not contacts:
+        return
+    st.markdown("**Alerts in each person's own Telegram chat**")
+    st.caption("Make a code for a person and send it to them. They open a private chat with the SentrAI bot "
+               "and send `/link CODE` within 30 minutes. From then on, alerts for them arrive in that chat "
+               "with the buttons, and whatever they press is recorded under their name.")
+    by_name = {str(c.get("name")): c for c in contacts if c.get("name")}
+    a, b, c = st.columns([3, 1.4, 1.2], vertical_alignment="bottom")
+    who = a.selectbox("Person", list(by_name), key="tg_person")
+    contact = by_name.get(who) or {}
+    op = st.session_state.operator
+    if b.button("Make link code", icon=":material/key:", key="tg_code", width="stretch", disabled=locked(),
+                help=why_locked()):
+        made, err = safe(lambda: client.telegram_link_code(str(contact.get("id")), op), {})
+        if err:
+            st.warning(f"Could not make a code: {err}")
+        else:
+            st.session_state["tg_made"] = made
+    if contact.get("telegram_linked") and c.button("Unlink", icon=":material/link_off:", key="tg_unlink",
+                                                   width="stretch", disabled=locked(), help=why_locked()):
+        run_action(f"{who} unlinked from Telegram",
+                   lambda: client.telegram_unlink(str(contact.get("id")), op))
+    made = st.session_state.get("tg_made")
+    if made and made.get("name") == who:
+        st.success(f"Code for {made.get('name')}: **{made.get('code')}** "
+                   f"(works once, until {str(made.get('expires_at') or '')[11:16]}). "
+                   f"They send this to the bot in a private chat:")
+        st.code(made.get("send") or f"/link {made.get('code')}", language=None)
 
 
 CHAT_STARTERS = ("What is happening right now?", "Which incident should I deal with first?",
                  "Why did you block the last IP address?")
+CHAT_FOLLOW_UPS = CHAT_STARTERS + ("Is anything waiting for my approval?", "What changed in the last hour?",
+                                   "Is any machine offline?")
+
+
+def chat_quick_replies(questions: list[str] | tuple[str, ...], key: str) -> None:
+    """Questions to send with one click, shown under Cyanide's message like quick replies."""
+    cols = st.container(key=f"quick_{key}").columns(len(questions))
+    for col, q in zip(cols, questions):
+        if col.button(q, key=f"{key}_{q}", width="stretch"):
+            st.session_state["chat_pending"] = q
+
+
+def chat_follow_ups(messages: list[dict]) -> list[str]:
+    """Up to three questions the operator has not asked yet, for under the latest reply."""
+    asked = {str(m.get("text") or "").strip().lower() for m in messages if m.get("role") == "operator"}
+    return [q for q in CHAT_FOLLOW_UPS if q.lower() not in asked][:3]
 
 
 def page_chat() -> None:
@@ -1355,17 +1598,17 @@ def page_chat() -> None:
         safe(client.clear_chat)
         st.rerun()
 
-    with st.container(height=540, border=True):
+    with st.container(height=540, border=True, key="chat_log"):
         if not messages:
-            st.caption(f"Ask {assistant} about incidents, its decisions, or what to do next.")
-        for m in messages:
-            chat_message(m, assistant, by_id)
+            with st.chat_message("assistant", avatar=":material/science:"):
+                st.caption(f"**{assistant}**")
+                st.markdown(f"Hi, I'm {assistant}. Ask me about incidents, why I acted, or what to do next. "
+                            "Or pick one of these to start:")
+                chat_quick_replies(CHAT_STARTERS, "starter")
+        last = max((n for n, m in enumerate(messages) if m.get("role") != "operator"), default=-1)
+        for n, m in enumerate(messages):
+            chat_message(m, assistant, by_id, follow_ups=chat_follow_ups(messages) if n == last else None)
 
-    if not messages:
-        cols = st.columns(len(CHAT_STARTERS))
-        for col, q in zip(cols, CHAT_STARTERS):
-            if col.button(q, width="stretch", key=f"starter_{q}"):
-                st.session_state["chat_pending"] = q
     prompt = st.chat_input(f"Ask {assistant}…") or st.session_state.pop("chat_pending", None)
     if prompt:
         with st.spinner(f"{assistant} is looking into it…"):
@@ -1395,20 +1638,20 @@ def setup_conversation() -> None:
         del st.session_state.setup_chat
         st.session_state.setup_later = True
         st.rerun()
-    with st.container(height=540, border=True):
-        for m in sc.messages:
+    answer = None
+    options = sc.options()
+    with st.container(height=540, border=True, key="chat_log"):
+        for i, m in enumerate(sc.messages):
             mine = m["role"] == "user"
             with st.chat_message("user" if mine else "assistant", avatar=":material/person:" if mine else ":material/science:"):
                 st.markdown(m["text"].replace("\n", "  \n") if mine else m["text"])
-    answer = None
-    options = sc.options()
-    if options:
-        per_row = 2 if any(len(label) > 26 for _, label in options) else 4  # long labels are never cut off
-        cols = st.columns(min(len(options), per_row))
-        for n, (value, label) in enumerate(options):
-            if cols[n % len(cols)].button(label, key=f"setup_{len(sc.messages)}_{value}", width="stretch",
-                                          type="primary" if n == 0 and sc.state == "review" else "secondary"):
-                answer = value
+                if options and i == len(sc.messages) - 1:  # the answers sit under the question they answer
+                    per_row = 2 if any(len(label) > 26 for _, label in options) else 4  # long labels are never cut off
+                    cols = st.columns(min(len(options), per_row))
+                    for n, (value, label) in enumerate(options):
+                        if cols[n % len(cols)].button(label, key=f"setup_{len(sc.messages)}_{value}", width="stretch",
+                                                      type="primary" if n == 0 and sc.state == "review" else "secondary"):
+                            answer = value
     if sc.secret:
         with st.form(f"setup_secret_{len(sc.messages)}", clear_on_submit=True, border=False):
             f1, f2 = st.columns([5, 1], vertical_alignment="bottom")
@@ -1448,14 +1691,14 @@ def save_setup(sc: "setup_chat.SetupChat") -> None:
     path = cfg.save(values)
     cfg.mark_setup_done("chat")
     try:
-        watched = setup_chat.save_log_sources(sc, f"guided setup ({values.get('CACTAI_OPERATOR') or 'operator'})")
+        watched = setup_chat.save_log_sources(sc, f"guided setup ({values.get('SENTRAI_OPERATOR') or 'operator'})")
     except OSError as e:
         watched = []
         sc.messages.append({"role": "assistant", "text": f"I couldn't add the log files to the collector's list ({e}). "
                             "Add them on the Collector page instead."})
     for key in [k for k in st.session_state if str(k).startswith("cfg_")]:  # Configuration shows the new values
         del st.session_state[key]
-    st.session_state.operator = values.get("CACTAI_OPERATOR") or st.session_state.operator
+    st.session_state.operator = values.get("SENTRAI_OPERATOR") or st.session_state.operator
     ai, err = safe(client.ai_reload)
     note = f"Saved to {path}. "
     if watched:
@@ -1472,7 +1715,7 @@ def save_setup(sc: "setup_chat.SetupChat") -> None:
     sc.saved(note + "\n\nYou can change anything later here or on the Configuration page.")
 
 
-def chat_message(m: dict, assistant: str, by_id: dict[str, dict]) -> None:
+def chat_message(m: dict, assistant: str, by_id: dict[str, dict], follow_ups: list[str] | None = None) -> None:
     mine = m.get("role") == "operator"
     who = m.get("operator") or st.session_state.operator if mine else assistant
     with st.chat_message("user" if mine else "assistant", avatar=":material/person:" if mine else ":material/science:"):
@@ -1487,6 +1730,8 @@ def chat_message(m: dict, assistant: str, by_id: dict[str, dict]) -> None:
             st.caption("Looked at: " + ", ".join(dict.fromkeys(m["looked_at"])))
         for n, s in enumerate(m.get("suggestions") or []):
             chat_suggestion(m.get("id"), n, s, by_id.get(str(s.get("incident"))))
+        if follow_ups:
+            chat_quick_replies(follow_ups, f"follow_{m.get('id')}")
 
 
 def chat_suggestion(mid: Any, n: int, s: dict, inc: dict | None) -> None:
@@ -1600,10 +1845,10 @@ def page_collector() -> None:
     left, right = st.columns(2)
     with left, st.container(border=True):
         section("Log sources", "from the settings file", "folder_open")
-        logs_dir = Path(os.environ.get("CACTAI_LAB_LOGS") or cfg.FIELDS["CACTAI_LAB_LOGS"].default)
+        logs_dir = Path(os.environ.get("SENTRAI_LAB_LOGS") or cfg.FIELDS["SENTRAI_LAB_LOGS"].default)
         st.caption(f"Folder: {logs_dir}")
         rows = []
-        for env in ("CACTAI_LOG_ACCESS", "CACTAI_LOG_AUTH", "CACTAI_LOG_DB", "CACTAI_LOG_OS"):
+        for env in ("SENTRAI_LOG_ACCESS", "SENTRAI_LOG_AUTH", "SENTRAI_LOG_DB", "SENTRAI_LOG_OS"):
             path = logs_dir / (os.environ.get(env) or cfg.FIELDS[env].default)
             rows.append({"Log": cfg.FIELDS[env].prompt.replace(" file name", ""), "File": path.name,
                          "Size": f"{path.stat().st_size / 1024:.1f} KB" if path.exists() else "not created yet"})
@@ -1711,7 +1956,7 @@ def threat_panel() -> None:
             st.caption(latest["note"])
         if not latest.get("scanned_at"):
             st.caption("No threat scan yet. Set the folders under threat_scan.paths in the system profile "
-                       "(or CACTAI_THREAT_PATHS); Cyanide can also run one when you ask in Chat.")
+                       "(or SENTRAI_THREAT_PATHS); Cyanide can also run one when you ask in Chat.")
         else:
             c = latest.get("counts") or {}
             st.caption(f"Last scan {sh.short_time(latest.get('scanned_at'))}: {latest.get('files_checked', 0)} files in "
@@ -1754,7 +1999,7 @@ def threat_row(f: dict) -> None:
 def scan_suggestion(s: dict) -> None:
     """One place the scan found logs, with a Watch button per file not yet watched."""
     files = s.get("files") or []
-    state = ":material/check: already watched" if s.get("already_watched") else f"{len(files)} log file(s)"
+    state = ":material/check: already watched" if s.get("already_watched") else sh.plural(len(files), "log file")
     st.markdown(f"**{html.escape(str(s.get('program')))}** · {code(s.get('path'))} · {html.escape(str(s.get('layer')))} · {state}  \n"
                 f"<span style='opacity:.7'>{html.escape(', '.join(s.get('reasons') or []))}</span>",
                 unsafe_allow_html=True)
@@ -1781,11 +2026,11 @@ def page_classifier() -> None:
     opened = sh.records_of(records, "incident_opened")
 
     by_rules = int((rows["Classified by"] == "Rules").sum()) if not rows.empty else 0
-    jev_status = str(jev.get("status") or "unknown")
+    ai_value, ai_note = sh.ai_classifier_state(jev.get("status"))
     stats(("Attacks identified", str(len(opened)), "incidents opened", sh.BAND_COLORS["critical"] if opened else None),
           ("Malicious events", str(len(rows)), "classified as an attack"),
           ("Settled by rules", str(by_rules), "certain, no AI needed"),
-          ("AI classifier", "off" if jev_status.startswith("disabled") else "on", jev_status.split("(")[0][:48]))
+          ("AI classifier", ai_value, ai_note[:48]))
 
     with st.container(border=True):
         section("Rules in use", "change them on the Configuration page", "rule")
@@ -1882,6 +2127,110 @@ def page_review() -> None:
             "Inaction penalty": st.column_config.NumberColumn("Inaction penalty", format="+%.0f pts")})
 
 
+def machine_list(found: list[dict], panel: bool) -> None:
+    """One card per machine. On a central panel a joined machine's card opens its services, incidents,
+    scans and backups right under it; clicking it again (or another one) closes it."""
+    if not panel:
+        st.markdown(sh.machine_rows_html(found), unsafe_allow_html=True)
+        return
+    opened = st.session_state.get("machine_open")
+    for i, m in enumerate(found):
+        host = m.get("host")
+        if not host or m.get("waiting"):
+            st.markdown(sh.machine_rows_html([m]), unsafe_allow_html=True)
+            continue
+        with st.container(key=f"mrow-{i}"):
+            st.markdown(sh.machine_rows_html([m], opened=host == opened), unsafe_allow_html=True)
+            if st.button(f"{'Hide' if host == opened else 'Show'} details for {m['name']}", key=f"mopen-{i}", width="stretch"):
+                st.session_state["machine_open"] = None if host == opened else host
+                st.rerun(scope="fragment")
+        if host == opened:
+            with st.container(border=True):
+                machine_details(m)
+
+
+def machine_details(chosen: dict) -> None:
+    pick = chosen["host"]
+    st.caption("Services running on it (its agent reports them every minute)")
+    table(sh.service_rows(chosen.get("services")), "No services reported yet.")
+    incs, ierr = safe(lambda: client.machine_incidents(pick), [])
+    if ierr:
+        st.warning(f"Could not load incidents: {ierr}")
+    st.caption("Its incidents")
+    table(sh.risk_breakdown(incs or []), f"All quiet on {pick}. No incidents.")
+    st.caption("Scans and backups on it (its agent picks them up within about 15 seconds and runs "
+               "them on the folders set on that machine)")
+    b1, b2, _ = st.columns([3, 3, 4])
+    if b1.button("Scan for threats", icon=":material/policy:", key="job_scan", width="stretch"):
+        run_action(f"Asked {pick} to scan for threats",
+                   lambda: client.queue_job(pick, "threat_scan", st.session_state.operator))
+    if b2.button("Back up now", icon=":material/backup:", key="job_backup", width="stretch"):
+        run_action(f"Asked {pick} to back up",
+                   lambda: client.queue_job(pick, "backup", st.session_state.operator))
+    jobs, jerr = safe(lambda: client.machine_jobs(pick), [])
+    if jerr:
+        st.warning(f"Could not load jobs: {jerr}")
+    table(sh.job_rows(jobs or []), f"Nothing asked of {pick} yet.")
+    found_now = sh.job_findings(jobs or [])
+    if not found_now.empty:
+        st.caption("What its latest threat scan found (critical and high ones also open an incident)")
+        table(found_now, "")
+
+
+def panel_address() -> str:
+    """Where a new machine should reach this panel: SENTRAI_PANEL_URL (here or on the core), else the
+    address this page was opened on, unless that is this computer itself."""
+    url = os.environ.get("SENTRAI_PANEL_URL", "").strip()
+    if not url:
+        info, _ = safe(client.fleet_panel, {})
+        url = str((info or {}).get("panel_url") or "")
+    if not url:
+        page = urlsplit(str(getattr(st.context, "url", "") or ""))
+        if page.scheme == "https" and page.hostname not in (None, "localhost", "127.0.0.1", "::1"):
+            url = f"https://{page.netloc}"
+    return url.rstrip("/") or os.environ.get("SENTRAI_PUBLIC_URL") or st.session_state.core_url
+
+
+def add_machine(panel: bool) -> None:
+    """The join-code form behind the + on the machine list."""
+    with st.container(border=True):
+        section("Add machine", "a one-time join code, valid for 24 hours", "add_circle")
+        if not panel:
+            empty("Turn on central panel mode first (see the note above).", "info")
+            return
+        name = st.text_input("Machine name (optional)", key="join_name", placeholder="web-01",
+                             help="Leave empty to use the new machine's own host name")
+        url = st.text_input("Panel address the machine will use", key="join_url", value=panel_address(),
+                            help="Must be https:// from another machine (install.sh --panel opens port 8443)")
+        if st.button("Make join code", icon=":material/key:", type="primary", key="join_make",
+                     disabled=locked("configure"), help=why_locked("configure")):
+            try:
+                st.session_state["join_made"] = client.join_code(st.session_state.operator, name.strip() or None)
+            except CoreError as exc:
+                st.session_state["flash"] = (f"Could not make a join code: {exc}", WARN_ICON)
+                st.rerun(scope="fragment")
+        made = st.session_state.get("join_made")
+        if made:
+            st.markdown(f'Join code <b>{html.escape(str(made["code"]))}</b> · works once, until '
+                        f'{html.escape(f"{ts:%d %b %H:%M}" if (ts := sh.parse_ts(made.get("expires_at"))) else "-")}', unsafe_allow_html=True)
+            pin = made.get("pin") if url.startswith("https://") else None
+            cmds = sh.join_commands(url, made["code"], made.get("name"), pin)
+            st.caption("On a Linux server, from a SentrAI checkout:")
+            st.code(cmds["linux"], language="bash")
+            st.caption("On Windows, from a SentrAI checkout in an Administrator PowerShell:")
+            st.code(cmds["windows"], language="powershell")
+            if pin:
+                st.caption("The --pin is this panel's certificate fingerprint: the machine will talk to this "
+                           "panel and nothing pretending to be it.")
+            if not url.startswith("https://"):
+                st.warning("Other machines refuse a plain http:// panel. Install the panel with "
+                           "sudo ./deploy/install.sh --panel to open its HTTPS port for agents.",
+                           icon=":material/lock_open:")
+            elif not pin:
+                st.info("No certificate pin is known (SENTRAI_PANEL_CERT is not set), so the machine checks the "
+                        "panel's certificate against the usual authorities.", icon=":material/lock:")
+
+
 @st.fragment(run_every=AUTO)
 def page_machines() -> None:
     show_flash()
@@ -1892,7 +2241,7 @@ def page_machines() -> None:
     panel = panel_mode(risk)
     online = sum(1 for m in found if m["online"])
     attacked = [m for m in found if m.get("open") or m["band"] in ("red", "critical")]
-    stats(("Machines", str(len(found)), "joined this panel" if panel else "this computer and CACTAI_PEERS"),
+    stats(("Machines", str(len(found)), "joined this panel" if panel else "this computer and SENTRAI_PEERS"),
           ("Online", str(online), f"{len(found) - online} offline or waiting",
            sh.BAND_COLORS["amber"] if online < len(found) else None),
           ("Need a look", str(len(attacked)), "open incidents or red and above",
@@ -1900,79 +2249,22 @@ def page_machines() -> None:
           ("Blocks in force", str(sum(m.get("blocked", 0) for m in found)), "each on its own machine"))
     if not panel:
         st.info("This core adds every machine into one score. To run it as a central panel, set "
-                "CACTAI_RISK_SCOPE=host (and CACTAI_FIREWALL=off) on it and restart the core: each machine is then "
+                "SENTRAI_RISK_SCOPE=host (and SENTRAI_FIREWALL=off) on it and restart the core: each machine is then "
                 "scored and blocked on its own.", icon=":material/info:")
 
-    left, right = st.columns([7, 5])
-    with left, st.container(border=True):
-        section("Machine list", "worst first · SentrAI acts on a machine when its own score passes the threshold", "dns")
-        st.markdown(sh.machine_rows_html(found), unsafe_allow_html=True)
-        hosts = [m["host"] for m in found if m.get("host") and not m.get("waiting")]
-        if panel and hosts:
-            pick = st.selectbox("Look at one machine", hosts, key="machine_pick")
-            chosen = next((m for m in found if m.get("host") == pick), {})
-            st.caption("Services running on it (its agent reports them every minute)")
-            table(sh.service_rows(chosen.get("services")), "No services reported yet.")
-            incs, ierr = safe(lambda: client.machine_incidents(pick), [])
-            if ierr:
-                st.warning(f"Could not load incidents: {ierr}")
-            st.caption("Its incidents")
-            table(sh.risk_breakdown(incs or []), f"All quiet on {pick}. No incidents.")
-            st.caption("Scans and backups on it (its agent picks them up within about 15 seconds and runs "
-                       "them on the folders set on that machine)")
-            b1, b2, _ = st.columns([3, 3, 4])
-            if b1.button("Scan for threats", icon=":material/policy:", key="job_scan", width="stretch"):
-                run_action(f"Asked {pick} to scan for threats",
-                           lambda: client.queue_job(pick, "threat_scan", st.session_state.operator))
-            if b2.button("Back up now", icon=":material/backup:", key="job_backup", width="stretch"):
-                run_action(f"Asked {pick} to back up",
-                           lambda: client.queue_job(pick, "backup", st.session_state.operator))
-            jobs, jerr = safe(lambda: client.machine_jobs(pick), [])
-            if jerr:
-                st.warning(f"Could not load jobs: {jerr}")
-            table(sh.job_rows(jobs or []), f"Nothing asked of {pick} yet.")
-            found_now = sh.job_findings(jobs or [])
-            if not found_now.empty:
-                st.caption("What its latest threat scan found (critical and high ones also open an incident)")
-                table(found_now, "")
-    with right, st.container(border=True):
-        section("Add machine", "a one-time join code, valid for 24 hours", "add_circle")
-        if not panel:
-            empty("Turn on central panel mode first (see the note above).", "info")
-        else:
-            name = st.text_input("Machine name (optional)", key="join_name", placeholder="web-01",
-                                 help="Leave empty to use the new machine's own host name")
-            url = st.text_input("Panel address the machine will use", key="join_url",
-                                value=os.environ.get("CACTAI_PANEL_URL") or os.environ.get("CACTAI_PUBLIC_URL")
-                                or st.session_state.core_url,
-                                help="Must be https:// from another machine (install.sh --panel opens port 8443)")
-            if st.button("Make join code", icon=":material/key:", type="primary", key="join_make",
-                         disabled=locked("configure"), help=why_locked("configure")):
-                try:
-                    st.session_state["join_made"] = client.join_code(st.session_state.operator, name.strip() or None)
-                except CoreError as exc:
-                    st.session_state["flash"] = (f"Could not make a join code: {exc}", WARN_ICON)
-                    st.rerun(scope="fragment")
-            made = st.session_state.get("join_made")
-            if made:
-                st.markdown(f'Join code <b>{html.escape(str(made["code"]))}</b> · works once, until '
-                            f'{html.escape(f"{ts:%d %b %H:%M}" if (ts := sh.parse_ts(made.get("expires_at"))) else "-")}', unsafe_allow_html=True)
-                pin = made.get("pin") if url.startswith("https://") else None
-                cmds = sh.join_commands(url, made["code"], made.get("name"), pin)
-                st.caption("On a Linux server, from a SentrAI checkout:")
-                st.code(cmds["linux"], language="bash")
-                st.caption("On Windows, from a SentrAI checkout in an Administrator PowerShell:")
-                st.code(cmds["windows"], language="powershell")
-                if pin:
-                    st.caption("The --pin is this panel's certificate fingerprint: the machine will talk to this "
-                               "panel and nothing pretending to be it.")
-                if not url.startswith("https://"):
-                    st.warning("Other machines refuse a plain http:// panel. Install the panel with "
-                               "sudo ./deploy/install.sh --panel to open its HTTPS port for agents.",
-                               icon=":material/lock_open:")
-                elif not pin:
-                    st.info("No certificate pin is known (CACTAI_PANEL_CERT is not set), so the machine checks the "
-                            "panel's certificate against the usual authorities.", icon=":material/lock:")
+    with st.container(border=True):
+        title, plus = st.columns([9, 2], vertical_alignment="center")
+        with title:
+            section("Machine list", "worst first · click a machine for its details · SentrAI acts on a machine "
+                    "when its own score passes the threshold", "dns")
+        if plus.button("Add machine", icon=":material/add:", key="add_toggle", help="Show the join command for a new machine",
+                       width="stretch",
+                       type="primary" if st.session_state.get("add_open") else "secondary"):
+            st.session_state["add_open"] = not st.session_state.get("add_open")
+            st.rerun(scope="fragment")
+        if st.session_state.get("add_open"):
+            add_machine(panel)
+        machine_list(found, panel)
 
     if panel:
         agents, aerr = fetch("fleet", [])
@@ -1994,7 +2286,8 @@ def page_machines() -> None:
 
 @st.fragment(run_every=AUTO)
 def page_reports() -> None:
-    header("Reports", "one evidence report for every contained incident")
+    header("Reports", "a one-page summary for the client, and one evidence report for every incident")
+    client_summary()
     incidents, err = fetch("incidents", [])
     records, _, _ = audit_records()
     with_report = {str((r.get("data") or {}).get("incident")) for r in sh.records_of(records, "report_generated")}
@@ -2029,10 +2322,8 @@ def page_audit() -> None:
             st.warning(f"Could not load audit log: {err}")
         render_feed(sh.build_activity_feed(records, limit=60))
     with right, st.container(border=True):
-        section("Agents", "who does what", "groups")
-        table(sh.pd.DataFrame([{"Agent": a.get("name"), "Role": a.get("role"),
-                                "Can act": "yes" if a.get("can_execute") else "no"} for a in agents or []]),
-              "Agent list unavailable.")
+        section("Agents", f"who does what · records in the latest {len(records)}", "groups")
+        table(sh.agent_table(agents, records), "No agents yet.")
 
 
 def when(value: Any) -> str:
@@ -2072,7 +2363,7 @@ def page_backups() -> None:
         st.warning("The last backup is more than two schedule periods old. Is SentrAI's core running?")
 
     with st.container(border=True):
-        section("What is backed up", "change it under backup in the system profile, or CACTAI_BACKUP_PATHS", "folder_copy")
+        section("What is backed up", "change it under backup in the system profile, or SENTRAI_BACKUP_PATHS", "folder_copy")
         folders = data.get("folders") or []
         st.markdown(("Folders: " + ", ".join(code(f) for f in folders) if folders else
                      "No folders chosen yet, so only SentrAI's own data is copied.")
@@ -2150,11 +2441,62 @@ def render_feed(feed: list[dict]) -> None:
                 unsafe_allow_html=True)
 
 
+SUMMARY_EVERY = {"daily": "Every day", "weekly": "Every week", "off": "Off"}
+WEEKDAYS = {"mon": "Monday", "tue": "Tuesday", "wed": "Wednesday", "thu": "Thursday", "fri": "Friday",
+            "sat": "Saturday", "sun": "Sunday"}
+
+
+def client_summary() -> None:
+    """The one-page client summary: how often it goes out (the client's choice) and today's or this week's page."""
+    sched, err = safe(client.summary_schedule)
+    if err or not isinstance(sched, dict):
+        return  # an older core without the summary
+    left, right = st.columns([4, 8])
+    with left, st.container(border=True):
+        nxt = str(sched.get("next_at") or "")[:16].replace("T", " ")
+        section("Client summary", f"next: {nxt}" if nxt else "not scheduled", "event_repeat")
+        with st.form("summary_schedule", border=False):
+            every = st.radio("Send it", list(SUMMARY_EVERY), format_func=SUMMARY_EVERY.get, horizontal=True,
+                             index=list(SUMMARY_EVERY).index(sched.get("every", "daily")))
+            c1, c2 = st.columns(2)
+            at = c1.text_input("At (local time)", sched.get("at", "08:00"), help="24-hour time, such as 08:00")
+            day = c2.selectbox("On (weekly)", list(WEEKDAYS), format_func=WEEKDAYS.get,
+                               index=list(WEEKDAYS).index(sched.get("day", "mon")))
+            to = st.text_input("Addressed to", sched.get("to", "Client"),
+                               help="The client's name, shown on the page. It goes out on the alert channels.")
+            if st.form_submit_button("Save", icon=":material/save:", type="primary", width="stretch"):
+                run_action("Summary schedule saved", lambda: client.set_summary_schedule(
+                    st.session_state.operator, every, at, day, to), rerun=False)
+                st.rerun()
+        if st.button("Send one now", icon=":material/send:", width="stretch",
+                     help="Sends the summary for the chosen period to the alert channels now"):
+            run_action("Summary sent to the alert channels", lambda: client.send_summary(st.session_state.operator),
+                       rerun=False)
+            st.rerun()
+    with right, st.container(border=True):
+        period = st.segmented_control("Period", ["daily", "weekly"], default="weekly" if sched.get("every") == "weekly"
+                                      else "daily", format_func=lambda p: "Last 24 hours" if p == "daily" else "Last 7 days",
+                                      key="summary_period") or "daily"
+        md, merr = safe(lambda: client.summary_md(period))
+        if merr or not md:
+            empty(f"The summary could not be made: {merr}", "error")
+            return
+        d0, d1 = st.columns(2)
+        pdf, perr = safe(lambda: client.summary_pdf(period))
+        if pdf and not perr:
+            d0.download_button("PDF (one page)", pdf, icon=":material/picture_as_pdf:", file_name=f"sentrai-{period}-summary.pdf",
+                               mime="application/pdf", type="primary", width="stretch", key=f"dl_sum_pdf_{period}")
+        d1.download_button("Markdown", md, icon=":material/download:", file_name=f"sentrai-{period}-summary.md",
+                           mime="text/markdown", width="stretch", key=f"dl_sum_md_{period}")
+        with st.container(height=420, border=True):
+            st.markdown(sh.demote_headings(md))
+
+
 def report_viewer(inc_id: str) -> None:
     section("Evidence report", inc_id, "verified")
     md, err = safe(lambda: client.report_md(inc_id))
     if err or not md:
-        empty("No report for this incident yet. Scribe writes one when autonomous containment fires.", "hourglass_empty")
+        empty("No report for this incident yet.", "hourglass_empty")
         return
     d0, d1, d2 = st.columns(3)
     pdf, perr = safe(lambda: client.report_pdf(inc_id))

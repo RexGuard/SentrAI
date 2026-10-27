@@ -7,7 +7,7 @@ title: Docs work status
 ## Done
 - Read inputs: `Cybersecurity + AI.md`, `mvp/CONTRACT.md`, `mvp/research/SOURCES.md`, `_config.yml`, `README.md`.
 - Surveyed `mvp/` code: core routes in `mvp/core/app/main.py` (contract endpoints plus extras: `/incidents/{id}/why`, `/notifications`, `/agents`, `/helpdesk/why`, `/heartbeat`, `/demo/advance`).
-- Env vars found: core `DEMO_SPEED` (60), `RISK_THRESHOLD` (80), `SLA_HOURS`, `HOTPATCH_TTL_HOURS`, `ON_DUTY`, `TEAM_LEAD`, `IT_MANAGER`, `CXO`, `CACTAI_DB`, `PROTECTED_IPS`, `JEV_TIMEOUT_S`; `TYPESAFE_API_KEY` (core Jev client, optional); notifier `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `CACTAI_OPERATOR`, `NOTIFIER_POLL_SECONDS`; all components `CACTAI_CORE_URL`.
+- Env vars found: core `DEMO_SPEED` (60), `RISK_THRESHOLD` (80), `SLA_HOURS`, `HOTPATCH_TTL_HOURS`, `ON_DUTY`, `TEAM_LEAD`, `IT_MANAGER`, `CXO`, `SENTRAI_DB`, `PROTECTED_IPS`, `JEV_TIMEOUT_S`; `TYPESAFE_API_KEY` (core Jev client, optional); notifier `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `SENTRAI_OPERATOR`, `NOTIFIER_POLL_SECONDS`; all components `SENTRAI_CORE_URL`.
 - Created `docs/` (this file only).
 
 ## Not done

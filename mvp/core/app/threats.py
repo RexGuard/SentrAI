@@ -5,10 +5,10 @@ The scan itself (``threatscan``) only reads. This part decides what to do with w
 * A ``critical`` or ``high`` finding becomes an ordinary event (source ``threat_scan``) that the rules
   classify as ``malware``, so it opens an incident, is audited and notified like any other.
 * Each finding is raised once. A fingerprint (file contents + signature, or program + signature) is
-  remembered in ``data/threat_seen.json`` (``CACTAI_THREAT_STATE``), so an hourly scan does not ping
+  remembered in ``data/threat_seen.json`` (``SENTRAI_THREAT_STATE``), so an hourly scan does not ping
   the operator about the same file every hour. A file that changes is a new finding.
 * Nothing is deleted. Quarantine moves one file, chosen by its id from the latest scan, into
-  ``data/quarantine`` (``CACTAI_QUARANTINE``) with a note of where it came from, and only if its
+  ``data/quarantine`` (``SENTRAI_QUARANTINE``) with a note of where it came from, and only if its
   contents still match what was scanned. Restore puts it back. Both are written to the audit trail.
 
 Folders come from ``threat_scan.paths`` in the system profile (or a scan request);
@@ -39,11 +39,11 @@ SEEN_LIMIT = 5000
 
 
 def state_file() -> Path:
-    return Path(os.environ.get("CACTAI_THREAT_STATE", str(CORE_DIR / "data" / "threat_seen.json")))
+    return Path(os.environ.get("SENTRAI_THREAT_STATE", str(CORE_DIR / "data" / "threat_seen.json")))
 
 
 def quarantine_dir() -> Path:
-    return Path(os.environ.get("CACTAI_QUARANTINE", str(CORE_DIR / "data" / "quarantine")))
+    return Path(os.environ.get("SENTRAI_QUARANTINE", str(CORE_DIR / "data" / "quarantine")))
 
 
 def threat_event(text: str, host: str | None = None) -> dict[str, Any]:
@@ -74,12 +74,12 @@ class ThreatWatch:
 
     # ------------------------------------------------------------ settings
     def config(self) -> dict[str, Any]:
-        """``threat_scan`` from the system profile; CACTAI_THREAT_PATHS (separated by the OS path
+        """``threat_scan`` from the system profile; SENTRAI_THREAT_PATHS (separated by the OS path
         separator) supplies the folders when the profile names none."""
         profile = getattr(self.core, "profile", None) or {}
         cfg = dict(profile.get("threat_scan") or {})
-        if not cfg.get("paths") and os.environ.get("CACTAI_THREAT_PATHS"):
-            cfg["paths"] = [p for p in os.environ["CACTAI_THREAT_PATHS"].split(os.pathsep) if p.strip()]
+        if not cfg.get("paths") and os.environ.get("SENTRAI_THREAT_PATHS"):
+            cfg["paths"] = [p for p in os.environ["SENTRAI_THREAT_PATHS"].split(os.pathsep) if p.strip()]
         return cfg
 
     def every_s(self) -> float:

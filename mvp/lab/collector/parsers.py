@@ -10,7 +10,7 @@ SentrAI has no use for (Suricata flow records, MongoDB storage notes): the colle
 ``mvp/CONTRACT.md`` under "Parsed fields".
 
 Stdlib only. Lines without a time zone (classic syslog, nginx error log) are read in the log
-machine's zone: ``CACTAI_LOG_TZ`` (an IANA name such as "Asia/Singapore", or "+08:00"), otherwise
+machine's zone: ``SENTRAI_LOG_TZ`` (an IANA name such as "Asia/Singapore", or "+08:00"), otherwise
 this computer's local zone.
 """
 from __future__ import annotations
@@ -43,8 +43,8 @@ _OFFSET = re.compile(r"^(?:UTC|GMT)?([+-])(\d{1,2}):?(\d{2})?$")
 
 
 def log_tz(name: str | None = None) -> tzinfo:
-    """The zone for log lines that carry none: CACTAI_LOG_TZ, else this computer's local zone."""
-    name = name if name is not None else os.environ.get("CACTAI_LOG_TZ", "").strip()
+    """The zone for log lines that carry none: SENTRAI_LOG_TZ, else this computer's local zone."""
+    name = name if name is not None else os.environ.get("SENTRAI_LOG_TZ", "").strip()
     if name:
         if name.upper() in ("UTC", "Z", "GMT"):
             return timezone.utc

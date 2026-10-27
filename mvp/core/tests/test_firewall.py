@@ -49,8 +49,8 @@ def block(ip=IP):
 
 
 def test_off_by_default_keeps_portal_only_blocking(monkeypatch):
-    monkeypatch.delenv("CACTAI_FIREWALL", raising=False)
-    monkeypatch.delenv("CACTAI_FIREWALL_ENFORCE", raising=False)
+    monkeypatch.delenv("SENTRAI_FIREWALL", raising=False)
+    monkeypatch.delenv("SENTRAI_FIREWALL_ENFORCE", raising=False)
     s = Settings()
     assert s.firewall == "off" and s.firewall_enforce is False
     r = from_settings(s.firewall, s.firewall_enforce, s.protected_ips)
@@ -69,7 +69,7 @@ def test_dry_run_logs_commands_and_never_runs_them():
     assert r.apply(a) is True
     assert runner.calls == []  # nothing touched the host
     assert a["firewall"]["dry_run"] is True
-    assert a["firewall"]["commands"] == [f"iptables -I INPUT -s {IP} -m comment --comment cactai -j DROP"]
+    assert a["firewall"]["commands"] == [f"iptables -I INPUT -s {IP} -m comment --comment sentrai -j DROP"]
     assert r.blocklist()["ips"] == [IP]  # the portal still blocks it
     r.revert(a)
     assert r.history[-1]["cmd"][:2] == ["iptables", "-D"] and r.history[-1]["dry_run"]
@@ -151,8 +151,8 @@ def test_nftables_sets_up_its_table_once():
     r.apply(block("2001:db8::7"))
     verbs = [" ".join(c[1:3]) for c in runner.calls]
     assert verbs.count("add table") == 1
-    assert ["nft", "add", "element", "inet", "cactai", "blocked4", "{ 203.0.113.1 }"] in runner.calls
-    assert ["nft", "add", "element", "inet", "cactai", "blocked6", "{ 2001:db8::7 }"] in runner.calls
+    assert ["nft", "add", "element", "inet", "sentrai", "blocked4", "{ 203.0.113.1 }"] in runner.calls
+    assert ["nft", "add", "element", "inet", "sentrai", "blocked6", "{ 2001:db8::7 }"] in runner.calls
     r.reset()  # demo reset takes both addresses out of the firewall
     assert sum(1 for c in runner.calls if c[1:3] == ["delete", "element"]) == 2
 
@@ -183,7 +183,7 @@ def test_other_actions_pass_through_untouched():
 @pytest.fixture
 def fw_client(tmp_path):
     def make(runner, enforce=True):
-        s = Settings(db_path=tmp_path / "cactai.db", background=False, demo_speed=60.0,
+        s = Settings(db_path=tmp_path / "sentrai.db", background=False, demo_speed=60.0,
                      firewall="iptables", firewall_enforce=enforce)
         app = create_app(s)
         app.state.core.blocklist_responder.runner = runner
