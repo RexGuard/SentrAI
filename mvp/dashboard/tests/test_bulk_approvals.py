@@ -39,6 +39,26 @@ def test_bulk_result_names_what_did_not_go_through():
     assert sh.bulk_result("Rejected", ["A"], [("B", "gone")]) == "Rejected 1 of 2 incidents. Not done: B (gone)"
 
 
+def test_saved_groups_take_their_incidents_out_of_the_list():
+    waiting = [_inc("A"), _inc("B"), _inc("C")]
+    groups, rest = sh.saved_groups(waiting, {"Scanner": ["B", "gone"], "Empty": ["gone"], "Also": ["B", "C"]})
+    assert [(n, [i["id"] for i in m]) for n, m in groups] == [("Scanner", ["B"]), ("Also", ["C"])]
+    assert [i["id"] for i in rest] == ["A"]
+
+
+def test_add_to_group_moves_incidents_and_drops_what_no_longer_waits():
+    saved = {"Old": ["A", "B"], "Stale": ["Z"]}
+    assert sh.add_to_group(saved, "New", ["B", "C"], {"A", "B", "C"}) == {"Old": ["A"], "New": ["B", "C"]}
+    assert sh.add_to_group({"Old": ["A"]}, "Old", ["C"], {"A", "C"}) == {"Old": ["A", "C"]}
+
+
+def test_suggested_name_is_what_they_share():
+    assert sh.suggest_group_name([_inc("A"), _inc("B", host="db-01")], {}) == "203.0.113.5"
+    two = [_inc("A", ip="1.1.1.1"), _inc("B", ip="2.2.2.2")]
+    assert sh.suggest_group_name(two, {}) == "web-01"
+    assert sh.suggest_group_name(two, {"web-01": ["X"], "Brute force": ["Y"]}) == "Group 3"
+
+
 def _approvals(fake_core, tmp_path, monkeypatch):
     from streamlit.testing.v1 import AppTest
     import streamlit as st
@@ -70,8 +90,8 @@ def test_pick_all_then_reject_with_one_reason(fake_core, tmp_path, monkeypatch):
     assert not [b for b in at.button if b.key == "bulk_clear"]  # no bar until something is picked
     next(c for c in at.checkbox if c.label.startswith("Pick all")).check().run()
     assert not at.exception, at.exception
-    at.text_input(key="bulk_rj_0").set_value("Our own scanner").run()
-    reject = next(b for b in at.button if b.key == "bulk_reject")
+    at.text_input(key="brj_bulk_0").set_value("Our own scanner").run()
+    reject = next(b for b in at.button if b.key == "br_bulk_0")
     assert reject.label == f"Reject all {len(ids)}"
     reject.click().run()
     # AppTest cannot rerun just a fragment, so run_bulk's refresh raises here; in a browser it reruns the page part.
@@ -101,3 +121,24 @@ def test_auditor_gets_no_tick_boxes(fake_core, tmp_path, monkeypatch):
     at.run()
     assert not at.exception, at.exception
     assert not [c for c in at.checkbox if c.label == "Pick" or c.label.startswith("Pick all")]
+
+
+def test_group_picked_then_decide_the_group_and_ungroup(fake_core, tmp_path, monkeypatch):
+    from sentrai_config import approval_groups
+
+    ids = _open_two(fake_core)
+    at = _approvals(fake_core, tmp_path, monkeypatch)
+    at.run()
+    next(c for c in at.checkbox if c.label.startswith("Pick all")).check().run()
+    at.text_input(key="gname_0").set_value("Pen test").run()
+    next(b for b in at.button if b.key == "gsave_0").click().run()
+    assert all("fragment" in str(e.value) for e in at.exception), at.exception
+    assert approval_groups() == {"Pen test": ids}
+    at = _approvals(fake_core, tmp_path, monkeypatch)
+    at.run()
+    assert not at.exception, at.exception
+    assert "Pen test" in " ".join(m.value for m in at.markdown)
+    assert not [c for c in at.checkbox if c.label == "Pick"]  # everything is in the group now
+    assert next(b for b in at.button if b.key == "br_grp_Pen test_0").label == f"Reject all {len(ids)}"
+    next(b for b in at.button if b.key == "ungroup_Pen test").click().run()
+    assert approval_groups() == {}

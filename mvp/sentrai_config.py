@@ -63,6 +63,29 @@ def accounts_path() -> Path:
     return sentrai_paths.path("accounts")
 
 
+def approval_groups_path() -> Path:
+    """Approvals bundled into named groups on the dashboard, next to the settings file."""
+    return sentrai_paths.path("approval_groups")
+
+
+def approval_groups() -> dict[str, list[str]]:
+    """{group name: [incident ids]}; {} until someone makes a group."""
+    try:
+        data = json.loads(approval_groups_path().read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {str(k): [str(i) for i in v] for k, v in data.items() if isinstance(v, list)}
+
+
+def save_approval_groups(groups: dict[str, list[str]]) -> Path:
+    path = approval_groups_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _write_private(path, json.dumps({k: v for k, v in groups.items() if v}, indent=2) + "\n")
+    return path
+
+
 def _write_private(path: Path, text: str) -> None:
     """The settings hold the API token and keys: readable by this user only (no effect on Windows)."""
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)

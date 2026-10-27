@@ -13,6 +13,7 @@ file at the root); else ``~/.sentrai``. deploy/install.sh uses /var/lib/sentrai,
       INDEX.md                      this map, written by `sentrai_paths.py index`
       config.json                   settings, read by every part                     SENTRAI_CONFIG
       accounts.json                 who may sign in to the dashboard                 SENTRAI_ACCOUNTS
+      approval-groups.json          approvals bundled into named groups              SENTRAI_APPROVAL_GROUPS
       core/                         the core service (on a server, only it may open this folder)
         sentrai.db (+ -wal, -shm)   Scribe: the audit chain and the working state   SENTRAI_DB
         anchor.key                  Scribe: the key that signs audit fingerprints
@@ -120,6 +121,8 @@ ENTRIES: dict[str, Entry] = {e.key: e for e in (
     Entry("config", "root", "config.json", "settings, read by every part when it starts", "every part", "SENTRAI_CONFIG"),
     Entry("accounts", "root", "accounts.json", "who may sign in, with password hashes and authenticator secrets",
           "Dashboard", "SENTRAI_ACCOUNTS", near="SENTRAI_CONFIG"),
+    Entry("approval_groups", "root", "approval-groups.json", "approvals a person bundled into named groups",
+          "Dashboard", "SENTRAI_APPROVAL_GROUPS", near="SENTRAI_CONFIG", optional=True),
     Entry("logs", "root", "logs", "JSON-lines logs the collector tails (an input, not SentrAI's own data)",
           "Collector", "SENTRAI_LAB_LOGS", kind="dir"),
     Entry("core.db", "core", "sentrai.db", "the hash-chained audit record and the working state (incidents, actions)",

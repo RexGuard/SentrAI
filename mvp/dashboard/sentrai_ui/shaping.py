@@ -1727,6 +1727,41 @@ def group_approvals(waiting: list[dict], by: str | None) -> list[tuple[str, list
     return sorted(groups.items(), key=lambda kv: -len(kv[1]))  # stable: equal sizes keep the page's order
 
 
+def saved_groups(waiting: list[dict], saved: dict[str, list[str]]) -> tuple[list[tuple[str, list[dict]]], list[dict]]:
+    """Split the waiting incidents into the groups a person saved (in the order they were made) and the rest.
+    An incident that no longer waits drops out of its group, and a group with none left is not shown."""
+    by_id = {str(i.get("id")): i for i in waiting}
+    groups, used = [], set()
+    for name, ids in saved.items():
+        members = [by_id[i] for i in dict.fromkeys(ids) if i in by_id and i not in used]
+        used.update(str(m.get("id")) for m in members)
+        if members:
+            groups.append((name, members))
+    return groups, [i for i in waiting if str(i.get("id")) not in used]
+
+
+def add_to_group(saved: dict[str, list[str]], name: str, ids: list[str], waiting_ids: set[str]) -> dict[str, list[str]]:
+    """The saved groups after putting ids into the group called name (made if new). An incident is in one group
+    only, so it leaves any other; ids that no longer wait are dropped, and so are groups left empty."""
+    out = {g: [i for i in members if i in waiting_ids and i not in ids] for g, members in saved.items()}
+    out[name] = list(dict.fromkeys([*out.get(name, []), *ids]))
+    return {g: m for g, m in out.items() if m}
+
+
+def suggest_group_name(picked: list[dict], saved: dict[str, list[str]]) -> str:
+    """A starting name for a new group: the attacker or machine they share, else Group N."""
+    for by in ("attacker", "machine", "type"):
+        names = {approval_group(i, by) for i in picked}
+        if len(names) == 1:
+            name = names.pop()
+            if name not in saved and not name.startswith("Unknown"):
+                return name
+    n = len(saved) + 1
+    while f"Group {n}" in saved:
+        n += 1
+    return f"Group {n}"
+
+
 def bulk_split(picked: list[dict]) -> dict[str, list[dict]]:
     """Which of the picked incidents each bulk button acts on: open ones are decided, contained ones kept or undone."""
     split: dict[str, list[dict]] = {"decide": [], "contain": []}
