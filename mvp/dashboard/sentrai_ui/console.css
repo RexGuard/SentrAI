@@ -314,3 +314,8 @@ div[data-testid="stButtonGroup"] button[aria-checked="true"] * { color: var(--on
 /* The conversation grows with the window, down to just above the pinned input. */
 :is(.st-key-chat_log, div:has(> .st-key-chat_log)) { height: max(540px, calc(100vh - 420px)) !important;
   flex-basis: auto !important; }
+
+/* ------------------------------------------------------------ secret boxes */
+/* app.py's secret_input(): API keys, tokens and codes are plain text boxes drawn as dots, so the browser does not
+   offer to save them as a website password (it only does that for type="password"). */
+div[class*="st-key-secret-"] input { -webkit-text-security: disc; text-security: disc; }
