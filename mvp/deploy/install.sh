@@ -590,6 +590,8 @@ PANEL_PORT="$(get_env SENTRAI_PANEL_PORT)"
 if [ -n "$PANEL_PORT" ]; then
     pin="$(openssl x509 -in "$(get_env SENTRAI_PANEL_CERT)" -outform DER 2>/dev/null | sha256sum | cut -d' ' -f1)"
     echo "  Central panel: agents join at $(get_env SENTRAI_PANEL_URL) (only machine keys are answered there)."
+    echo "    Other machines must reach that name. If they cannot (a cloud VM's internal name, for example),"
+    echo "    run this again with --panel-url https://<public name or IP>:$PANEL_PORT"
     echo "    Certificate pin: sha256:$pin   (the Machines page shows it with every join code)"
     echo "    On each machine: sudo ./mvp/deploy/install-agent.sh --panel $(get_env SENTRAI_PANEL_URL) --code <code> --pin sha256:$pin"
 fi
