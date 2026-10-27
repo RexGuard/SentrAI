@@ -39,8 +39,9 @@ import time
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterator
 
-from .config import CORE_DIR
+from . import config as _config  # noqa: F401  (first: it puts the saved settings in the environment)
 import sentrai_config
+import sentrai_paths
 from . import procscan
 from .procscan import hide_home
 
@@ -138,8 +139,12 @@ class BackupWatch:
         return Path(self.core.settings.db_path).parent
 
     def _dir(self) -> Path:
-        """Next to the database by default: the one place a hardened install lets the core write."""
-        return Path(os.environ.get("SENTRAI_BACKUP_DIR") or self._data_dir() / "backups")
+        """backups/ next to the database by default (SENTRAI_BACKUP_DIR moves it): the one place a
+        hardened install lets the core write. The agent's backups sit next to its agent.json the same way."""
+        return sentrai_paths.path("core.backups", self._data_dir())
+
+    def _restores_dir(self) -> Path:
+        return sentrai_paths.path("core.restores", self._data_dir(), migrate=False)
 
     # ------------------------------------------------------------- listing
     def _metas(self) -> list[dict[str, Any]]:
@@ -260,7 +265,7 @@ class BackupWatch:
                 data = self._data_dir()
                 db = Path(self.core.settings.db_path)
                 if data.is_dir():
-                    for p in self._walk(data, skip + [(data / "restores").resolve()], exclude):
+                    for p in self._walk(data, skip + [self._restores_dir().resolve()], exclude):
                         if p.name != db.name:
                             plan.append((p, f"sentrai/data/{p.relative_to(data).as_posix()}"))
                 snap_dir = Path(tempfile.mkdtemp(prefix="sentrai-backup-"))
@@ -338,7 +343,7 @@ class BackupWatch:
                 shutil.rmtree(snap_dir, ignore_errors=True)
 
     def _quarantine_dir(self) -> Path:
-        return Path(os.environ.get("SENTRAI_QUARANTINE", str(CORE_DIR / "data" / "quarantine")))
+        return sentrai_paths.path("core.quarantine", self._data_dir(), migrate=False)
 
     def _snapshot_db(self, target: Path) -> None:
         """A consistent copy of the audit database while it stays in use (SQLite's online backup)."""
@@ -526,7 +531,7 @@ class BackupWatch:
                 dest_root = None
             else:
                 stamp = time.strftime("%Y%m%d-%H%M%S")
-                dest_root = Path(os.path.expanduser(target)) if target else self._data_dir() / "restores" / f"{bid}-{stamp}"
+                dest_root = Path(os.path.expanduser(target)) if target else self._restores_dir() / f"{bid}-{stamp}"
                 if dest_root.exists() and any(dest_root.iterdir()):
                     raise ValueError("the restore folder is not empty; pick a new one")
                 _private_dir(dest_root)

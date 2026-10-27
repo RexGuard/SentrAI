@@ -2,6 +2,7 @@ import os
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -12,6 +13,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.append(str(ROOT.parent))  # sentrai_config and sentrai_extensions, as notifier.py does
 os.environ["SENTRAI_CONFIG"] = str(ROOT / "tests" / "no-config.json")  # ignore this machine's saved settings
+os.environ["SENTRAI_HOME"] = tempfile.mkdtemp(prefix="sentrai-notifier-test-")  # data root: not the checkout
+# Never move a developer's own files (mvp/lab/scout, mvp/core/data ...) into a test's temp folder.
+os.environ["SENTRAI_MIGRATE"] = "off"
 os.environ["SENTRAI_API_TOKEN"] = "test-token"  # never generate (and save) a real token from tests
 for _name in ("SLACK_WEBHOOK_URL", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "SENTRAI_EXTENSIONS",
               "SENTRAI_EXTENSIONS_DIR"):

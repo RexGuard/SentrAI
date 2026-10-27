@@ -11,7 +11,7 @@ with the bot first. Linking does that once:
 3. The notifier hands the code and that private chat's id to the core (POST /telegram/link), and
    from then on every alert routed to that contact goes to their own chat.
 
-Links are kept in ``telegram_links.json`` next to the database (SENTRAI_TELEGRAM_LINKS moves it). A
+Links are kept in ``people/telegram_links.json`` in the core's data folder (SENTRAI_TELEGRAM_LINKS moves it). A
 contact whose ``telegram`` in the routing file is already a numeric chat id counts as linked without a
 code. Removing the extension keeps the file, so adding it again brings every link back.
 """
@@ -29,6 +29,8 @@ from typing import Any, Optional, Union
 
 from fastapi import HTTPException
 from pydantic import BaseModel
+
+import sentrai_paths
 
 from app.extensions import Context, Extension
 
@@ -224,7 +226,7 @@ class Telegram(Extension):
 
 
 def setup(ctx: Context) -> Extension:
-    path = Path(os.getenv("SENTRAI_TELEGRAM_LINKS", "").strip() or ctx.state_dir / "telegram_links.json")
+    path = sentrai_paths.path("core.telegram_links", Path(ctx.state_dir))  # SENTRAI_TELEGRAM_LINKS moves it
     return Telegram(ctx, LinkBook(path))
 
 

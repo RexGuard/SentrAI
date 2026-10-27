@@ -6,7 +6,8 @@ Env:
   SENTRAI_API_TOKEN     core API token (default: the one saved by the setup wizard)
   SENTRAI_OPERATOR      fallback operator name (default "operator")
   NOTIFIER_POLL_SECONDS poll interval (default 2)
-  NOTIFIER_WITNESS_FILE where the last delivered audit fingerprint is kept (default notifier/data/last_witness.txt)
+  NOTIFIER_WITNESS_FILE where the last delivered audit fingerprint is kept (default: notifier/last_witness.txt
+                       in SentrAI's data root, see mvp/sentrai_paths.py)
   SMTP_HOST, ALERT_EMAIL_TO, ...  email channel, see emailer.py
 
 Alert extensions (mvp/extensions/<name>/notifier.py) bring the other channels: Telegram runs a bot that
@@ -37,19 +38,18 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
-from core import Core, CoreError
+sys.path.append(str(Path(__file__).resolve().parents[1]))  # mvp/: sentrai_paths, sentrai_config
+import sentrai_paths  # noqa: E402
+
+from core import Core, CoreError  # noqa: E402
 from emailer import EmailConfig, email_sender
 from formatting import format_console, incident_id_of, witness_of
 
-MVP_DIR = Path(__file__).resolve().parents[1]
-if str(MVP_DIR) not in sys.path:
-    sys.path.append(str(MVP_DIR))  # sentrai_config and sentrai_extensions live one level up
 import sentrai_extensions as se  # noqa: E402
 
 log = logging.getLogger("sentrai.notifier")
 
 DEFAULT_CORE = "http://127.0.0.1:8000"
-DEFAULT_WITNESS = Path(__file__).resolve().parent / "data" / "last_witness.txt"
 CHECK_S = 15.0  # how often the notifier asks which alert extensions are on
 
 
@@ -60,7 +60,7 @@ class WitnessStore:
     chat, where the server cannot change it; this copy lets /verify check it without pasting."""
 
     def __init__(self, path: Path | str | None = None) -> None:
-        self.path = Path(path or os.environ.get("NOTIFIER_WITNESS_FILE") or DEFAULT_WITNESS)
+        self.path = Path(path) if path else sentrai_paths.path("notifier.witness")  # NOTIFIER_WITNESS_FILE wins
 
     def save(self, line: str) -> None:
         try:

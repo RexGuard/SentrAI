@@ -51,6 +51,8 @@ wait_for "dashboard answers over HTTPS" 90 curl -skf https://127.0.0.1:8501/_stc
 nft list table inet sentrai_dashboard | grep -q "$ADMIN_IP" || fail "dashboard firewall rule does not allow $ADMIN_IP"
 [ "$(stat -c '%U:%G %a' /etc/sentrai/sentrai.env)" = "root:sentrai 640" ] || fail "sentrai.env owner/mode"
 [ "$(stat -c '%a' /var/lib/sentrai/core)" = 700 ] || fail "core state folder is not 0700"
+[ -f /var/lib/sentrai/INDEX.md ] || fail "install.sh did not write /var/lib/sentrai/INDEX.md"
+grep -q '^SENTRAI_HOME=/var/lib/sentrai$' /etc/sentrai/sentrai.env || fail "SENTRAI_HOME missing from sentrai.env"
 TOKEN="$(cd /opt/sentrai/mvp && set -a && . /etc/sentrai/sentrai.env && set +a && \
     runuser -u sentrai -- env HOME=/var/lib/sentrai lab/.venv/bin/python sentrai_config.py token)"
 [ -n "$TOKEN" ] || fail "no API token"
@@ -87,6 +89,8 @@ grep -q '^SENTRAI_FIREWALL_ENFORCE=0' /etc/sentrai/agent.env || fail "first inst
 grep -q "$LOG" /var/lib/sentrai/agent/sources.json || fail "the installer did not approve $LOG"
 grep -q "$ADMIN_IP" /etc/sentrai/agent.env || fail "--protect was not kept"
 [ "$(stat -c '%U %a' /var/lib/sentrai/agent)" = "sentrai 700" ] || fail "agent state folder owner/mode"
+[ -f /var/lib/sentrai/agent/INDEX.md ] || fail "install-agent.sh did not write the agent's INDEX.md"
+grep -q '^SENTRAI_HOME=/var/lib/sentrai/agent$' /etc/sentrai/agent.env || fail "SENTRAI_HOME missing from agent.env"
 [ "$(systemctl show -p User --value sentrai-agent)" = sentrai ] || fail "agent does not run as sentrai"
 
 # --- upgrade in place with --enforce (no code: the machine stays joined) ----------------------

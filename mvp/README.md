@@ -72,6 +72,9 @@ threshold, block expiry, SLA, IPs and accounts never to touch) and **notificatio
 
 The answers are saved to `%USERPROFILE%\.sentrai\config.json` (or the path in `SENTRAI_CONFIG`)
 and every component reads that file on start. A variable set in the environment still wins.
+Everything else SentrAI keeps (the audit record, read positions, Scout's lists, backups) goes in
+the same folder, one sub-folder per part: see [DATA.md](DATA.md), or run `python sentrai_paths.py`
+for this machine's map.
 
 ```powershell
 python sentrai_config.py            # show the current settings (runs the wizard on a new machine)
@@ -157,13 +160,14 @@ behind an arrow.
 | `SENTRAI_CORE_URL` | `http://127.0.0.1:8000` | lab, dashboard, notifier |
 | `SENTRAI_NODE_NAME` | `This computer` | dashboard: this machine's name in the Machines list on Review |
 | `SENTRAI_PEERS` | unset | dashboard: other SentrAI cores to show in the Machines list, as `Name=URL, Name=URL`; they must accept this console's API token |
-| `SENTRAI_LAB_LOGS` | `mvp\lab\logs` | lab: the collector tails JSON-lines logs here |
+| `SENTRAI_LAB_LOGS` | `logs` in the data root (`~\.sentrai\logs`) | lab: the collector tails JSON-lines logs here. A machine that saved its settings keeps the folder it saved |
 | `SENTRAI_LOG_ACCESS`, `_AUTH`, `_DB`, `_OS` | `access.jsonl`, `auth.jsonl`, `db.jsonl`, `os.jsonl` | lab: log file names |
 | `BRUTE_FORCE_COUNT` / `BRUTE_FORCE_WINDOW_S` | 5 / 60 | core: failed logins that count as brute force |
 | `EXPORT_ROWS_THRESHOLD` | 100 | core: rows in one export that count as exfiltration |
 | `NEEDLE_MIN_CONFIDENCE` | 0.6 | core: AI confidence Countersign needs before approving an autonomous action |
 | `SENTRAI_PRESET` | `moderate` | wizard and dashboard: `strict`, `moderate`, `balanced` or `advanced` |
 | `SENTRAI_OPERATOR` | `operator` | notifier: name shown on approvals |
+| `SENTRAI_HOME` | `~\.sentrai` (or the folder of `SENTRAI_CONFIG`) | all: the data root; every file SentrAI keeps is under it unless its own variable moves it (see [DATA.md](DATA.md)) |
 | `SENTRAI_CONFIG` | `~\.sentrai\config.json` | all: where the setup wizard saves settings |
 | `SENTRAI_API_TOKEN` | generated | all: the token the core API requires (`python sentrai_config.py token` prints it) |
 | `SENTRAI_ACCOUNTS` | `accounts.json` next to the settings | dashboard: who may sign in (see Access below) |
@@ -171,7 +175,7 @@ behind an arrow.
 | `SENTRAI_REPORT_PAGE` | on | dashboard: `off` turns off the open staff report page (`/?report`) |
 | `SENTRAI_REPORT_CODE` | unset | dashboard: a shared code staff must type on the report page (put it on the noticeboard) |
 | `TELEGRAM_REPORT_FROM` | `alert-chat` | notifier: who may send `/report`: the alert chat only, `any` chat that messages the bot, or a comma list of chat ids |
-| `SENTRAI_STAFF_REPORTS` | next to the core database | core: where staff reports are saved (`staff_reports.json`) |
+| `SENTRAI_STAFF_REPORTS` | `people/staff_reports.json` next to the core database | core: where staff reports are saved |
 
 ### Access
 

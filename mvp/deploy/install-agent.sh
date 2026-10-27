@@ -26,7 +26,7 @@
 #
 # What it creates:
 #   /etc/sentrai/agent.env              settings (root:sentrai 0640)
-#   /var/lib/sentrai/agent/             machine key, read positions, blocks in force (sentrai 0700)
+#   /var/lib/sentrai/agent/             machine key, read positions, blocks in force (sentrai 0700); INDEX.md lists every file
 #   /etc/systemd/system/sentrai-agent.service
 # The agent also approves this machine's nginx, SSH login, Suricata and database logs (collector --add-system-logs).
 # Remove it with: sudo ./deploy/uninstall-agent.sh  (--purge also deletes the machine key)
@@ -102,7 +102,9 @@ install -d -m 0755 "$PREFIX" "$MVP"
 rm -rf "$MVP/core/app"
 tar -C "$SRC" -cf - --exclude=.venv --exclude=__pycache__ --exclude=.pytest_cache \
     --exclude=./lab/logs --exclude=./lab/scout/sources.json --exclude=./lab/scout/pending.json \
-    ./lab ./core/app ./sentrai_config.py ./sentrai_llm.py ./sentrai_env.py ./sentrai_extensions.py | tar -C "$MVP" -xf - --no-same-owner
+    --exclude='./lab/scout/trails/[0-9]*' \
+    ./lab ./core/app ./sentrai_config.py ./sentrai_llm.py ./sentrai_env.py ./sentrai_paths.py ./sentrai_extensions.py \
+    | tar -C "$MVP" -xf - --no-same-owner
 chown -R root:root "$MVP"
 chmod -R u=rwX,go=rX "$MVP"
 PIP_HELP="could not download the Python packages (pip's message is above). This machine must reach pypi.org over HTTPS; fix that, then run this again."
@@ -128,6 +130,7 @@ FIREWALL="$(saved SENTRAI_FIREWALL)"; FIREWALL="${FIREWALL:-auto}"
     cat <<EOF
 # SentrAI agent settings (install-agent.sh). Restart after a change: systemctl restart sentrai-agent
 SENTRAI_AGENT_FILE=$STATE/agent.json
+SENTRAI_HOME=$STATE
 SENTRAI_CONFIG=$STATE/config.json
 SENTRAI_COLLECTOR_STATE=$STATE/collector-state.json
 SENTRAI_SCOUT_SOURCES=$STATE/sources.json
@@ -138,7 +141,7 @@ PROTECTED_IPS=$protected
 EOF
     # settings changed or added by hand stay
     if [ -f "$ENV_FILE" ]; then
-        grep -v -E '^(#|$|SENTRAI_AGENT_FILE=|SENTRAI_CONFIG=|SENTRAI_COLLECTOR_STATE=|SENTRAI_SCOUT_SOURCES=|SENTRAI_LAB_LOGS=|SENTRAI_FIREWALL=|SENTRAI_FIREWALL_ENFORCE=|PROTECTED_IPS=)' "$ENV_FILE" || true
+        grep -v -E '^(#|$|SENTRAI_AGENT_FILE=|SENTRAI_HOME=|SENTRAI_CONFIG=|SENTRAI_COLLECTOR_STATE=|SENTRAI_SCOUT_SOURCES=|SENTRAI_LAB_LOGS=|SENTRAI_FIREWALL=|SENTRAI_FIREWALL_ENFORCE=|PROTECTED_IPS=)' "$ENV_FILE" || true
     fi
     if [ -z "$(saved SENTRAI_AGENT_LOCAL_RULES)" ]; then
         echo "# While the panel cannot be reached: block clear attacks here for this long, at most this many an hour."
@@ -176,6 +179,9 @@ elif [ -n "$PIN" ]; then
     as_agent -m agent pin "$PIN" || die "could not set the new pin (see the message above)"
 fi
 as_agent -m collector.collector --add-system-logs || echo "No web, SSH, Suricata or database logs found yet; approve logs later with Scout."
+# Files older versions kept elsewhere move into $STATE, and $STATE/INDEX.md lists every file and where it is.
+as_agent "$MVP/sentrai_paths.py" index >/dev/null \
+    || echo "WARNING: could not write $STATE/INDEX.md (python sentrai_paths.py index)" >&2
 
 # --- service ----------------------------------------------------------------
 sed -e "s|@PREFIX@|$PREFIX|g" -e "s|@USER@|$SVC_USER|g" -e "s|@LOGGROUPS@|${LOG_GROUPS[*]}|g" \

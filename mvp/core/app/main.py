@@ -7,6 +7,7 @@ import contextlib
 import hmac
 import logging
 import os
+from pathlib import Path
 from typing import Any, Optional, Union
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request
@@ -14,9 +15,10 @@ from fastapi.responses import PlainTextResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from .config import Settings, sign
+import sentrai_paths
 from .reports import build_report, render_markdown, render_pdf
 from . import summary as client_summary
-from . import ai, anchor, fleet, integrations, jobs, webhook
+from . import ai, anchor, apidocs, fleet, integrations, jobs, webhook
 from .extensions import ExtensionError
 from .chat import OperatorChat, default_chat_provider
 from .discovery import Discovery
@@ -241,10 +243,13 @@ AGENT_ROUTES = frozenset({("POST", "/events"), ("POST", "/heartbeat"), ("GET", "
                            ("POST", "/fleet/offline-report")})
 
 
-# Open without a token: the launchers' readiness check, and the list the fake portal enforces
-# (it holds no personal data). A report opens with the signed link from its alert (?sig=). Every other endpoint needs "Authorization: Bearer <token>" or
-# the X-SentrAI-Token header; the token is SENTRAI_API_TOKEN from the setup wizard.
-OPEN_PATHS = frozenset({"/health", "/blocklist", "/docs", "/openapi.json", "/fleet/enrol"})
+# Open without a token: the launchers' readiness check, the list the fake portal enforces (it holds no
+# personal data), a new machine swapping its join code for a key, and the API docs page, which asks for
+# the token before it shows anything (apidocs.py; /openapi.json itself needs the token). A report opens
+# with the signed link from its alert (?sig=). Every other endpoint needs "Authorization: Bearer <token>"
+# or the X-SentrAI-Token header; the token is SENTRAI_API_TOKEN from the setup wizard.
+OPEN_PATHS = frozenset({"/health", "/blocklist", "/docs", "/fleet/enrol"})
+OPEN_ROUTES = frozenset({("GET", "/health"), ("GET", "/blocklist"), ("POST", "/fleet/enrol")})  # in /openapi.json
 TOKEN_HEADER = "x-sentrai-token"
 OLD_TOKEN_HEADER = "x-cactai-token"  # sent by scripts written before the CactAI -> SentrAI rename
 
@@ -310,8 +315,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     chat = OperatorChat(core, default_chat_provider() if isinstance(core, Cyanide) else None, discovery, threats,
                         backups)
     chat.off_reason = core.ai_off_reason = ai.why_off()
-    machines = fleet.Fleet(core.settings.db_path.parent / "fleet.json")
-    machine_jobs = jobs.Jobs(core.settings.db_path.parent / "jobs.json")
+    core_dir = Path(core.settings.db_path).parent  # machines/fleet.json and machines/jobs.json sit next to the database
+    machines = fleet.Fleet(sentrai_paths.path("core.fleet", core_dir))
+    machine_jobs = jobs.Jobs(sentrai_paths.path("core.jobs", core_dir))
     staff = StaffReports(core, lambda: chat.provider)  # follows /ai/reload
 
     def require_token(request: Request) -> None:
@@ -350,7 +356,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                                 "(python sentrai_config.py token shows it)",
                                 headers={"WWW-Authenticate": "Bearer"})
 
-    app = FastAPI(title="SentrAI core", version="0.1.0", lifespan=lifespan, dependencies=[Depends(require_token)])
+    # FastAPI's own /docs, /redoc and /openapi.json would skip require_token: apidocs.py serves them instead.
+    app = FastAPI(title="SentrAI core", version="0.1.0", lifespan=lifespan, dependencies=[Depends(require_token)],
+                  docs_url=None, redoc_url=None, openapi_url=None)
+    apidocs.install(app, OPEN_ROUTES, AGENT_ROUTES)
     # The signed report link opens in a browser: no framing, no type sniffing, and the ?sig= stays
     # out of the Referer of anything the page links to.
     @app.middleware("http")

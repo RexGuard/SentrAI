@@ -18,22 +18,15 @@ import sentrai_config  # noqa: E402
 
 from . import protect  # noqa: E402
 
+import sentrai_paths  # noqa: E402
+
 sentrai_config.load()
-DEFAULT_DB = CORE_DIR / "data" / "sentrai.db"
-OLD_DB = CORE_DIR / "data" / "cactai.db"  # its name before the CactAI -> SentrAI rename
 
 
 def _default_db() -> str:
-    """The audit database in the checkout; one saved under the old name is renamed first."""
-    if not DEFAULT_DB.exists() and OLD_DB.exists():
-        try:
-            for suffix in ("", "-wal", "-shm"):
-                old = OLD_DB.with_name(OLD_DB.name + suffix)
-                if old.exists():
-                    old.rename(DEFAULT_DB.with_name(DEFAULT_DB.name + suffix))
-        except OSError:  # still open in an old core (Windows): keep using it under its old name
-            return str(OLD_DB)
-    return str(DEFAULT_DB)
+    """The audit database: core/sentrai.db in the data root (sentrai_paths.py). One kept by an older
+    version in the checkout's mvp/core/data, or named cactai.db, is moved there the first time."""
+    return str(sentrai_paths.path("core.db"))
 
 
 def sign(token: str, path: str) -> str:

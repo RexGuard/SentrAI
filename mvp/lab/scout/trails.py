@@ -2,23 +2,29 @@
 
 An experienced technician runs ``python -m scout record`` and browses with a few simple
 commands. Every step (which folder they opened, which file they looked inside, which file
-they chose and why) is saved as one JSON line in ``scout/trails/``. Scout's confirmed
-finds are saved the same way. Scout reads the trails before each search, so it follows
-the same route an expert would and skips the dead ends they already ruled out.
-``SENTRAI_SCOUT_TRAILS`` moves the folder (the server install keeps it under /var/lib/sentrai).
+they chose and why) is saved as one JSON line in ``scout/trails/`` in SentrAI's data root
+(``~/.sentrai`` on a laptop, ``/var/lib/sentrai`` on a server; ``SENTRAI_SCOUT_TRAILS`` moves the
+folder). Scout's confirmed finds are saved the same way. Scout reads the trails before each
+search, so it follows the same route an expert would and skips the dead ends they already ruled
+out. The two example trails in this code folder are copied into a new trails folder.
 """
 from __future__ import annotations
 
 import json
-import os
 import shlex
+import sys
 import time
 from pathlib import Path
 from typing import Callable
 
 from .tools import SafeFS
 
-TRAILS_DIR = Path(os.environ.get("SENTRAI_SCOUT_TRAILS") or Path(__file__).resolve().parent / "trails")
+sys.path.append(str(Path(__file__).resolve().parents[2]))  # mvp/
+import sentrai_paths  # noqa: E402
+
+# scout/trails/ in the data root (SENTRAI_SCOUT_TRAILS moves it); a new folder starts with the
+# example trails that ship in this code folder.
+TRAILS_DIR = sentrai_paths.path("scout.trails")
 LAYERS = ("web", "db", "os", "network", "cloud")
 MAX_LESSON_CHARS = 6000
 

@@ -7,6 +7,8 @@ _TMP = Path(tempfile.mkdtemp(prefix="sentrai-test-"))
 os.environ["SENTRAI_DB"] = str(_TMP / "import.db")
 os.environ["SENTRAI_BACKGROUND"] = "0"
 os.environ["SENTRAI_CONFIG"] = str(Path(_TMP) / "no-config.json")  # ignore this machine's saved settings
+# Never move a developer's own files (mvp/lab/scout, mvp/core/data ...) into a test's temp folder.
+os.environ["SENTRAI_MIGRATE"] = "off"
 os.environ.pop("TYPESAFE_API_KEY", None)
 for _name in ("CLOUDFLARE_API_TOKEN", "ABUSEIPDB_API_KEY", "SLACK_WEBHOOK_URL"):  # never call real services
     os.environ.pop(_name, None)

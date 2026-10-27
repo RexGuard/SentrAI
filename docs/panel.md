@@ -136,7 +136,8 @@ runs set: `--protect` adds to the addresses already kept, and enforcing stays on
 | `--prefix DIR` / `--user NAME` | `-Prefix DIR` | install somewhere else, or run as another account |
 
 On Linux the settings are in `/etc/sentrai/agent.env` and the machine's key in
-`/var/lib/sentrai/agent/`. After editing `agent.env` by hand, run
+`/var/lib/sentrai/agent/`, where `INDEX.md` lists every file the agent keeps
+(`C:\ProgramData\SentrAI\agent\INDEX.md` on Windows). After editing `agent.env` by hand, run
 `sudo systemctl restart sentrai-agent`. On Windows, rerun the installer with the option you want to
 change; the others are kept.
 

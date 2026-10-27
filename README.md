@@ -10,7 +10,7 @@ title: SentrAI
 
 SentrAI reads the logs you approve, turns what it sees into a live **0 to 100 risk index**, and when your own risk tolerance is crossed it applies a **temporary, reversible fix** inside your network and writes a tamper-evident **evidence report**. It never hacks back.
 
-📘 **[Full install guide](https://rexguard.github.io/SentrAI/docs/)**, with screenshots, sign-in help, settings and troubleshooting.
+📘 **[Full install guide](https://rexguard.github.io/SentrAI/docs/)**, with screenshots, sign-in help, settings and troubleshooting. Calling SentrAI from your own tools: the **[API reference](https://rexguard.github.io/SentrAI/docs/api/)**.
 
 ## Install
 
@@ -131,6 +131,7 @@ Port clashes, missing packages and a dashboard you can't reach are covered in [T
 ## More
 
 - 📘 **[Install guide](https://rexguard.github.io/SentrAI/docs/)**: laptop, server, central panel, sign-in, settings, troubleshooting.
+- 🔌 **[API reference](https://rexguard.github.io/SentrAI/docs/api/)**: every endpoint of the core with examples and error codes. The running core's own `/docs` page shows them live once you paste the API token.
 - 🛠️ **[MVP README](https://github.com/RexGuard/SentrAI/blob/main/mvp/README.md)**: configuration, every variable, the parts and the tests. Server details in [deploy/README.md](https://github.com/RexGuard/SentrAI/blob/main/mvp/deploy/README.md).
 - 📄 **[Full project plan](https://rexguard.github.io/SentrAI/Cybersecurity%20+%20AI.html)**: problem, data per layer, risk formula, Jev pipeline, hotpatch workflow, reports, ethics and stack. ([Markdown source](https://github.com/RexGuard/SentrAI/blob/main/Cybersecurity%20%2B%20AI.md))
 - 🗺️ **[Roadmap](https://rexguard.github.io/SentrAI/ROADMAP.html)**: 9 phases from the MVP to a pilot.

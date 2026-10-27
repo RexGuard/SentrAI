@@ -56,7 +56,7 @@ def test_a_link_code_puts_the_persons_chat_on_their_alerts(make_core):
 def test_links_survive_a_restart_and_unlink_removes_them(make_core, tmp_path):
     c = routed(make_core)
     assert link(c).status_code == 200
-    saved = json.loads((tmp_path / "telegram_links.json").read_text(encoding="utf-8"))
+    saved = json.loads((tmp_path / "people" / "telegram_links.json").read_text(encoding="utf-8"))
     assert saved["links"][0]["contact_id"] == "amir"
     c2 = routed(make_core)
     assert [x["name"] for x in c2.get("/telegram/links").json()] == ["Amir"]
@@ -129,6 +129,6 @@ def test_removed_telegram_answers_404_and_keeps_the_links(make_core, tmp_path):
     assert all("telegram_linked" not in x for x in c.get("/routing").json()["contacts"])
     brute_force(c, ip="203.0.113.45")
     assert all("telegram_chat" not in d for d in pending(c, "incident_opened")[0]["deliver_to"])
-    assert (tmp_path / "telegram_links.json").exists()
+    assert (tmp_path / "people" / "telegram_links.json").exists()
     c.post("/extensions/telegram/add", json={"operator": "erick"})
     assert [x["name"] for x in c.get("/telegram/links").json()] == ["Amir"]  # added again: the links are back

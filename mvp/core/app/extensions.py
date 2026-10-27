@@ -36,6 +36,7 @@ from typing import Any
 
 from .config import sentrai_config  # noqa: F401  (config.py puts mvp/ on sys.path, then these import)
 import sentrai_extensions as se  # noqa: E402
+import sentrai_paths  # noqa: E402
 
 from .classifier import Classification, Classifier  # noqa: E402,F401
 from .firewall import unsafe_reason  # noqa: E402,F401
@@ -45,7 +46,6 @@ from .risk import CATEGORIES, clip_confidence  # noqa: E402,F401
 
 log = logging.getLogger("sentrai.extensions")
 
-CHOICES_FILE = "extensions.json"  # next to the database: the core can write there, even under systemd
 
 
 class ExtensionError(Exception):
@@ -195,7 +195,7 @@ class Host:
             self.problems.append(f"{se.CHOICE_ENV} names {', '.join(unknown)}, which is not installed")
         for problem in self.problems:  # a skipped folder or a misspelt name: say so where people look
             log.warning("extensions: %s", problem)
-        self.choices = se.Choices(core.settings.db_path.parent / CHOICES_FILE)
+        self.choices = se.Choices(sentrai_paths.path("core.extensions", core.settings.db_path.parent))
         self.running: dict[str, Running] = {}
         self.errors: dict[str, str] = {}  # name -> why its core part could not start
         self._modules: dict[str, ModuleType] = {}

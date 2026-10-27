@@ -123,11 +123,12 @@ def test_revoke(panel):
 
 def test_saved_without_plain_secrets(panel):
     a = join(panel)
-    text = (panel.tmp / "fleet.json").read_text()
+    saved = panel.tmp / "machines" / "fleet.json"  # machines/ next to the database (mvp/sentrai_paths.py)
+    text = saved.read_text()
     assert a["key"] not in text and a["agent_id"] in text
     if os.name == "posix":
-        assert (panel.tmp / "fleet.json").stat().st_mode & 0o777 == 0o600
-    again = fleet.Fleet(panel.tmp / "fleet.json")
+        assert saved.stat().st_mode & 0o777 == 0o600
+    again = fleet.Fleet(saved)
     assert again.check(a["key"])["host"] == "office-pc"
 
 

@@ -1,4 +1,4 @@
-{% assign docs = site.data.docs %}{% assign i = -1 %}{% for d in docs %}{% if page.url == d.url %}{% assign i = forloop.index0 %}{% endif %}{% endfor %}
+{% assign docs = site.data[page.nav] %}{% assign i = -1 %}{% for d in docs %}{% if page.url == d.url %}{% assign i = forloop.index0 %}{% endif %}{% endfor %}
 {% if i >= 0 %}{% assign prev_i = i | minus: 1 %}{% assign next_i = i | plus: 1 %}
 <nav class="pager" aria-label="Previous and next page">
   {% if i > 0 %}<a class="prev" href="{{ docs[prev_i].url | relative_url }}"><span>Previous</span>{{ docs[prev_i].title }}</a>{% else %}<span></span>{% endif %}

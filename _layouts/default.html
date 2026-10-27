@@ -7,22 +7,22 @@
 {% include header.html %}
 <main id="main">
   <div class="wrap">
-    <div class="doc-hero"><div class="crumbs"><a href="{{ '/' | relative_url }}">Home</a> / {% if page.nav == 'docs' and page.url != '/docs/' %}<a href="{{ '/docs/' | relative_url }}">Install guide</a> / {% endif %}{{ page.title | default: site.title }}</div></div>
+    <div class="doc-hero"><div class="crumbs"><a href="{{ '/' | relative_url }}">Home</a> / {% if page.nav == 'docs' and page.url != '/docs/' %}<a href="{{ '/docs/' | relative_url }}">Install guide</a> / {% endif %}{% if page.nav == 'api' and page.url != '/docs/api/' %}<a href="{{ '/docs/api/' | relative_url }}">API reference</a> / {% endif %}{{ page.title | default: site.title }}</div></div>
     <div class="doc">
       <aside class="toc" aria-label="On this page">
-        {% if page.nav == 'docs' %}<nav class="docs-nav" aria-label="Install guide"><p>Install guide</p><ol>
-          {% for d in site.data.docs %}<li><a href="{{ d.url | relative_url }}"{% if page.url == d.url %} aria-current="page"{% endif %}>{{ d.title }}</a></li>{% endfor %}
+        {% if page.nav == 'docs' or page.nav == 'api' %}{% assign guide = site.data[page.nav] %}{% if page.nav == 'api' %}{% assign guide_title = 'API reference' %}{% else %}{% assign guide_title = 'Install guide' %}{% endif %}<nav class="docs-nav" aria-label="{{ guide_title }}"><p>{{ guide_title }}</p><ol>
+          {% for d in guide %}<li><a href="{{ d.url | relative_url }}"{% if page.url == d.url %} aria-current="page"{% endif %}>{{ d.title }}</a></li>{% endfor %}
         </ol></nav>{% endif %}
         <div class="toc-here"><p>On this page</p><ol id="toc"></ol></div>
       </aside>
       <article class="prose">
         {{ content }}
-        {% if page.nav == 'docs' %}{% include docs-pager.html %}{% endif %}
+        {% if page.nav == 'docs' or page.nav == 'api' %}{% include docs-pager.html %}{% endif %}
       </article>
     </div>
   </div>
 </main>
-<a class="to-top" href="#main" aria-label="Back to top">↑</a>
+<a class="to-top" href="#main" aria-label="Back to top"><svg width="20" height="20" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg></a>
 {% include footer.html %}
 <script>
   (function () {

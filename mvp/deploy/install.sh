@@ -43,9 +43,10 @@
 #
 # What it creates:
 #   /etc/sentrai/sentrai.env           ports, addresses and paths (root:sentrai 0640, kept on upgrade)
-#   /var/lib/sentrai/                 state: settings, approved log list, Scout trails (sentrai 0750)
-#   /var/lib/sentrai/core/            the audit record and its fingerprint key (core only, 0700)
-#   /var/lib/sentrai/collector/       the collector's read positions and line chain (collector only, 0700)
+#   /var/lib/sentrai/                 the data (sentrai 0750): INDEX.md (every file and where it is),
+#                                     the settings, scout/, lab-logs/, collector/ and notifier/
+#   /var/lib/sentrai/core/            the audit record, its key, and the core's people/, machines/,
+#                                     threats/ (quarantine) and backups/ folders (core only, 0700)
 #   /etc/systemd/system/sentrai*.service and sentrai.target
 #   /usr/local/bin/sentrai-scout      runs Scout as the service account (no terminal needed)
 #   /usr/local/bin/sentrai-admin      shows or resets the dashboard sign-in (sudo sentrai-admin --reset)
@@ -98,7 +99,7 @@ while [ $# -gt 0 ]; do
         --remote-copy-ca) REMOTE_CA="$2"; shift 2 ;;
         --panel) case "${2:-}" in [0-9]*|off) PANEL="$2"; shift 2 ;; *) PANEL=8443; shift ;; esac ;;
         --panel-url) PANEL_URL="$2"; shift 2 ;;
-        -h|--help) sed -n '2,57p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,60p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "Unknown option: $1 (see --help)" >&2; exit 2 ;;
     esac
 done
@@ -217,6 +218,7 @@ SENTRAI_PUBLIC_URL=http://127.0.0.1:8000
 DEMO_SPEED=1
 PROTECTED_IPS=127.0.0.1,::1,localhost
 SENTRAI_CONFIG=$STATE/config.json
+SENTRAI_HOME=$STATE
 SENTRAI_DB=$STATE/core/sentrai.db
 SENTRAI_COLLECTOR_STATE=$STATE/collector/state.json
 SENTRAI_LAB_LOGS=$STATE/lab-logs
@@ -230,6 +232,8 @@ chmod 0640 "$ENV_FILE"
 for k in "${!SET[@]}"; do set_env "$k" "${SET[$k]}"; done
 # The notifier keeps the last audit fingerprint it delivered here (its code folder is read-only to it).
 [ -n "$(get_env NOTIFIER_WITNESS_FILE)" ] || set_env NOTIFIER_WITNESS_FILE "$STATE/notifier/last_witness.txt"
+# Every part's data root; INDEX.md there lists every file. The paths set in sentrai.env still win.
+[ -n "$(get_env SENTRAI_HOME)" ] || set_env SENTRAI_HOME "$STATE"
 if [ "${#PROTECT[@]}" -gt 0 ]; then
     ips="$(get_env PROTECTED_IPS)"
     for ip in "${PROTECT[@]}"; do
@@ -290,7 +294,8 @@ fi
 if [ "$(get_env SENTRAI_DB)" = "$STATE/sentrai.db" ] || [ -z "$(get_env SENTRAI_COLLECTOR_STATE)" ]; then
     systemctl stop sentrai.target 2>/dev/null || true
     if [ "$(get_env SENTRAI_DB)" = "$STATE/sentrai.db" ]; then
-        for f in sentrai.db sentrai.db-wal sentrai.db-shm anchor.key protection.json archive; do
+        for f in sentrai.db sentrai.db-wal sentrai.db-shm anchor.key protection.json archive summary.json \
+                 routing.json telegram_links.json staff_reports.json fleet.json jobs.json backups restores; do
             if [ -e "$STATE/$f" ] && [ ! -e "$STATE/core/$f" ]; then mv "$STATE/$f" "$STATE/core/$f"; fi
         done
         set_env SENTRAI_DB "$STATE/core/sentrai.db"
@@ -338,8 +343,9 @@ for c in core lab dashboard notifier; do
 done
 tar -C "$SRC" -cf - \
     --exclude=.venv --exclude=__pycache__ --exclude=.pytest_cache --exclude=.run_logs \
-    --exclude=.run_pids.json --exclude=./lab/logs --exclude=./core/data \
+    --exclude=.run_pids.json --exclude=./lab/logs --exclude=./core/data --exclude=./notifier/data \
     --exclude=./lab/scout/sources.json --exclude=./lab/scout/pending.json \
+    --exclude='./lab/scout/trails/[0-9]*' \
     --exclude=./research --exclude=./pitch --exclude=./deck --exclude=./assets \
     . | tar -C "$MVP" -xf - --no-same-owner
 chown -R root:root "$MVP"
@@ -533,6 +539,17 @@ systemctl enable sentrai.target "${UNITS[@]:0:3}" >/dev/null
 if [ "$NOTIFIER" = 1 ]; then systemctl enable sentrai-notifier >/dev/null
 else systemctl disable --now sentrai-notifier >/dev/null 2>&1 || true; fi
 
+# --- data index -------------------------------------------------------------
+# Moves files from the places older versions used, then writes $STATE/INDEX.md (every file and where
+# it is). Only while no service runs, so nothing moves under a running one. With --no-start and
+# SentrAI running, this is skipped; each part then moves its own files when it restarts.
+if [ "$START" = 1 ]; then systemctl stop sentrai.target "${UNITS[@]}" 2>/dev/null || true; fi
+if ! systemctl is-active --quiet "${UNITS[@]}"; then
+    (set -a && . "$ENV_FILE" && set +a && cd "$MVP" && \
+        runuser -u "$SVC_USER" -- env HOME="$STATE" "$MVP/lab/.venv/bin/python" sentrai_paths.py index >/dev/null) \
+        || echo "WARNING: could not write $STATE/INDEX.md (python sentrai_paths.py index)" >&2
+fi
+
 if [ "$START" = 1 ]; then
     systemctl restart sentrai.target
     echo -n "Waiting for the core on $CORE_URL "
@@ -553,6 +570,7 @@ SentrAI is installed.
   Core API:   $CORE_URL
   Find logs:  sudo sentrai-scout find --root /var/log "where are the login and web logs?"
 EOF
+if [ -f "$STATE/INDEX.md" ]; then echo "  Data:       $STATE/INDEX.md lists every file and where it is"; fi
 echo
 if [ -n "$DASH_ALLOW" ]; then
     addr="$(hostname -I 2>/dev/null | awk '{print $1}')"

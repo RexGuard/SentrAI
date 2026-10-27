@@ -90,6 +90,11 @@ $pyNotif = Ensure-Venv "notifier"
 & $pyLab (Join-Path $Root "sentrai_config.py")
 if ($LASTEXITCODE -ne 0) { exit 1 }
 
+# Files older versions kept elsewhere move into the data root, and INDEX.md there lists every file.
+# The moves are named on stderr: shown, never taken as a failure.
+& { $ErrorActionPreference = "Continue"; & $pyLab (Join-Path $Root "sentrai_paths.py") index | Out-Null }
+if ($LASTEXITCODE -ne 0) { Write-Host "Could not write the data index (python sentrai_paths.py index)." -ForegroundColor Yellow }
+
 # The core API token (made and saved on first use). Every window gets the same one.
 $env:SENTRAI_API_TOKEN = (& $pyLab (Join-Path $Root "sentrai_config.py") token | Select-Object -Last 1).Trim()
 if (-not $env:SENTRAI_API_TOKEN) { Write-Host "Could not read the API token (python sentrai_config.py token)." -ForegroundColor Red; exit 1 }
@@ -146,10 +151,12 @@ if (-not $NoDashboard) {
 }
 
 $started | ConvertTo-Json | Set-Content -Path $PidFile -Encoding ASCII
+$dataRoot = & $pyLab -c "import sys; sys.path.insert(0, sys.argv[1]); import sentrai_paths; print(sentrai_paths.root())" $Root | Select-Object -Last 1
 
 Write-Host ""
 Write-Host "All components started." -ForegroundColor Green
 Write-Host "Core API:  $Core"
 Write-Host "Dashboard: $Dash"
 if (-not $NoDashboard) { $signIn | ForEach-Object { Write-Host $_ -ForegroundColor Yellow } }
+if ($dataRoot) { Write-Host "Data:      $dataRoot  (INDEX.md there lists every file)" }
 Write-Host "Stop everything with .\stop.ps1"

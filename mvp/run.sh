@@ -120,6 +120,9 @@ PY_NOTIF="$ROOT/notifier/.venv/bin/python"
 # First run on this machine: ask for the settings (logs, rules, responder, alerts) once.
 "$PY_LAB" "$ROOT/sentrai_config.py"
 
+# Files older versions kept elsewhere move into the data root, and INDEX.md there lists every file.
+"$PY_LAB" "$ROOT/sentrai_paths.py" index >/dev/null || echo "Could not write the data index (python sentrai_paths.py index)." >&2
+
 # The core API token (made and saved on first use). Every component gets the same one.
 SENTRAI_API_TOKEN="$("$PY_LAB" "$ROOT/sentrai_config.py" token | tail -n 1)"
 [ -n "$SENTRAI_API_TOKEN" ] || { echo "Could not read the API token (python sentrai_config.py token)." >&2; exit 1; }
@@ -176,10 +179,13 @@ if [ "$NO_DASHBOARD" = 0 ]; then
     fi
 fi
 
+DATA_ROOT="$("$PY_LAB" -c 'import sys; sys.path.insert(0, sys.argv[1]); import sentrai_paths; print(sentrai_paths.root())' "$ROOT" || true)"
+
 echo
 echo "All components started."
 echo "Core API:  $CORE"
 echo "Dashboard: $DASH"
 [ "$NO_DASHBOARD" = 1 ] || printf '%s\n' "$SIGN_IN"
 echo "Logs:      mvp/.run_logs/  (tail -f .run_logs/core.log)"
+[ -z "$DATA_ROOT" ] || echo "Data:      $DATA_ROOT  (INDEX.md there lists every file)"
 echo "Stop everything with ./stop.sh"
