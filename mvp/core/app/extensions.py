@@ -193,6 +193,8 @@ class Host:
         unknown = sorted(words - set(self.installed) - {"all", "none"})
         if unknown:
             self.problems.append(f"{se.CHOICE_ENV} names {', '.join(unknown)}, which is not installed")
+        for problem in self.problems:  # a skipped folder or a misspelt name: say so where people look
+            log.warning("extensions: %s", problem)
         self.choices = se.Choices(core.settings.db_path.parent / CHOICES_FILE)
         self.running: dict[str, Running] = {}
         self.errors: dict[str, str] = {}  # name -> why its core part could not start

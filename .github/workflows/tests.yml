@@ -76,6 +76,17 @@ jobs:
         working-directory: mvp/notifier
         run: .venv/${{ runner.os == 'Windows' && 'Scripts/python.exe' || 'bin/python' }} -m pytest -q
 
+      # Each extension's tests run in the venv of the part they plug into.
+      - name: Extension tests (core side)
+        if: ${{ !cancelled() }}
+        working-directory: mvp/extensions
+        run: ../core/.venv/${{ runner.os == 'Windows' && 'Scripts/python.exe' || 'bin/python' }} -m pytest -q --ignore-glob='*_notifier.py'
+
+      - name: Extension tests (notifier side)
+        if: ${{ !cancelled() }}
+        working-directory: mvp/extensions
+        run: ../notifier/.venv/${{ runner.os == 'Windows' && 'Scripts/python.exe' || 'bin/python' }} -m pytest -q --ignore-glob='*_core.py'
+
   windows-agent:
     # Installs the agent as a real Windows service on the runner (which runs as Administrator),
     # joins a local panel, puts one real Windows Firewall block in place and uninstalls again.

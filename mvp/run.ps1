@@ -6,7 +6,7 @@
   Opens one titled window per component:
     core       FastAPI risk engine + agents     http://127.0.0.1:8000  (-CorePort)
     collector  tails the logs you approved -> core
-    notifier   Telegram bot (console mode if TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID are not set)
+    notifier   alerts: the Telegram and Slack extensions, email, or the console
     dashboard  Streamlit                        http://127.0.0.1:8501  (-DashboardPort)
   Window PIDs are saved to mvp\.run_pids.json so stop.ps1 stops only these.
 

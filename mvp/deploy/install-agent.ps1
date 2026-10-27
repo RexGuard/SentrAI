@@ -176,7 +176,7 @@ function Copy-Tree([string]$From, [string]$To, [string[]]$Extra = @()) {
 }
 Copy-Tree (Join-Path $Src "lab") (Join-Path $Mvp "lab") @((Join-Path $Src "lab\logs"), "/XF", "sources.json", "pending.json")
 Copy-Tree (Join-Path $Src "core\app") (Join-Path $Mvp "core\app")
-foreach ($f in "sentrai_config.py", "sentrai_llm.py", "sentrai_env.py") { Copy-Item -Force (Join-Path $Src $f) (Join-Path $Mvp $f) }
+foreach ($f in "sentrai_config.py", "sentrai_llm.py", "sentrai_env.py", "sentrai_extensions.py") { Copy-Item -Force (Join-Path $Src $f) (Join-Path $Mvp $f) }
 
 if (-not (Test-Path $VenvPy)) {
     $python = Find-Python

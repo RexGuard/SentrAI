@@ -369,7 +369,7 @@ for c in core lab dashboard notifier; do
     fi
     "$dir/.venv/bin/python" -m compileall -q "$dir" -x '/\.venv/' >/dev/null || true
 done
-"$MVP/core/.venv/bin/python" -m compileall -q "$MVP"/*.py >/dev/null || true
+"$MVP/core/.venv/bin/python" -m compileall -q "$MVP"/*.py "$MVP/extensions" >/dev/null || true
 
 # --- Scout wrapper ----------------------------------------------------------
 SCOUT_GROUPS=""  # Scout reads logs to find them, so it gets the same groups as the collector

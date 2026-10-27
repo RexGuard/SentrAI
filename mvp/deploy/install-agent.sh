@@ -102,7 +102,7 @@ install -d -m 0755 "$PREFIX" "$MVP"
 rm -rf "$MVP/core/app"
 tar -C "$SRC" -cf - --exclude=.venv --exclude=__pycache__ --exclude=.pytest_cache \
     --exclude=./lab/logs --exclude=./lab/scout/sources.json --exclude=./lab/scout/pending.json \
-    ./lab ./core/app ./sentrai_config.py ./sentrai_llm.py ./sentrai_env.py | tar -C "$MVP" -xf - --no-same-owner
+    ./lab ./core/app ./sentrai_config.py ./sentrai_llm.py ./sentrai_env.py ./sentrai_extensions.py | tar -C "$MVP" -xf - --no-same-owner
 chown -R root:root "$MVP"
 chmod -R u=rwX,go=rX "$MVP"
 PIP_HELP="could not download the Python packages (pip's message is above). This machine must reach pypi.org over HTTPS; fix that, then run this again."
