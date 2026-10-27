@@ -131,7 +131,8 @@ def test_docs_page_is_open_but_empty(client):
     assert r.headers["cache-control"] == "no-store"
     for path in ("/incidents", "/fleet", "/audit", "/events", "/blocklist"):
         assert path not in r.text, f"{path} is on the docs page before the token is typed"
-    assert "API token" in r.text and 'type="password"' in r.text
+    assert "API token" in r.text and 'id="token" type="text" autocomplete="off"' in r.text
+    assert 'type="password"' not in r.text  # a password box makes browsers offer to save the token as a login
     assert apidocs.SWAGGER in r.text and 'integrity="sha384-' in r.text
 
 

@@ -158,6 +158,8 @@ PAGE = f"""<!doctype html>
 <title>SentrAI core API</title>
 <link rel="stylesheet" href="{SWAGGER}/swagger-ui.css" integrity="{SWAGGER_CSS_SRI}" crossorigin="anonymous">
 <style>
+  /* drawn as dots, but a plain text box, so browsers do not offer to save the token as a login */
+  #token {{ -webkit-text-security: disc; }}
   body {{ margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: #18181b; background: #fafafa; }}
   #unlock {{ max-width: 34rem; margin: 12vh auto 0; padding: 2rem; background: #fff; border: 1px solid #e4e4e7;
              border-radius: 12px; }}
@@ -182,7 +184,7 @@ PAGE = f"""<!doctype html>
   <p>On the machine running SentrAI, <code>python sentrai_config.py token</code> prints it.</p>
   <label for="token">API token</label>
   <div class="row">
-    <input id="token" type="password" spellcheck="false" autocapitalize="off" required>
+    <input id="token" type="text" autocomplete="off" spellcheck="false" autocapitalize="off" required>
     <button type="submit">Show the API</button>
   </div>
   <p id="note" role="status" aria-live="polite"></p>
