@@ -19,6 +19,7 @@ from . import summary as client_summary
 from . import ai, anchor, fleet, integrations, jobs, webhook
 from .chat import OperatorChat, default_chat_provider
 from .discovery import Discovery
+from .staff_reports import RateLimited, ReportError, StaffReports
 from .threats import ThreatWatch
 from .backups import BackupWatch
 from .cyanide import Cyanide, default_planner
@@ -171,6 +172,23 @@ class AITestIn(BaseModel):
     model: str = ""
 
 
+class StaffReportIn(BaseModel):
+    text: str
+    reporter: str = ""
+    contact: str = ""
+    where: str = ""
+    channel: str = "api"
+    sender: str = ""  # who sent it, for the rate limit: the reporter's address or chat id, set by the channel
+    host: str = ""  # the machine it is about, if known: its incident then belongs to that machine
+
+
+class StaffReportUpdateIn(BaseModel):
+    operator: str
+    status: Optional[str] = None
+    assignee: Optional[str] = None
+    note: Optional[str] = None
+
+
 class HeartbeatIn(BaseModel):
     collector: str
 
@@ -310,6 +328,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     chat.off_reason = core.ai_off_reason = ai.why_off()
     machines = fleet.Fleet(core.settings.db_path.parent / "fleet.json")
     machine_jobs = jobs.Jobs(core.settings.db_path.parent / "jobs.json")
+    staff = StaffReports(core, lambda: chat.provider)  # follows /ai/reload
 
     def require_token(request: Request) -> None:
         path = request.url.path
@@ -365,6 +384,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.backups = backups
     app.state.fleet = machines
     app.state.jobs = machine_jobs
+    app.state.staff = staff
 
     def not_found(iid: str) -> HTTPException:
         return HTTPException(status_code=404, detail=f"incident {iid} not found")
@@ -750,6 +770,40 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(404, str(e).strip("'\""))
         except ValueError as e:
             raise HTTPException(409, str(e))
+
+    # Staff reports: anyone at the business reports something suspicious (from the dashboard's open
+    # report page, Telegram or another channel holding the token); it is sorted, opens a "needs review"
+    # incident, and is tracked until a person closes it with a note (staff_reports.py).
+    @app.post("/staff-reports")
+    def post_staff_report(body: StaffReportIn) -> dict[str, Any]:
+        try:
+            return staff.submit(body.text, body.reporter, body.contact, body.where, body.channel, body.sender,
+                                body.host)
+        except RateLimited as e:
+            raise HTTPException(429, str(e))
+        except ReportError as e:
+            raise HTTPException(400, str(e))
+
+    @app.get("/staff-reports")
+    def get_staff_reports(status: Optional[str] = Query(None, description="new, reviewing, resolved, "
+                                                        "not_a_threat, or open (new + reviewing)")) -> dict[str, Any]:
+        return {"reports": staff.list(status), "counts": staff.counts()}
+
+    @app.get("/staff-reports/{rid}")
+    def get_staff_report(rid: str) -> dict[str, Any]:
+        try:
+            return staff.get(rid)
+        except KeyError as e:
+            raise HTTPException(404, str(e).strip("'\""))
+
+    @app.post("/staff-reports/{rid}")
+    def update_staff_report(rid: str, body: StaffReportUpdateIn) -> dict[str, Any]:
+        try:
+            return staff.update(rid, body.operator, body.status, body.assignee, body.note)
+        except KeyError as e:
+            raise HTTPException(404, str(e).strip("'\""))
+        except ReportError as e:
+            raise HTTPException(400, str(e))
 
     @app.get("/ai")
     def ai_status() -> dict[str, Any]:

@@ -64,6 +64,11 @@ def test_protection_switch(fake_core):
     requests.post(f"{fake_core}/dev/reset", timeout=3)
 
 
+def test_machine_names_for_the_report_form(fake_core):
+    assert {"web-01", "office-pc"} <= set(CoreClient(fake_core).machine_names())
+    assert CoreClient("http://127.0.0.1:9", timeout=0.3).machine_names() == []  # no list: the form shows no picker
+
+
 def test_assign_and_resolve(fake_core):
     c = CoreClient(fake_core)
     requests.post(f"{fake_core}/dev/reset", timeout=3)
