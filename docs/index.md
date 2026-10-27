@@ -21,6 +21,7 @@ a server that keeps watch around the clock.
 | Sign in, invite your team, or reset a sign-in | [Signing in](sign-in.html) | |
 | Change thresholds, alerts or protected IPs | [Settings](settings.html) | |
 | Fix a port clash, a missing package or a blocked dashboard | [Troubleshooting](troubleshooting.html) | |
+| Call SentrAI from your own scripts and tools | [API reference](api/index.html) | |
 
 ## What you need
 

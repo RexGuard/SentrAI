@@ -1,6 +1,8 @@
 # SentrAI core
 
-This is the FastAPI service on `http://127.0.0.1:8000`. It implements every Core API endpoint in `../CONTRACT.md`. It handles:
+This is the FastAPI service on `http://127.0.0.1:8000`. It implements every Core API endpoint in `../CONTRACT.md`;
+the [API reference](https://rexguard.github.io/SentrAI/docs/api/) (`docs/api/`) has every endpoint with examples and
+error codes, and `http://127.0.0.1:8000/docs` shows them live once you paste the API token. It handles:
 
 - event ingestion
 - classification: rules, then Jev, then a fallback heuristic
