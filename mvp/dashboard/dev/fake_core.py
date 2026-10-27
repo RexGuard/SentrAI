@@ -105,7 +105,9 @@ class State:
             "a1b2c3": {"agent_id": "a1b2c3", "host": "web-01", "joined_at": iso(now()), "invited_by": "erick",
                        "last_seen": iso(now()), "revoked_at": None, "revoked_by": None},
             "d4e5f6": {"agent_id": "d4e5f6", "host": "office-pc", "joined_at": iso(now()), "invited_by": "erick",
-                       "last_seen": iso(now()), "revoked_at": None, "revoked_by": None},
+                       "last_seen": iso(now()), "revoked_at": None, "revoked_by": None, "offline_total": 1,
+                       "offline": {"from": iso(now() - timedelta(minutes=50)), "to": iso(now() - timedelta(minutes=20)),
+                                   "scored": 42, "local_blocks": 1, "reported_at": iso(now() - timedelta(minutes=20))}},
         }
 
 
@@ -287,12 +289,16 @@ def events(body=Body(...)):
 
 
 @app.get("/risk")
-def risk():
+def risk(host: str | None = None):
+    """With ?host=, one machine's own score: the scripted incidents are all on web-01, the others stay at 0."""
     with lock:
-        idx = risk_index()
+        idx = risk_index() if host in (None, "web-01") else 0
+        hist = S.history if host in (None, "web-01") else [{"t": p["t"], "risk_index": 0} for p in S.history]
         return {"risk_index": idx, "band": band(idx), "raw_score": round(raw_score(), 1), "threshold": THRESHOLD,
-                "open_incidents": [i for i, v in S.incidents.items() if v["status"] in ("open", "acknowledged")],
-                "monitor_only": S.protection["monitor_only"], "history": S.history, "risk_scope": RISK_SCOPE}
+                "open_incidents": [i for i, v in S.incidents.items() if v["status"] in ("open", "acknowledged")
+                                   and host in (None, v["host"])],
+                "monitor_only": S.protection["monitor_only"], "history": hist, "risk_scope": RISK_SCOPE,
+                **({"host": host} if host else {})}
 
 
 @app.get("/incidents")
@@ -316,7 +322,7 @@ def machines():
                         "open_incidents": sum(i["status"] in ("open", "acknowledged") for i in incs),
                         "contained_incidents": sum(i["status"] == "contained" for i in incs),
                         "blocked": len(blocklist()["ips"]) if h == "web-01" else 0,
-                        "last_seen": iso(now()), "silent": False,
+                        "last_seen": iso(now()), "silent": False, "services_at": iso(now()),
                         "services": FAKE_SERVICES.get(h, []) if h != "web-01" else [
                             {**x, "open_incidents": sum(1 for i in incs if i["status"] in ("open", "acknowledged"))
                              if x["name"] == "web" else 0} for x in FAKE_SERVICES["web-01"]]})
@@ -601,10 +607,12 @@ def post_protection(body: dict = Body(...)):
 
 
 @app.get("/blocklist")
-def blocklist():
+def blocklist(host: str | None = None):
     with lock:
         ips, users = set(), set()
         for inc in S.incidents.values():
+            if host is not None and inc["host"] != host:
+                continue
             for a in inc["actions"]:
                 if a["status"] in ("active", "permanent"):
                     if a["type"] == "block_ip":

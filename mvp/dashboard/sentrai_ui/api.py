@@ -111,6 +111,14 @@ class CoreClient:
     def machines(self) -> list[dict]:
         return list(self.get_json("/machines") or [])
 
+    def machine_risk(self, host: str) -> dict:
+        """One machine's own risk index and its history (a central panel scores each machine apart)."""
+        return self.get_json(f"/risk?host={quote(host, safe='')}")
+
+    def machine_blocklist(self, host: str) -> dict:
+        """The blocks that one machine's agent puts in place there."""
+        return self.get_json(f"/blocklist?host={quote(host, safe='')}")
+
     def machine_incidents(self, host: str) -> list[dict]:
         return list(self.get_json(f"/incidents?host={quote(host, safe='')}") or [])
 

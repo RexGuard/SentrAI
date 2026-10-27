@@ -131,7 +131,8 @@ def _signed_in(email: str, note: str = "") -> None:
         st.session_state.pop(key, None)
     st.session_state.signed_in = email
     st.session_state.flash = (note or f"Last sign-in: {_when(before)}" + (f" from {where}" if where else ""), "🔐")
-    st.query_params.clear()
+    # A machine's link (?machine=...) still opens that machine once signed in; anything else (an invite) goes.
+    st.query_params.from_dict({k: st.query_params[k] for k in ("machine", "tab") if k in st.query_params})
     st.rerun()
 
 
@@ -481,6 +482,24 @@ def machines() -> list[dict]:
     return found
 
 
+# One machine's page has its own address (?machine=web-01&tab=incidents), like a server's page in a game panel.
+MACHINE_TABS = {"Overview": "", "Incidents": "incidents", "Blocks": "blocks", "Services": "services",
+                "Scans and backups": "scans", "Agent": "agent"}  # tab label: its name in the address
+
+
+def follow_address() -> None:
+    """Keep the page in step with the address bar: a machine's link opens its page (on the tab it names),
+    and the browser's Back button, which takes ?machine= out of the address, returns to the machine list."""
+    host = st.query_params.get("machine")
+    if host:
+        st.session_state.page, st.session_state.machine = "machine", host
+        slug = st.query_params.get("tab", "")
+        st.session_state.machine_tab = next((t for t, s in MACHINE_TABS.items() if s == slug), "Overview")
+    elif st.session_state.get("page") == "machine":
+        st.session_state.page = "machines"
+
+
+follow_address()
 if "page" not in st.session_state:  # land on what needs a person; a new machine starts with guided setup
     st.session_state.page = sh.start_page(fetch("incidents", [])[0]) if cfg.setup_done() else "chat"
 
@@ -511,6 +530,14 @@ def page_allowed(key: str) -> bool:
 
 def go(page: str) -> None:
     st.session_state.page = page
+    if st.query_params:  # leaving a machine's page: its address goes too, in one step for the Back button
+        st.query_params.clear()
+    st.rerun()
+
+
+def open_machine(host: str, tab: str = "Overview") -> None:
+    """Go to one machine's own page; follow_address() sets it up from the new address on the rerun."""
+    st.query_params.from_dict({"machine": host, **({"tab": MACHINE_TABS[tab]} if MACHINE_TABS.get(tab) else {})})
     st.rerun()
 
 
@@ -564,7 +591,7 @@ def menu() -> None:
         n = bubbles.get(key, 0)
         text = label + (f"  :red-badge[{n}]" if n else "")
         if st.button(text, key=f"nav_{key}", icon=f":material/{ico}:", width="stretch",
-                     type="primary" if key == page else "secondary"):
+                     type="primary" if key == page or (key, page) == ("machines", "machine") else "secondary"):
             if key in sh.ALERT_TYPES:
                 seen[key] = sh.head_seq(records)
             go(key)
@@ -586,13 +613,13 @@ with st.sidebar:
 
 # ------------------------------------------------------------------ shared page parts
 
-def header(title: str, note: str = "") -> dict | None:
+def header(title: str, note: str = "", eyebrow: str = "") -> dict | None:
     """Page title plus the live status chips. Returns /risk, or None when the core is offline.
 
     The risk number lives in the sidebar card only, so each screen says it once."""
     risk, err = fetch("risk")
     now_s = datetime.now().strftime("%H:%M:%S")
-    ico, _, group = PAGES[st.session_state.page]
+    ico, _, group = PAGES.get(st.session_state.page, PAGES["machines"])
     if err or not isinstance(risk, dict):
         chips = status("Core offline", sh.BAND_COLORS["critical"])
     else:
@@ -606,7 +633,7 @@ def header(title: str, note: str = "") -> dict | None:
                     pulse=bool(AUTO))
     st.markdown(
         f'<div class="page-head"><div class="page-title">'
-        f'<div class="eyebrow">{icon(ico)} {html.escape(group)}</div><h1>{html.escape(title)}</h1>'
+        f'<div class="eyebrow">{icon(ico)} {html.escape(eyebrow or group)}</div><h1>{html.escape(title)}</h1>'
         f'<div class="page-note">{html.escape(note)}</div></div>'
         f'<div class="chips">{chips}</div></div>',
         unsafe_allow_html=True,
@@ -2108,7 +2135,7 @@ def page_review() -> None:
         found = machines()
         online = sum(m["online"] for m in found)
         section("Machines", f"{online} of {len(found)} online · SentrAI acts on its own above the threshold", "dns")
-        st.markdown(sh.machine_rows_html(found), unsafe_allow_html=True)
+        machine_list(found, panel_mode(risk))
     with h, st.container(border=True):
         section("Risk over time", "dashed line is the threshold", "show_chart")
         if hist.empty:
@@ -2128,53 +2155,19 @@ def page_review() -> None:
 
 
 def machine_list(found: list[dict], panel: bool) -> None:
-    """One card per machine. On a central panel a joined machine's card opens its services, incidents,
-    scans and backups right under it; clicking it again (or another one) closes it."""
+    """One card per machine, like the server list of a game panel. On a central panel each card opens
+    that machine's own page (an invisible button stretched over the card, see console.css)."""
     if not panel:
         st.markdown(sh.machine_rows_html(found), unsafe_allow_html=True)
         return
-    opened = st.session_state.get("machine_open")
     for i, m in enumerate(found):
-        host = m.get("host")
-        if not host or m.get("waiting"):
+        if not m.get("host"):
             st.markdown(sh.machine_rows_html([m]), unsafe_allow_html=True)
             continue
         with st.container(key=f"mrow-{i}"):
-            st.markdown(sh.machine_rows_html([m], opened=host == opened), unsafe_allow_html=True)
-            if st.button(f"{'Hide' if host == opened else 'Show'} details for {m['name']}", key=f"mopen-{i}", width="stretch"):
-                st.session_state["machine_open"] = None if host == opened else host
-                st.rerun(scope="fragment")
-        if host == opened:
-            with st.container(border=True):
-                machine_details(m)
-
-
-def machine_details(chosen: dict) -> None:
-    pick = chosen["host"]
-    st.caption("Services running on it (its agent reports them every minute)")
-    table(sh.service_rows(chosen.get("services")), "No services reported yet.")
-    incs, ierr = safe(lambda: client.machine_incidents(pick), [])
-    if ierr:
-        st.warning(f"Could not load incidents: {ierr}")
-    st.caption("Its incidents")
-    table(sh.risk_breakdown(incs or []), f"All quiet on {pick}. No incidents.")
-    st.caption("Scans and backups on it (its agent picks them up within about 15 seconds and runs "
-               "them on the folders set on that machine)")
-    b1, b2, _ = st.columns([3, 3, 4])
-    if b1.button("Scan for threats", icon=":material/policy:", key="job_scan", width="stretch"):
-        run_action(f"Asked {pick} to scan for threats",
-                   lambda: client.queue_job(pick, "threat_scan", st.session_state.operator))
-    if b2.button("Back up now", icon=":material/backup:", key="job_backup", width="stretch"):
-        run_action(f"Asked {pick} to back up",
-                   lambda: client.queue_job(pick, "backup", st.session_state.operator))
-    jobs, jerr = safe(lambda: client.machine_jobs(pick), [])
-    if jerr:
-        st.warning(f"Could not load jobs: {jerr}")
-    table(sh.job_rows(jobs or []), f"Nothing asked of {pick} yet.")
-    found_now = sh.job_findings(jobs or [])
-    if not found_now.empty:
-        st.caption("What its latest threat scan found (critical and high ones also open an incident)")
-        table(found_now, "")
+            st.markdown(sh.machine_rows_html([m], link=True), unsafe_allow_html=True)
+            if st.button(f"Open {m['name']}", key=f"mopen-{i}", width="stretch"):
+                open_machine(m["host"])
 
 
 def panel_address() -> str:
@@ -2273,15 +2266,219 @@ def page_machines() -> None:
             if aerr:
                 st.warning(f"Could not load joined machines: {aerr}")
             table(sh.agent_rows(agents or []), "No machine has joined yet. Make a join code above.")
-            active = {f"{a['host']} ({a['agent_id']})": a["agent_id"] for a in agents or []
-                      if isinstance(a, dict) and not a.get("revoked_at")}
-            if active:
-                c1, c2, c3 = st.columns([4, 3, 2])
-                which = c1.selectbox("Revoke a machine", list(active), key="revoke_pick", label_visibility="collapsed")
-                sure = c2.checkbox("Yes, stop accepting its key", key="revoke_sure")
-                if c3.button("Revoke", icon=":material/block:", disabled=not sure or locked("configure"),
-                             help=why_locked("configure"), key="revoke_go", width="stretch"):
-                    run_action(f"Revoked {which}", lambda: client.revoke_agent(active[which], st.session_state.operator))
+            if agents:
+                st.caption("To stop accepting a machine's key, open the machine and use Revoke on its Agent tab.")
+
+
+# ------------------------------------------------------------------ one machine's page
+
+def _tab_to_address() -> None:
+    """A new tab goes into the address, so a link or the Back button brings the same tab back."""
+    slug = MACHINE_TABS.get(st.session_state.get("machine_tab", ""), "")
+    if slug:
+        st.query_params["tab"] = slug
+    else:
+        st.query_params.pop("tab", None)
+
+
+def _show_tab(tab: str) -> None:
+    st.session_state.machine_tab = tab
+    _tab_to_address()
+
+
+def machine_note(m: dict, agent: dict | None) -> str:
+    """The line under a machine's name: what watches it, since when, and what runs on it."""
+    if agent:
+        joined = sh.parse_ts(agent.get("joined_at"))
+        parts = [f"SentrAI agent {agent.get('agent_id')}",
+                 f"joined {joined:%d %b %H:%M}" + (f" by {agent['invited_by']}" if agent.get("invited_by") else "")
+                 if joined else ""]
+    else:
+        parts = ["Known from logs only: no SentrAI agent runs on it"]
+    if m.get("services"):
+        parts.append(sh.services_text(m["services"]))
+    return " · ".join(p for p in parts if p)
+
+
+@st.fragment(run_every=AUTO)
+def page_machine() -> None:
+    """One machine's own page, laid out like a server's page in Pterodactyl or Calagopus: a status card
+    with its quick actions (their power buttons), then tabs. Its address can be bookmarked or shared."""
+    show_flash()
+    host = str(st.session_state.get("machine") or "")
+    found = machines()
+    m = next((x for x in found if x.get("host") == host), None)
+    back, _, pick = st.columns([2, 5, 3], vertical_alignment="center")
+    if back.button("All machines", icon=":material/arrow_back:", type="tertiary", key="machine_back"):
+        go("machines")
+    hosts = [x["host"] for x in found if x.get("host")]
+    if m is not None and len(hosts) > 1:
+        other = pick.selectbox("Switch machine", hosts, index=hosts.index(host), key=f"machine_pick_{host}",
+                               label_visibility="collapsed", help="Open another machine on the same tab")
+        if other != host:
+            open_machine(other, st.session_state.get("machine_tab", "Overview"))
+    agents, _ = fetch("fleet", [])
+    mine = [a for a in agents or [] if isinstance(a, dict) and a.get("host") == host]
+    agent = next((a for a in mine if not a.get("revoked_at")), None)
+    risk = header(m["name"] if m else host or "Machine", machine_note(m, agent) if m else "", eyebrow="Machines")
+    if risk is None:
+        return
+    if m is None:
+        why = "" if panel_mode(risk) else " Machine pages need central panel mode (SENTRAI_RISK_SCOPE=host)."
+        empty(f"No machine called {host or '(none)'} reports to this panel. It may have been revoked, or the "
+              f"link is out of date.{why}", "search_off")
+        return
+
+    card, actions = st.columns([3, 2], vertical_alignment="center")
+    card.markdown(sh.machine_rows_html([m], status=True), unsafe_allow_html=True)
+    with actions:
+        b1, b2 = st.columns(2)
+        why = None if m.get("agent_id") else "Scans and backups run through SentrAI's agent, and this machine has none."
+        off = not m.get("agent_id") or locked()
+        if b1.button("Scan for threats", icon=":material/policy:", key="job_scan", width="stretch", disabled=off,
+                     help=why or why_locked(otherwise="Its agent scans the folders set on that machine")):
+            run_action(f"Asked {host} to scan for threats",
+                       lambda: client.queue_job(host, "threat_scan", st.session_state.operator))
+        if b2.button("Back up now", icon=":material/backup:", key="job_backup", width="stretch", disabled=off,
+                     help=why or why_locked(otherwise="Its agent backs up the folders set on that machine")):
+            run_action(f"Asked {host} to back up", lambda: client.queue_job(host, "backup", st.session_state.operator))
+
+    incs, ierr = safe(lambda: client.machine_incidents(host), [])
+    if ierr:
+        st.warning(f"Could not load its incidents: {ierr}")
+    incs = incs or []
+    tabs = st.tabs(list(MACHINE_TABS), key="machine_tab", on_change=_tab_to_address)
+    for tab, show in zip(tabs, (machine_overview, machine_incidents, machine_blocks, machine_services,
+                                machine_jobs_tab, machine_agent)):
+        if tab.open:
+            with tab:
+                show(m, incs, agent, mine)
+
+
+def machine_overview(m: dict, incs: list[dict], agent: dict | None, mine: list[dict]) -> None:
+    """Its console: the live log of what SentrAI saw and did there, beside its own risk over time."""
+    host = m["host"]
+    waiting = sh.pending_approvals(incs)
+    if waiting:
+        lead, btn = st.columns([4, 1], vertical_alignment="center")
+        lead.markdown(f'<div class="lead">{icon("pending_actions")}<span>{html.escape(sh.approvals_headline(waiting))}'
+                      f'</span></div>', unsafe_allow_html=True)
+        btn.button("Open its incidents", key="to_incidents", width="stretch", on_click=_show_tab, args=("Incidents",))
+    records, _, _ = audit_records()
+    log = sh.build_activity_feed(sh.machine_records(records, host, [i.get("id") for i in incs]), limit=80)
+    left, right = st.columns([7, 5])
+    with left, st.container(border=True):
+        section("Live log", "what SentrAI saw and did on this machine, newest first", "terminal")
+        if log:
+            st.markdown(sh.console_html(log, f"Live log for {host}"), unsafe_allow_html=True)
+        else:
+            empty(f"Nothing recorded about {host} yet.", "terminal")
+    with right, st.container(border=True):
+        section("Risk over time", "this machine's own score · dashed line is the threshold", "show_chart")
+        own, err = safe(lambda: client.machine_risk(host), {})
+        hist = sh.history_frame((own or {}).get("history"))
+        if err or hist.empty:
+            empty("No history yet. The panel adds a point whenever its score changes.", "show_chart")
+        else:
+            st.plotly_chart(sh.history_figure(hist, float((own or {}).get("threshold") or m["threshold"] or 80)),
+                            width="stretch", config={"displayModeBar": False}, key="machine_history")
+
+
+def machine_incidents(m: dict, incs: list[dict], agent: dict | None, mine: list[dict]) -> None:
+    waiting = sh.pending_approvals(incs)
+    with st.container(border=True):
+        section("Waiting on you", "approve or reject, keep or roll back", "approval_delegation")
+        if not waiting:
+            empty(f"Nothing on {m['host']} waits for a decision.", "check_circle", good=True)
+        for inc in waiting:
+            verb = "Approve or reject" if sh.available_actions(inc)["decide"] else "Keep or roll back"
+
+            def details(inc=inc) -> None:
+                incident_summary(inc)
+                decision_controls(inc)
+                table(sh.action_rows(inc), "No containment actions yet.")
+            incident_row(inc, "mach", verb, details)
+    with st.container(border=True):
+        section("All its incidents", "what adds to its own score, one row per incident", "calculate")
+        table(sh.risk_breakdown(incs), f"All quiet on {m['host']}. No incidents.")
+
+
+def machine_blocks(m: dict, incs: list[dict], agent: dict | None, mine: list[dict]) -> None:
+    """Its firewall, as a game panel's Network tab: what is blocked there right now, and every action taken."""
+    host = m["host"]
+    blocks, err = safe(lambda: client.machine_blocklist(host), {"ips": [], "users": []})
+    with st.container(border=True):
+        section("In force on this machine", "its agent puts each one in place there and takes it out when it ends",
+                "block")
+        if err:
+            st.warning(f"Could not load its blocks: {err}")
+        table(sh.build_containment_rows(blocks, incs), f"Nothing blocked on {host} right now.")
+    with st.container(border=True):
+        section("Every action on this machine", "each one ends on its own unless a person keeps it", "history")
+        table(sh.all_action_rows(incs), f"No actions taken on {host} yet.")
+
+
+def machine_services(m: dict, incs: list[dict], agent: dict | None, mine: list[dict]) -> None:
+    at = sh.parse_ts(m.get("services_at"))
+    with st.container(border=True):
+        section("Services", "what listens on it, reported by its agent every minute"
+                + (f" · last report {sh.seen_ago(at)}" if at else ""), "lan")
+        table(sh.service_rows(m.get("services")),
+              "No services reported yet." if m.get("agent_id") else "No agent on this machine reports its services.")
+
+
+def machine_jobs_tab(m: dict, incs: list[dict], agent: dict | None, mine: list[dict]) -> None:
+    host = m["host"]
+    with st.container(border=True):
+        section("Scans and backups", "asked with the buttons above · its agent picks each one up within about "
+                "15 seconds and runs it on the folders set on that machine", "policy")
+        if not m.get("agent_id"):
+            empty("Scans and backups run through SentrAI's agent, and this machine has none.", "info")
+            return
+        jobs, jerr = safe(lambda: client.machine_jobs(host), [])
+        if jerr:
+            st.warning(f"Could not load its scans and backups: {jerr}")
+        table(sh.job_rows(jobs or []), f"Nothing asked of {host} yet.")
+        found_now = sh.job_findings(jobs or [])
+        if not found_now.empty:
+            st.caption("What its latest threat scan found (critical and high ones also open an incident)")
+            table(found_now, "")
+
+
+def machine_agent(m: dict, incs: list[dict], agent: dict | None, mine: list[dict]) -> None:
+    """Its agent and key, with Revoke, as a game panel's Settings tab with its danger zone."""
+    host = m["host"]
+    old = [a for a in mine if a.get("revoked_at")]
+    with st.container(border=True):
+        section("Agent", "the SentrAI program on the machine: it sends the logs and puts the blocks in place", "key")
+        if agent is None:
+            empty(f"No SentrAI agent runs on {host}: the panel only knows it from the logs it was sent. "
+                  "To watch and protect it directly, add it with + Add machine on the Machines page.", "info")
+        else:
+            st.markdown('<div class="detail-grid three">' + "".join(
+                f'<div><span>{html.escape(k)}</span><b>{html.escape(v)}</b></div>' for k, v in sh.agent_facts(agent))
+                + '</div>', unsafe_allow_html=True)
+        if old:
+            st.caption("Earlier keys for this machine")
+            table(sh.agent_rows(old), "")
+    if agent is None:
+        return
+    with st.container(border=True):
+        section("Revoke its key", "it can join again later with a new join code", "block")
+        st.caption(f"The panel stops accepting {host}'s key at once: its agent can no longer send logs or pick up "
+                   "scans and backups. Blocks it already put in place end on their own.")
+        c1, c2 = st.columns([3, 1], vertical_alignment="center")
+        sure = c1.checkbox("Yes, stop accepting its key", key=f"revoke_sure_{host}")
+        if c2.button("Revoke key", icon=":material/block:", key=f"revoke_{host}", width="stretch",
+                     disabled=not sure or locked("configure"), help=why_locked("configure")):
+            try:
+                client.revoke_agent(str(agent["agent_id"]), st.session_state.operator)
+            except CoreError as exc:
+                st.session_state["flash"] = (f"Could not revoke {host}: {exc}", WARN_ICON)
+                st.rerun(scope="fragment")
+            _get.clear()  # the machine list must not show it as joined for another second
+            st.session_state["flash"] = (f"Revoked {host} ({agent['agent_id']})", OK_ICON)
+            go("machines")
 
 
 @st.fragment(run_every=AUTO)
@@ -2606,6 +2803,6 @@ if not page_allowed(st.session_state.page):
 {
     "config": page_config, "approvals": page_approvals, "incidents": page_incidents, "chat": page_chat,
     "collector": page_collector, "classifier": page_classifier, "responder": page_responder, "machines": page_machines,
-    "review": page_review, "reports": page_reports, "audit": page_audit,
+    "review": page_review, "reports": page_reports, "audit": page_audit, "machine": page_machine,
     "backups": page_backups, "team": page_team, "integrations": page_integrations,
 }[st.session_state.page]()
