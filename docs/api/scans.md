@@ -28,8 +28,7 @@ access, SentrAI's own parts) and suggest where they keep their logs. The collect
 until a person approves a file with [`POST /log-sources`](events.html#post-log-sources). The scan
 also looks for hostile-looking programs, such as a crypto miner or a shell wired to a remote address:
 each critical or high one opens or joins a `malware` incident, once per program and sign. The scan is
-written to the audit
-trail as `system_scan` and replaces the previous one, which is kept in memory only.
+written to the audit trail as `system_scan` and replaces the previous one, which is kept in memory only.
 
 **Body** (optional)
 
@@ -45,51 +44,21 @@ trail as `system_scan` and replaces the previous one, which is kept in memory on
 
 ```json
 {
-  "platform": "Linux",
-  "enabled": true,
-  "scanned": 81,
-  "skipped_protected": 0,
-  "recognised": 1,
+  "platform": "Linux", "enabled": true, "scanned": 81, "skipped_protected": 0, "recognised": 1,
   "threats": [
-    {
-      "key": "deleted-exe",
-      "label": "program whose file was deleted after it started",
-      "severity": "high",
-      "pid": 85,
-      "name": "kworker",
-      "exe": "/usr/local/lib/.x/kworker (deleted)",
-      "account": "(user)"
-    }
+    {"key": "deleted-exe", "label": "program whose file was deleted after it started", "severity": "high",
+     "pid": 85, "name": "kworker", "exe": "/usr/local/lib/.x/kworker (deleted)", "account": "(user)"}
   ],
-  "notes": [],
-  "error": null,
-  "took_s": 0.02,
-  "scanned_at": "2026-10-27T02:45:12+00:00",
-  "new_alerts": 1,
+  "notes": [], "error": null, "took_s": 0.02, "scanned_at": "2026-10-27T02:45:12+00:00", "new_alerts": 1,
   "processes": [
-    {
-      "pid": 3847,
-      "name": "python",
-      "program": "Python app",
-      "layer": "web",
-      "path": "/usr/bin/python3.11",
-      "account": "root",
-      "service": "",
-      "log_options": []
-    }
+    {"pid": 3847, "name": "python", "program": "Python app", "layer": "web", "path": "/usr/bin/python3.11",
+     "account": "root", "service": "", "log_options": []}
   ],
   "suggestions": [
     {
-      "path": "/var/log/app/app.log",
-      "kind": "file",
-      "program": "app-server",
-      "recognised": false,
-      "layer": "web",
-      "format": "text",
-      "reasons": ["open by the process right now"],
-      "files_found": 1,
-      "already_watched": false,
-      "id": "s1",
+      "path": "/var/log/app/app.log", "kind": "file", "program": "app-server", "recognised": false,
+      "layer": "web", "format": "text", "reasons": ["open by the process right now"],
+      "files_found": 1, "already_watched": false, "id": "s1",
       "files": [
         {"id": "s1f1", "name": "/var/log/app/app.log", "size": 35335, "modified": "2026-10-27T02:42:38", "watched": false}
       ]
@@ -156,26 +125,16 @@ skipped, and so are files that match a pattern in `threat_scan.allow` and files 
 
 ```json
 {
-  "roots": ["/var/www/site"],
-  "missing": [],
-  "files_checked": 2,
-  "files_not_checked": 0,
+  "roots": ["/var/www/site"], "missing": [], "files_checked": 2, "files_not_checked": 0,
   "counts": {"critical": 1, "high": 0, "medium": 0},
-  "took_s": 0.0,
-  "scanned_at": "2026-10-27T02:45:12+00:00",
-  "new_alerts": 1,
+  "took_s": 0.0, "scanned_at": "2026-10-27T02:45:12+00:00", "new_alerts": 1,
   "findings": [
     {
       "path": "/var/www/site/uploads/img.php",
       "sha256": "41b3ad0435f917526c725f98b62e3741a77784ce0123d2fda9af90b0325063f5",
-      "size": 31,
-      "key": "php-eval-request",
-      "kind": "webshell",
-      "severity": "critical",
-      "label": "runs code sent in a web request",
-      "line": 1,
-      "snippet": "<?php @eval($_POST['cmd']); ?>",
-      "id": "t1"
+      "size": 31, "key": "php-eval-request", "kind": "webshell", "severity": "critical",
+      "label": "runs code sent in a web request", "line": 1,
+      "snippet": "<?php @eval($_POST['cmd']); ?>", "id": "t1"
     }
   ]
 }
@@ -266,22 +225,11 @@ Every file in quarantine, oldest first.
 [
   {
     "id": "q-20261027024512-41b3ad04",
-    "original": "/var/www/site/uploads/img.php",
-    "name": "img.php",
-    "sha256": "41b3ad0435f917526c725f98b62e3741a77784ce0123d2fda9af90b0325063f5",
-    "size": 31,
-    "finding": {
-      "key": "php-eval-request",
-      "kind": "webshell",
-      "severity": "critical",
-      "label": "runs code sent in a web request",
-      "line": 1,
-      "entry": null
-    },
-    "operator": "erick",
-    "reason": "web shell in uploads",
-    "at": "2026-10-27T02:45:12",
-    "mode": 420
+    "original": "/var/www/site/uploads/img.php", "name": "img.php",
+    "sha256": "41b3ad0435f917526c725f98b62e3741a77784ce0123d2fda9af90b0325063f5", "size": 31,
+    "finding": {"key": "php-eval-request", "kind": "webshell", "severity": "critical",
+                "label": "runs code sent in a web request", "line": 1, "entry": null},
+    "operator": "erick", "reason": "web shell in uploads", "at": "2026-10-27T02:45:12", "mode": 420
   }
 ]
 ```
@@ -339,16 +287,10 @@ The backup settings in use, when the next backup is due, and every backup kept, 
 
 ```json
 {
-  "enabled": true,
-  "every_hours": 24.0,
-  "keep": 7,
-  "folders": ["/var/www/site"],
-  "include_sentrai": true,
-  "copy_to": null,
+  "enabled": true, "every_hours": 24.0, "keep": 7,
+  "folders": ["/var/www/site"], "include_sentrai": true, "copy_to": null,
   "stored_in": "/var/lib/sentrai/core/backups",
-  "next_due": "2026-10-28T02:45:12+00:00",
-  "overdue": false,
-  "last_error": null,
+  "next_due": "2026-10-28T02:45:12+00:00", "overdue": false, "last_error": null,
   "backups": [ ... ]
 }
 ```
@@ -372,39 +314,21 @@ minutes. A backup that works is written to the audit trail as `backup_made`, and
 beyond `keep` are then deleted (`backup_pruned`). A backup that fails is written as `backup_failed`
 and queues a `backup_failed` alert for the person on duty, and so does a second copy that fails.
 
-**Body** (optional)
-
-```json
-{"operator": "erick"}
-```
-
-| Field | Type | Default | Meaning |
-| --- | --- | --- | --- |
-| `operator` | string | `operator` | who asked for it |
+**Body** (optional): `{"operator": "erick"}`. `operator` is a string, who asked for it, by default
+`operator`.
 
 **Returns** the new [backup record](#the-backup-record), with `ok` and the backups deleted to stay
 within `keep`:
 
 ```json
 {
-  "ok": true,
-  "id": "b-20261027-024512",
-  "created": "2026-10-27T02:45:12+00:00",
-  "created_ts": 1793069112.6452723,
-  "by": "erick",
-  "reason": "manual",
-  "folders": ["/var/www/site"],
-  "missing": [],
-  "sentrai": true,
-  "files": 11,
-  "bytes": 182151,
-  "archive_bytes": 27047,
+  "ok": true, "id": "b-20261027-024512",
+  "created": "2026-10-27T02:45:12+00:00", "created_ts": 1793069112.6452723,
+  "by": "erick", "reason": "manual", "folders": ["/var/www/site"], "missing": [], "sentrai": true,
+  "files": 11, "bytes": 182151, "archive_bytes": 27047,
   "sha256": "aac085c1b1250db7a332bf2984caf24613e2a6ca8fc3e642605a4143e7ea8fe4",
   "manifest_sha256": "b42637b3e963acfbe1e281244ffcd6401f4ce27efc5ae42fbad5f681226c2e60",
-  "skipped": [],
-  "copy": null,
-  "verified": null,
-  "pruned": []
+  "skipped": [], "copy": null, "verified": null, "pruned": []
 }
 ```
 
@@ -425,17 +349,12 @@ Check that a backup is intact: the archive against its note and against its `bac
 the audit trail, then every file inside against its SHA-256. The result is saved on the backup as
 `verified` and written to the audit trail as `backup_verified`.
 
-**Body** (optional): `{"operator": "erick"}`, as for `POST /backups`.
+**Body** (optional): `{"operator": "erick"}`, as for [`POST /backups`](#post-backups).
 
 **Returns**
 
 ```json
-{
-  "ok": true,
-  "backup": "b-20261027-024512",
-  "files_checked": 11,
-  "problems": []
-}
+{"ok": true, "backup": "b-20261027-024512", "files_checked": 11, "problems": []}
 ```
 
 A backup that fails its check still answers 200, with `ok` set to `false` and each problem in plain
@@ -481,13 +400,9 @@ data into `sentrai`. To restore in place:
 
 ```json
 {
-  "ok": true,
-  "backup": "b-20261027-024512",
-  "in_place": false,
+  "ok": true, "backup": "b-20261027-024512", "in_place": false,
   "restored_to": "/var/lib/sentrai/core/restores/b-20261027-024512-20261027-031502",
-  "files_restored": 11,
-  "failed": [],
-  "safety_backup": null,
+  "files_restored": 11, "failed": [], "safety_backup": null,
   "note": "Nothing live was changed. Compare the restored files, then copy back what you need, or restore again with 'in place'. SentrAI's own data is never written over while it runs. It is in the sentrai folder. To use it: stop SentrAI, copy sentrai/data into the core's data folder and sentrai/config.json to the settings file, then start SentrAI."
 }
 ```
