@@ -1,7 +1,7 @@
 ---
 title: Install on a server
 nav: docs
-description: Install SentrAI as systemd services on a Linux server, open the dashboard to your own IP, upgrade and uninstall.
+description: Install SentrAI as systemd services on a Linux server, open the dashboard to your own IP, update and uninstall.
 ---
 
 # Install on a server
@@ -150,24 +150,61 @@ journalctl -u sentrai-core -f               # follow one service's output
 sudo systemctl restart sentrai.target       # restart all four
 sudo sentrai-admin                          # who may sign in; a setup code on a new machine
 sudo sentrai-admin --reset                  # the first Owner: new password, printed once
+sudo sentrai-update                         # newest version, same settings (see Update)
 ```
 
-## Upgrade
+## Update
 
-Pull the new code and run the same install command again:
+One command, from anywhere on the server:
 
 ```bash
-cd SentrAI && git pull && cd mvp
-sudo ./deploy/install.sh
+sudo sentrai-update
 ```
 
-Your settings, sign-in and records are kept. Only the options you pass change, and Python
-packages are reinstalled only when they changed.
+It fetches the newest SentrAI from GitHub, installs it over the old one and restarts the
+services. Everything you set at install time stays: ports, allowed IPs, `--dashboard-local`,
+`--panel` and its address, the notifier choice, the sign-in and every record. It never asks
+questions and never makes a new setup code. Python packages are reinstalled only when they
+changed.
+
+Before it changes anything it saves the running version (code, packages, `/etc/sentrai`, the
+service files and the data, but not collected logs) to `/var/backups/sentrai/`. Afterwards it
+checks the core answers, the dashboard and the agents' port answer, and that no service keeps
+restarting. If any check fails, it puts the saved version back and starts that again, so a bad
+update leaves you where you were. Every run is logged to `/var/log/sentrai-update.log`.
+
+| Command | What it does |
+| --- | --- |
+| `sudo sentrai-update` | update to the newest `main` |
+| `sudo sentrai-update --check` | only say whether a newer version is out |
+| `sudo sentrai-update --ref v1.2` | follow a tag or another branch (remembered for next time) |
+| `sudo sentrai-update --rollback` | go back to the version before the last update |
+| `sudo sentrai-update --force` | reinstall the same version (repairs a damaged install) |
+| `sudo sentrai-update --from ~/SentrAI` | install from a checkout on the server, without fetching |
+
+An agent installed on the same server is updated with the panel. Agents on other machines are
+updated on each machine with the same command (see [One panel, many machines](panel.html#update-the-agents)).
+
+**Update available.** Once a day the server checks GitHub for a newer version (it only checks,
+it never installs on its own). When one is out, the dashboard's sidebar shows **Update
+available** with the command to run. The sidebar's foot shows the version running now.
+
+**Servers installed before the updater.** `sentrai-update` arrives with the first install or
+update after it was added. Do that one the old way, once:
+
+```bash
+cd SentrAI && git pull
+sudo ./mvp/deploy/update.sh
+```
+
+From then on `sudo sentrai-update` is enough. Running `sudo ./deploy/install.sh` again still
+works too: it is how you change options (only the options you pass change).
 
 ### Upgrading a server set up before the SentrAI name
 
 Servers installed before October 2026 used the old name CactAI in their folders and services
-(`/etc/cactai`, `/var/lib/cactai`, `cactai-core`, the `cactai` account). The same install command
+(`/etc/cactai`, `/var/lib/cactai`, `cactai-core`, the `cactai` account). `sentrai-update` is not
+there yet on such a server: pull the new code and run the install command again. It
 moves all of it to the SentrAI names the first time it runs: settings, records, sign-in, the
 API token, the machine key of an agent on the same server and any blocks already in the firewall
 come along. An agent installed on the same server is upgraded with it. Settings written with the

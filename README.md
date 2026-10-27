@@ -79,7 +79,7 @@ It then asks for the dashboard port, allowed IPs, sign-in email and a password (
 | `--no-questions` (or `-y`) | never ask; use the options given and the defaults, for scripts |
 | `--reset-password` | make a new dashboard password and print it |
 
-Upgrade by running `git pull` and the same install command again; settings, sign-in and records are kept. Remove it with `sudo ./deploy/uninstall.sh` (add `--purge` to also delete settings and records). All options are in the [server guide](https://rexguard.github.io/SentrAI/docs/server.html).
+**Update** with one command: `sudo sentrai-update`. It fetches the newest version, keeps every setting, sign-in and record, checks SentrAI still works and goes back to the old version by itself if not. The dashboard shows **Update available** when there is one. Remove it with `sudo ./deploy/uninstall.sh` (add `--purge` to also delete settings and records). All options are in the [server guide](https://rexguard.github.io/SentrAI/docs/server.html).
 
 ### 3c. Watch more machines from one panel
 
@@ -89,7 +89,7 @@ A server install can be the **central panel** for other machines. Add `--panel` 
 sudo ./mvp/deploy/install-agent.sh --panel https://panel.example.com:8443 --code ABCD-EFGH-JKLM --pin sha256:... --name web-01
 ```
 
-Windows machines get a matching `install-agent.ps1` command. The agent sends that machine's logs to the panel and applies the panel's blocks for it, as a dry run until you rerun it with `--enforce`. It only makes outgoing HTTPS calls. Step by step: [One panel, many machines](https://rexguard.github.io/SentrAI/docs/panel.html).
+Windows machines get a matching `install-agent.ps1` command. Agents update the same way as the panel: `sudo sentrai-update` (Windows: `& "C:\Program Files\SentrAI\update-agent.ps1"`). The agent sends that machine's logs to the panel and applies the panel's blocks for it, as a dry run until you rerun it with `--enforce`. It only makes outgoing HTTPS calls. Step by step: [One panel, many machines](https://rexguard.github.io/SentrAI/docs/panel.html).
 
 ### 4. Protect your own IP first
 

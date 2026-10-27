@@ -24,10 +24,14 @@ done
 migrate_from_cactai server
 reinstall_other_after_cactai panel "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-systemctl disable --now sentrai.target sentrai-core sentrai-collector sentrai-dashboard sentrai-notifier 2>/dev/null || true
-rm -f /etc/systemd/system/sentrai.target /etc/systemd/system/sentrai-{core,collector,dashboard,notifier}.service
+systemctl disable --now sentrai.target sentrai-core sentrai-collector sentrai-dashboard sentrai-notifier \
+    sentrai-update-check.timer 2>/dev/null || true
+rm -f /etc/systemd/system/sentrai.target /etc/systemd/system/sentrai-{core,collector,dashboard,notifier}.service \
+    /etc/systemd/system/sentrai-update-check.{service,timer}
 systemctl daemon-reload
 rm -f /usr/local/bin/sentrai-scout /usr/local/bin/sentrai-admin
+# sudo sentrai-update stays while an agent on this machine still uses it.
+[ -f /etc/systemd/system/sentrai-agent.service ] || rm -f /usr/local/sbin/sentrai-update
 if [ -x /usr/local/sbin/sentrai-dashboard-firewall ]; then /usr/local/sbin/sentrai-dashboard-firewall remove; fi
 rm -f /usr/local/sbin/sentrai-dashboard-firewall
 if command -v ufw >/dev/null 2>&1; then  # the allow rules install.sh added for the dashboard and panel
@@ -36,7 +40,7 @@ if command -v ufw >/dev/null 2>&1; then  # the allow rules install.sh added for 
 fi
 [ -f "$PREFIX/mvp/core/app/main.py" ] && rm -rf "$PREFIX"
 if [ "$PURGE" = 1 ]; then
-    rm -rf /etc/sentrai /var/lib/sentrai
+    rm -rf /etc/sentrai /var/lib/sentrai /var/backups/sentrai
     if id "$SVC_USER" >/dev/null 2>&1; then userdel "$SVC_USER"; fi
     echo "SentrAI removed, with its settings, audit trail and user."
 else

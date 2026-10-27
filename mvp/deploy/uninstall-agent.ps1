@@ -73,6 +73,8 @@ if (Test-Path $Prefix) {
 }
 if ($Purge -and (Test-Path $State)) {
     Remove-Item -Recurse -Force $State
+    # update-agent.ps1's saved versions and where it fetches from
+    Remove-Item -Recurse -Force (Join-Path (Split-Path -Parent $State) "backups"), (Join-Path (Split-Path -Parent $State) "update.json") -ErrorAction SilentlyContinue
     $parent = Split-Path -Parent $State
     if (-not (Get-ChildItem $parent -Force -ErrorAction SilentlyContinue)) { Remove-Item -Force $parent }
     Write-Host "Deleted $State (machine key and logs)."

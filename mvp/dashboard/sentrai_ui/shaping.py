@@ -1450,3 +1450,40 @@ def pending_approvals(incidents: Iterable[dict]) -> list[dict]:
     """Incidents waiting on a person: open ones to approve or reject, contained ones to keep or roll back."""
     waiting = [i for i in incidents or [] if (a := available_actions(i))["decide"] or a["contain_controls"]]
     return sorted(waiting, key=lambda i: (not available_actions(i)["decide"], -incident_contribution(i)))
+
+
+# ---------------------------------------------------------------- updates
+
+def _key_values(path) -> dict[str, str]:
+    try:
+        with open(path, encoding="utf-8") as f:
+            return dict(line.rstrip("\r\n").split("=", 1) for line in f if "=" in line)
+    except OSError:
+        return {}
+
+
+def update_status(version_file, check_file) -> dict[str, Any]:
+    """What the sidebar says about this install's version.
+
+    version_file is mvp/VERSION (written by the installers); check_file is the update-check.json the
+    daily `sentrai-update --check` writes. An update counts as available only while the check was made
+    against the code installed now, so the notice goes away as soon as the update is installed."""
+    installed = _key_values(version_file).get("commit", "")
+    try:
+        with open(check_file, encoding="utf-8") as f:
+            check = json.load(f)
+    except (OSError, ValueError):
+        check = {}
+    if not isinstance(check, dict):
+        check = {}
+    latest = str(check.get("latest") or "")
+    known = installed not in ("", "unknown", "local")
+    available = bool(known and check.get("available") and latest and latest != installed
+                     and check.get("installed") == installed)
+    return {
+        "version": installed[:7] if known else "",
+        "available": available,
+        "latest": latest[:7],
+        "ref": str(check.get("ref") or ""),
+        "checked": str(check.get("checked") or ""),
+    }

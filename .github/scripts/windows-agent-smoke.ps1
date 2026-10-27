@@ -72,6 +72,35 @@ try {
     }
     if (@(Invoke-RestMethod "$Panel/fleet/agents" -Headers $Headers).Count -ne 1) { Fail "the upgrade joined a second time" }
 
+    # --- update-agent.ps1: in place with the join and settings kept, then a broken version rolled back ---
+    $Root = Split-Path -Parent $Mvp
+    $Head = (git -C $Root rev-parse HEAD).Trim()
+    $Updater = Join-Path $Prefix "update-agent.ps1"
+    if (-not (Test-Path $Updater)) { Fail "install-agent.ps1 did not add update-agent.ps1" }
+    if (-not (Select-String -Path (Join-Path $Prefix "mvp\VERSION") -SimpleMatch "commit=$Head" -Quiet)) { Fail "VERSION does not name the installed commit" }
+    function Same-Settings([string]$After) {
+        if (-not (Select-String -Path $Xml -SimpleMatch 'name="SENTRAI_FIREWALL_ENFORCE" value="1"' -Quiet)) { Fail "$After lost -Enforce" }
+        if (-not (Select-String -Path $Xml -SimpleMatch '203.0.113.10' -Quiet)) { Fail "$After lost -Protect" }
+        if (@(Invoke-RestMethod "$Panel/fleet/agents" -Headers $Headers).Count -ne 1) { Fail "$After joined a second time" }
+        if ((Get-Service SentrAIAgent).Status -ne "Running") { Fail "the service is not running after $After" }
+        Write-Host "ok: the join and settings are unchanged after $After"
+    }
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Updater -From $Root
+    if ($LASTEXITCODE) { Fail "update-agent.ps1 exited $LASTEXITCODE" }
+    Same-Settings "the update"
+    $Broken = Join-Path $env:RUNNER_TEMP "sentrai-broken"
+    git -C $Root archive --format=zip -o "$Broken.zip" HEAD
+    Expand-Archive "$Broken.zip" $Broken
+    Add-Content (Join-Path $Broken "mvp\lab\agent\agent.py") 'raise SystemExit("broken on purpose (CI)")'
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Updater -From $Broken
+    if (-not $LASTEXITCODE) { Fail "a broken version passed the update's checks" }
+    if (Select-String -Path (Join-Path $Prefix "mvp\lab\agent\agent.py") -SimpleMatch "broken on purpose" -Quiet) { Fail "the broken code is still installed" }
+    Wait-For "the agent reports in again after the rollback" {
+        $m = @(Invoke-RestMethod "$Panel/machines" -Headers $Headers) | Where-Object { $_.host -eq "ci-win" }
+        $m -and ([datetimeoffset]$m.last_seen).UtcDateTime -gt [datetime]::UtcNow.AddSeconds(-15)
+    }
+    Same-Settings "the rollback"
+
     # --- one real Windows Firewall block through the agent's own netsh commands ---
     Push-Location (Join-Path $Prefix "mvp\lab")
     & .\.venv\Scripts\python.exe -c "from agent.agent import Enforcer; e = Enforcer('netsh', True, set()); print(e.sync({'$TestIp'}), e.log); assert e.applied == {'$TestIp'}, e.log"
