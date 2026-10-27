@@ -56,7 +56,7 @@ def test_risk_breakdown_counts_only_active_incidents():
 APP = str(Path(__file__).resolve().parents[1] / "app.py")
 
 
-@pytest.mark.parametrize("page", ["config", "approvals", "incidents", "chat", "collector", "classifier", "responder",
+@pytest.mark.parametrize("page", ["config", "approvals", "incidents", "staff", "chat", "collector", "classifier", "responder",
                                   "machines", "review", "reports", "audit", "backups", "extensions"])
 def test_every_page_renders(fake_core, page, tmp_path, monkeypatch):
     from streamlit.testing.v1 import AppTest
@@ -296,6 +296,82 @@ def test_console_opens_on_what_needs_a_decision(fake_core, tmp_path, monkeypatch
     at.run()
     assert not at.exception, at.exception
     assert at.session_state["page"] == "approvals"
+
+
+def _report_page(fake_core, tmp_path, monkeypatch):
+    from streamlit.testing.v1 import AppTest
+
+    monkeypatch.setenv("SENTRAI_CONFIG", str(tmp_path / "config.json"))
+    monkeypatch.setenv("SENTRAI_DASHBOARD_LOGIN", "on")  # the report page needs no sign-in even when it is on
+    at = AppTest.from_file(APP, default_timeout=20)
+    at.query_params["report"] = ""
+    at.session_state["core_url"] = fake_core
+    at.run()
+    return at
+
+
+def test_staff_report_page_sends_without_sign_in(fake_core, tmp_path, monkeypatch):
+    at = _report_page(fake_core, tmp_path, monkeypatch)
+    assert not at.exception, at.exception
+    assert not at.sidebar.button  # no menu, nothing from SentrAI
+    at.text_area[0].input("I got an email asking for my password and I clicked the link.")
+    at.text_input[0].input("Mei")
+    at.button[0].click().run()
+    assert not at.exception, at.exception
+    assert any("reached the security team" in s.value for s in at.success)
+    reports = requests.get(f"{fake_core}/staff-reports", timeout=3).json()["reports"]
+    assert reports[0]["reporter"] == "Mei" and reports[0]["channel"] == "dashboard"
+    assert reports[0]["host"] is None  # "Not sure" sends no machine
+
+
+def test_staff_report_page_names_the_machine(fake_core, tmp_path, monkeypatch):
+    at = _report_page(fake_core, tmp_path, monkeypatch)
+    picker = at.selectbox[0]
+    assert picker.label == "Which computer is it about?" and "office-pc" in picker.options
+    at.text_area[0].input("The office PC keeps opening pop-ups about a prize.")
+    picker.select("office-pc")
+    at.button[0].click().run()
+    assert not at.exception, at.exception
+    r = requests.get(f"{fake_core}/staff-reports", timeout=3).json()["reports"][0]
+    assert r["host"] == "office-pc"
+    assert requests.get(f"{fake_core}/incidents/{r['incident']}", timeout=3).json()["host"] == "office-pc"
+
+
+def test_staff_report_page_asks_for_the_code_when_set(fake_core, tmp_path, monkeypatch):
+    monkeypatch.setenv("SENTRAI_REPORT_CODE", "lighthouse")
+    at = _report_page(fake_core, tmp_path, monkeypatch)
+    before = len(requests.get(f"{fake_core}/staff-reports", timeout=3).json()["reports"])
+    at.text_area[0].input("A stranger was using the front desk computer at lunch.")
+    at.text_input[3].input("wrong")
+    at.button[0].click().run()
+    assert any("report code is not right" in e.value for e in at.error)
+    assert len(requests.get(f"{fake_core}/staff-reports", timeout=3).json()["reports"]) == before
+
+
+def test_staff_reports_page_closes_a_report_with_a_note(fake_core, tmp_path, monkeypatch):
+    from streamlit.testing.v1 import AppTest
+
+    monkeypatch.setenv("SENTRAI_CONFIG", str(tmp_path / "config.json"))
+    rid = requests.post(f"{fake_core}/staff-reports", timeout=3,
+                        json={"text": "My laptop shows pop-ups asking me to call Microsoft.", "reporter": "Arif"}).json()["id"]
+    import streamlit as st
+    st.cache_data.clear()  # the staff page render in an earlier test may have cached the list without it
+    at = AppTest.from_file(APP, default_timeout=20)
+    at.session_state["core_url"] = fake_core
+    at.session_state["auto_refresh"] = False
+    at.session_state["page"] = "staff"
+    at.run()
+    assert not at.exception, at.exception
+    assert any(rid in e.label for e in at.expander)
+    resolve = next(b for b in at.button if b.label == "Resolved")
+    resolve.click().run()
+    assert any("Add a short note" in w.value for w in at.warning)  # no note, no close
+    note = next(t for t in at.text_input if t.label == "Note")
+    note.input("Scam pop-up; browser reset.")
+    next(b for b in at.button if b.label == "Resolved").click().run()
+    assert not at.exception, at.exception
+    r = next(r for r in requests.get(f"{fake_core}/staff-reports", timeout=3).json()["reports"] if r["id"] == rid)
+    assert r["status"] == "resolved" and r["notes"][-1]["text"] == "Scam pop-up; browser reset."
 
 
 def _extensions_page(fake_core, tmp_path, monkeypatch):

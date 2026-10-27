@@ -11,7 +11,9 @@
     {"env": "TELEGRAM_BOT_TOKEN", "prompt": "Telegram bot token, blank for no Telegram alerts", "secret": true},
     {"env": "TELEGRAM_CHAT_ID", "prompt": "Telegram chat id of the team group"},
     {"env": "TELEGRAM_GROUP_COPY", "prompt": "When the team group gets an alert that went to people directly",
-     "default": "fallback", "choices": ["fallback", "always", "off"], "advanced": true}
+     "default": "fallback", "choices": ["fallback", "always", "off"], "advanced": true},
+    {"env": "TELEGRAM_REPORT_FROM", "prompt": "Who may send /report: alert-chat, any, or chat ids (comma-separated)",
+     "default": "alert-chat", "advanced": true}
   ],
   "requires": {"notifier": ["python-telegram-bot"]}
 }

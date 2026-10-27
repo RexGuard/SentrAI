@@ -22,7 +22,8 @@ CONSOLE mode.
 Usage:  python notifier.py [--console] [--once] [--core URL]
         python notifier.py --verify [LINE]   check the core's audit chain against the last witnessed
                                              fingerprint (or LINE); exit 1 if it was changed
-In Telegram, /verify does the same.
+In Telegram, /verify does the same, and /report <what you saw> sends a staff report (see the Telegram
+extension and staff_reports.py in the core).
 """
 from __future__ import annotations
 

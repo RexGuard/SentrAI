@@ -60,6 +60,13 @@ else.
 
 Only that chat can press the Approve and Reject buttons.
 
+### Staff reports
+
+Staff can report something suspicious without an account. Share the dashboard address with
+`/?report` on the end (the **Staff reports** page shows the exact link). To ask for a shared code
+first, set `SENTRAI_REPORT_CODE`. In Telegram they can send `/report` and what they saw; by default
+only the alert chat can, and `TELEGRAM_REPORT_FROM=any` lets staff message the bot directly.
+
 ### Email
 
 Set the mail server and who gets alerts in the same section. By default email is the backup and

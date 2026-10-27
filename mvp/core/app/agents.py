@@ -37,6 +37,7 @@ PLAYBOOKS: dict[str, list[tuple[str, str]]] = {
     "log_tampering": [("block_ip", "@src_ip")],
     "prompt_injection": [("waf_rule", "prompt-injection-signature"), ("block_ip", "@src_ip")],
     "malware": [],  # files are quarantined from the threat scan, one by one, by an operator
+    "staff_report": [],  # a person reviews what staff reported; nothing is blocked on a report alone
 }
 
 ACTION_TEXT = {
@@ -63,6 +64,8 @@ EXPLAIN = {
                         "into missing the attack. Rules caught it before any AI saw it.",
     "malware": "SentrAI's threat scan found {reason} on {host}. Something hostile may already be inside: check the file "
                "or program, quarantine it from the threat scan if it is not yours, and look for how it got there.",
+    "staff_report": "{user} reported something suspicious ({reason}). A person needs to read the report under "
+                    "Staff reports, decide whether it is a security problem, and close it with a note.",
 }
 
 # What a person should do next, in everyday words (plan item 2). Shown in reports and the client summary.

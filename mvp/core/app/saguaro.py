@@ -66,6 +66,7 @@ TITLES = {
     "log_tampering": "Log tampering",
     "malware": "Malware found",
     "prompt_injection": "Prompt injection",
+    "staff_report": "Staff report",
 }
 
 BUTTONS_DECIDE = [

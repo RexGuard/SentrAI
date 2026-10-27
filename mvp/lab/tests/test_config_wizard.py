@@ -243,7 +243,7 @@ def test_settings_saved_before_extensions_keep_working_and_move_on_save(config_f
     assert "TELEGRAM_BOT_TOKEN" not in saved["notifications"]
     assert saved["extension:typesafe"]["TYPESAFE_API_KEY"] == "ts-key"
     assert saved["extension:telegram"] == {"TELEGRAM_BOT_TOKEN": "123:abc", "TELEGRAM_CHAT_ID": "-1001",
-                                           "TELEGRAM_GROUP_COPY": "fallback"}
+                                           "TELEGRAM_GROUP_COPY": "fallback", "TELEGRAM_REPORT_FROM": "alert-chat"}
     assert saved["extension:cloudflare"]["CLOUDFLARE_ZONE_ID"] == "zone"
     assert saved["extension:slack"]["SLACK_WEBHOOK_URL"].startswith("https://hooks.slack.com/")
     assert cfg.read()["CLOUDFLARE_API_TOKEN"] == "cf-token"

@@ -111,6 +111,14 @@ class CoreClient:
     def machines(self) -> list[dict]:
         return list(self.get_json("/machines") or [])
 
+    def machine_risk(self, host: str) -> dict:
+        """One machine's own risk index and its history (a central panel scores each machine apart)."""
+        return self.get_json(f"/risk?host={quote(host, safe='')}")
+
+    def machine_blocklist(self, host: str) -> dict:
+        """The blocks that one machine's agent puts in place there."""
+        return self.get_json(f"/blocklist?host={quote(host, safe='')}")
+
     def machine_incidents(self, host: str) -> list[dict]:
         return list(self.get_json(f"/incidents?host={quote(host, safe='')}") or [])
 
@@ -316,3 +324,27 @@ class CoreClient:
     def decide_log_source(self, proposal_id: str, operator: str, approve: bool, reason: str = "") -> dict:
         return self.post_json(f"/log-sources/pending/{proposal_id}",
                               {"operator": operator, "approve": approve, "reason": reason})
+
+    # ---- staff reports: anyone at the business reports something suspicious ----
+    def report_suspicious(self, text: str, reporter: str = "", contact: str = "", where: str = "",
+                          sender: str = "", host: str = "") -> dict:
+        """Send one staff report; the answer holds the advice for the reporter. Sorting may use the AI model."""
+        return self.post_json("/staff-reports", {"text": text, "reporter": reporter, "contact": contact,
+                                                 "where": where, "channel": "dashboard", "sender": sender,
+                                                 "host": host}, timeout=CHAT_TIMEOUT)
+
+    def machine_names(self) -> list[str]:
+        """Machines a central panel knows (GET /machines); empty when this core has no such list."""
+        try:
+            rows = self.get_json("/machines")
+        except CoreError:
+            return []
+        return [str(m["host"]) for m in rows or [] if isinstance(m, dict) and m.get("host")]
+
+    def staff_reports(self, status: str | None = None) -> dict:
+        return self.get_json(f"/staff-reports?status={status}" if status else "/staff-reports")
+
+    def update_staff_report(self, report_id: str, operator: str, status: str | None = None,
+                            assignee: str | None = None, note: str | None = None) -> dict:
+        return self.post_json(f"/staff-reports/{report_id}", {"operator": operator, "status": status,
+                                                              "assignee": assignee, "note": note})

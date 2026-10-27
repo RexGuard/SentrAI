@@ -12,6 +12,7 @@ Personal alerts: each person in the routing file links their own private chat on
 /link CODE (the code comes from the dashboard's Incidents page). After that, alerts routed to them
 arrive in that chat with the buttons, and a button pressed there is recorded under their name.
 /unlink in that chat stops it. /verify checks the audit log against the last fingerprint the chat got.
+/report <what you saw> sends a staff report; TELEGRAM_REPORT_FROM says who may (alert-chat, any, or chat ids).
 """
 from __future__ import annotations
 
@@ -27,7 +28,8 @@ from .direct import Target, deliver, group_mode, plan
 
 log = logging.getLogger("sentrai.ext.telegram")
 
-__all__ = ["Target", "deliver", "group_mode", "main_channel", "plan", "run_telegram", "telegram_links"]
+__all__ = ["Target", "deliver", "group_mode", "main_channel", "plan", "report_allowed", "run_telegram",
+           "staff_report_reply", "telegram_links"]
 
 
 def telegram_links(core: Any) -> list[dict]:
@@ -38,6 +40,35 @@ def telegram_links(core: Any) -> list[dict]:
     except CoreError:
         return []
     return [x for x in data or [] if isinstance(x, dict)]
+
+
+def report_allowed(chat_id: str, alert_chat: str, setting: str | None) -> bool:
+    """May this chat send /report? TELEGRAM_REPORT_FROM: alert-chat (default), any, or chat ids."""
+    setting = (setting or "alert-chat").strip().lower()
+    if setting == "any":
+        return True
+    if setting == "alert-chat":
+        return str(chat_id) == str(alert_chat)
+    return str(chat_id) in {c.strip() for c in setting.split(",") if c.strip()} or str(chat_id) == str(alert_chat)
+
+
+def staff_report_reply(core: Any, text: str, reporter: str, chat_id: str) -> str:
+    """Sends /report text to the core and words the answer for the person who reported."""
+    text = text.strip()
+    if not text:
+        return ("Tell us what you noticed after /report, in your own words. For example:\n"
+                "/report I got an email asking for my password and clicked the link.")
+    try:
+        res = core.staff_report(text, reporter, f"telegram:{chat_id}")
+    except CoreError:
+        return "The report could not be sent right now. Please tell your IT contact directly."
+    if res.get("error"):
+        return f"⚠️ {res['error']}"
+    steps = "\n".join(f"{n}. {a}" for n, a in enumerate(res.get("advice") or [], 1))
+    urgent = " It is treated as urgent." if res.get("urgency") == "high" else ""
+    return (f"✅ Thank you. Report {res.get('id')} reached the security team.{urgent}\n"
+            f"It sounds like: {res.get('kind_label') or 'something to check'}.\n\n"
+            + (f"What to do now:\n{steps}" if steps else ""))
 
 
 def main_channel(ctx: Any) -> Callable[[], None] | None:
@@ -306,6 +337,21 @@ def run_telegram(ctx: Any, token: str, chat_id: str, group_copy: str = "fallback
         _, message = await asyncio.to_thread(ctx.verify, line)
         await update.message.reply_text(message)
 
+    report_from = ctx.setting("TELEGRAM_REPORT_FROM")
+
+    async def on_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """/report <what you saw>: a staff report. Staff can message the bot directly when
+        TELEGRAM_REPORT_FROM allows their chat; the core limits how often one chat may send."""
+        if update.message is None or update.effective_chat is None:
+            return
+        chat = str(update.effective_chat.id)
+        if not report_allowed(chat, allowed_chat, report_from):
+            await update.message.reply_text("This chat cannot send reports. Please tell your IT contact directly.")
+            return
+        text = (update.message.text or "").partition(" ")[2]
+        reply = await asyncio.to_thread(staff_report_reply, core, text, operator_of(update), chat)
+        await update.message.reply_text(reply)
+
     async def post_stop(app: Application) -> None:
         poller = app.bot_data.get("poller")
         if poller is not None and not poller.done():  # stopped by a signal: nothing may send any more
@@ -319,6 +365,7 @@ def run_telegram(ctx: Any, token: str, chat_id: str, group_copy: str = "fallback
     app.add_handler(CommandHandler("link", on_link))
     app.add_handler(CommandHandler("unlink", on_unlink))
     app.add_handler(CommandHandler("verify", on_verify))
+    app.add_handler(CommandHandler("report", on_report))
     app.add_handler(CallbackQueryHandler(on_button))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
     try:

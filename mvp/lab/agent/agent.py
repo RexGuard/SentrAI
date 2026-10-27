@@ -171,6 +171,7 @@ class Enforcer:
         self.last_ok = last_ok if last_ok is not None else clock()
         self.log: list[str] = []
         self._ready = False
+        self._checked = False  # the saved list is only a hint until the firewall itself was checked
 
     def _run(self, args: list[str], probe: bool = False) -> int:
         if not self.enforce:
@@ -217,11 +218,15 @@ class Enforcer:
             self.last_ok = now
             self.panel = set(wanted)
         target = self.panel | set(local)
-        added = [ip for ip in sorted(target - self.applied) if self._add(ip)]
+        # On the first pass put every block back: the saved list may come from a dry run, or from before a
+        # reboot that emptied the firewall. _add skips the ones already in place.
+        first = not self._checked
+        self._checked = True
+        added = [ip for ip in sorted(target if first else target - self.applied) if self._add(ip)]
         removed = sorted(self.applied - target)
         for ip in removed:
             self._remove(ip)
-        self.applied = (self.applied | set(added)) - set(removed)
+        self.applied = ((set() if first else self.applied) | set(added)) - set(removed)  # a failed re-add is tried again
         return {"added": added, "removed": removed}
 
 
