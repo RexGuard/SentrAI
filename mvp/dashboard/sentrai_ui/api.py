@@ -117,6 +117,10 @@ class CoreClient:
     def fleet_agents(self) -> list[dict]:
         return list(self.get_json("/fleet/agents") or [])
 
+    def fleet_panel(self) -> dict:
+        """The HTTPS address and certificate pin new machines use (the core's SENTRAI_PANEL_URL)."""
+        return dict(self.get_json("/fleet/panel") or {})
+
     def join_code(self, operator: str, name: str | None = None) -> dict:
         return self.post_json("/fleet/join-codes", {"operator": operator, "name": name or None})
 
@@ -175,6 +179,10 @@ class CoreClient:
 
     def routing(self) -> dict:
         return self.get_json("/routing")
+
+    def save_routing(self, routing: dict, operator: str) -> dict:
+        """Replace the whole routing file (people, rules, follow-up); the core checks it before writing."""
+        return self.post_json("/routing", {"routing": routing, "operator": operator})
 
     def telegram_link_code(self, contact: str, operator: str) -> dict:
         return self.post_json("/telegram/link-codes", {"contact": contact, "operator": operator})

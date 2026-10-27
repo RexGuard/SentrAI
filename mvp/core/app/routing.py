@@ -23,6 +23,9 @@ TEAM_LEAD, IT_MANAGER, CXO) form a chain where each one backs up the one before.
 A rule matches on any of category, severity, host and layer (a value, a list of values, or a
 shell pattern such as ``web-*``); the first rule that matches wins. Its owner is assigned the
 incident and hears every reminder; the people under notify are told about it once.
+
+The dashboard edits this file through POST /routing: ``validate`` checks a whole new version and
+``save`` writes it in one go, so a half-written or broken file never reaches the router.
 """
 
 from __future__ import annotations
@@ -31,9 +34,13 @@ import fnmatch
 import json
 import logging
 import os
+import re
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+from .risk import CATEGORIES, SEVERITIES
 
 log = logging.getLogger("sentrai.routing")
 
@@ -231,6 +238,120 @@ def load(path: Path, on_duty: str, team_lead: str, it_manager: str, cxo: str) ->
     return router
 
 
+def path_from_settings(s: Any) -> Path:
+    return Path(os.getenv("SENTRAI_ROUTING", "").strip() or s.db_path.parent / "routing.json")
+
+
 def from_settings(s: Any) -> Router:
-    path = Path(os.getenv("SENTRAI_ROUTING", "").strip() or s.db_path.parent / "routing.json")
-    return load(path, s.on_duty, s.team_lead, s.it_manager, s.cxo)
+    return load(path_from_settings(s), s.on_duty, s.team_lead, s.it_manager, s.cxo)
+
+
+# ---------------------------------------------------------------------- editing
+
+CONTACT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,39}$")
+MAX_CONTACTS, MAX_RULES, MAX_TEXT = 200, 100, 120
+
+
+def _text(v: Any, what: str, required: bool = False) -> str:
+    t = str(v or "").strip()
+    if required and not t:
+        raise ValueError(f"{what} is empty")
+    if len(t) > MAX_TEXT:
+        raise ValueError(f"{what} is longer than {MAX_TEXT} characters")
+    return t
+
+
+def validate(data: Any) -> dict[str, Any]:
+    """A whole routing file, checked and tidied, or ValueError with a reason a person can act on."""
+    if not isinstance(data, dict):
+        raise ValueError("the routing must be an object with contacts, rules and follow_up")
+    raw = data.get("contacts") or {}
+    if isinstance(raw, list):
+        raw = {str(c.get("id") or ""): c for c in raw if isinstance(c, dict)}
+    if not isinstance(raw, dict) or not raw:
+        raise ValueError("keep at least one person in the routing")
+    if len(raw) > MAX_CONTACTS:
+        raise ValueError(f"at most {MAX_CONTACTS} people")
+    contacts: dict[str, dict[str, str]] = {}
+    names: set[str] = set()
+    for cid, c in raw.items():
+        cid = str(cid)
+        if not CONTACT_ID.match(cid):
+            raise ValueError(f"{cid!r} is not a usable id (letters, digits, _ . - only)")
+        if not isinstance(c, dict):
+            raise ValueError(f"contact {cid} is not an object")
+        name = _text(c.get("name"), f"the name of {cid}", required=True)
+        if name.lower() in names:
+            raise ValueError(f"two people are called {name!r}: give each a different name")
+        names.add(name.lower())
+        email = _text(c.get("email"), f"{name}'s email")
+        if email and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+            raise ValueError(f"{name}'s email {email!r} does not look like an email address")
+        contacts[cid] = {"name": name, "role": _text(c.get("role"), f"{name}'s role"), "email": email,
+                         "telegram": _text(c.get("telegram"), f"{name}'s Telegram"),
+                         "backup": _text(c.get("backup"), f"{name}'s backup")}
+    for cid, c in contacts.items():
+        if c["backup"] and c["backup"] not in contacts:
+            raise ValueError(f"{c['name']}'s backup {c['backup']!r} is not one of the people")
+        if c["backup"] == cid:
+            raise ValueError(f"{c['name']} cannot be their own backup")
+    rules = []
+    raw_rules = data.get("rules") or []
+    if not isinstance(raw_rules, list) or len(raw_rules) > MAX_RULES:
+        raise ValueError(f"rules must be a list of at most {MAX_RULES}")
+    for n, r in enumerate(raw_rules, 1):
+        if not isinstance(r, dict):
+            raise ValueError(f"rule {n} is not an object")
+        name = _text(r.get("name"), f"the name of rule {n}", required=True)
+        match: dict[str, list[str]] = {}
+        for key, v in (r.get("match") or {}).items():
+            if key not in MATCH_KEYS:
+                raise ValueError(f"rule {name!r}: can only match on {', '.join(MATCH_KEYS)}")
+            values = [_text(x, f"rule {name!r} {key}") for x in _as_list(v)]
+            values = [x for x in values if x]
+            known = {"category": CATEGORIES, "severity": SEVERITIES}.get(key)
+            bad = [x for x in values if known is not None and x not in known]
+            if bad:
+                raise ValueError(f"rule {name!r}: unknown {key} {', '.join(bad)}")
+            if values:
+                match[key] = values
+        owner = str(r.get("owner") or "")
+        if owner not in contacts:
+            raise ValueError(f"rule {name!r} needs an owner who is one of the people")
+        notify = [x for x in dict.fromkeys(_as_list(r.get("notify"))) if x != owner]
+        bad = [x for x in notify if x not in contacts]
+        if bad:
+            raise ValueError(f"rule {name!r} tells {', '.join(bad)}, who are not among the people")
+        rules.append({"name": name, "match": match, "owner": owner, "notify": notify})
+    f = data.get("follow_up") or {}
+    try:
+        fu = {"escalate_after_reminders": int(f.get("escalate_after_reminders", 2)),
+              "max_escalations": int(f.get("max_escalations", 3)),
+              "resolve_within_hours": float(f.get("resolve_within_hours", 24))}
+    except (TypeError, ValueError):
+        raise ValueError("follow_up needs whole numbers of reminders and escalations and a number of hours")
+    if not (1 <= fu["escalate_after_reminders"] <= 20 and 0 <= fu["max_escalations"] <= 20
+            and 0 <= fu["resolve_within_hours"] <= 24 * 30):
+        raise ValueError("follow_up is out of range (1-20 reminders, 0-20 escalations, 0-720 hours)")
+    return {"contacts": contacts, "rules": rules, "follow_up": fu}
+
+
+def save(path: Path, data: dict[str, Any]) -> None:
+    """Write the routing file in one step (temporary file, then rename), readable by its owner only."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=".routing-", suffix=".json", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, indent=2, ensure_ascii=False)
+            fh.write("\n")
+        try:
+            os.chmod(tmp, 0o600)
+        except OSError:
+            pass
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
