@@ -660,7 +660,8 @@ def panel_machines(found: Iterable[dict], agents: Iterable[dict], risk: dict | N
                      "open": int(m.get("open_incidents") or 0), "contained": int(m.get("contained_incidents") or 0),
                      "blocked": int(m.get("blocked") or 0), "last_seen": last,
                      "agent_id": (agent or {}).get("agent_id"), "services_at": m.get("services_at"),
-                     "services": [x for x in m.get("services") or [] if isinstance(x, dict)]})
+                     "services": [x for x in m.get("services") or [] if isinstance(x, dict)],
+                     "hardware": m.get("hardware") if isinstance(m.get("hardware"), dict) else None})
     for host, agent in live.items():
         if host not in seen:
             rows.append({"name": host, "place": "Agent", "host": host, "online": False, "waiting": True,
@@ -691,6 +692,163 @@ def service_rows(services: Iterable[dict]) -> pd.DataFrame:
             for x in services or [] if isinstance(x, dict) and x.get("name")]
     rows.sort(key=lambda r: (-r["Open incidents"], r["Port"] if r["Port"] is not None else 1 << 17))
     return pd.DataFrame(rows, columns=["Service", "Port", "Protocol", "Process", "Open incidents"])
+
+
+# ---------------------------------------------------------------- hardware (core hardware.py, agent hardware.py)
+
+def bytes_label(n: Any) -> str:
+    """1536 -> '1.5 KB', 8 GiB -> '8.0 GB' (powers of 1024, the way an OS shows memory and disks)."""
+    if not isinstance(n, (int, float)) or n < 0:
+        return "-"
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if n < 1024 or unit == "TB":
+            return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
+        n /= 1024
+    return "-"
+
+
+def rate_label(bps: Any) -> str:
+    return "-" if not isinstance(bps, (int, float)) else f"{bytes_label(bps)}/s"
+
+
+def pct_label(v: Any) -> str:
+    return "-" if not isinstance(v, (int, float)) else f"{v:.0f}%"
+
+
+def _fullest(hw: dict) -> dict | None:
+    disks = [d for d in hw.get("disks") or [] if isinstance(d, dict) and isinstance(d.get("percent"), (int, float))]
+    return max(disks, key=lambda d: d["percent"]) if disks else None
+
+
+def _hottest(hw: dict) -> dict | None:
+    temps = [t for t in hw.get("temps") or [] if isinstance(t, dict) and isinstance(t.get("current"), (int, float))]
+    return max(temps, key=lambda t: t["current"]) if temps else None
+
+
+def hardware_hot(hw: dict | None) -> set[str]:
+    """Which parts are over their alert limit right now: 'cpu', 'memory', 'disk', 'temp' (from the core's warnings)."""
+    out = set()
+    for w in (hw or {}).get("warnings") or []:
+        w = str(w)
+        out.add("cpu" if w.startswith("CPU") else "memory" if w.startswith("memory") else
+                "disk" if w.startswith("disk") else "temp" if "temperature" in w else "")
+    return out - {""}
+
+
+def hardware_text(hw: dict | None) -> str:
+    """'4 cores · 7.8 GB memory · Linux 6.8 · up 3 d 4 h' for the line under a machine's name."""
+    if not hw:
+        return ""
+    cores = (hw.get("cpu") or {}).get("cores")
+    total = (hw.get("memory") or {}).get("total")
+    up = hw.get("uptime_s")
+    parts = [plural(cores, "core") if cores else "", f"{bytes_label(total)} memory" if total else "", hw.get("os") or "",
+             f"up {span_label(up)}" if isinstance(up, (int, float)) else ""]
+    return " · ".join(str(p) for p in parts if p)
+
+
+def hardware_cells(hw: dict | None) -> list[tuple[str, str, bool]]:
+    """CPU, memory and fullest disk for a machine's row in the list, as a game panel's server list shows them."""
+    if not hw:
+        return []
+    hot, disk = hardware_hot(hw), _fullest(hw)
+    return [("CPU", pct_label((hw.get("cpu") or {}).get("percent")), "cpu" in hot),
+            ("Memory", pct_label((hw.get("memory") or {}).get("percent")), "memory" in hot),
+            ("Disk", pct_label(disk["percent"]) if disk else "-", "disk" in hot)]
+
+
+def hardware_stats(hw: dict | None) -> list[tuple[str, str, str, bool]]:
+    """(label, value, note, over the limit) for the strip at the top of a machine's Hardware tab."""
+    if not hw:
+        return []
+    hot = hardware_hot(hw)
+    cpu, mem, net = hw.get("cpu") or {}, hw.get("memory") or {}, hw.get("net") or {}
+    load = cpu.get("load")
+    disk, temp = _fullest(hw), _hottest(hw)
+    out = [("CPU", pct_label(cpu.get("percent")),
+            " · ".join(x for x in (plural(cpu["cores"], "core") if cpu.get("cores") else "",
+                                    f"load {load[0]:.2f}" if load else "") if x), "cpu" in hot),
+           ("Memory", pct_label(mem.get("percent")),
+            f"{bytes_label(mem.get('used'))} of {bytes_label(mem.get('total'))}" if mem.get("total") else "", "memory" in hot),
+           ("Fullest disk", pct_label(disk["percent"]) if disk else "-",
+            f"{disk['mount']} · {bytes_label(disk.get('total'))}" if disk else "no disks reported", "disk" in hot),
+           ("Network in", rate_label(net.get("recv_rate")), f"out {rate_label(net.get('sent_rate'))}", False)]
+    if temp:
+        out.append(("Hottest", f"{temp['current']:.0f} °C", str(temp.get("label") or ""), "temp" in hot))
+    up = hw.get("uptime_s")
+    out.append(("Uptime", span_label(up) if isinstance(up, (int, float)) else "-", hw.get("os") or "", False))
+    return out
+
+
+def hardware_frame(history: Iterable[dict] | None) -> pd.DataFrame:
+    cols = ["t", "cpu", "memory", "disk", "temp", "net_in", "net_out"]
+    rows = []
+    for p in history or []:
+        t = parse_ts(p.get("t")) if isinstance(p, dict) else None
+        if t is not None:
+            rows.append({"t": t, **{c: p.get(c) if isinstance(p.get(c), (int, float)) else None for c in cols[1:]}})
+    df = pd.DataFrame(rows, columns=cols)
+    return df.sort_values("t").reset_index(drop=True) if not df.empty else df
+
+
+def _hardware_layout(fig: go.Figure, yaxis: dict) -> go.Figure:
+    fig.update_layout(
+        height=230, margin={"l": 8, "r": 8, "t": 10, "b": 8}, paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)", hovermode="x unified",
+        legend={"orientation": "h", "y": 1.12, "x": 0, "font": {"size": 12}},
+        font={"color": TEXT_SECONDARY, "family": FONT, "size": 12},
+        xaxis={"showgrid": False, "linecolor": GRID, "tickformat": "%H:%M"},
+        yaxis={"gridcolor": GRID, "zeroline": False, **yaxis})
+    return fig
+
+
+# Line styles, not colours, tell the series apart: colour on this console means risk.
+_SERIES = {"cpu": ("CPU", "solid"), "memory": ("Memory", "dash"), "disk": ("Fullest disk", "dot")}
+
+
+def usage_figure(df: pd.DataFrame, limits: dict | None = None) -> go.Figure:
+    """CPU, memory and fullest disk in % over the last hour; the dashed rule is the CPU and memory alert limit."""
+    fig = go.Figure()
+    for col, (name, dash) in _SERIES.items():
+        if not df.empty and df[col].notna().any():
+            fig.add_trace(go.Scatter(x=df["t"], y=df[col], mode="lines", name=name, connectgaps=False,
+                                     line={"color": TEXT_PRIMARY if col == "cpu" else TEXT_SECONDARY, "width": 2,
+                                           "dash": dash},
+                                     hovertemplate=f"{name} <b>%{{y:.0f}}%</b><extra></extra>"))
+    limit = (limits or {}).get("cpu")
+    if isinstance(limit, (int, float)) and (limits or {}).get("alerts", True):
+        fig.add_hline(y=float(limit), line={"color": BAND_COLORS["amber"], "width": 1, "dash": "dash"},
+                      annotation_text=f"Alert at {limit:.0f}%", annotation_position="top left",
+                      annotation_font={"color": TEXT_SECONDARY, "size": 11})
+    return _hardware_layout(fig, {"range": [0, 100], "ticksuffix": "%", "tickvals": [0, 25, 50, 75, 100]})
+
+
+def network_figure(df: pd.DataFrame) -> go.Figure:
+    """Traffic in and out per second over the last hour."""
+    fig = go.Figure()
+    for col, name, dash in (("net_in", "In", "solid"), ("net_out", "Out", "dash")):
+        if not df.empty and df[col].notna().any():
+            fig.add_trace(go.Scatter(x=df["t"], y=df[col], mode="lines", name=name,
+                                     line={"color": TEXT_PRIMARY if col == "net_in" else TEXT_SECONDARY, "width": 2,
+                                           "dash": dash},
+                                     customdata=[rate_label(v) for v in df[col]],
+                                     hovertemplate=f"{name} <b>%{{customdata}}</b><extra></extra>"))
+    return _hardware_layout(fig, {"rangemode": "tozero", "tickformat": ".2s", "ticksuffix": "B/s"})
+
+
+def disk_rows(hw: dict | None) -> pd.DataFrame:
+    rows = [{"Disk": d.get("mount"), "Used": bytes_label(d.get("used")), "Size": bytes_label(d.get("total")),
+             "Full": float(d["percent"])}
+            for d in (hw or {}).get("disks") or [] if isinstance(d, dict) and isinstance(d.get("percent"), (int, float))]
+    rows.sort(key=lambda r: -r["Full"])
+    return pd.DataFrame(rows, columns=["Disk", "Used", "Size", "Full"])
+
+
+def temp_rows(hw: dict | None) -> pd.DataFrame:
+    rows = [{"Sensor": t.get("label"), "Now": f"{t['current']:.0f} °C",
+             "Its own high mark": f"{t['high']:.0f} °C" if isinstance(t.get("high"), (int, float)) else "-"}
+            for t in (hw or {}).get("temps") or [] if isinstance(t, dict) and isinstance(t.get("current"), (int, float))]
+    return pd.DataFrame(rows, columns=["Sensor", "Now", "Its own high mark"])
 
 
 def agent_rows(agents: Iterable[dict]) -> pd.DataFrame:
@@ -776,16 +934,17 @@ def _machine_state(m: dict) -> tuple[str, str, str]:
 
 
 def _machine_stats(m: dict, now: datetime | None) -> str:
-    """Incidents, blocks and last call-in for a machine on a central panel: what a game panel's server
-    row shows as CPU, memory and disk. Hidden when the list is narrow (console.css)."""
+    """CPU, memory and disk (when its agent reports them), incidents, blocks and last call-in for a machine
+    on a central panel, as a game panel's server row shows them. Hidden when the list is narrow (console.css)."""
     if "open" not in m:
         return ""
     found = [f"{m['open']} open" if m.get("open") else "", f"{m['contained']} contained" if m.get("contained") else ""]
-    cells = [("Incidents", " · ".join(x for x in found if x) or "None", bool(m.get("open"))),
+    cells = [*(hardware_cells(m.get("hardware")) if m.get("online") else []), ("Incidents", " · ".join(x for x in found if x) or "None", bool(m.get("open"))),
              ("Blocks", f"{m['blocked']} in force" if m.get("blocked") else "None", False),
              ("Last seen", seen_ago(m.get("last_seen"), now), False)]
+    hw = {label for label, _, _ in hardware_cells(m.get("hardware"))}
     return '<span class="m-stats">' + "".join(
-        f'<span class="m-stat"><span class="m-stat-label">{label}</span>'
+        f'<span class="m-stat{" hw" if label in hw else ""}"><span class="m-stat-label">{label}</span>'
         f'<span class="m-stat-value"{" style=color:var(--amber)" if hot else ""}>{html.escape(value)}</span></span>'
         for label, value, hot in cells) + "</span>"
 

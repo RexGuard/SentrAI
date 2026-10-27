@@ -180,6 +180,54 @@ def test_report_services_posts_names_only():
     assert sent["body"]["services"][0]["name"] == "nginx" and sent["headers"]["Authorization"] == "Bearer sa_x.y"
 
 
+def test_hardware_reading_has_the_numbers_the_panel_shows():
+    from agent import hardware
+
+    t = [100.0]
+    reader = hardware.Reader(clock=lambda: t[0])
+    first = reader.read()
+    assert 0 <= first["cpu"]["percent"] <= 100 and first["cpu"]["cores"] >= 1
+    assert 0 < first["memory"]["percent"] <= 100 and first["memory"]["total"] > 0
+    assert first["uptime_s"] >= 0 and "sent_rate" not in first["net"]  # no speed until a second reading
+    t[0] += 30
+    assert reader.read()["net"]["recv_rate"] >= 0
+    assert set(first) <= {"cpu", "memory", "swap", "disks", "net", "temps", "uptime_s", "os"}  # numbers, nothing personal
+
+
+def test_hardware_keeps_real_disks_and_readable_sensors():
+    from collections import namedtuple
+
+    from agent import hardware
+
+    P = namedtuple("P", "device mountpoint fstype opts")
+    U = namedtuple("U", "total used free percent")
+    parts = [P("/dev/sda1", "/", "ext4", "rw"), P("/dev/sda1", "/var/snapshots", "ext4", "rw"),
+             P("tmpfs", "/run", "tmpfs", "rw"), P("/dev/loop3", "/snap/core/1", "squashfs", "ro"),
+             P("/dev/sdb1", "/data", "xfs", "rw"), P("D:\\", "D:\\", "", "cdrom")]
+    sizes = {"/": U(100, 40, 60, 40.0), "/data": U(500, 475, 25, 95.0)}
+    found = hardware.disks(lambda: parts, sizes.__getitem__)
+    assert [d["mount"] for d in found] == ["/data", "/"]  # fullest first, each device once
+
+    T = namedtuple("T", "label current high critical")
+    temps = hardware.temperatures(lambda: {"coretemp": [T("Package id 0", 71.0, 100.0, 105.0), T("", None, None, None)],
+                                           "nvme": [T("Composite", 44.9, 84.8, 84.8)]})
+    assert temps[0] == {"label": "coretemp Package id 0", "current": 71.0, "high": 100.0} and len(temps) == 2
+    assert hardware.temperatures(lambda: (_ for _ in ()).throw(OSError())) == []
+
+
+def test_report_hardware_posts_the_reading():
+    sent = {}
+
+    class S:
+        def post(self, url, json, headers, timeout, verify):
+            sent.update(url=url, body=json, headers=headers)
+            return FakeResponse(200, {"ok": True})
+
+    data = {"panel": "https://panel.example.com", "key": "sa_x.y"}
+    assert agent.report_hardware(data, S(), {"cpu": {"percent": 5.0}})
+    assert sent["url"] == "https://panel.example.com/fleet/hardware" and sent["body"]["cpu"]["percent"] == 5.0
+
+
 # ---------------------------------------------------------------- jobs from the panel (tasks.py)
 def test_threat_scan_job_reads_only_local_folders(tmp_path, monkeypatch):
     from agent import tasks

@@ -37,9 +37,10 @@ KIND_HEADERS = {
     "backup_failed": ("💾", "Backup problem"),
     "backup_restored": ("💾", "Backup restored"),
     "summary": ("📋", "Security summary"),
+    "hardware": ("🖥️", "Machine health"),
 }
 # Kinds that are not about one incident: shown as a short note (header, title, text), no risk or buttons.
-NOTICE_KINDS = ("audit_anchor", "backup_failed", "backup_restored", "summary")
+NOTICE_KINDS = ("audit_anchor", "backup_failed", "backup_restored", "summary", "hardware")
 LINK_TEXT = {"summary": "Open the one-page summary (PDF)"}
 
 # Callback data: "<verb>:<incident_id>" (Telegram limits callback_data to 64 bytes).

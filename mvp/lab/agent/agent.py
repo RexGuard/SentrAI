@@ -5,6 +5,8 @@ It does these jobs and nothing else:
   * sends this machine's approved logs to the panel (the collector, with this machine's own key)
   * puts the panel's blocks for this machine into the local firewall, and takes them out again
   * once a minute, tells the panel which services listen here (names and ports only, services.py)
+  * every 30 s, tells the panel how the hardware is doing: CPU, memory, disks, network, uptime and
+    temperatures (numbers only, hardware.py)
   * runs the threat scans and backups the panel asks for, on folders set here (tasks.py)
 
 The panel does the scoring and decides; the agent only makes outgoing HTTPS calls, so no port is
@@ -57,6 +59,7 @@ from agent import offline, pinning  # noqa: E402
 
 POLL_S = 5.0
 SERVICES_EVERY_S = 60.0
+HARDWARE_EVERY_S = 30.0
 OFFLINE_HOLD_H = float(os.environ.get("SENTRAI_AGENT_OFFLINE_HOLD_H", "24") or 24)
 
 
@@ -275,6 +278,17 @@ def report_services(data: dict[str, Any], session: requests.Session,
     return r.status_code == 200
 
 
+def report_hardware(data: dict[str, Any], session: requests.Session, reading: dict[str, Any]) -> bool:
+    """Send one hardware reading to the panel (numbers only). True when it was accepted."""
+    try:
+        r = session.post(f"{data['panel']}/fleet/hardware", json=reading,
+                         headers={"Authorization": f"Bearer {data['key']}"}, timeout=5,
+                         verify=getattr(session, "verify", True))
+    except requests.RequestException:
+        return False
+    return r.status_code == 200
+
+
 def send_offline_report(data: dict[str, Any], session: requests.Session, report: dict[str, Any]) -> bool:
     """Tell the panel what the local rules did while it was out of reach. True once it is accepted."""
     body = {**report, "actions": [{k: v for k, v in a.items() if k != "until_ts"} for a in report.get("actions", [])]}
@@ -288,12 +302,19 @@ def send_offline_report(data: dict[str, Any], session: requests.Session, report:
 
 
 def enforce_loop(data: dict[str, Any], enforcer: Enforcer, stop: threading.Event, poll_s: float = POLL_S,
-                 guard: offline.LocalGuard | None = None, session: requests.Session | None = None) -> None:
+                 guard: offline.LocalGuard | None = None, session: requests.Session | None = None,
+                 reader: Any = None) -> None:
+    from agent import hardware
+
     session = session or panel_session(data)
-    next_services = 0.0
+    reader = reader or hardware.Reader()
+    next_services = next_hardware = 0.0
     while not stop.is_set():
         if time.monotonic() >= next_services:
             next_services = time.monotonic() + (SERVICES_EVERY_S if report_services(data, session) else poll_s * 2)
+        if time.monotonic() >= next_hardware:
+            report_hardware(data, session, reader.read())  # a missed reading is simply skipped
+            next_hardware = time.monotonic() + HARDWARE_EVERY_S
         wanted = fetch_blocklist(data, session)
         local = guard.wanted() if guard else set()
         change = enforcer.sync(wanted, local)

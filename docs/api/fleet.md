@@ -168,6 +168,84 @@ it next to the machine's open incidents. Each report replaces the last one.
 
 **Errors**: `400` `which machine? (?host=)` (API token with no `host`).
 
+### `POST /fleet/hardware`
+
+**Agent.** How a machine's hardware is doing: its agent sends a reading every 30 seconds. The panel keeps
+the latest one and about an hour of history (120 readings) per machine, in memory, and shows them on the
+machine's Hardware tab and in the machine list. Every part is optional: a machine without temperature
+sensors simply sends none.
+
+A reading over a limit tells the on-duty person once, as a `hardware` alert, and again only after it has
+come back 5 points under the limit. CPU, memory and temperature must stay over for `SENTRAI_HW_FOR_MIN`
+minutes first; a disk counts at once. SentrAI only reports this: nothing is changed on the machine.
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `SENTRAI_HW_ALERTS` | `on` | `off`: show the numbers, never send an alert |
+| `SENTRAI_HW_CPU_PCT` | `90` | CPU use, % |
+| `SENTRAI_HW_MEM_PCT` | `90` | memory use, % |
+| `SENTRAI_HW_DISK_PCT` | `90` | any one disk's use, % |
+| `SENTRAI_HW_TEMP_C` | `85` | the hottest sensor, °C |
+| `SENTRAI_HW_FOR_MIN` | `5` | minutes CPU, memory or heat must stay over the limit |
+
+**Query**
+
+| Name | Type | Meaning |
+| --- | --- | --- |
+| `host` | string | the machine, when called with the API token; a machine key always reports for itself |
+
+**Body**
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `cpu` | object | `percent` (0 to 100), `cores`, `load` (1, 5 and 15 minute load average; not on Windows) |
+| `memory`, `swap` | object | `total` and `used` in bytes, `percent` |
+| `disks` | list, up to 32 | `mount`, `total`, `used`, `percent` for each real disk |
+| `net` | object | `sent` and `recv` in bytes since boot, `sent_rate` and `recv_rate` in bytes per second |
+| `temps` | list, up to 32 | `label`, `current` and the sensor's own `high` mark, in °C |
+| `uptime_s` | number | seconds since the machine started |
+| `os` | string | the operating system and its version |
+
+```json
+{"cpu": {"percent": 12.5, "cores": 4, "load": [0.42, 0.37, 0.30]},
+ "memory": {"total": 8589934592, "used": 3521873920, "percent": 41.0},
+ "disks": [{"mount": "/", "total": 107374182400, "used": 53687091200, "percent": 50.0}],
+ "net": {"sent": 81234567, "recv": 912345678, "sent_rate": 2048.0, "recv_rate": 15360.0},
+ "temps": [{"label": "coretemp Package id 0", "current": 54.0, "high": 100.0}],
+ "uptime_s": 273600, "os": "Linux 6.8.0"}
+```
+
+**Returns**: `{"ok": true, "alerts": 0}`, where `alerts` is how many limits this reading newly crossed.
+
+**Errors**: `400` `which machine? (?host=)` (API token with no `host`); `422` for a value out of range.
+
+### `GET /fleet/hardware`
+
+One machine's latest hardware reading, its history for the charts, and the alert limits in use.
+
+**Query**
+
+| Name | Type | Meaning |
+| --- | --- | --- |
+| `host` | string, required | the machine |
+
+**Returns**
+
+```json
+{
+  "host": "web-01",
+  "latest": {"cpu": {"percent": 12.5, "cores": 4}, "memory": {"percent": 41.0}, "disks": [],
+             "at": "2026-10-27T02:45:20+00:00", "warnings": ["disk / is 93% full (limit 90%)"]},
+  "history": [{"t": "2026-10-27T02:45:20+00:00", "cpu": 12.5, "memory": 41.0, "disk": 93.0, "temp": 54.0,
+               "net_in": 15360.0, "net_out": 2048.0}],
+  "limits": {"alerts": true, "cpu": 90.0, "memory": 90.0, "disk": 90.0, "temp": 85.0, "for_min": 5.0}
+}
+```
+
+`latest` is the last reading as sent, plus `at` and `warnings` (the limits it is over right now); it is
+`null` when the machine never sent one since the panel started. In `history`, `disk` is the fullest
+disk and `temp` the hottest sensor.
+
 ## Send a job to a machine
 
 A job asks a machine to run a threat scan or take a backup of its own folders. The panel only queues

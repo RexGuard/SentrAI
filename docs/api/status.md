@@ -129,7 +129,9 @@ first (ties by name). The dashboard's machine list and a central panel's overvie
     "services": [
       {"name": "nginx", "port": 443, "proto": "tcp", "process": "nginx", "open_incidents": 1}
     ],
-    "services_at": "2026-10-27T02:45:00+00:00"
+    "services_at": "2026-10-27T02:45:00+00:00",
+    "hardware": {"cpu": {"percent": 12.5, "cores": 4}, "memory": {"percent": 41.0}, "at": "2026-10-27T02:45:20+00:00",
+                 "warnings": []}
   }
 ]
 ```
@@ -143,6 +145,7 @@ first (ties by name). The dashboard's machine list and a central panel's overvie
 | `silent` | `true` when its collector sent no heartbeat for `WATCHDOG_SILENCE_S` seconds (30 by default) |
 | `services` | what runs on it, as its agent reported through [`POST /fleet/services`](fleet.html#post-fleetservices), each with the number of open incidents about it. A service that only an incident names is listed with `null` port, protocol and process |
 | `services_at` | when the agent last reported its services, `null` if it never did |
+| `hardware` | its agent's latest hardware reading, as in [`GET /fleet/hardware`](fleet.html#get-fleethardware) `latest`; `null` until one arrives |
 
 ## Switch protection on and off
 

@@ -139,6 +139,7 @@ A machine key can call these endpoints, and only for its own machine:
 | [`GET /blocklist`](status.html#get-blocklist) | reads the blocks it must put in place |
 | [`GET /fleet/me`](fleet.html#get-fleetme) | asks which machine its key belongs to |
 | [`POST /fleet/services`](fleet.html#post-fleetservices) | reports the services running on it |
+| [`POST /fleet/hardware`](fleet.html#post-fleethardware) | reports how its CPU, memory, disks, network and temperatures are doing |
 | [`GET /fleet/jobs/next`](fleet.html#get-fleetjobsnext) | picks up the next job the panel queued for it |
 | [`POST /fleet/jobs/result`](fleet.html#post-fleetjobsresult) | reports how that job went |
 | [`POST /fleet/offline-report`](fleet.html#post-fleetoffline-report) | reports what it blocked on its own while the panel was out of reach |

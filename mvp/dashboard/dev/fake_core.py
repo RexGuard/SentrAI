@@ -334,8 +334,44 @@ def machines():
                         "last_seen": iso(now()), "silent": False, "services_at": iso(now()),
                         "services": FAKE_SERVICES.get(h, []) if h != "web-01" else [
                             {**x, "open_incidents": sum(1 for i in incs if i["status"] in ("open", "acknowledged"))
-                             if x["name"] == "web" else 0} for x in FAKE_SERVICES["web-01"]]})
+                             if x["name"] == "web" else 0} for x in FAKE_SERVICES["web-01"]],
+                        "hardware": fake_hardware(h)})
         return sorted(out, key=lambda m: -m["risk_index"])
+
+
+def fake_hardware(host: str, t: float | None = None) -> dict:
+    """A made-up hardware reading that moves a little each call (core hardware.py, GET /fleet/hardware)."""
+    t = time.time() if t is None else t
+    busy = host == "web-01"
+    cpu = round(max(1.0, min(99.0, (38 if busy else 9) + 14 * math.sin(t / 97) + 6 * math.sin(t / 13))), 1)
+    gib = 2 ** 30
+    disk = 93.0 if busy else 61.0
+    out = {"cpu": {"percent": cpu, "cores": 4 if busy else 8, "load": [round(cpu / 25, 2), 1.1, 0.9]},
+           "memory": {"total": 8 * gib, "used": int(8 * gib * 0.62), "percent": 62.0},
+           "swap": {"total": 2 * gib, "used": 0, "percent": 0.0},
+           "disks": [{"mount": "/" if busy else "C:\\", "total": 80 * gib, "used": int(80 * gib * disk / 100), "percent": disk}]
+           + ([{"mount": "/data", "total": 500 * gib, "used": 120 * gib, "percent": 24.0}] if busy else []),
+           "net": {"sent": 81234567, "recv": 912345678, "sent_rate": round(2000 + 1500 * math.sin(t / 31), 1),
+                   "recv_rate": round(15000 + 9000 * math.sin(t / 23), 1)},
+           "temps": [{"label": "coretemp Package id 0", "current": 58.0, "high": 100.0},
+                     {"label": "nvme Composite", "current": 41.0, "high": 84.8}] if busy else [],
+           "uptime_s": 3 * 86400 + 4 * 3600 if busy else 26 * 3600, "os": "Linux 6.8.0" if busy else "Windows 11",
+           "at": iso(datetime.fromtimestamp(t, timezone.utc)),
+           "warnings": ["disk / is 93% full (limit 90%)"] if busy else []}
+    return out
+
+
+@app.get("/fleet/hardware")
+def fleet_hardware(host: str):
+    t = time.time()
+    hist = []
+    for k in range(119, -1, -1):
+        r = fake_hardware(host, t - 30 * k)
+        hist.append({"t": r["at"], "cpu": r["cpu"]["percent"], "memory": r["memory"]["percent"],
+                     "disk": r["disks"][0]["percent"], "temp": (r["temps"] or [{}])[0].get("current"),
+                     "net_in": r["net"]["recv_rate"], "net_out": r["net"]["sent_rate"]})
+    return {"host": host, "latest": fake_hardware(host, t), "history": hist,
+            "limits": {"alerts": True, "cpu": 90.0, "memory": 90.0, "disk": 90.0, "temp": 85.0, "for_min": 5.0}}
 
 
 FAKE_SERVICES = {

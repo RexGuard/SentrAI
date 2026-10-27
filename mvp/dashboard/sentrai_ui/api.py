@@ -119,6 +119,10 @@ class CoreClient:
         """The blocks that one machine's agent puts in place there."""
         return self.get_json(f"/blocklist?host={quote(host, safe='')}")
 
+    def machine_hardware(self, host: str) -> dict:
+        """One machine's latest hardware reading, about an hour of history and the alert limits (core hardware.py)."""
+        return dict(self.get_json(f"/fleet/hardware?host={quote(host, safe='')}") or {})
+
     def machine_incidents(self, host: str) -> list[dict]:
         return list(self.get_json(f"/incidents?host={quote(host, safe='')}") or [])
 

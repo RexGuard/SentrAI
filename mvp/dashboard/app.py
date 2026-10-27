@@ -582,7 +582,7 @@ def machines() -> list[dict]:
 
 
 # One machine's page has its own address (?machine=web-01&tab=incidents), like a server's page in a game panel.
-MACHINE_TABS = {"Overview": "", "Incidents": "incidents", "Blocks": "blocks", "Services": "services",
+MACHINE_TABS = {"Overview": "", "Hardware": "hardware", "Incidents": "incidents", "Blocks": "blocks", "Services": "services",
                 "Scans and backups": "scans", "Agent": "agent"}  # tab label: its name in the address
 
 
@@ -2785,6 +2785,8 @@ def machine_note(m: dict, agent: dict | None) -> str:
                  if joined else ""]
     else:
         parts = ["Known from logs only: no SentrAI agent runs on it"]
+    if m.get("hardware"):
+        parts.append(sh.hardware_text(m["hardware"]))
     if m.get("services"):
         parts.append(sh.services_text(m["services"]))
     return " · ".join(p for p in parts if p)
@@ -2838,7 +2840,7 @@ def page_machine() -> None:
         st.warning(f"Could not load its incidents: {ierr}")
     incs = incs or []
     tabs = st.tabs(list(MACHINE_TABS), key="machine_tab", on_change=_tab_to_address)
-    for tab, show in zip(tabs, (machine_overview, machine_incidents, machine_blocks, machine_services,
+    for tab, show in zip(tabs, (machine_overview, machine_hardware, machine_incidents, machine_blocks, machine_services,
                                 machine_jobs_tab, machine_agent)):
         if tab.open:
             with tab:
@@ -2872,6 +2874,59 @@ def machine_overview(m: dict, incs: list[dict], agent: dict | None, mine: list[d
         else:
             st.plotly_chart(sh.history_figure(hist, float((own or {}).get("threshold") or m["threshold"] or 80)),
                             width="stretch", config={"displayModeBar": False}, key="machine_history")
+
+
+def machine_hardware(m: dict, incs: list[dict], agent: dict | None, mine: list[dict]) -> None:
+    """Its hardware, as a game panel's node stats: CPU, memory, disks, network, heat and uptime from its agent."""
+    host = m["host"]
+    if not m.get("agent_id"):
+        empty(f"Hardware is reported by SentrAI's agent, and {host} has none. Add it with + Add machine on the "
+              "Machines page to see its CPU, memory and disks here.", "info")
+        return
+    hw_view, err = safe(lambda: client.machine_hardware(host), {})
+    hw = (hw_view or {}).get("latest") or m.get("hardware")
+    if err:
+        st.warning(f"Could not load its hardware: {err}")
+    if not hw:
+        empty(f"No hardware reading from {host} yet. Its agent sends one every 30 seconds; an agent older than "
+              "this panel needs an update first (sentrai-update on the machine).", "memory")
+        return
+    for line in hw.get("warnings") or []:
+        st.warning(str(line)[:1].upper() + str(line)[1:], icon=":material/warning:")
+    stats(*[(label, value, note, sh.BAND_COLORS["amber"] if hot else None)
+            for label, value, note, hot in sh.hardware_stats(hw)])
+    at = sh.parse_ts(hw.get("at"))
+    lim = (hw_view or {}).get("limits") or {}
+    df = sh.hardware_frame((hw_view or {}).get("history"))
+    left, right = st.columns(2)
+    with left, card():
+        section("CPU, memory and disk", "the last hour, in %" + (f" · last reading {sh.seen_ago(at)}" if at else ""),
+                "monitoring")
+        if df.empty:
+            empty("The chart starts with the next reading.", "monitoring")
+        else:
+            st.plotly_chart(sh.usage_figure(df, lim), width="stretch", config={"displayModeBar": False},
+                            key="hw_usage")
+    with right, card():
+        section("Network", "traffic in and out per second, the last hour", "swap_vert")
+        if df.empty or df[["net_in", "net_out"]].isna().all().all():
+            empty("The chart starts once two readings have come in.", "swap_vert")
+        else:
+            st.plotly_chart(sh.network_figure(df), width="stretch", config={"displayModeBar": False}, key="hw_net")
+    left, right = st.columns(2)
+    with left, card():
+        section("Disks", "each real disk once, fullest first", "hard_drive")
+        table(sh.disk_rows(hw), "No disks reported.", column_config={
+            "Full": st.column_config.ProgressColumn("Full", min_value=0, max_value=100, format="%.0f%%")})
+    with right, card():
+        section("Temperatures", "hottest first, where the machine has sensors it can read", "thermostat")
+        table(sh.temp_rows(hw), "No temperature sensors this agent can read (common on Windows and in VMs).")
+    if lim:
+        st.caption(("Alerts go to the on-duty person when " if lim.get("alerts") else "Alerts are off "
+                    "(SENTRAI_HW_ALERTS=off); the limits would be ")
+                   + f"CPU or memory stays over {lim.get('cpu', 90):.0f}% / {lim.get('memory', 90):.0f}% for "
+                   f"{lim.get('for_min', 5):g} min, a disk passes {lim.get('disk', 90):.0f}%, or a sensor stays over "
+                   f"{lim.get('temp', 85):.0f} °C. Set them with SENTRAI_HW_* on the panel.")
 
 
 def machine_incidents(m: dict, incs: list[dict], agent: dict | None, mine: list[dict]) -> None:

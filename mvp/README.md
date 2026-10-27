@@ -138,6 +138,8 @@ behind an arrow.
 | `SENTRAI_RISK_SCOPE` | `fleet` | core: `host` scores and blocks each machine on its own, for a central panel (set `SENTRAI_FIREWALL=off` with it) |
 | `SENTRAI_PANEL_PORT` / `SENTRAI_PANEL_URL` | unset | core and dashboard: the agents' HTTPS port and the address they use (`install.sh --panel` sets both, with `SENTRAI_PANEL_CERT` / `SENTRAI_PANEL_KEY`) |
 | `SENTRAI_AGENT_OFFLINE_HOLD_H` | `24` | agent: hours blocks stay in place while the panel cannot be reached |
+| `SENTRAI_HW_ALERTS` | `on` | core: alert the on-duty person when a machine's hardware passes a limit (`off`: only show it) |
+| `SENTRAI_HW_CPU_PCT` / `SENTRAI_HW_MEM_PCT` / `SENTRAI_HW_DISK_PCT` / `SENTRAI_HW_TEMP_C` | `90` / `90` / `90` / `85` | core: those limits; CPU, memory and heat must stay over for `SENTRAI_HW_FOR_MIN` (`5`) minutes |
 | `AUTO_ACTIONS` | `block_ip,rate_limit,waf_rule` | core: action types SentrAI may take on its own; any other type waits for a person |
 | `MAX_AUTO_ACTIONS_PER_HOUR` | `10` | core: automatic actions allowed in any rolling hour; past it a person decides |
 | `MAX_TTL_HOURS` / `ACTION_TTL_HOURS` | `24` / unset | core: longest any temporary action lasts; per-type hours such as `lock_user=1,block_ip=4` |

@@ -18,7 +18,7 @@ from .config import Settings, sign
 import sentrai_paths
 from .reports import build_report, render_markdown, render_pdf
 from . import summary as client_summary
-from . import ai, anchor, apidocs, fleet, integrations, jobs, webhook
+from . import ai, anchor, apidocs, fleet, hardware, integrations, jobs, webhook
 from .extensions import ExtensionError
 from .chat import OperatorChat, default_chat_provider
 from .discovery import Discovery
@@ -205,6 +205,47 @@ class ServicesIn(BaseModel):
     services: list[ServiceIn] = Field(default_factory=list, max_length=200)
 
 
+class UsageIn(BaseModel):
+    total: Optional[int] = Field(None, ge=0)
+    used: Optional[int] = Field(None, ge=0)
+    percent: Optional[float] = Field(None, ge=0, le=100)
+
+
+class CpuIn(BaseModel):
+    percent: Optional[float] = Field(None, ge=0, le=100)
+    cores: Optional[int] = Field(None, ge=0, le=4096)
+    load: Optional[list[float]] = Field(None, max_length=3)
+
+
+class DiskIn(UsageIn):
+    mount: str = Field(max_length=128)
+
+
+class NetIn(BaseModel):
+    sent: Optional[int] = Field(None, ge=0)
+    recv: Optional[int] = Field(None, ge=0)
+    sent_rate: Optional[float] = Field(None, ge=0)
+    recv_rate: Optional[float] = Field(None, ge=0)
+
+
+class TempIn(BaseModel):
+    label: str = Field(max_length=64)
+    current: Optional[float] = Field(None, ge=-100, le=300)
+    high: Optional[float] = Field(None, ge=-100, le=300)
+
+
+class HardwareIn(BaseModel):
+    """One reading of a machine's hardware from its agent (lab/agent/hardware.py); every part is optional."""
+    cpu: CpuIn = Field(default_factory=CpuIn)
+    memory: UsageIn = Field(default_factory=UsageIn)
+    swap: UsageIn = Field(default_factory=UsageIn)
+    disks: list[DiskIn] = Field(default_factory=list, max_length=32)
+    net: NetIn = Field(default_factory=NetIn)
+    temps: list[TempIn] = Field(default_factory=list, max_length=32)
+    uptime_s: Optional[float] = Field(None, ge=0)
+    os: Optional[str] = Field(None, max_length=120)
+
+
 class JobIn(BaseModel):
     host: str = Field(max_length=63)
     kind: str = Field(max_length=32)
@@ -238,9 +279,9 @@ class OfflineReportIn(BaseModel):
 
 
 # What a machine's own agent key may do (fleet.py): send its events and heartbeat, read its block list.
-# It also picks up the jobs the panel queued for its own machine and reports how they went (jobs.py).
+# It reports what runs there and how its hardware is doing, picks up the jobs the panel queued for its own machine and reports how they went (jobs.py).
 AGENT_ROUTES = frozenset({("POST", "/events"), ("POST", "/heartbeat"), ("GET", "/blocklist"), ("GET", "/fleet/me"),
-                           ("POST", "/fleet/services"), ("GET", "/fleet/jobs/next"), ("POST", "/fleet/jobs/result"),
+                           ("POST", "/fleet/services"), ("POST", "/fleet/hardware"), ("GET", "/fleet/jobs/next"), ("POST", "/fleet/jobs/result"),
                            ("POST", "/fleet/offline-report")})
 
 
@@ -319,6 +360,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     core_dir = Path(core.settings.db_path).parent  # machines/fleet.json and machines/jobs.json sit next to the database
     machines = fleet.Fleet(sentrai_paths.path("core.fleet", core_dir))
     machine_jobs = jobs.Jobs(sentrai_paths.path("core.jobs", core_dir))
+    machine_health = hardware.Health(core.clock.now, core.clock.iso)
     staff = StaffReports(core, lambda: chat.provider)  # follows /ai/reload
 
     def require_token(request: Request) -> None:
@@ -378,6 +420,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.backups = backups
     app.state.fleet = machines
     app.state.jobs = machine_jobs
+    app.state.health = machine_health
     app.state.staff = staff
 
     def not_found(iid: str) -> HTTPException:
@@ -414,7 +457,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/machines")
     def get_machines() -> list[dict[str, Any]]:
-        return core.machines()
+        """Every machine, each with its latest hardware reading when its agent sends one (hardware.py)."""
+        return [{**m, "hardware": machine_health.latest(m["host"])} for m in core.machines()]
 
     @app.get("/incidents")
     def get_incidents(host: Optional[str] = Query(None)) -> list[dict[str, Any]]:
@@ -872,6 +916,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         core.scribe.record(core.name, "machine_revoked", {"agent_id": agent_id, "host": out["host"],
                                                           "operator": body.operator})
         machine_jobs.drop_host(out["host"], body.operator)
+        machine_health.forget(out["host"])
         return out
 
     @app.post("/fleet/services")
@@ -882,6 +927,32 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not host:
             raise HTTPException(status_code=400, detail="which machine? (?host=)")
         return core.set_services(host, [x.model_dump() for x in body.services])
+
+    @app.post("/fleet/hardware")
+    def post_hardware(request: Request, body: HardwareIn, host: Optional[str] = Query(None, max_length=63)) -> dict[str, Any]:
+        """How a machine's hardware is doing: its agent reports every 30 s; the operator token may name a host.
+        A limit crossed for long enough tells the on-duty person once (hardware.py)."""
+        if request.state.agent is not None:
+            host = request.state.agent["host"]
+        if not host:
+            raise HTTPException(status_code=400, detail="which machine? (?host=)")
+        out = machine_health.record(host, body.model_dump())
+        with core.lock:
+            core._host_seen.setdefault(host, core.clock.now())  # listed on /machines, as after its first services report
+        for line in out["alerts"]:
+            core.scribe.record(core.name, "machine_health", {"host": host, "summary": f"{host}: {line}"})
+            with core.lock:
+                core._notify(core.clock.now(), "hardware", None, [core.settings.on_duty], f"{host}: {line}",
+                             f"{host}: {line}. SentrAI only watches this; nothing was changed on the machine.", [])
+        for line in out["cleared"]:
+            core.scribe.record(core.name, "machine_health_ok", {"host": host, "summary": f"{host}: back to normal "
+                                                                                          f"(was: {line})"})
+        return {"ok": True, "alerts": len(out["alerts"])}
+
+    @app.get("/fleet/hardware")
+    def get_hardware(host: str = Query(..., max_length=63)) -> dict[str, Any]:
+        """One machine's latest hardware reading, about an hour of history, and the alert limits in use."""
+        return machine_health.view(host)
 
     # -- jobs the panel asks one machine to run (jobs.py): its agent picks them up on its next call out
     def job_error(exc: jobs.JobError) -> HTTPException:
