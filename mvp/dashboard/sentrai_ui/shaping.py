@@ -640,7 +640,7 @@ def panel_machines(found: Iterable[dict], agents: Iterable[dict], risk: dict | N
                      "monitor_only": bool(risk.get("monitor_only")),
                      "open": int(m.get("open_incidents") or 0), "contained": int(m.get("contained_incidents") or 0),
                      "blocked": int(m.get("blocked") or 0), "last_seen": last,
-                     "agent_id": (agent or {}).get("agent_id"),
+                     "agent_id": (agent or {}).get("agent_id"), "services_at": m.get("services_at"),
                      "services": [x for x in m.get("services") or [] if isinstance(x, dict)]})
     for host, agent in live.items():
         if host not in seen:
@@ -732,46 +732,125 @@ def join_commands(panel_url: str, code: str, name: str | None = None, pin: str |
     }
 
 
-def machine_rows_html(machines: list[dict], opened: bool | None = None) -> str:
-    """The machine list: one row per SentrAI program, like a game's server-status screen.
+def seen_ago(ts: Any, now: datetime | None = None) -> str:
+    """When a machine last called in, the way people say it: "just now", "40 s ago", "7 min ago", "never"."""
+    ts = parse_ts(ts)
+    if ts is None:
+        return "never"
+    if ts.tzinfo is None:
+        ts = ts.astimezone()  # a naive time is this computer's local time
+    secs = ((now or datetime.now(timezone.utc)) - ts).total_seconds()
+    if secs < 10:
+        return "just now"
+    return f"{int(secs)} s ago" if secs < 60 else f"{span_label(secs)} ago"
 
-    Status shield on the left (protecting, protection off, or offline), the machine's name with a small
-    risk bar under it, and the risk number with its band word on the right. Styled by .machines in
-    console.css; only the data-driven widths and colours are inline. With opened set (True or False) the
-    rows open their details on click, so they end with an arrow pointing down (closed) or up (open)."""
+
+def _machine_state(m: dict) -> tuple[str, str, str]:
+    """(icon, state word, colour) for a machine's status shield and stripe."""
+    if m.get("waiting"):
+        return "hourglass_empty", "Waiting for its first data", UNKNOWN_COLOR
+    if not m["online"]:
+        return "cancel", "Offline", BAND_COLORS["critical"]
+    if m["monitor_only"]:
+        return "remove_moderator", "Protection off", BAND_COLORS["amber"]
+    return "verified_user", "Protecting", BAND_COLORS["green"]
+
+
+def _machine_stats(m: dict, now: datetime | None) -> str:
+    """Incidents, blocks and last call-in for a machine on a central panel: what a game panel's server
+    row shows as CPU, memory and disk. Hidden when the list is narrow (console.css)."""
+    if "open" not in m:
+        return ""
+    found = [f"{m['open']} open" if m.get("open") else "", f"{m['contained']} contained" if m.get("contained") else ""]
+    cells = [("Incidents", " · ".join(x for x in found if x) or "None", bool(m.get("open"))),
+             ("Blocks", f"{m['blocked']} in force" if m.get("blocked") else "None", False),
+             ("Last seen", seen_ago(m.get("last_seen"), now), False)]
+    return '<span class="m-stats">' + "".join(
+        f'<span class="m-stat"><span class="m-stat-label">{label}</span>'
+        f'<span class="m-stat-value"{" style=color:var(--amber)" if hot else ""}>{html.escape(value)}</span></span>'
+        for label, value, hot in cells) + "</span>"
+
+
+def machine_rows_html(machines: list[dict], link: bool = False, status: bool = False,
+                      now: datetime | None = None) -> str:
+    """The machine list: one row per machine, like the server list of a game panel (Pterodactyl, Calagopus).
+
+    A status stripe and shield on the left (protecting, protection off, offline or waiting), the machine's
+    name with a small risk bar under it, its incidents, blocks and last call-in on a central panel, and the
+    risk number with its band word on the right. Styled by .machines in console.css; only the data-driven
+    widths and colours are inline. With link set each row opens that machine's own page, so it ends with an
+    arrow. With status set the row is the status card on that page: the state word takes the name's place."""
     rows = []
     for m in machines:
+        icon, state, tone = _machine_state(m)
         name, place = html.escape(str(m["name"])), html.escape(str(m["place"]))
         if m.get("waiting"):
-            icon, state, tone = "hourglass_empty", "Joined", UNKNOWN_COLOR
             num, word, color, width = "-", "Waiting", UNKNOWN_COLOR, 0.0
             place = f"{place} · waiting for its first data"
         elif not m["online"]:
-            icon, state, tone = "cancel", "Offline", BAND_COLORS["critical"]
             num, word, color, width = "0", "Offline", UNKNOWN_COLOR, 0.0
         else:
             color = band_color(m["band"])
-            if m["monitor_only"]:
-                icon, state, tone = "remove_moderator", "Protection off", BAND_COLORS["amber"]
-            else:
-                icon, state, tone = "verified_user", "Protecting", BAND_COLORS["green"]
             num = "-" if m["index"] is None else f"{m['index']:.0f}"
             word, width = BAND_WORD.get(m["band"], "Unknown"), m["index"] or 0.0
             place = f"{place} · threshold {m['threshold']:.0f}"
-            if m.get("services"):
-                place = f"{place} · {services_text(m['services'])}"
-        more = "" if opened is None else f'<span class="m-more mi" aria-hidden="true">{"expand_less" if opened else "expand_more"}</span>'
+            if m.get("services") and not status:
+                place = f"{place} · {html.escape(services_text(m['services']))}"
+        title = html.escape(state) if status else name
+        more = '<span class="m-more mi" aria-hidden="true">chevron_right</span>' if link else ""
         rows.append(
-            f'<li class="machine{"" if opened is None else " clickable"}">'
+            f'<li class="machine{" clickable" if link else ""}{" status" if status else ""}">'
+            f'<span class="m-stripe" aria-hidden="true" style="background:{tone}"></span>'
             f'<span class="m-icon mi" style="color:{tone}" aria-hidden="true">{icon}</span>'
-            f'<span class="m-main"><span class="m-name">{name}</span>'
+            f'<span class="m-main"><span class="m-name">{title}</span>'
             f'<span class="m-sub"><span class="m-bar" aria-hidden="true"><i style="width:{width:.0f}%;background:{color}"></i></span>'
-            f'<span class="sr">{state}. </span>{place}</span></span>'
+            f'{"" if status else f"<span class=sr>{html.escape(state)}. </span>"}{place}</span></span>'
+            f'{_machine_stats(m, now)}'
             f'<span class="m-risk"><span class="m-num"{" style=color:var(--ink-muted)" if not m["online"] else ""}>{num}</span>'
             f'<span class="m-word" style="color:{color}">{word}</span></span>'
             f'{more}</li>'
         )
-    return f'<ul class="machines" aria-label="SentrAI machines">{"".join(rows)}</ul>'
+    label = "Machine status" if status else "SentrAI machines"
+    return f'<ul class="machines" aria-label="{label}">{"".join(rows)}</ul>'
+
+
+def machine_records(records: Iterable[dict], host: str, incident_ids: Iterable[str]) -> list[dict]:
+    """The audit records about one machine: those naming it, and those about one of its incidents."""
+    ids = {str(i) for i in incident_ids}
+    out = []
+    for r in records or []:
+        data = r.get("data") if isinstance(r, dict) else None
+        if isinstance(data, dict) and (data.get("host") == host or str(data.get("incident")) in ids):
+            out.append(r)
+    return out
+
+
+def console_html(feed: list[dict], label: str) -> str:
+    """A machine's live log in a terminal-style box, like a game panel's console: time, who, what."""
+    lines = [
+        f'<div class="c-line"><span class="c-time">{html.escape(e["time"])}</span>'
+        f'<span class="c-who" style="color:{e["color"]}">{html.escape(e["agent"])}</span>'
+        f'<span class="c-msg"><b>{html.escape(e["type"])}</b> {html.escape(e["summary"])}</span></div>'
+        for e in feed
+    ]
+    # Focusable, so keyboard users can scroll it too.
+    return f'<div class="console" tabindex="0" role="region" aria-label="{html.escape(label)}">{"".join(lines)}</div>'
+
+
+def agent_facts(agent: dict | None, now: datetime | None = None) -> list[tuple[str, str]]:
+    """One machine's agent for its Agent tab: id, when and by whom it joined, last call-in, time alone."""
+    if not agent:
+        return []
+    off = agent.get("offline") if isinstance(agent.get("offline"), dict) else {}
+    alone = (f"{short_time(off.get('from'))} to {short_time(off.get('to'))}, "
+             f"{plural(off.get('local_blocks', 0), 'local block')}" if off else "Never")
+    joined = parse_ts(agent.get("joined_at"))
+    return [("Agent id", str(agent.get("agent_id") or "-")),
+            ("Joined", joined.strftime("%d %b %H:%M") if joined else "-"),
+            ("Invited by", str(agent.get("invited_by") or "-")),
+            ("Last seen", seen_ago(agent.get("last_seen"), now)),
+            ("Last time offline", alone),
+            ("Blocks made while offline", str(int(agent.get("offline_total") or 0)))]
 
 
 def history_frame(history: Iterable[dict] | None) -> pd.DataFrame:

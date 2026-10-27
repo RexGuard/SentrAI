@@ -314,12 +314,12 @@ its own block list; revoke one with `POST /fleet/agents/<id>/revoke`. If the pan
   injection, XSS, port scans, privilege escalation, data theft, prompt injection), never private or
   protected addresses. `SENTRAI_AGENT_LOCAL_RULES=off` turns this off.
 - when the panel answers again the agent reports every local block (`POST /fleet/offline-report`):
-  it is written to the audit record, raises an alert, and the Machines page shows it under
-  "Last time offline"
+  it is written to the audit record, raises an alert, and the Machines page and the machine's
+  Agent tab show it under "Last time offline"
 
 ### Threat scans and backups from the panel
 
-On the Machines page, pick a machine and press **Scan for threats** or **Back up now**. The panel
+On the Machines page, click a machine and press **Scan for threats** or **Back up now**. The panel
 only queues the job; the machine's agent picks it up on its next call out (within about 15 s), runs
 it there and sends back a short result. Critical and high scan findings open a malware incident on
 that machine. Backups stay on the machine (restoring one is done there, by a person); the panel gets
