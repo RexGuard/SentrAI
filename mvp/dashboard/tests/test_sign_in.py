@@ -112,6 +112,15 @@ def test_sign_in_locks_after_repeated_wrong_tries(app):
     assert "pending" not in app.session_state
 
 
+
+def test_tries_are_counted_per_browser_behind_a_local_proxy():
+    from sentrai_ui import signin
+
+    assert signin.client_address(None, "203.0.113.5") == "203.0.113.5"  # Caddy on the same machine
+    assert signin.client_address("127.0.0.1", "198.51.100.1, 203.0.113.5") == "203.0.113.5"  # the proxy's own entry
+    assert signin.client_address("192.0.2.9", "203.0.113.5") == "192.0.2.9"  # a remote browser cannot pick one
+    assert signin.client_address(None) == "local"
+
 def test_invite_link_lets_an_auditor_join_who_can_change_nothing(app, fake_core):
     owner_with_authenticator()
     code = acc.invite("erick@example.com", "hozen@example.com", "auditor")

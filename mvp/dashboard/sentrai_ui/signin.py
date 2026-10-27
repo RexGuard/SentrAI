@@ -15,6 +15,15 @@ _fails: dict[str, list[float]] = {}
 _lock = threading.Lock()
 
 
+def client_address(ip: str | None, forwarded: str = "") -> str:
+    """Whose tries these are. Behind a reverse proxy on this machine (Caddy, nginx) every browser comes
+    from it, so the address the proxy saw, which it adds last to X-Forwarded-For, is used instead. Only a
+    local connection is trusted to say this, so nobody else can pick their own address."""
+    if ip in (None, "127.0.0.1", "::1") and forwarded.strip():
+        ip = forwarded.split(",")[-1].strip()
+    return ip if isinstance(ip, str) and ip else "local"  # a test run has no real address
+
+
 def _recent(ip: str, now: float) -> list[float]:
     kept = [t for t in _fails.get(ip, []) if now - t < FAIL_WINDOW_S]
     if kept:
