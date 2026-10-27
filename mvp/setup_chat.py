@@ -373,22 +373,33 @@ def _operator(s: SetupChat, answer: str) -> str:
 
 
 # 6. Alerts
+def _telegram_installed() -> bool:
+    """Telegram alerts are an extension: offered only while it is installed."""
+    return "telegram" in cfg.EXTENSION_SECTIONS
+
+
+def _alerts_options(s: SetupChat) -> list[Option]:
+    telegram = [("telegram", "Telegram"), ("both", "Telegram, email as backup")] if _telegram_installed() else []
+    return [*telegram[:1], ("email", "Email"), *telegram[1:], ("console", "Just the dashboard")]
+
+
 def _alerts(s: SetupChat, choice: str) -> str:
     s.notes["alerts"] = choice
+    no_telegram = {"TELEGRAM_BOT_TOKEN": "", "TELEGRAM_CHAT_ID": ""} if _telegram_installed() else {}
     if choice == "console":
-        s.set(TELEGRAM_BOT_TOKEN="", TELEGRAM_CHAT_ID="", SMTP_HOST="")
+        s.set(**no_telegram, SMTP_HOST="")
         return "Alerts will show in the console and the dashboard only."
     if choice == "telegram":
         s.set(SMTP_HOST="")
     if choice == "email":
-        s.set(TELEGRAM_BOT_TOKEN="", TELEGRAM_CHAT_ID="", SENTRAI_EMAIL_MODE="always")
+        s.set(**no_telegram, SENTRAI_EMAIL_MODE="always")
     if choice == "both":
         s.set(SENTRAI_EMAIL_MODE="backup")
     return ""
 
 
 def _wants(kind: str) -> Callable[[SetupChat], bool]:
-    return lambda s: s.notes.get("alerts") in (kind, "both")
+    return lambda s: s.notes.get("alerts") in (kind, "both") and (kind != "telegram" or _telegram_installed())
 
 
 def _telegram_token(s: SetupChat, answer: str) -> str:
@@ -409,7 +420,8 @@ def _telegram_chat(s: SetupChat, answer: str) -> str:
     if not re.fullmatch(r"-?\d+|@\w{4,}", chat):
         raise Retry("A chat id is a number like 123456789 (or -100... for a group), or a channel name like @mychannel.")
     s.set(TELEGRAM_CHAT_ID=chat)
-    return "Telegram is set."
+    return ("Telegram is set. Saving turns the Telegram extension on, unless someone removed it on the "
+            "Extensions page.")
 
 
 def _smtp_host(s: SetupChat, answer: str) -> str:
@@ -594,9 +606,7 @@ STEPS: tuple[Step, ...] = (
          lambda s: [("none", "No")], words={"none": NO}),
     Step("operator", lambda s: "What name should appear on your approvals?", _operator,
          lambda s: [("keep", f"Keep \"{s.current['SENTRAI_OPERATOR']}\"")]),
-    Step("alerts", lambda s: "How should I alert you when something happens?", _alerts,
-         lambda s: [("telegram", "Telegram"), ("email", "Email"), ("both", "Telegram, email as backup"),
-                    ("console", "Just the dashboard")], typed=False,
+    Step("alerts", lambda s: "How should I alert you when something happens?", _alerts, _alerts_options, typed=False,
          words={"console": {"none", "no", "dashboard", "console"}}),
     Step("tg_token", lambda s: "Paste your Telegram bot token (from @BotFather).", _telegram_token,
          lambda s: _keep(s, "TELEGRAM_BOT_TOKEN", "the saved token"), when=_wants("telegram"), secret=True),
