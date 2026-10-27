@@ -168,6 +168,10 @@ behind an arrow.
 | `SENTRAI_API_TOKEN` | generated | all: the token the core API requires (`python sentrai_config.py token` prints it) |
 | `SENTRAI_ACCOUNTS` | `accounts.json` next to the settings | dashboard: who may sign in (see Access below) |
 | `SENTRAI_DASHBOARD_LOGIN` | on | dashboard: `off` opens it without signing in (local testing only) |
+| `SENTRAI_REPORT_PAGE` | on | dashboard: `off` turns off the open staff report page (`/?report`) |
+| `SENTRAI_REPORT_CODE` | unset | dashboard: a shared code staff must type on the report page (put it on the noticeboard) |
+| `TELEGRAM_REPORT_FROM` | `alert-chat` | notifier: who may send `/report`: the alert chat only, `any` chat that messages the bot, or a comma list of chat ids |
+| `SENTRAI_STAFF_REPORTS` | next to the core database | core: where staff reports are saved (`staff_reports.json`) |
 
 ### Access
 
@@ -222,6 +226,26 @@ Only the configured chat, and people's linked private chats, can press the butto
 4. Optional, so each person gets their own alerts instead of the group: on the dashboard's Incidents page, press
    **Make link code** for a person; they send `/link CODE` to the bot in a private chat. See
    "Alerts in each person's own Telegram chat" in `core/README.md`.
+
+### Staff reports
+
+Anyone at the business can report something suspicious (a strange email, a pop-up, a login they
+did not make, a stranger at the computers) without a dashboard account:
+
+- **Web:** the dashboard address plus `/?report`, for example `https://server:8501/?report`. No
+  sign-in, and the page shows nothing from SentrAI. Set `SENTRAI_REPORT_CODE` to ask for a shared code.
+  Staff must be able to reach the dashboard (on a server, add their network to `--protect`).
+- **Telegram:** `/report I got an email asking for my password`. Only the alert chat by default; set
+  `TELEGRAM_REPORT_FROM=any` so staff can message the bot directly.
+- **Anything else** that holds the API token can `POST /staff-reports` (`CONTRACT.md`).
+
+Each report is sorted at once (the AI model when one is set up, keyword rules otherwise): what kind
+of problem it sounds like, how urgent, what the reporter should do now, and what technical staff
+should check first. It opens a "Staff report" incident marked *needs review*, which alerts like any
+other and is never acted on automatically. On the **Staff reports** page technical staff pick a
+report up (that acknowledges the incident), add notes, and close it as *resolved* or *not a threat*
+with a note; closing the last report on an incident closes the incident. Every step is in the audit
+trail. One sender may send 5 reports every 10 minutes.
 
 ### Email alerts (optional backup)
 

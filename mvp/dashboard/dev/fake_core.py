@@ -39,7 +39,7 @@ SEVERITY = {
     "brute_force": ("high", 30), "sql_injection": ("high", 40), "xss": ("medium", 20),
     "port_scan": ("medium", 15), "privilege_escalation": ("critical", 60),
     "data_exfiltration": ("critical", 70), "misconfiguration": ("medium", 20), "log_tampering": ("critical", 55),
-    "malware": ("critical", 65), "prompt_injection": ("critical", 60),
+    "malware": ("critical", 65), "prompt_injection": ("critical", 60), "staff_report": ("medium", 20),
     "benign": ("low", 0),
 }
 PLAYBOOK = {
@@ -52,6 +52,7 @@ PLAYBOOK = {
     "misconfiguration": [("revoke_public_acl", "s3://demo-bucket")],
     "log_tampering": [("block_ip", "src_ip")],
     "malware": [],
+    "staff_report": [],
     "prompt_injection": [("waf_rule", "prompt-injection filter"), ("block_ip", "src_ip")],
 }
 RECOMMEND = {
@@ -64,6 +65,7 @@ RECOMMEND = {
     "misconfiguration": "Remove the public ACL and enable default encryption",
     "log_tampering": "Block {src_ip} for 2 h and check the host for compromise",
     "malware": "Check the file or program and quarantine it from the threat scan",
+    "staff_report": "Read the report under Staff reports and close it with a note",
     "prompt_injection": "Add a WAF rule for prompt-injection text and block {src_ip} for 2 h",
 }
 
@@ -109,6 +111,7 @@ class State:
                        "offline": {"from": iso(now() - timedelta(minutes=50)), "to": iso(now() - timedelta(minutes=20)),
                                    "scored": 42, "local_blocks": 1, "reported_at": iso(now() - timedelta(minutes=20))}},
         }
+        self.staff_reports: list[dict] = []
 
 
 S = State()
@@ -833,6 +836,66 @@ def post_restore(qid: str, body: dict = Body(...)):
             raise HTTPException(404, f"{qid} is not in quarantine")
         S.quarantine.remove(q)
         return {"ok": True, "file": q["original"]}
+
+
+FAKE_ADVICE = ["Do not click any link or open any attachment in it.",
+               "Leave the message where it is so it can be checked.",
+               "If you typed a password after clicking, change it now and tell technical staff."]
+
+
+@app.post("/staff-reports")
+def post_staff_report(body: dict = Body(...)):
+    text = str(body.get("text") or "").strip()
+    if len(text) < 10:
+        raise HTTPException(400, "Please describe what you saw in a sentence or two.")
+    with lock:
+        rid = f"SR-2026-{len(S.staff_reports) + 1:03d}"
+        high = any(w in text.lower() for w in ("clicked", "typed my password", "paid", "locked"))
+        inc = open_incident("staff_report", None, body.get("reporter") or "anonymous", 1.0, 1.5 if high else 1.0, "rules")
+        inc["needs_review"] = True
+        inc["host"] = body.get("host") or inc["host"]
+        r = {"id": rid, "received_at": iso(now()), "channel": body.get("channel") or "api",
+             "reporter": body.get("reporter") or "anonymous", "contact": body.get("contact") or None,
+             "where": body.get("where") or None, "host": body.get("host") or None, "text": text, "status": "new", "assignee": None,
+             "incident": inc["id"], "notes": [], "kind_label": "Suspicious email, message or link",
+             "triage": {"kind": "phishing", "urgency": "high" if high else "medium",
+                        "summary": text.split(".")[0][:160], "advice": FAKE_ADVICE, "by": "keywords",
+                        "for_tech": "Find the message, check who else got it, block the sender and reset passwords."},
+             "history": [{"at": iso(now()), "by": body.get("reporter") or "anonymous", "what": "reported"}]}
+        S.staff_reports.append(r)
+        audit("staff_report_received", "Warden", report=rid, summary=f"Staff report {rid}: {r['triage']['summary']}")
+        return {"id": rid, "status": "new", "kind": "phishing", "kind_label": r["kind_label"],
+                "urgency": r["triage"]["urgency"], "advice": FAKE_ADVICE}
+
+
+@app.get("/staff-reports")
+def get_staff_reports(status: str | None = None):
+    rows = [r for r in S.staff_reports if not status or r["status"] == status
+            or (status == "open" and r["status"] in ("new", "reviewing"))]
+    counts = {s: sum(1 for r in S.staff_reports if r["status"] == s)
+              for s in ("new", "reviewing", "resolved", "not_a_threat")}
+    return {"reports": list(reversed(rows)), "counts": counts}
+
+
+@app.post("/staff-reports/{rid}")
+def update_staff_report(rid: str, body: dict = Body(...)):
+    with lock:
+        r = next((r for r in S.staff_reports if r["id"] == rid), None)
+        if r is None:
+            raise HTTPException(404, f"staff report {rid} not found")
+        status, note = body.get("status"), (body.get("note") or "").strip()
+        if status in ("resolved", "not_a_threat") and not note:
+            raise HTTPException(400, "Add a short note saying what was found before closing a report.")
+        if body.get("assignee") is not None:
+            r["assignee"] = body["assignee"] or None
+        if status:
+            r["status"] = status
+        elif r["status"] == "new":
+            r["status"] = "reviewing"
+        if note:
+            r["notes"].append({"at": iso(now()), "by": body.get("operator"), "text": note})
+        r["history"].append({"at": iso(now()), "by": body.get("operator"), "what": f"status {r['status']}"})
+        return r
 
 
 def _fake_backup(by: str, reason: str) -> dict:

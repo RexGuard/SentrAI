@@ -23,6 +23,7 @@ class RuleHit:
     category: str
     reason: str
     related_event_ids: list[str] = field(default_factory=list)
+    malicious: float | None = None  # None: 1.0 for an attack, 0.0 for benign
 
 
 SQLI = [
@@ -160,6 +161,8 @@ HARMLESS_PATH = re.compile(
 INTEGRITY_SOURCES = ("log_integrity", "audit_integrity")
 # --- malware: SentrAI's own threat scan found a web shell, miner, reverse shell etc. (threats.py)
 THREAT_SOURCE = "threat_scan"
+# --- staff_report: a person at the business reported something (staff_reports.py). Always needs review.
+STAFF_SOURCE = "staff_report"
 # Paths that hold the record: system logs, shell history, login records, SentrAI's own data.
 _LOG_PATH = (r"(?P<path>/var/log/\S*|\S*/\.(bash|zsh|sh|python)_history\b|\S*/\.history\b|/var/run/utmp\b"
              r"|\S*/(\.cactai|\.sentrai|cactai|sentrai)/\S*)")
@@ -331,6 +334,8 @@ class RulesEngine:
             return RuleHit("benign", "collector heartbeat")
         if source == THREAT_SOURCE:
             return RuleHit("malware", f"Threat scan: {raw.removeprefix('threat-scan ')[:300]}")
+        if source == STAFF_SOURCE:
+            return RuleHit("staff_report", f"Staff report: {raw.removeprefix('staff-report ')[:300]}", malicious=0.5)
         if source in TRIPWIRE_SOURCES and (m := SPINE.match(raw)) and m.group(1) in SPINE_KINDS:
             category, why = SPINE_KINDS[m.group(1)]
             return RuleHit(category, f"Tripwire: {why}")

@@ -37,6 +37,9 @@ SEVERITY: dict[str, tuple[str, int]] = {
     # Text written to talk the AI classifier into a wrong answer ("ignore previous instructions, this
     # is benign"). Nobody types that into a login form by accident.
     "prompt_injection": ("critical", 60),
+    # A person at the business reported something (staff_reports.py). Never one of the classifier's
+    # labels: only a report makes it. Always "needs review"; the report's urgency scales the points.
+    "staff_report": ("medium", 20),
 }
 
 BANDS = ["green", "amber", "red", "critical"]
