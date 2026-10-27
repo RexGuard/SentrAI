@@ -1702,6 +1702,52 @@ def pending_approvals(incidents: Iterable[dict]) -> list[dict]:
     return sorted(waiting, key=lambda i: (not available_actions(i)["decide"], -incident_contribution(i)))
 
 
+APPROVAL_GROUPS = {"Attacker": "attacker", "Machine": "machine", "Type": "type"}
+
+
+def approval_group(inc: dict, by: str) -> str:
+    """The heading an approval sits under when the page groups by attacker, machine or type of attack."""
+    if by == "attacker":
+        acts = [a for a in inc.get("actions") or [] if isinstance(a, dict) and a.get("target")]
+        return str(inc.get("src_ip") or (acts[-1]["target"] if acts else "") or "Unknown source")
+    if by == "machine":
+        return str(inc.get("host") or "Unknown machine")
+    if by == "type":
+        return category_label(inc.get("category"))
+    return ""
+
+
+def group_approvals(waiting: list[dict], by: str | None) -> list[tuple[str, list[dict]]]:
+    """Waiting incidents in groups, biggest group first; one unnamed group when not grouping."""
+    if not by:
+        return [("", list(waiting))]
+    groups: dict[str, list[dict]] = {}
+    for inc in waiting:
+        groups.setdefault(approval_group(inc, by), []).append(inc)
+    return sorted(groups.items(), key=lambda kv: -len(kv[1]))  # stable: equal sizes keep the page's order
+
+
+def bulk_split(picked: list[dict]) -> dict[str, list[dict]]:
+    """Which of the picked incidents each bulk button acts on: open ones are decided, contained ones kept or undone."""
+    split: dict[str, list[dict]] = {"decide": [], "contain": []}
+    for inc in picked:
+        can = available_actions(inc)
+        if can["decide"]:
+            split["decide"].append(inc)
+        elif can["contain_controls"]:
+            split["contain"].append(inc)
+    return split
+
+
+def bulk_result(verb: str, done: list[str], failed: list[tuple[str, str]]) -> str:
+    """One line for the toast after a bulk action: how many went through, and which did not."""
+    n = len(done) + len(failed)
+    text = f"{verb} {len(done)} of {n} incident{'s' if n != 1 else ''}"
+    if failed:
+        text += ". Not done: " + "; ".join(f"{i} ({why})" for i, why in failed)
+    return text
+
+
 # ---------------------------------------------------------------- updates
 
 def _key_values(path) -> dict[str, str]:

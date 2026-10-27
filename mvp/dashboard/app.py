@@ -960,10 +960,15 @@ def quick_actions(inc: dict, where: str) -> None:
             run_action(f"Acknowledged {inc_id}", lambda: client.ack(inc_id, op))
 
 
-def incident_row(inc: dict, where: str, note: str = "", details=None) -> None:
-    """One short line per incident with its quick buttons; everything else waits behind Details."""
+def incident_row(inc: dict, where: str, note: str = "", details=None, pick: str | None = None) -> None:
+    """One short line per incident with its quick buttons; everything else waits behind Details.
+    With pick, a tick box in front adds the incident to the Approvals page's bulk selection."""
     with card():
-        a, b = st.columns([3, 2], vertical_alignment="center")
+        if pick:
+            p, a, b = st.columns([0.3, 3, 2], vertical_alignment="center")
+            p.checkbox("Pick", key=pick, label_visibility="collapsed", help="Pick to approve or reject together")
+        else:
+            a, b = st.columns([3, 2], vertical_alignment="center")
         sev = str(inc.get("severity") or "unknown").capitalize()
         a.markdown(
             f'<div class="inc-row"><div class="inc-head">'
@@ -1496,6 +1501,83 @@ def extension_card(r: dict, results: dict, managed: bool) -> None:
         st.error(f"Test failed: {result.get('error')}")
 
 
+def pick_key(inc_id) -> str:
+    # The round in the key lets one bump clear every tick after a bulk action (a drawn widget can't be reset).
+    return f"pick_{st.session_state.get('pick_round', 0)}_{inc_id}"
+
+
+def pick_all(ids: list[str], key: str) -> None:
+    for i in ids:
+        st.session_state[pick_key(i)] = st.session_state[key]
+
+
+def run_bulk(verb: str, items: list[dict], fn) -> None:
+    """Run one operator action on each picked incident; each goes to the audit log on its own, as a single click would."""
+    done, failed = [], []
+    for inc in items:
+        try:
+            fn(inc)
+            done.append(str(inc.get("id")))
+        except CoreError as exc:
+            failed.append((str(inc.get("id")), str(exc)))
+    st.session_state["flash"] = (sh.bulk_result(verb, done, failed), WARN_ICON if failed else OK_ICON)
+    st.session_state["pick_round"] = st.session_state.get("pick_round", 0) + 1
+    st.rerun(scope="fragment")
+
+
+def bulk_bar(picked: list[dict]) -> None:
+    """Buttons that act on every picked incident at once, with one reason for the whole group."""
+    op, off, ro = st.session_state.operator, locked(), why_locked()
+    split = sh.bulk_split(picked)
+    decide, contain = split["decide"], split["contain"]
+    with card():
+        parts = [f"{len(decide)} to approve or reject" if decide else "",
+                 f"{len(contain)} to keep or roll back" if contain else ""]
+        st.markdown(f'<div class="inc-head">{icon("checklist")}<b>{len(picked)} picked</b>'
+                    f'<span class="inc-sub">{" · ".join(p for p in parts if p)}</span></div>', unsafe_allow_html=True)
+        cols = iter(st.columns(2 * bool(decide) + 2 * bool(contain) + 1))
+        rnd = st.session_state.get("pick_round", 0)
+        if decide:
+            no_patch = protection_off()
+            note = f"Approved as a group of {len(decide)} from the dashboard"
+            if next(cols).button(f"Approve {len(decide)}", icon=":material/check:", type="primary", key="bulk_approve",
+                         width="stretch", disabled=off or no_patch,
+                         help=ro or ("Protection is off (monitor only): turn it on in Configuration to apply a hotpatch."
+                                     if no_patch else "Approve & patch each one, written to the audit log")):
+                def _approve(inc: dict) -> None:
+                    if sh.available_actions(inc)["ack"]:
+                        client.ack(str(inc.get("id")), op)
+                    client.decision(str(inc.get("id")), op, "approve", note)
+                run_bulk("Approved & patched", decide, _approve)
+            with next(cols).popover(f"Reject {len(decide)}", icon=":material/block:", width="stretch", disabled=off, help=ro):
+                just = st.text_input("Why (required, written to the audit log for each one)", key=f"bulk_rj_{rnd}",
+                                     placeholder="e.g. False positive: our penetration tester")
+                if st.button(f"Reject all {len(decide)}", key="bulk_reject", width="stretch", disabled=not just.strip()):
+                    def _reject(inc: dict) -> None:
+                        if sh.available_actions(inc)["ack"]:
+                            client.ack(str(inc.get("id")), op)
+                        client.decision(str(inc.get("id")), op, "reject", just.strip())
+                    run_bulk("Rejected", decide, _reject)
+        if contain:
+            if next(cols).button(f"Roll back {len(contain)}", icon=":material/undo:", key="bulk_rollback", width="stretch",
+                         disabled=off, help=ro or "Undo each of these blocks now"):
+                run_bulk("Rolled back", contain, lambda inc: client.rollback(
+                    str(inc.get("id")), op, f"Rolled back as a group of {len(contain)} by operator from dashboard"))
+            with next(cols).popover(f"Keep {len(contain)}", icon=":material/push_pin:", width="stretch", disabled=off, help=ro):
+                st.caption("These blocks will no longer expire on their own.")
+                just = st.text_input("Why (optional, written to the audit log for each one)", key=f"bulk_pj_{rnd}",
+                                     placeholder="e.g. Verified attackers")
+                if st.button(f"Keep all {len(contain)} forever", key="bulk_perm", type="primary", width="stretch"):
+                    run_bulk("Made permanent", contain, lambda inc: client.permanent(
+                        str(inc.get("id")), op, just.strip() or "Made permanent as a group by operator from dashboard"))
+        if next(cols).button("Clear", icon=":material/close:", key="bulk_clear", width="stretch"):
+            st.session_state["pick_round"] = st.session_state.get("pick_round", 0) + 1
+            st.rerun(scope="fragment")
+
+
+GROUP_ICONS = {"attacker": "person", "machine": "dns", "type": "category"}
+
+
 @st.fragment(run_every=AUTO)
 def page_approvals() -> None:
     show_flash()
@@ -1510,19 +1592,35 @@ def page_approvals() -> None:
         return
     st.markdown(f'<div class="lead">{icon("pending_actions")}<span>{html.escape(sh.approvals_headline(waiting))}</span></div>',
                 unsafe_allow_html=True)
-    for inc in waiting:
-        verb = "Approve or reject" if sh.available_actions(inc)["decide"] else "Keep or roll back"
+    by = sh.APPROVAL_GROUPS.get(st.segmented_control("Group by", list(sh.APPROVAL_GROUPS), key="appr_group") or "")
+    # Read-only roles see the list and the groups, but get no tick boxes: there is nothing they could do with them.
+    picking = not locked() and len(waiting) > 1
+    if picking:
+        picked = [i for i in waiting if st.session_state.get(pick_key(i.get("id")))]
+        if picked:
+            bulk_bar(picked)
+    for label, group in sh.group_approvals(waiting, by):
+        ids = [str(i.get("id")) for i in group]
+        if label:
+            section(html.escape(label), f"{len(group)} waiting", GROUP_ICONS.get(by, ""))
+        if picking and len(group) > 1:
+            key = f"pickall_{st.session_state.get('pick_round', 0)}_{by}_{label}"
+            st.session_state[key] = all(st.session_state.get(pick_key(i)) for i in ids)
+            st.checkbox(f"Pick all {len(group)}" + (f" from {label}" if label else ""), key=key,
+                        on_change=pick_all, args=(ids, key))
+        for inc in group:
+            verb = "Approve or reject" if sh.available_actions(inc)["decide"] else "Keep or roll back"
 
-        def details(inc=inc) -> None:
-            incident_summary(inc)
-            if inc.get("category") == "staff_report":
-                st.info("Someone at the business reported this. Read it and close it with a note under Staff reports; "
-                        "closing every report on it closes this incident too.", icon=":material/campaign:")
-                if st.button("Open Staff reports", key=f"to_staff_{inc.get('id')}", icon=":material/arrow_forward:"):
-                    go("staff")
-            decision_controls(inc)
-            table(sh.action_rows(inc), "No containment actions yet.")
-        incident_row(inc, "appr", verb, details)
+            def details(inc=inc) -> None:
+                incident_summary(inc)
+                if inc.get("category") == "staff_report":
+                    st.info("Someone at the business reported this. Read it and close it with a note under Staff reports; "
+                            "closing every report on it closes this incident too.", icon=":material/campaign:")
+                    if st.button("Open Staff reports", key=f"to_staff_{inc.get('id')}", icon=":material/arrow_forward:"):
+                        go("staff")
+                decision_controls(inc)
+                table(sh.action_rows(inc), "No containment actions yet.")
+            incident_row(inc, "appr", verb, details, pick=pick_key(inc.get("id")) if picking else None)
 
 
 STAFF_FILTERS = {"Open": "open", "New": "new", "Reviewing": "reviewing", "Resolved": "resolved",
