@@ -43,7 +43,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .risk import CATEGORIES, SEVERITIES
+from .risk import SEVERITIES, SEVERITY
 
 log = logging.getLogger("sentrai.routing")
 
@@ -343,7 +343,8 @@ def validate(data: Any) -> dict[str, Any]:
                 raise ValueError(f"rule {name!r}: can only match on {', '.join(MATCH_KEYS)}")
             values = [_text(x, f"rule {name!r} {key}") for x in _as_list(v)]
             values = [x for x in values if x]
-            known = {"category": CATEGORIES, "severity": SEVERITIES}.get(key)
+            # Every incident type the core makes (staff reports too, which the classifier never picks).
+            known = {"category": SEVERITY, "severity": SEVERITIES}.get(key)
             bad = [x for x in values if known is not None and x not in known]
             if bad:
                 raise ValueError(f"rule {name!r}: unknown {key} {', '.join(bad)}")

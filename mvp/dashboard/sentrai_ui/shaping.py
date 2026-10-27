@@ -1101,21 +1101,23 @@ def routing_from_editor(routing: Any) -> dict:
     """The editor's Save turned into the file POST /routing takes: people keyed by id in the order the
     editor lists them, text trimmed, and where each box sits on the map. The core checks it all again."""
     routing = routing if isinstance(routing, dict) else {}
+    part = lambda key, kind: routing.get(key) if isinstance(routing.get(key), kind) else kind()  # noqa: E731
     contacts = {}
-    for c in routing.get("contacts") or []:
+    for c in part("contacts", list):
         if isinstance(c, dict) and str(c.get("id") or "").strip():
             contacts[str(c["id"]).strip()] = {k: str(c.get(k) or "").strip()
                                                for k in ("name", "role", "email", "telegram", "backup")}
     rules = []
-    for r in routing.get("rules") or []:
+    for r in part("rules", list):
         if not isinstance(r, dict):
             continue
         match = r.get("match") if isinstance(r.get("match"), dict) else {}
         values = {str(k): [str(x).strip() for x in (v if isinstance(v, list) else [v]) if str(x or "").strip()]
                   for k, v in match.items()}
         rules.append({"name": str(r.get("name") or "").strip(), "match": {k: v for k, v in values.items() if v},
-                      "owner": str(r.get("owner") or ""), "notify": [str(x) for x in r.get("notify") or []]})
-    out = {"contacts": contacts, "rules": rules, "follow_up": dict(routing.get("follow_up") or {})}
+                      "owner": str(r.get("owner") or ""), "notify": [str(x) for x in r.get("notify") if x]
+                                                               if isinstance(r.get("notify"), list) else []})
+    out = {"contacts": contacts, "rules": rules, "follow_up": dict(part("follow_up", dict))}
     if isinstance(routing.get("layout"), dict):
         out["layout"] = routing["layout"]
     return out

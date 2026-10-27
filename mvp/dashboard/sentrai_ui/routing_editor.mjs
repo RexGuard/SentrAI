@@ -37,13 +37,34 @@ export function reserveKeys(doc) {
 
 // ------------------------------------------------------------------ the model
 
+const MATCH_ORDER = ["category", "severity", "host", "layer"];
+const matchRank = (k) => (MATCH_ORDER.includes(k) ? MATCH_ORDER.indexOf(k) : MATCH_ORDER.length);
+
+/** A rule's conditions without empty ones, always in the same key order (types, severity, machines, ...),
+    so unticking and ticking a box again leaves the rule as it was. */
 export function cleanMatch(match) {
   const out = {};
-  for (const [k, v] of Object.entries(match || {})) {
-    const values = list(v).map((x) => x.trim()).filter(Boolean);
+  const keys = Object.keys(match || {}).sort((a, b) => matchRank(a) - matchRank(b) || (a < b ? -1 : a > b ? 1 : 0));
+  for (const k of keys) {
+    const values = list(match[k]).map((x) => x.trim()).filter(Boolean);
     if (values.length) out[k] = values;
   }
   return out;
+}
+
+/** The same conditions, whatever order their values were ticked in. */
+export const sameMatch = (a, b) => JSON.stringify(sortedMatch(a)) === JSON.stringify(sortedMatch(b));
+const sortedMatch = (m) => Object.fromEntries(Object.entries(cleanMatch(m)).map(([k, v]) => [k, [...new Set(v)].sort()]));
+
+/** What the saved file would say, with the order of conditions and of "tells" ignored (it changes nothing):
+    the editor compares these to know whether anything is left to save. */
+export function signature(doc, pos) {
+  const r = toRouting(doc, pos);
+  for (const x of r.rules) {
+    x.match = sortedMatch(x.match);
+    x.notify = [...x.notify].sort();
+  }
+  return JSON.stringify(r);
 }
 
 /** GET /routing (contacts as a list, as Python sends them) as the editor's working copy. Rules get a key
@@ -107,10 +128,10 @@ export function ruleWhen(match, labels, short = false) {
   return parts.join(" · ");
 }
 
-/** A short id from the name (lee, lee-2, ...) that nobody has yet; the same as shaping.new_contact_id. */
-export function newContactId(doc, name) {
+/** A short id from the name (lee, lee-2, ...) that nobody has yet, nor any id in `reserved`. */
+export function newContactId(doc, name, reserved = []) {
   const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 30) || "person";
-  const ids = new Set(doc.contacts.map((c) => c.id));
+  const ids = new Set([...doc.contacts.map((c) => c.id), ...reserved]);
   let id = base;
   for (let n = 2; ids.has(id); n += 1) id = `${base}-${n}`;
   return id;
@@ -123,9 +144,11 @@ function freeName(taken, base) {
   return name;
 }
 
-export function addPerson(doc, name) {
+/** A new person called `name` (or "New person 2"...). `reserved`: ids not to reuse, such as those of people
+    removed since the last save, whose Telegram chat link the core keeps under that id. */
+export function addPerson(doc, name, reserved = []) {
   const fresh = freeName(doc.contacts.map((c) => c.name), name || "New person");
-  const id = newContactId(doc, fresh);
+  const id = newContactId(doc, fresh, reserved);
   doc.contacts.push({ id, name: fresh, role: "", email: "", telegram: "", backup: "" });
   return id;
 }
@@ -288,7 +311,7 @@ export function backupLoops(doc) {
       path.push(cur);
       cur = backup.get(cur);
     }
-    if (cur && path.includes(cur)) loops.push(path.slice(path.indexOf(cur)));
+    if (cur && path.includes(cur) && path.length - path.indexOf(cur) > 1) loops.push(path.slice(path.indexOf(cur)));
     path.forEach((x) => done.add(x));
   }
   return loops;
@@ -399,14 +422,19 @@ export function restackRules(doc, pos, size) {
   }
 }
 
+export const CONTACT_ID = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,39}$/; // the core's (routing.py)
+
 /** People added since the last save take their id from the name they ended up with (lee-tan, not the
-    new-person they started as). Returns copies, plus which ids changed. */
+    new-person they started as), never the id of someone saved before (even if removed now: the core keeps
+    their Telegram chat link under it). A saved id the core would refuse (a hand-edited file) is replaced
+    the same way. Returns copies, plus which ids changed. */
 export function settleIds(base, doc, pos) {
   const saved = new Set(base.contacts.map((c) => c.id));
-  const taken = { contacts: doc.contacts.filter((c) => saved.has(c.id)).map((c) => ({ id: c.id })) };
+  const keeps = (c) => saved.has(c.id) && CONTACT_ID.test(c.id);
+  const taken = { contacts: [...saved].map((id) => ({ id })) };
   const renamed = new Map();
   for (const c of doc.contacts) {
-    if (saved.has(c.id)) continue;
+    if (keeps(c)) continue;
     const id = newContactId(taken, c.name.trim() || "person");
     taken.contacts.push({ id });
     if (id !== c.id) renamed.set(c.id, id);
@@ -455,7 +483,7 @@ export function summarize(base, doc, labels) {
     const dropped = b.notify.filter((x) => !r.notify.includes(x)).map((x) => nameOf(base, x));
     if (added.length) out.push(`${name} now also tells ${added.join(", ")}`);
     if (dropped.length) out.push(`${name} no longer tells ${dropped.join(", ")}`);
-    if (JSON.stringify(cleanMatch(b.match)) !== JSON.stringify(cleanMatch(r.match))) {
+    if (!sameMatch(b.match, r.match)) {
       out.push(`${name} now catches ${ruleWhen(r.match, labels) || "everything"}`);
     }
   }
@@ -652,8 +680,11 @@ class Editor {
     const result = data.result;
     if (this.pending && result && result.id === this.pending.id) {
       clearTimeout(this.pending.timer);
+      const { renamed } = this.pending;
       this.pending = null;
       if (result.ok) {
+        const was = this.sel && this.sel.kind === "person" ? this.sel.key.slice(2) : null;
+        if (was && renamed.has(was)) this.sel = { kind: "person", key: pkey(renamed.get(was)) };
         this.adopt(data, true);
         this.say(result.message || "Saved.");
       } else {
@@ -724,7 +755,7 @@ class Editor {
   }
 
   sig() {
-    return JSON.stringify(toRouting(this.doc, this.pos));
+    return signature(this.doc, this.pos);
   }
 
   /** Unsaved changes from before a page switch or reload, made on top of this same saved version. */
@@ -789,7 +820,7 @@ class Editor {
   change(fn) {
     const snap = this.snapshot();
     const said = fn();
-    if (said === false || this.sig() === JSON.stringify(toRouting(snap.doc, snap.pos))) {
+    if (said === false || this.sig() === signature(snap.doc, snap.pos)) {
       this.render();
       return false;
     }
@@ -883,7 +914,7 @@ class Editor {
     if (what === "add-person") {
       let cid;
       this.change(() => {
-        cid = addPerson(d, "New person");
+        cid = addPerson(d, "New person", this.base.contacts.map((c) => c.id));
         this.renderNodes();
         placeMissing(d, this.pos, (k) => this.size(k));
         this.sel = { kind: "person", key: pkey(cid) };
@@ -907,10 +938,7 @@ class Editor {
     const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
     const summary = summaryText(summarize(this.base, this.doc, this.labels));
     const settled = settleIds(this.base, this.doc, this.pos);
-    if (this.sel && this.sel.kind === "person" && settled.renamed.has(this.sel.key.slice(2))) {
-      this.sel = { kind: "person", key: pkey(settled.renamed.get(this.sel.key.slice(2))) };
-    }
-    this.pending = { id, timer: setTimeout(() => {
+    this.pending = { id, renamed: settled.renamed, timer: setTimeout(() => {
       if (this.pending && this.pending.id === id) {
         this.pending = null;
         this.error = "No answer from the console. Check that it is still running, then save again.";
@@ -1354,7 +1382,7 @@ class Editor {
         h("li", {}, "Keyboard: arrow keys move the focused box (up and down change a rule's turn), Delete removes it, Ctrl+Z undoes."))];
     return [
       h("p", { class: "re-ptitle" }, "Follow-up"),
-      h("p", { class: "re-help" }, "For every incident. Select a rule or a person on the map to change it."),
+      h("p", { class: "re-help" }, this.readOnly ? "For every incident." : "For every incident. Select a rule or a person on the map to change it."),
       num("re-f-after", "Unanswered reminders before the backup takes over", "escalate_after_reminders", { min: 1, max: 20, step: 1 }),
       num("re-f-most", "Hand an incident on at most this many times", "max_escalations", { min: 0, max: 20, step: 1 }),
       num("re-f-hours", "Remind the owner after this many hours when acknowledged but not resolved", "resolve_within_hours",
@@ -1633,8 +1661,7 @@ class Editor {
         this.stackRules(g.top);
       }
       if (g.moved && !cancelled) {
-        const before = JSON.stringify(toRouting(g.snap.doc, g.snap.pos));
-        if (this.sig() !== before) {
+        if (this.sig() !== signature(g.snap.doc, g.snap.pos)) {
           this.push(g.snap);
           const order = JSON.stringify(g.snap.doc.rules.map((r) => r.key)) !== JSON.stringify(this.doc.rules.map((r) => r.key));
           if (order) {
@@ -1676,7 +1703,7 @@ class Editor {
     // Dropped on empty space: a new person there, already connected.
     let cid;
     this.change(() => {
-      cid = addPerson(d, "New person");
+      cid = addPerson(d, "New person", this.base.contacts.map((c) => c.id));
       this.renderNodes();
       const sz = this.size(pkey(cid));
       this.pos[pkey(cid)] = { x: Math.round(g.at.x), y: Math.round(g.at.y - sz.h / 2) };
