@@ -14,8 +14,8 @@ def site(tmp_path, monkeypatch):
     (root / "img" / "logo.png").write_bytes(bytes(range(256)) * 10)
     (root / "__pycache__").mkdir()
     (root / "__pycache__" / "x.pyc").write_bytes(b"skip me")
-    monkeypatch.setenv("CACTAI_BACKUP_PATHS", str(root))
-    monkeypatch.setenv("CACTAI_BACKUP_DIR", str(tmp_path / "backups"))
+    monkeypatch.setenv("SENTRAI_BACKUP_PATHS", str(root))
+    monkeypatch.setenv("SENTRAI_BACKUP_DIR", str(tmp_path / "backups"))
     return root
 
 
@@ -30,7 +30,7 @@ def test_backup_takes_folders_and_sentrai_data(client, site, tmp_path):
     assert b["ok"], b
     names = {f["name"] for f in json.loads(
         tarfile.open(tmp_path / "backups" / f"{b['id']}.tar.gz").extractfile("manifest.json").read())["files"]}
-    assert {"files/0/index.php", "files/0/img/logo.png", "sentrai/data/cactai.db"} <= names
+    assert {"files/0/index.php", "files/0/img/logo.png", "sentrai/data/sentrai.db"} <= names
     assert not any("__pycache__" in n for n in names)
     status = client.get("/backups").json()
     assert status["backups"][0]["id"] == b["id"] and "real_roots" not in status["backups"][0]
@@ -59,7 +59,7 @@ def test_restore_to_new_folder_changes_nothing_live(client, site):
     restored = client.core.settings.db_path.parent / "restores"
     copies = list(restored.glob(f"{b['id']}-*/files/0-www/index.php"))
     assert copies and copies[0].read_text() == "<?php echo 'hello';"
-    assert list(restored.glob(f"{b['id']}-*/sentrai/data/cactai.db"))
+    assert list(restored.glob(f"{b['id']}-*/sentrai/data/sentrai.db"))
     rec = [r for r in client.core.audit.records() if r["type"] == "backup_restored"][-1]["data"]
     assert rec["ok"] and rec["operator"] == "erick"
 
@@ -80,8 +80,8 @@ def test_in_place_restore_needs_confirmation_and_takes_safety_backup(client, sit
 
 
 def test_failed_backup_alerts(client, tmp_path, monkeypatch):
-    monkeypatch.setenv("CACTAI_BACKUP_PATHS", str(tmp_path / "nope"))
-    monkeypatch.setenv("CACTAI_BACKUP_DIR", str(tmp_path / "backups"))
+    monkeypatch.setenv("SENTRAI_BACKUP_PATHS", str(tmp_path / "nope"))
+    monkeypatch.setenv("SENTRAI_BACKUP_DIR", str(tmp_path / "backups"))
     client.core.profile = {"backup": {"include_sentrai": False}}
     out = backup(client)
     assert not out["ok"] and "nothing to back up" in out["error"]
@@ -90,7 +90,7 @@ def test_failed_backup_alerts(client, tmp_path, monkeypatch):
 
 
 def test_keeps_only_the_newest(client, site, monkeypatch):
-    monkeypatch.setenv("CACTAI_BACKUP_KEEP", "2")
+    monkeypatch.setenv("SENTRAI_BACKUP_KEEP", "2")
     ids = [backup(client)["id"] for _ in range(3)]
     left = [b["id"] for b in client.get("/backups").json()["backups"]]
     assert left == [ids[2], ids[1]]
@@ -102,7 +102,7 @@ def test_bad_ids_are_refused(client, site):
 
 
 def test_copy_to_second_place(client, site, tmp_path, monkeypatch):
-    monkeypatch.setenv("CACTAI_BACKUP_COPY_TO", str(tmp_path / "usb"))
+    monkeypatch.setenv("SENTRAI_BACKUP_COPY_TO", str(tmp_path / "usb"))
     b = backup(client)
     assert b["copy"]["ok"] and (tmp_path / "usb" / f"{b['id']}.tar.gz").is_file()
 

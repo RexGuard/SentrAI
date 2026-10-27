@@ -38,6 +38,7 @@ sys.path.insert(0, str(EVAL_DIR.parent / "core"))
 from app.classifier import (  # noqa: E402
     ClassifierChain,
     FallbackClassifier,
+    JevCache,
     JevClassifier,
     RulesClassifier,
 )
@@ -85,12 +86,14 @@ def predictors(jev: JevClient | None) -> dict[str, Callable[[], Callable[[dict],
 
     out = {"rules": rules_only, "fallback": fallback_only, "chain": chain}
     if jev is not None:
+        # No template cache here: it only saves calls in production, and with it every repeat of
+        # a line (e.g. a failed login, benign once and brute force later) would reuse the first answer.
         def jev_only():
-            j = JevClassifier(jev)
+            j = JevClassifier(jev, JevCache(size=0))
             return lambda ev: _out(j.classify(ev, _ts(ev)))
 
         def chain_jev():
-            ch = ClassifierChain(RulesClassifier(RulesEngine()), JevClassifier(jev), FallbackClassifier())
+            ch = ClassifierChain(RulesClassifier(RulesEngine()), JevClassifier(jev, JevCache(size=0)), FallbackClassifier())
             return lambda ev: _out(ch.classify(ev, _ts(ev)))
 
         out["jev"] = jev_only
@@ -167,7 +170,7 @@ def to_markdown(res: dict[str, Any]) -> str:
         "# SentrAI classifier accuracy",
         "",
         f"{res['events']} labelled events ({', '.join(f'{v} {k}' for k, v in res['by_origin'].items())}). "
-        "Built by `eval/build_dataset.py`, scored by `eval/evaluate.py`.",
+        "A fixed set, scored by `eval/evaluate.py`.",
         f"Jev: {res['jev_status']}.",
         "",
         "## Headline",

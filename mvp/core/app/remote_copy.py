@@ -245,15 +245,15 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m app.remote_copy", description="Compare with the off-box copy.")
     sub = ap.add_subparsers(dest="cmd", required=True)
     c = sub.add_parser("compare", help="check the audit record here against the witness's copy")
-    c.add_argument("--url", help="witness URL (default: CACTAI_REMOTE_COPY_URL)")
-    c.add_argument("--read-token-file", type=Path, help="the witness's read token (default: CACTAI_WITNESS_READ_TOKEN)")
+    c.add_argument("--url", help="witness URL (default: SENTRAI_REMOTE_COPY_URL)")
+    c.add_argument("--read-token-file", type=Path, help="the witness's read token (default: SENTRAI_WITNESS_READ_TOKEN)")
     c.add_argument("--stream", help="witness stream (default: this host's current chain)")
     c.add_argument("--db", type=Path)
     args = ap.parse_args(argv)
     s = Settings()
     url = args.url or s.remote_copy_url
     token = (args.read_token_file.read_text(encoding="utf-8").strip() if args.read_token_file
-             else _secret("CACTAI_WITNESS_READ_TOKEN"))
+             else _secret("SENTRAI_WITNESS_READ_TOKEN"))
     if not url or not token:
         print("needs the witness URL and its read token (--url, --read-token-file)", file=sys.stderr)
         return 2

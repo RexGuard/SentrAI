@@ -66,4 +66,5 @@ Before you turn on firewall blocking, add your own IP address to the protected I
 
 ## Next
 
-To keep SentrAI watching a machine around the clock, [install it on a server](server.html).
+To keep SentrAI watching a machine around the clock, [install it on a server](server.html). A
+laptop can also report to a server you already run, with the [agent](panel.html#on-a-laptop-without-a-service).

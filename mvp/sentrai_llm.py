@@ -9,13 +9,13 @@ Providers:
   anthropic  ANTHROPIC_API_KEY  Claude, through the ``anthropic`` package
   openai     OPENAI_API_KEY     OpenAI, through the ``openai`` package
   deepseek   DEEPSEEK_API_KEY   DeepSeek's OpenAI-compatible API (``openai`` package)
-  commandcode COMMANDCODE_API_KEY  Command Code's OpenAI-compatible API (needs CACTAI_LLM_MODEL)
-  compatible CACTAI_LLM_BASE_URL: any other OpenAI-compatible service
+  commandcode COMMANDCODE_API_KEY  Command Code's OpenAI-compatible API (needs SENTRAI_LLM_MODEL)
+  compatible SENTRAI_LLM_BASE_URL: any other OpenAI-compatible service
 
-The setup wizard keeps one key for all of them: CACTAI_LLM_API_KEY is used by whichever
-provider CACTAI_LLM_PROVIDER names (a provider's own variable above still wins when set).
+The setup wizard keeps one key for all of them: SENTRAI_LLM_API_KEY is used by whichever
+provider SENTRAI_LLM_PROVIDER names (a provider's own variable above still wins when set).
 "auto" (the default) takes the first provider whose own key is set, in the order above.
-CACTAI_LLM_MODEL overrides the provider's default model; ``list_models()`` asks the provider
+SENTRAI_LLM_MODEL overrides the provider's default model; ``list_models()`` asks the provider
 which models the key can use.
 """
 from __future__ import annotations
@@ -28,14 +28,16 @@ import urllib.request
 from dataclasses import dataclass, field
 from typing import Any
 
+import sentrai_env  # noqa: F401  (old CACTAI_* names still work)
+
 PROVIDERS = ("anthropic", "openai", "deepseek", "commandcode", "compatible")
 KEY_ENV = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY", "deepseek": "DEEPSEEK_API_KEY",
-           "commandcode": "COMMANDCODE_API_KEY", "compatible": "CACTAI_LLM_API_KEY"}
+           "commandcode": "COMMANDCODE_API_KEY", "compatible": "SENTRAI_LLM_API_KEY"}
 DEFAULT_MODEL = {"anthropic": "claude-opus-5", "openai": "gpt-5", "deepseek": "deepseek-chat", "commandcode": "",
                  "compatible": ""}
 LABEL = {"anthropic": "Anthropic (Claude)", "openai": "OpenAI", "deepseek": "DeepSeek", "commandcode": "Command Code",
          "compatible": "Other OpenAI-compatible service"}
-GENERIC_KEY_ENV = "CACTAI_LLM_API_KEY"
+GENERIC_KEY_ENV = "SENTRAI_LLM_API_KEY"
 BASE_URL = {"anthropic": "https://api.anthropic.com", "openai": "https://api.openai.com/v1", "deepseek": "https://api.deepseek.com", "commandcode": "https://api.commandcode.ai/provider/v1"}
 
 
@@ -58,29 +60,29 @@ class Turn:
 
 
 def api_key(name: str) -> str | None:
-    """The key for one provider: its own variable, else the shared CACTAI_LLM_API_KEY."""
+    """The key for one provider: its own variable, else the shared SENTRAI_LLM_API_KEY."""
     return os.getenv(KEY_ENV[name]) or os.getenv(GENERIC_KEY_ENV) or None
 
 
 def provider_name() -> str | None:
     """The provider to use, or None when no key is configured."""
-    choice = os.getenv("CACTAI_LLM_PROVIDER", "auto").strip().lower() or "auto"
+    choice = os.getenv("SENTRAI_LLM_PROVIDER", "auto").strip().lower() or "auto"
     if choice != "auto":
         return choice if choice in PROVIDERS and api_key(choice) else None
     if os.getenv("ANTHROPIC_AUTH_TOKEN"):
         return "anthropic"
     name = next((p for p in PROVIDERS if os.getenv(KEY_ENV[p])), None)
     if name == "compatible" and os.getenv(GENERIC_KEY_ENV, "").startswith("sk-ant-") \
-            and not os.getenv("CACTAI_LLM_BASE_URL"):
+            and not os.getenv("SENTRAI_LLM_BASE_URL"):
         return "anthropic"  # a Claude key in the shared field, with no other service named
     return name
 
 
 def off_reason() -> str:
     """Why from_env() has no provider, in words a person can act on."""
-    choice = os.getenv("CACTAI_LLM_PROVIDER", "auto").strip().lower() or "auto"
+    choice = os.getenv("SENTRAI_LLM_PROVIDER", "auto").strip().lower() or "auto"
     if choice != "auto" and choice not in PROVIDERS:
-        return f"unknown provider {choice!r} in CACTAI_LLM_PROVIDER"
+        return f"unknown provider {choice!r} in SENTRAI_LLM_PROVIDER"
     if choice != "auto":
         return f"no API key for {LABEL[choice]}: enter one under Configuration, section 5"
     return "no API key set: enter one under Configuration, section 5"
@@ -98,7 +100,7 @@ def from_env(effort: str = "medium", timeout_s: float = 120.0) -> "Provider | No
     name = provider_name()
     if name is None:
         return None
-    return build(name, api_key(name), os.getenv("CACTAI_LLM_MODEL"), os.getenv("CACTAI_LLM_BASE_URL"),
+    return build(name, api_key(name), os.getenv("SENTRAI_LLM_MODEL"), os.getenv("SENTRAI_LLM_BASE_URL"),
                  effort=effort, timeout_s=timeout_s)
 
 
@@ -113,7 +115,7 @@ def build(name: str, key: str | None, model: str | None = None, base_url: str | 
     model = model or DEFAULT_MODEL[name]
     base_url = base_url or BASE_URL.get(name)
     if name != "anthropic" and (not model or (name == "compatible" and not base_url)):
-        raise LLMError(f"the {name} provider needs CACTAI_LLM_MODEL" + (" and CACTAI_LLM_BASE_URL" if name == "compatible" else ""))
+        raise LLMError(f"the {name} provider needs SENTRAI_LLM_MODEL" + (" and SENTRAI_LLM_BASE_URL" if name == "compatible" else ""))
     try:
         if name == "anthropic":
             return AnthropicProvider(model=model, effort=effort, timeout_s=timeout_s, api_key=key)
@@ -197,7 +199,7 @@ def list_models(name: str, key: str, base_url: str | None = None, timeout_s: flo
 
 
 def _get_json(url: str, headers: dict[str, str], timeout_s: float) -> dict[str, Any]:
-    req = urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": "cactai", **headers})
+    req = urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": "sentrai", **headers})
     try:
         with urllib.request.urlopen(req, timeout=timeout_s) as r:
             data = json.loads(r.read().decode("utf-8"))

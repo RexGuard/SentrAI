@@ -1,5 +1,5 @@
 classifier,category,precision,recall,f1,support
-rules,benign,0.762,0.744,0.753,86
+rules,benign,0.759,0.750,0.754,88
 rules,brute_force,1.000,0.565,0.722,46
 rules,sql_injection,1.000,1.000,1.000,14
 rules,xss,1.000,1.000,1.000,5
@@ -9,9 +9,9 @@ rules,data_exfiltration,1.000,1.000,1.000,11
 rules,misconfiguration,1.000,1.000,1.000,5
 rules,log_tampering,1.000,1.000,1.000,9
 rules,malware,1.000,0.800,0.889,5
-rules,prompt_injection,0.000,0.000,0.000,0
-rules,MACRO,,,0.931,196
-fallback,benign,0.503,0.977,0.664,86
+rules,prompt_injection,1.000,0.750,0.857,4
+rules,MACRO,,,0.925,202
+fallback,benign,0.497,0.977,0.659,88
 fallback,brute_force,0.000,0.000,0.000,46
 fallback,sql_injection,1.000,0.429,0.600,14
 fallback,xss,1.000,1.000,1.000,5
@@ -21,9 +21,9 @@ fallback,data_exfiltration,0.500,0.091,0.154,11
 fallback,misconfiguration,0.800,0.800,0.800,5
 fallback,log_tampering,0.000,0.000,0.000,9
 fallback,malware,1.000,0.600,0.750,5
-fallback,prompt_injection,0.000,0.000,0.000,0
-fallback,MACRO,,,0.538,196
-chain,benign,0.811,1.000,0.896,86
+fallback,prompt_injection,0.000,0.000,0.000,4
+fallback,MACRO,,,0.489,202
+chain,benign,0.807,1.000,0.893,88
 chain,brute_force,1.000,0.565,0.722,46
 chain,sql_injection,1.000,1.000,1.000,14
 chain,xss,1.000,1.000,1.000,5
@@ -33,5 +33,5 @@ chain,data_exfiltration,1.000,1.000,1.000,11
 chain,misconfiguration,1.000,1.000,1.000,5
 chain,log_tampering,1.000,1.000,1.000,9
 chain,malware,1.000,1.000,1.000,5
-chain,prompt_injection,0.000,0.000,0.000,0
-chain,MACRO,,,0.962,196
+chain,prompt_injection,1.000,0.750,0.857,4
+chain,MACRO,,,0.952,202

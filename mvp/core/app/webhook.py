@@ -2,14 +2,14 @@
 collector. `POST /webhook/<name>` maps each JSON object onto the `POST /events` contract
 (CONTRACT.md) and ingests it like any other event.
 
-How fields are found, per contract field: the source's own map first (CACTAI_WEBHOOK_MAPS), then
+How fields are found, per contract field: the source's own map first (SENTRAI_WEBHOOK_MAPS), then
 the common key names below. A map value is a dotted path ("data.srcip"), a list of paths (first one
 present wins) or a fixed value starting with "=" ("=os"):
 
-    CACTAI_WEBHOOK_MAPS='{"wazuh": {"src_ip": "data.srcip", "raw": "full_log", "layer": "=os",
+    SENTRAI_WEBHOOK_MAPS='{"wazuh": {"src_ip": "data.srcip", "raw": "full_log", "layer": "=os",
                                     "host": "agent.name", "timestamp": "timestamp"}}'
 
-CACTAI_WEBHOOK_MAPS may also be the path of a JSON file holding the same object.
+SENTRAI_WEBHOOK_MAPS may also be the path of a JSON file holding the same object.
 
 The sender writes everything here, so nothing is trusted: the source is always "webhook_<name>"
 (it cannot pose as a heartbeat, tripwire or integrity check), events never carry a line chain,
@@ -51,8 +51,8 @@ class WebhookError(ValueError):
 
 
 def load_maps(value: str | None = None) -> dict[str, dict[str, Any]]:
-    """CACTAI_WEBHOOK_MAPS: inline JSON, or the path of a JSON file. Bad input means no maps."""
-    value = (os.getenv("CACTAI_WEBHOOK_MAPS", "") if value is None else value).strip()
+    """SENTRAI_WEBHOOK_MAPS: inline JSON, or the path of a JSON file. Bad input means no maps."""
+    value = (os.getenv("SENTRAI_WEBHOOK_MAPS", "") if value is None else value).strip()
     if not value:
         return {}
     try:

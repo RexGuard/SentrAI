@@ -33,7 +33,7 @@ def wit(tmp_path):
 
 
 def _audit(tmp_path, n=5):
-    log = AuditLog(tmp_path / "core" / "cactai.db")
+    log = AuditLog(tmp_path / "core" / "sentrai.db")
     for i in range(n):
         log.append("event_classified", {"i": i, "raw": f"Failed password for root from 203.0.113.{i}"},
                    f"2026-10-02T10:00:{i:02d}Z")
@@ -173,7 +173,7 @@ def test_unreachable_witness_keeps_lines_until_it_is_back(tmp_path, wit, monkeyp
 
 
 def test_core_sends_as_it_goes_and_opens_an_incident_on_refusal(tmp_path, wit):
-    s = Settings(db_path=tmp_path / "core" / "cactai.db", background=False, remote_copy_url=wit.url,
+    s = Settings(db_path=tmp_path / "core" / "sentrai.db", background=False, remote_copy_url=wit.url,
                  remote_copy_token=APPEND)
     core = Saguaro(s)
     try:

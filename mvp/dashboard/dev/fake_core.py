@@ -340,6 +340,11 @@ def fleet_agents():
         return list(S.agents.values())
 
 
+@app.get("/fleet/panel")
+def fleet_panel():
+    return {"panel_url": os.environ.get("SENTRAI_PANEL_URL", "").rstrip("/"), "pin": ""}
+
+
 @app.post("/fleet/join-codes")
 def fleet_join_code(body: dict = Body(...)):
     with lock:
@@ -455,13 +460,40 @@ ROUTING = {"source": "defaults", "contacts": [
     {"id": "team_lead", "name": "Team lead", "role": "team_lead", "email": "", "telegram": "", "backup": "it_manager"},
     {"id": "it_manager", "name": "IT manager", "role": "it_manager", "email": "", "telegram": "", "backup": "cxo"},
     {"id": "cxo", "name": "CXO", "role": "cxo", "email": "", "telegram": "", "backup": ""}],
-    "rules": [{"name": "Everything else", "match": {}, "owner": "on_duty", "notify": []}],
+    "rules": [{"name": "Critical", "match": {"severity": ["critical"]}, "owner": "on_duty",
+               "notify": ["team_lead", "it_manager", "cxo"]},
+              {"name": "Attacker inside", "match": {"category": ["malware", "data_exfiltration", "log_tampering",
+                                                                 "privilege_escalation"]},
+               "owner": "on_duty", "notify": ["team_lead", "it_manager"]},
+              {"name": "High", "match": {"severity": ["high"]}, "owner": "on_duty", "notify": ["team_lead"]},
+              {"name": "Everything else", "match": {}, "owner": "on_duty", "notify": []}],
     "follow_up": {"escalate_after_reminders": 2, "max_escalations": 3, "resolve_within_hours": 24}}
 
 
 @app.get("/routing")
 def routing():
     return {**ROUTING, "contacts": [{**c, "telegram_linked": c["id"] in TG_LINKS} for c in ROUTING["contacts"]]}
+
+
+@app.post("/routing")
+def save_routing(body: dict = Body(...)):
+    new = body.get("routing") or {}
+    contacts = new.get("contacts") or {}
+    if not contacts:
+        raise HTTPException(400, "keep at least one person in the routing")
+    for r in new.get("rules") or []:
+        if r.get("owner") not in contacts:
+            raise HTTPException(400, f"rule {r.get('name')!r} needs an owner who is one of the people")
+    ROUTING.update(source="routing.json (fake core)", follow_up=new.get("follow_up") or ROUTING["follow_up"],
+                   contacts=[{"id": k, **{f: str(v.get(f) or "") for f in ("name", "role", "email", "telegram", "backup")}}
+                             for k, v in contacts.items()],
+                   rules=[{"name": r.get("name"), "match": r.get("match") or {}, "owner": r.get("owner"),
+                           "notify": [x for x in r.get("notify") or [] if x != r.get("owner")]}
+                          for r in new.get("rules") or []])
+    if not ROUTING["rules"] or ROUTING["rules"][-1]["match"]:
+        ROUTING["rules"].append({"name": "Everything else", "match": {}, "owner": ROUTING["contacts"][0]["id"],
+                                 "notify": []})
+    return routing()
 
 
 TG_LINKS: dict = {}  # contact id -> chat id
@@ -627,7 +659,7 @@ FAKE_INTEGRATIONS = [
      "docs": "https://developers.cloudflare.com/fundamentals/api/get-started/create-token/"},
     {"name": "webhook", "title": "Any other system (webhook)", "kind": "Blocking", "configured": False, "testable": False,
      "what": "Sends each block and its removal to a URL you choose: n8n, Zapier, a router, a SOAR.",
-     "detail": "Set a URL to hand blocks to another system.", "settings": ["CACTAI_RESPONDER_WEBHOOK_URL"], "docs": ""},
+     "detail": "Set a URL to hand blocks to another system.", "settings": ["SENTRAI_RESPONDER_WEBHOOK_URL"], "docs": ""},
     {"name": "abuseipdb", "title": "AbuseIPDB", "kind": "Lookups", "configured": True, "testable": True,
      "what": "Shows how often other people have reported an attacking address, on each incident.",
      "detail": "14 lookup(s) since start, answers kept 24 h", "settings": ["ABUSEIPDB_API_KEY"],
@@ -701,7 +733,7 @@ FAKE_SCAN = {
     "platform": "Windows", "enabled": True, "scanned": 142, "skipped_protected": 3, "recognised": 3, "error": None,
     "notes": ["MySQL / MariaDB database: The error log shows failed logins only when log_error_verbosity is 3."],
     "processes": [{"pid": 1200, "name": "python.exe", "program": "SentrAI lab: fake student portal", "layer": "web",
-                   "path": "~\\cactai\\mvp\\lab\\.venv\\Scripts\\python.exe", "account": "(user)", "service": "",
+                   "path": "~\\sentrai\\mvp\\lab\\.venv\\Scripts\\python.exe", "account": "(user)", "service": "",
                    "log_options": []},
                   {"pid": 1300, "name": "nginx.exe", "program": "nginx web server", "layer": "web",
                    "path": "C:\\nginx-1.27\\nginx.exe", "account": "(user)", "service": "", "log_options": []}],
@@ -710,7 +742,7 @@ FAKE_SCAN = {
          "format": "text", "reasons": ["next to the program"], "files_found": 2, "already_watched": False,
          "files": [{"id": "s1f1", "name": "access.log", "size": 20480, "modified": "2026-09-28T20:01:00", "watched": False},
                    {"id": "s1f2", "name": "error.log", "size": 512, "modified": "2026-09-28T19:00:00", "watched": False}]},
-        {"id": "s2", "path": "~\\cactai\\mvp\\lab\\logs", "kind": "folder", "program": "SentrAI lab: fake student portal",
+        {"id": "s2", "path": "~\\sentrai\\mvp\\lab\\logs", "kind": "folder", "program": "SentrAI lab: fake student portal",
          "layer": "web", "format": "jsonl", "reasons": ["logs folder of the app"], "files_found": 1, "already_watched": True,
          "files": [{"id": "s2f1", "name": "access.jsonl", "size": 4096, "modified": "2026-09-28T20:02:00", "watched": True}]},
     ],

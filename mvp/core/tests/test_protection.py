@@ -102,6 +102,6 @@ def test_switch_survives_reset_and_restart(tmp_path):
     with TestClient(create_app(Settings(db_path=tmp_path / "p.db", background=False)), headers=AUTH) as c:
         p = c.get("/protection").json()
         assert p["monitor_only"] is True and p["changed_by"] == "erick"
-    # An explicit CACTAI_MONITOR_ONLY wins at start.
+    # An explicit SENTRAI_MONITOR_ONLY wins at start.
     with TestClient(create_app(Settings(db_path=tmp_path / "p.db", background=False, monitor_only="0")), headers=AUTH) as c:
         assert c.get("/protection").json()["monitor_only"] is False

@@ -18,7 +18,7 @@ Keys are saved in your settings file (never in the code) under **Configuration**
 | Cloudflare | Blocks an attacker at Cloudflare's edge, before it reaches your site | `CLOUDFLARE_API_TOKEN` |
 | AbuseIPDB | Shows how often others have reported the attacking address | `ABUSEIPDB_API_KEY` |
 | Slack | Posts a copy of every alert in a channel | `SLACK_WEBHOOK_URL` |
-| Any other system | Sends each block and its removal to a URL (n8n, Zapier, a router) | `CACTAI_RESPONDER_WEBHOOK_URL` |
+| Any other system | Sends each block and its removal to a URL (n8n, Zapier, a router) | `SENTRAI_RESPONDER_WEBHOOK_URL` |
 
 ## Cloudflare
 
@@ -75,6 +75,6 @@ dashboard.
 
 ## Any other system
 
-`CACTAI_RESPONDER_WEBHOOK_URL` sends every block and its removal as signed JSON to a URL you
+`SENTRAI_RESPONDER_WEBHOOK_URL` sends every block and its removal as signed JSON to a URL you
 choose. Use it to reach a service SentrAI does not connect to yet, through n8n, Zapier or Make.
-`CACTAI_RESPONDER_WEBHOOK_SECRET` signs each request so the receiver can check it came from SentrAI.
+`SENTRAI_RESPONDER_WEBHOOK_SECRET` signs each request so the receiver can check it came from SentrAI.

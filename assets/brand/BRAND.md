@@ -36,7 +36,7 @@ Head snippet for a web page:
 
 ## Colour
 
-Dark values are the Risk Console's own (`mvp/dashboard/cactai_ui/console.css`), so the site, console, alerts and reports share one palette.
+Dark values are the Risk Console's own (`mvp/dashboard/sentrai_ui/console.css`), so the site, console, alerts and reports share one palette.
 
 | Token | White | Black | Role |
 |---|---|---|---|
@@ -62,7 +62,7 @@ Logo colours (the logo keeps them in both themes and with every accent): indigo 
 
 Rules:
 - The UI is black and white; the violet logo and the accent picked in the console are the only other colours. Green, amber and red mean risk and nothing else.
-- The console's accent is set in Configuration > Appearance: Mono, Violet, Blue or a custom colour. `mvp/dashboard/cactai_ui/theme.py` derives readable shades from it.
+- The console's accent is set in Configuration > Appearance: Mono, Violet, Blue or a custom colour. `mvp/dashboard/sentrai_ui/theme.py` derives readable shades from it.
 - Text colours pass WCAG AA (4.5:1) on `--sn-bg` and `--sn-surface` in both themes.
 - Black is the default for the console, slides and alerts. The website follows the visitor's OS setting.
 
@@ -97,4 +97,4 @@ Taglines:
 
 ## Internal names
 
-Code-level names stay as they are: `CACTAI_*` env vars, `cactai_*` modules, `~/.cactai`, service names, and the agent names Saguaro, Needle, Cyanide and cactus spines. Only what a person sees uses SentrAI.
+Code-level names stay as they are: `SENTRAI_*` env vars, `sentrai_*` modules, `~/.sentrai`, service names, and the agent names Saguaro, Needle, Cyanide and cactus spines. Only what a person sees uses SentrAI.

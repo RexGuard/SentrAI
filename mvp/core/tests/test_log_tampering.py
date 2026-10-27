@@ -29,7 +29,7 @@ SUDO = "sudo:  deploy : TTY=pts/1 ; PWD=/root ; USER=root ; COMMAND="
     SUDO + "/usr/bin/chattr -a /var/log/secure",
     SUDO + "/usr/bin/sed -i /203.0.113.70/d /var/log/auth.log",
     SUDO + "/usr/bin/truncate -s 0 /var/log/nginx/access.log",
-    SUDO + "/usr/bin/rm -rf /var/lib/cactai/cactai.db",
+    SUDO + "/usr/bin/rm -rf /var/lib/sentrai/sentrai.db",
     "bash history: history -c && unset HISTFILE",
     "shred -u /root/.bash_history",
     ": > /var/log/wtmp",

@@ -14,7 +14,7 @@ from .conftest import AUTH, ev
 
 @pytest.fixture
 def panel(tmp_path):
-    settings = Settings(db_path=tmp_path / "cactai.db", background=False, demo_speed=60.0, risk_scope="host")
+    settings = Settings(db_path=tmp_path / "sentrai.db", background=False, demo_speed=60.0, risk_scope="host")
     app = create_app(settings)
     with TestClient(app, headers=AUTH) as c:
         c.core = app.state.core  # type: ignore[attr-defined]

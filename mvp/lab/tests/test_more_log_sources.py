@@ -18,9 +18,9 @@ SAMPLES = Path(__file__).resolve().parent / "samples"
 
 @pytest.fixture(autouse=True)
 def _env(monkeypatch, tmp_path):
-    monkeypatch.setenv("CACTAI_LOG_TZ", "+08:00")
-    monkeypatch.setenv("CACTAI_HOST", "vps-real")
-    monkeypatch.setenv("CACTAI_COLLECTOR_STATE", str(tmp_path / "state.json"))
+    monkeypatch.setenv("SENTRAI_LOG_TZ", "+08:00")
+    monkeypatch.setenv("SENTRAI_HOST", "vps-real")
+    monkeypatch.setenv("SENTRAI_COLLECTOR_STATE", str(tmp_path / "state.json"))
 
 
 def lines(name: str) -> list[str]:
@@ -186,6 +186,22 @@ def test_service_logs_are_found_at_their_usual_places(tmp_path):
     assert [(Path(e["path"]).name, e["layer"], e["format"]) for e in got] == [
         ("eve.json", "network", "suricata"), ("error.log", "db", "mysql"),
         ("postgresql-16-main.log", "db", "postgres"), ("mongod.log", "db", "mongodb")]
+
+
+def test_a_log_folder_this_account_may_not_open_is_skipped(tmp_path, monkeypatch):
+    # Ubuntu keeps /var/log/mysql as mysql:adm 2750; outside the adm group stat() fails there.
+    (tmp_path / "var/log/nginx").mkdir(parents=True)
+    (tmp_path / "var/log/nginx/access.log").write_text("")
+    real = Path.is_file
+
+    def is_file(self):
+        if "mysql" in self.parts:
+            raise PermissionError(13, "Permission denied", str(self))
+        return real(self)
+
+    monkeypatch.setattr(Path, "is_file", is_file)
+    got = collector.system_log_entries(tmp_path, has_journalctl=False, windows=False)
+    assert [Path(e["path"]).name for e in got] == ["access.log"]
 
 
 def test_windows_gets_its_event_logs(tmp_path):

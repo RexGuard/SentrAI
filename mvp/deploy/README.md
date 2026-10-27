@@ -33,22 +33,22 @@ packages are reinstalled only when a `requirements.txt` changed.
 
 | Service | What it does | Default address |
 | --- | --- | --- |
-| `cactai-core` | risk engine, agents, API | `127.0.0.1:8000` |
-| `cactai-collector` | tails the approved log files, sends events to the core | |
-| `cactai-dashboard` | Streamlit dashboard | `127.0.0.1:8501` |
-| `cactai-notifier` | Telegram alerts (to the journal when no bot is set) | |
+| `sentrai-core` | risk engine, agents, API | `127.0.0.1:8000` |
+| `sentrai-collector` | tails the approved log files, sends events to the core | |
+| `sentrai-dashboard` | Streamlit dashboard | `127.0.0.1:8501` |
+| `sentrai-notifier` | Telegram alerts (to the journal when no bot is set) | |
 
-`cactai.target` groups them: `systemctl restart cactai.target` restarts all four.
+`sentrai.target` groups them: `systemctl restart sentrai.target` restarts all four.
 The demo portal and attack scripts are not installed as services.
 
-- Code: `/opt/cactai/mvp` (owned by root; `--prefix` moves it).
-- Service settings: `/etc/cactai/cactai.env` (ports, addresses, paths, `PROTECTED_IPS`; readable
-  by root and the `cactai` group only). Restart `cactai.target` after editing it.
-- State: `/var/lib/cactai` (the settings you save on the dashboard, the list of watched log files,
-  Scout's pending proposals and trails), with the audit record in `/var/lib/cactai/core` and the
-  collector's read positions in `/var/lib/cactai/collector`. An upgrade moves both from their old
-  place in `/var/lib/cactai` (it stops the services for that, even with `--no-start`).
-- The services run as the `cactai` system user, which has no extra groups. See "Least privilege".
+- Code: `/opt/sentrai/mvp` (owned by root; `--prefix` moves it).
+- Service settings: `/etc/sentrai/sentrai.env` (ports, addresses, paths, `PROTECTED_IPS`; readable
+  by root and the `sentrai` group only). Restart `sentrai.target` after editing it.
+- State: `/var/lib/sentrai` (the settings you save on the dashboard, the list of watched log files,
+  Scout's pending proposals and trails), with the audit record in `/var/lib/sentrai/core` and the
+  collector's read positions in `/var/lib/sentrai/collector`. An upgrade moves both from their old
+  place in `/var/lib/sentrai` (it stops the services for that, even with `--no-start`).
+- The services run as the `sentrai` system user, which has no extra groups. See "Least privilege".
 - The clock runs in real time (`DEMO_SPEED=1`): a 2-hour block lasts 2 real hours.
 
 ## Options
@@ -69,24 +69,24 @@ The demo portal and attack scripts are not installed as services.
 --prefix DIR / --user NAME
 ```
 
-On an upgrade only the options you pass change `cactai.env`; everything else stays as it was.
+On an upgrade only the options you pass change `sentrai.env`; everything else stays as it was.
 
 ## Least privilege
 
 Each service gets only what its job needs, so a flaw in one part cannot be used to rewrite the
-record or switch SentrAI off. The limits are in the `cactai-*.service` files:
+record or switch SentrAI off. The limits are in the `sentrai-*.service` files:
 
 | Service | Reads logs | Writes | Can change the firewall | Can see the audit record |
 |---|---|---|---|---|
-| `cactai-core` | yes | `core/`, `scout/` | yes (only with `CACTAI_FIREWALL` on) | yes |
-| `cactai-collector` | yes | `collector/` | no | no |
-| `cactai-dashboard` | no | the settings file | no | no |
-| `cactai-notifier` | no | nothing | no | no |
+| `sentrai-core` | yes | `core/`, `scout/` | yes (only with `SENTRAI_FIREWALL` on) | yes |
+| `sentrai-collector` | yes | `collector/` | no | no |
+| `sentrai-dashboard` | no | the settings file | no | no |
+| `sentrai-notifier` | no | nothing | no | no |
 
 The log groups (`adm`, `systemd-journal`) are given to the core and collector services only, not
-to the `cactai` account; `cactai-scout` gets them for its own run. Every service also runs with
+to the `sentrai` account; `sentrai-scout` gets them for its own run. Every service also runs with
 no new privileges, a read-only system, no devices, no kernel tunables or modules, and the
-`@system-service` system calls only (`systemd-analyze security cactai-core` scores each one;
+`@system-service` system calls only (`systemd-analyze security sentrai-core` scores each one;
 they are all "OK", down from "EXPOSED" before).
 
 The services share one account, so these walls are the service sandboxes, not file ownership: a
@@ -130,7 +130,7 @@ sudo ./deploy/install.sh --remote-copy https://198.51.100.20:8600 \
      --remote-copy-token-file ./append.token --remote-copy-ca ./cert.pem
 ```
 
-The token is kept in `/var/lib/cactai/core`, which only the core service can open. If this
+The token is kept in `/var/lib/sentrai/core`, which only the core service can open. If this
 server's record is ever changed, the core's next send is refused and a **Log tampering** incident
 opens. To list what changed, run from anywhere holding the witness's read token (keep that one
 off this server):
@@ -146,13 +146,13 @@ no packages.
 
 With `--protect` or `--dashboard-allow`, the installer sets up access by itself:
 
-- The dashboard listens on all addresses (`CACTAI_DASHBOARD_HOST=0.0.0.0`), and a firewall rule
-  drops every address on its port except the allowed ones (`CACTAI_DASHBOARD_ALLOW` in
-  `cactai.env`). The rule lives in its own nftables table `inet cactai_dashboard` (or iptables
-  chain `CACTAI-DASH`); the dashboard service puts it back each time it starts, and refuses to
+- The dashboard listens on all addresses (`SENTRAI_DASHBOARD_HOST=0.0.0.0`), and a firewall rule
+  drops every address on its port except the allowed ones (`SENTRAI_DASHBOARD_ALLOW` in
+  `sentrai.env`). The rule lives in its own nftables table `inet sentrai_dashboard` (or iptables
+  chain `SENTRAI-DASH`); the dashboard service puts it back each time it starts, and refuses to
   start without nft or iptables rather than run open. When ufw or firewalld is active, the
   installer also allows the port there for those addresses.
-- It serves HTTPS with a self-signed certificate made in `/etc/cactai/tls/`. The browser warns
+- It serves HTTPS with a self-signed certificate made in `/etc/sentrai/tls/`. The browser warns
   about it once.
 - It asks for the email, password and authenticator code on every new browser session.
 
@@ -167,9 +167,9 @@ ssh -L 8501:127.0.0.1:8501 you@your-server     # then open http://127.0.0.1:8501
 ```
 
 ```bash
-sudo cactai-admin                                  # who may sign in; a setup code on a new machine
-sudo cactai-admin --reset                          # the first Owner: new password, authenticator again
-sudo cactai-admin --reset --email you@example.com  # the same for another account
+sudo sentrai-admin                                  # who may sign in; a setup code on a new machine
+sudo sentrai-admin --reset                          # the first Owner: new password, authenticator again
+sudo sentrai-admin --reset --email you@example.com  # the same for another account
 ```
 
 ## Finding the logs to watch
@@ -178,23 +178,33 @@ Scout needs an AI key (Configuration page, section 5). It runs as the service us
 waits for keyboard answers when no terminal is attached:
 
 ```bash
-sudo cactai-scout find --root /var/log "where are the login and web server logs?"
+sudo sentrai-scout find --root /var/log "where are the login and web server logs?"
 ```
 
 Its proposals appear on the dashboard's Collector page under "Scout proposals" (Watch or
-Dismiss), or from the shell: `sudo cactai-scout pending`, `sudo cactai-scout approve <id>`.
+Dismiss), or from the shell: `sudo sentrai-scout pending`, `sudo sentrai-scout approve <id>`.
 The collector starts watching an approved file within a few seconds. The "Scan running programs"
 button on the same page finds log files without an AI key.
 
 ## Everyday commands
 
 ```bash
-systemctl status 'cactai-*'
-journalctl -u cactai-core -f          # or -u cactai-collector, -u cactai-dashboard
-sudo systemctl restart cactai.target
-sudo ./deploy/uninstall.sh            # keeps /etc/cactai and /var/lib/cactai; --purge removes them
+systemctl status 'sentrai-*'
+journalctl -u sentrai-core -f          # or -u sentrai-collector, -u sentrai-dashboard
+sudo systemctl restart sentrai.target
+sudo ./deploy/uninstall.sh            # keeps /etc/sentrai and /var/lib/sentrai; --purge removes them
                                       # (also removes the dashboard firewall rule)
 ```
+
+## Upgrading from the CactAI names
+
+`migrate-from-cactai.sh` (run by every install and uninstall script) moves an install made before
+the rename: it stops and removes the `cactai-*` units, moves `/etc/cactai` and `/var/lib/cactai`
+(renaming `cactai.env`, `cactai.db` and the `CACTAI_*` settings), renames the `cactai` account to
+`sentrai` with the same uid, copies the blocks in `inet cactai` and the `cactai` iptables rules to
+the new names, and deletes `/opt/cactai` and the old commands. When both the panel and an agent
+were on the machine, the installer that ran upgrades the other one as well. Rules added to ufw or
+firewalld keep their old `cactai-` comment; they still allow the same ports.
 
 ## One panel, many machines (`install-agent.sh`)
 
@@ -204,8 +214,8 @@ into its own firewall. The panel does the scoring; the agent only makes outgoing
 
 On the panel, install (or upgrade) with `--panel`. It opens a second core port for agents only
 (8443, HTTPS with a self-signed certificate), scores each machine on its own
-(`CACTAI_RISK_SCOPE=host`) and prints the certificate's pin. Keep the panel's own firewall out of it
-with `CACTAI_FIREWALL=off` in `/etc/cactai/cactai.env` when the panel is not itself a guarded server.
+(`SENTRAI_RISK_SCOPE=host`) and prints the certificate's pin. Keep the panel's own firewall out of it
+with `SENTRAI_FIREWALL=off` in `/etc/sentrai/sentrai.env` when the panel is not itself a guarded server.
 
 ```bash
 sudo ./deploy/install.sh --panel                                  # port 8443
@@ -221,7 +231,7 @@ Make a one-time join code (valid 24 h) on the dashboard's Machines page, Add mac
 command to paste, with the panel's address and pin. Or with the API, then on the new machine:
 
 ```bash
-# on the panel (TOKEN is the core's API token: python cactai_config.py token, with the service settings)
+# on the panel (TOKEN is the core's API token: python sentrai_config.py token, with the service settings)
 curl -s -X POST http://127.0.0.1:8000/fleet/join-codes \
      -H "Authorization: Bearer TOKEN" \
      -H 'content-type: application/json' -d '{"operator": "erick"}'
@@ -229,7 +239,15 @@ curl -s -X POST http://127.0.0.1:8000/fleet/join-codes \
 # on the new machine
 sudo ./deploy/install-agent.sh --panel https://panel.example.com:8443 --code ABCD-EFGH-JKLM --pin sha256:... --name web-01
 sudo ./deploy/install-agent.sh --enforce          # later: really change the firewall (default is a dry run)
+sudo ./deploy/install-agent.sh --dry-run          # back to only logging the commands
+sudo ./deploy/uninstall-agent.sh                  # remove it and its blocks (--purge also deletes the key)
 ```
+
+Running `install-agent.sh` again from a newer checkout upgrades the agent and keeps the machine
+joined, its `--protect` addresses, enforcing or dry run, and anything added to
+`/etc/sentrai/agent.env` by hand. The CI job "Linux install" runs this whole path (panel with
+`--panel`, agent with the pin, a real attack, nftables and iptables blocks, uninstall) on Ubuntu
+22.04 and 24.04 for every pull request.
 
 ### Windows machines (`install-agent.ps1`)
 
@@ -268,7 +286,7 @@ On a laptop, without installing a service, the agent can also run from a checkou
 ```bash
 cd mvp/lab
 python -m agent join --panel https://panel.example.com:8443 --code ABCD-EFGH-JKLM --pin sha256:...
-python -m agent run         # CACTAI_FIREWALL=netsh CACTAI_FIREWALL_ENFORCE=1 to block on Windows
+python -m agent run         # SENTRAI_FIREWALL=netsh SENTRAI_FIREWALL_ENFORCE=1 to block on Windows
 ```
 
 ### The certificate pin
@@ -278,22 +296,23 @@ certificate, so a self-signed panel needs no certificate file, and a look-alike 
 intercepting proxy is refused even if some authority signed its certificate. A panel behind a
 publicly trusted certificate (for example nginx with Let's Encrypt) can skip the pin; `--ca FILE`
 still works for a private authority. After the panel's certificate is renewed, set the new pin on
-each machine: `python -m agent pin` shows the kept and the current one, `python -m agent pin sha256:...`
-sets it (then restart the agent).
+each machine: `sudo ./deploy/install-agent.sh --pin sha256:...` (it keeps every other setting and
+restarts the agent). From a checkout without the service, `python -m agent pin` shows the kept and
+the current one, and `python -m agent pin sha256:...` sets it.
 
 ### When the panel cannot be reached
 
 Each machine's key only sends that machine's events and reads
 its own block list; revoke one with `POST /fleet/agents/<id>/revoke`. If the panel goes quiet:
 
-- blocks already in place stay for 24 h (`CACTAI_AGENT_OFFLINE_HOLD_H`) and are then removed
+- blocks already in place stay for 24 h (`SENTRAI_AGENT_OFFLINE_HOLD_H`) and are then removed
 - the logs wait in the collector and reach the panel when it is back, where they are scored as usual
 - after 30 s the agent's local rules take over: the core's own rules (no AI) score each line, and an
   outside address that reaches the panel's autonomous line (`RISK_THRESHOLD`, 80) in 10 minutes is
-  blocked for an hour (`CACTAI_AGENT_LOCAL_TTL_MIN`), at most 10 new blocks an hour
-  (`CACTAI_AGENT_LOCAL_MAX_PER_HOUR`). Only address blocks, only clear attacks (brute force, SQL
+  blocked for an hour (`SENTRAI_AGENT_LOCAL_TTL_MIN`), at most 10 new blocks an hour
+  (`SENTRAI_AGENT_LOCAL_MAX_PER_HOUR`). Only address blocks, only clear attacks (brute force, SQL
   injection, XSS, port scans, privilege escalation, data theft, prompt injection), never private or
-  protected addresses. `CACTAI_AGENT_LOCAL_RULES=off` turns this off.
+  protected addresses. `SENTRAI_AGENT_LOCAL_RULES=off` turns this off.
 - when the panel answers again the agent reports every local block (`POST /fleet/offline-report`):
   it is written to the audit record, raises an alert, and the Machines page shows it under
   "Last time offline"
@@ -306,13 +325,13 @@ it there and sends back a short result. Critical and high scan findings open a m
 that machine. Backups stay on the machine (restoring one is done there, by a person); the panel gets
 the backup's id, size and checksum. A job nobody picks up in 24 h expires.
 
-What is read is set on each machine, never by the panel. Add these to `/etc/cactai/agent.env`
+What is read is set on each machine, never by the panel. Add these to `/etc/sentrai/agent.env`
 (folders separated by `:`, or `;` on Windows) and restart the agent:
 
 ```bash
-CACTAI_THREAT_PATHS=/var/www:/srv/minecraft/plugins
-CACTAI_BACKUP_PATHS=/srv/app/data
-CACTAI_BACKUP_KEEP=7                 # optional; backups go to /var/lib/cactai/agent/backups
+SENTRAI_THREAT_PATHS=/var/www:/srv/minecraft/plugins
+SENTRAI_BACKUP_PATHS=/srv/app/data
+SENTRAI_BACKUP_KEEP=7                 # optional; backups go to /var/lib/sentrai/agent/backups
 ```
 
 The agent runs as its own user, so it can only scan and back up folders that user can read.

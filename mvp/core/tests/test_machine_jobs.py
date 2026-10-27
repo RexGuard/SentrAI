@@ -13,8 +13,8 @@ from .test_fleet import as_agent, join
 
 @pytest.fixture
 def panel(tmp_path, monkeypatch):
-    monkeypatch.setenv("CACTAI_THREAT_STATE", str(tmp_path / "state" / "seen.json"))
-    settings = Settings(db_path=tmp_path / "cactai.db", background=False, demo_speed=60.0, risk_scope="host")
+    monkeypatch.setenv("SENTRAI_THREAT_STATE", str(tmp_path / "state" / "seen.json"))
+    settings = Settings(db_path=tmp_path / "sentrai.db", background=False, demo_speed=60.0, risk_scope="host")
     app = create_app(settings)
     with TestClient(app, headers=AUTH) as c:
         c.core = app.state.core  # type: ignore[attr-defined]

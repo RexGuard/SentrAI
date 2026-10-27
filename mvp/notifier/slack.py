@@ -16,7 +16,7 @@ from typing import Callable
 
 from formatting import BAND_EMOJI, BRAND, alert_fields, is_notice, notice_lines
 
-log = logging.getLogger("cactai.notifier.slack")
+log = logging.getLogger("sentrai.notifier.slack")
 
 # poster(url, body bytes, headers) -> HTTP status; raises on network errors
 Poster = Callable[[str, bytes, dict], int]

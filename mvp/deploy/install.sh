@@ -6,9 +6,9 @@
 #   sudo ./deploy/install.sh --protect 203.0.113.10   never block your own admin IP (repeatable),
 #                                                     and open the dashboard to that IP only
 #
-# Options (each is optional; on an upgrade only the ones you pass change /etc/cactai/cactai.env):
-#   --prefix DIR           where the code goes (default /opt/cactai; copied from this checkout)
-#   --user NAME            system account the services run as (default cactai)
+# Options (each is optional; on an upgrade only the ones you pass change /etc/sentrai/sentrai.env):
+#   --prefix DIR           where the code goes (default /opt/sentrai; copied from this checkout)
+#   --user NAME            system account the services run as (default sentrai)
 #   --core-port N          core API port (default 8000)
 #   --core-bind ADDR       core API address (default 127.0.0.1; the collector, dashboard and
 #                          notifier reach it there)
@@ -42,25 +42,25 @@
 #   --panel-url URL        the address agents use (default https://<this server's name>:PORT)
 #
 # What it creates:
-#   /etc/cactai/cactai.env           ports, addresses and paths (root:cactai 0640, kept on upgrade)
-#   /var/lib/cactai/                 state: settings, approved log list, Scout trails (cactai 0750)
-#   /var/lib/cactai/core/            the audit record and its fingerprint key (core only, 0700)
-#   /var/lib/cactai/collector/       the collector's read positions and line chain (collector only, 0700)
-#   /etc/systemd/system/cactai*.service and cactai.target
-#   /usr/local/bin/cactai-scout      runs Scout as the service account (no terminal needed)
-#   /usr/local/bin/cactai-admin      shows or resets the dashboard sign-in (sudo cactai-admin --reset)
-#   /usr/local/sbin/cactai-dashboard-firewall   the dashboard's firewall rule (run by its service)
-#   /etc/cactai/tls/                 a self-signed HTTPS certificate, when the dashboard is opened
+#   /etc/sentrai/sentrai.env           ports, addresses and paths (root:sentrai 0640, kept on upgrade)
+#   /var/lib/sentrai/                 state: settings, approved log list, Scout trails (sentrai 0750)
+#   /var/lib/sentrai/core/            the audit record and its fingerprint key (core only, 0700)
+#   /var/lib/sentrai/collector/       the collector's read positions and line chain (collector only, 0700)
+#   /etc/systemd/system/sentrai*.service and sentrai.target
+#   /usr/local/bin/sentrai-scout      runs Scout as the service account (no terminal needed)
+#   /usr/local/bin/sentrai-admin      shows or resets the dashboard sign-in (sudo sentrai-admin --reset)
+#   /usr/local/sbin/sentrai-dashboard-firewall   the dashboard's firewall rule (run by its service)
+#   /etc/sentrai/tls/                 a self-signed HTTPS certificate, when the dashboard is opened
 # Least privilege: the account itself has no extra groups. Only the core and collector services
 # get the adm and systemd-journal groups (to read /var/log/auth.log, nginx logs and the journal);
 # only the core may change the firewall; each service sees only its own state folder (see the
-# cactai-*.service files). The only firewall change made here is the dashboard rule
+# sentrai-*.service files). The only firewall change made here is the dashboard rule
 # (plus a matching allow in ufw or firewalld when one is active). Nothing touches nginx or sshd.
 # Remove everything again with ./deploy/uninstall.sh.
 set -euo pipefail
 
-PREFIX=/opt/cactai
-SVC_USER=cactai
+PREFIX=/opt/sentrai
+SVC_USER=sentrai
 NOTIFIER=1
 START=1
 PROTECT=()
@@ -80,10 +80,10 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --prefix) PREFIX="$2"; shift 2 ;;
         --user) SVC_USER="$2"; shift 2 ;;
-        --core-port) SET[CACTAI_CORE_PORT]="$2"; shift 2 ;;
-        --core-bind) SET[CACTAI_CORE_HOST]="$2"; shift 2 ;;
-        --dashboard-port) SET[CACTAI_DASHBOARD_PORT]="$2"; shift 2 ;;
-        --dashboard-bind) SET[CACTAI_DASHBOARD_HOST]="$2"; shift 2 ;;
+        --core-port) SET[SENTRAI_CORE_PORT]="$2"; shift 2 ;;
+        --core-bind) SET[SENTRAI_CORE_HOST]="$2"; shift 2 ;;
+        --dashboard-port) SET[SENTRAI_DASHBOARD_PORT]="$2"; shift 2 ;;
+        --dashboard-bind) SET[SENTRAI_DASHBOARD_HOST]="$2"; shift 2 ;;
         --protect) PROTECT+=("$2"); shift 2 ;;
         --dashboard-allow) ALLOW+=("$2"); shift 2 ;;
         --dashboard-local) DASH_LOCAL=1; shift ;;
@@ -102,7 +102,7 @@ while [ $# -gt 0 ]; do
         *) echo "Unknown option: $1 (see --help)" >&2; exit 2 ;;
     esac
 done
-for k in CACTAI_CORE_PORT CACTAI_DASHBOARD_PORT; do
+for k in SENTRAI_CORE_PORT SENTRAI_DASHBOARD_PORT; do
     v="${SET[$k]:-}"
     case "$v" in '') ;; *[!0-9]*) echo "$k must be a number (got '$v')" >&2; exit 2 ;; esac
 done
@@ -117,13 +117,16 @@ die() { echo "install.sh: $*" >&2; exit 1; }
 command -v systemctl >/dev/null 2>&1 || die "systemd is required"
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"  # the mvp/ folder of this checkout
 [ -f "$SRC/core/app/main.py" ] || die "run it from a SentrAI checkout (mvp/deploy/install.sh)"
+# An install from before the CactAI -> SentrAI rename moves to the new names first.
+. "$SRC/deploy/migrate-from-cactai.sh"
+migrate_from_cactai server
 PYTHON="${PYTHON:-python3}"
 "$PYTHON" -c 'import sys; sys.exit(sys.version_info < (3, 10))' 2>/dev/null || die "python 3.10 or newer is required"
 "$PYTHON" -c 'import ensurepip, venv' 2>/dev/null \
     || die "python's venv module is missing (Debian/Ubuntu: apt install python3-venv)"
 
-ENV_FILE=/etc/cactai/cactai.env
-STATE=/var/lib/cactai
+ENV_FILE=/etc/sentrai/sentrai.env
+STATE=/var/lib/sentrai
 MVP="$PREFIX/mvp"
 [ "$MVP" != "$SRC" ] || die "--prefix must differ from this checkout"
 
@@ -131,19 +134,19 @@ MVP="$PREFIX/mvp"
 # Asked only with a terminal, and only for what the command line left open. Enter keeps the value
 # in [brackets]: the current one on an upgrade, else a sensible default.
 existing() { if [ -f "$ENV_FILE" ]; then sed -n "s/^$1=//p" "$ENV_FILE" | tail -1; fi; }
-saved_config="$(existing CACTAI_CONFIG)"; saved_config="${saved_config:-$STATE/config.json}"
+saved_config="$(existing SENTRAI_CONFIG)"; saved_config="${saved_config:-$STATE/config.json}"
 ADMIN_PASSWORD=""
 if [ "$ASK" = 1 ] && [ -t 0 ]; then
     echo "SentrAI setup: the web dashboard. Press Enter to keep the value in [brackets]."
-    if [ -z "${SET[CACTAI_DASHBOARD_PORT]:-}" ]; then
-        cur="$(existing CACTAI_DASHBOARD_PORT)"
+    if [ -z "${SET[SENTRAI_DASHBOARD_PORT]:-}" ]; then
+        cur="$(existing SENTRAI_DASHBOARD_PORT)"
         while :; do
             read -r -p "  Dashboard port [${cur:-8501}]: " a || a=""
-            case "$a" in '') break ;; *[!0-9]*) echo "    Please enter a number." ;; *) SET[CACTAI_DASHBOARD_PORT]="$a"; break ;; esac
+            case "$a" in '') break ;; *[!0-9]*) echo "    Please enter a number." ;; *) SET[SENTRAI_DASHBOARD_PORT]="$a"; break ;; esac
         done
     fi
     if [ "${#ALLOW[@]}" = 0 ] && [ "$DASH_LOCAL" = 0 ]; then
-        cur="$(existing CACTAI_DASHBOARD_ALLOW)"
+        cur="$(existing SENTRAI_DASHBOARD_ALLOW)"
         if [ -z "$cur" ]; then
             for ip in "${PROTECT[@]}"; do case "$ip" in 127.*|::1|localhost) ;; *) cur="${cur:+$cur,}$ip" ;; esac; done
         fi
@@ -157,7 +160,7 @@ if [ "$ASK" = 1 ] && [ -t 0 ]; then
     fi
     # The Owner account, only on a machine with no one yet. People after that join by invite (Team page).
     if [ ! -f "$(dirname "$saved_config")/accounts.json" ] \
-        && ! grep -q '"CACTAI_DASHBOARD_PASSWORD_HASH": "pbkdf2' "$saved_config" 2>/dev/null; then
+        && ! grep -q '"SENTRAI_DASHBOARD_PASSWORD_HASH": "pbkdf2' "$saved_config" 2>/dev/null; then
         echo "  The dashboard's Owner account. Press Enter to skip and create it in the browser with a setup code."
         if [ -z "$ADMIN_EMAIL" ]; then
             while :; do
@@ -191,8 +194,8 @@ for g in adm systemd-journal; do
     fi
 done
 install -d -o "$SVC_USER" -g "$SVC_USER" -m 0750 "$STATE" "$STATE/scout" "$STATE/scout/trails" "$STATE/lab-logs"
-install -d -o "$SVC_USER" -g "$SVC_USER" -m 0700 "$STATE/core" "$STATE/collector"
-install -d -o root -g "$SVC_USER" -m 0750 /etc/cactai
+install -d -o "$SVC_USER" -g "$SVC_USER" -m 0700 "$STATE/core" "$STATE/collector" "$STATE/notifier"
+install -d -o root -g "$SVC_USER" -m 0750 /etc/sentrai
 
 # --- settings (ports, addresses, paths) ------------------------------------
 set_env() {  # KEY VALUE: replace the line or append it
@@ -202,29 +205,31 @@ set_env() {  # KEY VALUE: replace the line or append it
 get_env() { sed -n "s/^$1=//p" "$ENV_FILE" | tail -1; }
 if [ ! -f "$ENV_FILE" ]; then
     cat > "$ENV_FILE" <<EOF
-# SentrAI service settings, read by every cactai-* service (systemctl restart cactai.target after a change).
-# Detection, response, alert and AI settings live in CACTAI_CONFIG and are edited on the dashboard.
-CACTAI_CORE_HOST=127.0.0.1
-CACTAI_CORE_PORT=8000
-CACTAI_DASHBOARD_HOST=127.0.0.1
-CACTAI_DASHBOARD_PORT=8501
-CACTAI_CORE_URL=http://127.0.0.1:8000
-CACTAI_PUBLIC_URL=http://127.0.0.1:8000
+# SentrAI service settings, read by every sentrai-* service (systemctl restart sentrai.target after a change).
+# Detection, response, alert and AI settings live in SENTRAI_CONFIG and are edited on the dashboard.
+SENTRAI_CORE_HOST=127.0.0.1
+SENTRAI_CORE_PORT=8000
+SENTRAI_DASHBOARD_HOST=127.0.0.1
+SENTRAI_DASHBOARD_PORT=8501
+SENTRAI_CORE_URL=http://127.0.0.1:8000
+SENTRAI_PUBLIC_URL=http://127.0.0.1:8000
 # Real time: one real hour is one hour on the SLA and block timers (DEMO_SPEED above 1 speeds them up for testing).
 DEMO_SPEED=1
 PROTECTED_IPS=127.0.0.1,::1,localhost
-CACTAI_CONFIG=$STATE/config.json
-CACTAI_DB=$STATE/core/cactai.db
-CACTAI_COLLECTOR_STATE=$STATE/collector/state.json
-CACTAI_LAB_LOGS=$STATE/lab-logs
-CACTAI_SCOUT_SOURCES=$STATE/scout/sources.json
-CACTAI_SCOUT_TRAILS=$STATE/scout/trails
+SENTRAI_CONFIG=$STATE/config.json
+SENTRAI_DB=$STATE/core/sentrai.db
+SENTRAI_COLLECTOR_STATE=$STATE/collector/state.json
+SENTRAI_LAB_LOGS=$STATE/lab-logs
+SENTRAI_SCOUT_SOURCES=$STATE/scout/sources.json
+SENTRAI_SCOUT_TRAILS=$STATE/scout/trails
 EOF
     echo "Wrote $ENV_FILE"
 fi
 chown root:"$SVC_USER" "$ENV_FILE"
 chmod 0640 "$ENV_FILE"
 for k in "${!SET[@]}"; do set_env "$k" "${SET[$k]}"; done
+# The notifier keeps the last audit fingerprint it delivered here (its code folder is read-only to it).
+[ -n "$(get_env NOTIFIER_WITNESS_FILE)" ] || set_env NOTIFIER_WITNESS_FILE "$STATE/notifier/last_witness.txt"
 if [ "${#PROTECT[@]}" -gt 0 ]; then
     ips="$(get_env PROTECTED_IPS)"
     for ip in "${PROTECT[@]}"; do
@@ -236,8 +241,8 @@ fi
 is_ip() { "$PYTHON" -c 'import ipaddress, sys; ipaddress.ip_network(sys.argv[1], strict=False)' "$1" 2>/dev/null; }
 is_local() { case "$1" in 127.*|::1|localhost) return 0 ;; *) return 1 ;; esac; }
 if [ "$DASH_LOCAL" = 1 ]; then
-    set_env CACTAI_DASHBOARD_ALLOW ""
-    [ -n "${SET[CACTAI_DASHBOARD_HOST]:-}" ] || set_env CACTAI_DASHBOARD_HOST 127.0.0.1
+    set_env SENTRAI_DASHBOARD_ALLOW ""
+    [ -n "${SET[SENTRAI_DASHBOARD_HOST]:-}" ] || set_env SENTRAI_DASHBOARD_HOST 127.0.0.1
 else
     if [ "${#ALLOW[@]}" = 0 ]; then  # default: the admin IPs given with --protect
         for ip in "${PROTECT[@]}"; do is_local "$ip" || ALLOW+=("$ip"); done
@@ -246,26 +251,31 @@ else
         for ip in "${ALLOW[@]}"; do is_ip "$ip" || die "--dashboard-allow / --protect: '$ip' is not an IP address"; done
         command -v nft >/dev/null 2>&1 || command -v iptables >/dev/null 2>&1 \
             || die "opening the dashboard needs nft or iptables (or use --dashboard-local)"
-        set_env CACTAI_DASHBOARD_ALLOW "$(IFS=,; echo "${ALLOW[*]}")"
-        [ -n "${SET[CACTAI_DASHBOARD_HOST]:-}" ] || set_env CACTAI_DASHBOARD_HOST 0.0.0.0
+        set_env SENTRAI_DASHBOARD_ALLOW "$(IFS=,; echo "${ALLOW[*]}")"
+        [ -n "${SET[SENTRAI_DASHBOARD_HOST]:-}" ] || set_env SENTRAI_DASHBOARD_HOST 0.0.0.0
     fi
 fi
-DASH_ALLOW="$(get_env CACTAI_DASHBOARD_ALLOW)"
+DASH_ALLOW="$(get_env SENTRAI_DASHBOARD_ALLOW)"
 
-CORE_HOST="$(get_env CACTAI_CORE_HOST)"; CORE_PORT="$(get_env CACTAI_CORE_PORT)"
-DASH_HOST="$(get_env CACTAI_DASHBOARD_HOST)"; DASH_PORT="$(get_env CACTAI_DASHBOARD_PORT)"
+CORE_HOST="$(get_env SENTRAI_CORE_HOST)"; CORE_PORT="$(get_env SENTRAI_CORE_PORT)"
+DASH_HOST="$(get_env SENTRAI_DASHBOARD_HOST)"; DASH_PORT="$(get_env SENTRAI_DASHBOARD_PORT)"
 [ "$CORE_PORT" != "$DASH_PORT" ] || die "core and dashboard need different ports"
 case "$CORE_HOST" in 0.0.0.0|::|'[::]') reach=127.0.0.1 ;; *:*) reach="[$CORE_HOST]" ;; *) reach="$CORE_HOST" ;; esac
 CORE_URL="http://$reach:$CORE_PORT"
-set_env CACTAI_CORE_URL "$CORE_URL"
-if [ -n "${SET[CACTAI_CORE_PORT]:-}${SET[CACTAI_CORE_HOST]:-}" ]; then set_env CACTAI_PUBLIC_URL "$CORE_URL"; fi
+set_env SENTRAI_CORE_URL "$CORE_URL"
+if [ -n "${SET[SENTRAI_CORE_PORT]:-}${SET[SENTRAI_CORE_HOST]:-}" ]; then set_env SENTRAI_PUBLIC_URL "$CORE_URL"; fi
 
 # --- ports ------------------------------------------------------------------
 port_owner() {  # prints the process listening on a TCP port, if any
     ss -Hltnp "sport = :$1" 2>/dev/null | sed -n 's/.*users:((\("[^"]*"\).*/\1/p' | head -1
 }
 if [ "$START" = 1 ] && command -v ss >/dev/null 2>&1; then
-    systemctl stop cactai.target 2>/dev/null || true  # an upgrade frees its own ports first
+    # An upgrade frees its own ports first (naming the services too: stopping the target alone can return
+    # before they are down), then gives the old processes a few seconds to let go of them.
+    systemctl stop sentrai.target sentrai-core sentrai-collector sentrai-dashboard sentrai-notifier 2>/dev/null || true
+    for p in "$CORE_PORT" "$DASH_PORT"; do
+        for _ in 1 2 3 4 5 6 7 8 9 10; do [ -n "$(ss -Hltn "sport = :$p" 2>/dev/null)" ] || break; sleep 1; done
+    done
     for p in "$CORE_PORT" "$DASH_PORT"; do
         who="$(port_owner "$p")"
         if [ -n "$who" ] || ss -Hltn "sport = :$p" 2>/dev/null | grep -q .; then
@@ -277,28 +287,28 @@ fi
 # --- state folders (upgrade) ------------------------------------------------
 # Older installs kept the audit record and the collector's positions in $STATE itself, where every
 # service could write them. Move them into the folders only their own service can open.
-if [ "$(get_env CACTAI_DB)" = "$STATE/cactai.db" ] || [ -z "$(get_env CACTAI_COLLECTOR_STATE)" ]; then
-    systemctl stop cactai.target 2>/dev/null || true
-    if [ "$(get_env CACTAI_DB)" = "$STATE/cactai.db" ]; then
-        for f in cactai.db cactai.db-wal cactai.db-shm anchor.key protection.json archive; do
+if [ "$(get_env SENTRAI_DB)" = "$STATE/sentrai.db" ] || [ -z "$(get_env SENTRAI_COLLECTOR_STATE)" ]; then
+    systemctl stop sentrai.target 2>/dev/null || true
+    if [ "$(get_env SENTRAI_DB)" = "$STATE/sentrai.db" ]; then
+        for f in sentrai.db sentrai.db-wal sentrai.db-shm anchor.key protection.json archive; do
             if [ -e "$STATE/$f" ] && [ ! -e "$STATE/core/$f" ]; then mv "$STATE/$f" "$STATE/core/$f"; fi
         done
-        set_env CACTAI_DB "$STATE/core/cactai.db"
+        set_env SENTRAI_DB "$STATE/core/sentrai.db"
         echo "Moved the audit record to $STATE/core/"
     fi
-    if [ -z "$(get_env CACTAI_COLLECTOR_STATE)" ]; then
+    if [ -z "$(get_env SENTRAI_COLLECTOR_STATE)" ]; then
         if [ -e "$STATE/collector-state.json" ] && [ ! -e "$STATE/collector/state.json" ]; then
             mv "$STATE/collector-state.json" "$STATE/collector/state.json"
         fi
-        set_env CACTAI_COLLECTOR_STATE "$STATE/collector/state.json"
+        set_env SENTRAI_COLLECTOR_STATE "$STATE/collector/state.json"
     fi
     chown -R "$SVC_USER:$SVC_USER" "$STATE/core" "$STATE/collector"
 fi
 
 # --- off-box copy (--remote-copy) -------------------------------------------
-# The witness's append token goes where only the core service can read it (/var/lib/cactai/core).
+# The witness's append token goes where only the core service can read it (/var/lib/sentrai/core).
 if [ "$REMOTE" = off ]; then
-    set_env CACTAI_REMOTE_COPY_URL ""
+    set_env SENTRAI_REMOTE_COPY_URL ""
 elif [ -n "$REMOTE" ]; then
     case "$REMOTE" in http://*|https://*) ;; *) die "--remote-copy needs an http(s):// URL (got '$REMOTE')" ;; esac
     [ -n "$REMOTE_TOKEN" ] || [ -s "$STATE/core/remote-copy.token" ] \
@@ -309,11 +319,11 @@ elif [ -n "$REMOTE" ]; then
     fi
     if [ -n "$REMOTE_CA" ]; then
         [ -s "$REMOTE_CA" ] || die "--remote-copy-ca: $REMOTE_CA is missing or empty"
-        install -m 0644 "$REMOTE_CA" /etc/cactai/witness-ca.pem
-        set_env CACTAI_REMOTE_COPY_CA /etc/cactai/witness-ca.pem
+        install -m 0644 "$REMOTE_CA" /etc/sentrai/witness-ca.pem
+        set_env SENTRAI_REMOTE_COPY_CA /etc/sentrai/witness-ca.pem
     fi
-    set_env CACTAI_REMOTE_COPY_URL "$REMOTE"
-    set_env CACTAI_REMOTE_COPY_TOKEN_FILE "$STATE/core/remote-copy.token"
+    set_env SENTRAI_REMOTE_COPY_URL "$REMOTE"
+    set_env SENTRAI_REMOTE_COPY_TOKEN_FILE "$STATE/core/remote-copy.token"
     code="$(curl -s -o /dev/null -w '%{http_code}' ${REMOTE_CA:+--cacert "$REMOTE_CA"} "$REMOTE/health" 2>/dev/null || true)"
     [ "$code" = 200 ] || echo "WARNING: the witness at $REMOTE did not answer (got '${code:-nothing}'); SentrAI keeps retrying." >&2
 fi
@@ -342,18 +352,19 @@ for f in "$MVP"/lab/scout/trails/*.jsonl; do
 done
 
 hash_file() { sha256sum "$1" | cut -d' ' -f1; }
+PIP_HELP="could not download the Python packages (pip's message is above). This server must reach pypi.org over HTTPS; fix that, then run this again (it picks up where it stopped)."
 for c in core lab dashboard notifier; do
     dir="$MVP/$c"
     if [ ! -x "$dir/.venv/bin/python" ]; then
         echo "Creating venv for $c ..."
-        "$PYTHON" -m venv "$dir/.venv"
-        "$dir/.venv/bin/python" -m pip install -q --upgrade pip
+        "$PYTHON" -m venv "$dir/.venv" || die "could not create the Python environment in $dir/.venv"
+        "$dir/.venv/bin/python" -m pip install -q --upgrade pip || { rm -rf "$dir/.venv"; die "$PIP_HELP"; }
     fi
     want="$(hash_file "$dir/requirements.txt")"
     have="$(cat "$dir/.venv/requirements.installed" 2>/dev/null || true)"
     if [ "$want" != "$have" ]; then
         echo "Installing packages for $c ..."
-        "$dir/.venv/bin/python" -m pip install -q -r "$dir/requirements.txt"
+        "$dir/.venv/bin/python" -m pip install -q -r "$dir/requirements.txt" || die "$PIP_HELP"
         echo "$want" > "$dir/.venv/requirements.installed"
     fi
     "$dir/.venv/bin/python" -m compileall -q "$dir" -x '/\.venv/' >/dev/null || true
@@ -363,49 +374,55 @@ done
 # --- Scout wrapper ----------------------------------------------------------
 SCOUT_GROUPS=""  # Scout reads logs to find them, so it gets the same groups as the collector
 for g in "${LOG_GROUPS[@]}"; do SCOUT_GROUPS+="-G $g "; done
-cat > /usr/local/bin/cactai-scout <<EOF
+cat > /usr/local/bin/sentrai-scout <<EOF
 #!/usr/bin/env bash
 # Runs Scout (python -m scout) as $SVC_USER with the service settings. Without a terminal it
 # never waits for answers; its proposals wait on the dashboard's Collector page.
-#   sudo cactai-scout find --root /var/log "where are the login and web logs?"
-#   sudo cactai-scout pending | approve <id> | reject <id>
+#   sudo sentrai-scout find --root /var/log "where are the login and web logs?"
+#   sudo sentrai-scout pending | approve <id> | reject <id>
 set -euo pipefail
 [ "\$(id -u)" = 0 ] || { echo "run with sudo" >&2; exit 1; }
 set -a; . $ENV_FILE; set +a
 cd $MVP/lab
 exec runuser -u $SVC_USER $SCOUT_GROUPS-- env HOME=$STATE $MVP/lab/.venv/bin/python -m scout "\$@"
 EOF
-chmod 0755 /usr/local/bin/cactai-scout
+chmod 0755 /usr/local/bin/sentrai-scout
 
 # --- dashboard sign-in --------------------------------------------------------
-cat > /usr/local/bin/cactai-admin <<EOF
+cat > /usr/local/bin/sentrai-admin <<EOF
 #!/usr/bin/env bash
 # Lists who may sign in to the dashboard; on a new machine, prints a one-time setup code for the Owner.
-#   sudo cactai-admin          sudo cactai-admin --reset [--email you@example.com]   (new password, authenticator again)
+#   sudo sentrai-admin          sudo sentrai-admin --reset [--email you@example.com]   (new password, authenticator again)
 set -euo pipefail
 [ "\$(id -u)" = 0 ] || { echo "run with sudo" >&2; exit 1; }
 set -a; . $ENV_FILE; set +a
-exec runuser -u $SVC_USER -- env HOME=$STATE $MVP/lab/.venv/bin/python $MVP/cactai_config.py admin "\$@"
+exec runuser -u $SVC_USER -- env HOME=$STATE $MVP/lab/.venv/bin/python $MVP/sentrai_config.py admin "\$@"
 EOF
-chmod 0755 /usr/local/bin/cactai-admin
+chmod 0755 /usr/local/bin/sentrai-admin
 admin_args=()
 if [ -n "$ADMIN_EMAIL" ]; then admin_args+=(--email "$ADMIN_EMAIL"); fi
 if [ "$RESET_PW" = 1 ]; then admin_args+=(--reset); fi
 if [ -n "$ADMIN_PASSWORD" ] && [ -n "$ADMIN_EMAIL" ]; then
-    SIGN_IN="$(printf '%s\n' "$ADMIN_PASSWORD" | /usr/local/bin/cactai-admin "${admin_args[@]}" --password-stdin)" \
+    SIGN_IN="$(printf '%s\n' "$ADMIN_PASSWORD" | /usr/local/bin/sentrai-admin "${admin_args[@]}" --password-stdin)" \
         || die "could not set up the dashboard sign-in"
 else
-    SIGN_IN="$(/usr/local/bin/cactai-admin "${admin_args[@]}" </dev/null)" || die "could not set up the dashboard sign-in"
+    SIGN_IN="$(/usr/local/bin/sentrai-admin "${admin_args[@]}" </dev/null)" || die "could not set up the dashboard sign-in"
 fi
 unset ADMIN_PASSWORD
+# The API token every service sends to the core. Make it now: the core, collector and notifier may
+# not write the settings file (their sandbox), so none of them could save a new one.
+(set -a && . "$ENV_FILE" && set +a && cd "$MVP" && \
+    runuser -u "$SVC_USER" -- env HOME="$STATE" "$MVP/lab/.venv/bin/python" sentrai_config.py token >/dev/null) \
+    || die "could not make the API token"
 
 # --- dashboard HTTPS and firewall rule -------------------------------------
-install -m 0755 "$SRC/deploy/dashboard-firewall.sh" /usr/local/sbin/cactai-dashboard-firewall
-TLS=/etc/cactai/tls
+install -m 0755 "$SRC/deploy/dashboard-firewall.sh" /usr/local/sbin/sentrai-dashboard-firewall
+TLS=/etc/sentrai/tls
 if [ -n "$DASH_ALLOW" ]; then
     if [ ! -f "$TLS/cert.pem" ] && command -v openssl >/dev/null 2>&1; then
         install -d -o root -g "$SVC_USER" -m 0750 "$TLS"
-        openssl req -x509 -newkey rsa:2048 -nodes -days 825 -subj "/CN=$(hostname -f 2>/dev/null || hostname)" \
+        cn="$(hostname -f 2>/dev/null || hostname)"; cn="${cn:0:64}"  # a certificate name holds at most 64 characters
+        openssl req -x509 -newkey rsa:2048 -nodes -days 825 -subj "/CN=$cn" \
             -keyout "$TLS/key.pem" -out "$TLS/cert.pem" >/dev/null 2>&1 || rm -f "$TLS/key.pem" "$TLS/cert.pem"
         chown root:"$SVC_USER" "$TLS"/*.pem 2>/dev/null || true
         chmod 0640 "$TLS"/*.pem 2>/dev/null || true
@@ -431,7 +448,7 @@ if [ -n "$DASH_ALLOW" ]; then
     fi
 else
     sed -i '/^STREAMLIT_SERVER_SSL_/d' "$ENV_FILE"
-    /usr/local/sbin/cactai-dashboard-firewall remove
+    /usr/local/sbin/sentrai-dashboard-firewall remove
 fi
 SCHEME=http
 if grep -q '^STREAMLIT_SERVER_SSL_CERT_FILE=' "$ENV_FILE"; then SCHEME=https; fi
@@ -450,28 +467,33 @@ open_panel_port() {  # PORT [remove]: ufw and firewalld drop it on their own
     fi
 }
 if [ "$PANEL" = off ]; then
-    old="$(get_env CACTAI_PANEL_PORT)"
+    old="$(get_env SENTRAI_PANEL_PORT)"
     [ -n "$old" ] && open_panel_port "$old" remove
-    sed -i '/^CACTAI_PANEL_/d' "$ENV_FILE"
+    sed -i '/^SENTRAI_PANEL_/d' "$ENV_FILE"
 elif [ -n "$PANEL" ]; then
-    command -v openssl >/dev/null 2>&1 || die "openssl is needed for the panel's HTTPS port"
+    command -v openssl >/dev/null 2>&1 || die "openssl is needed for the panel's HTTPS port (Debian/Ubuntu: apt install openssl)"
     install -d -o root -g "$SVC_USER" -m 0750 "$TLS"
     if [ ! -f "$TLS/panel-cert.pem" ]; then
-        name="$(hostname -f 2>/dev/null || hostname)"
-        openssl req -x509 -newkey rsa:2048 -nodes -days 1825 -subj "/CN=$name" -addext "subjectAltName=DNS:$name" \
+        # Named after the address agents use (--panel-url), else this server's name. Agents check the pin,
+        # not the name, but a matching name lets a browser or curl check it too.
+        name="$("$PYTHON" -c 'import sys, urllib.parse; print(urllib.parse.urlsplit(sys.argv[1]).hostname or "")' "$PANEL_URL")"
+        [ -n "$name" ] || name="$(hostname -f 2>/dev/null || hostname)"
+        if "$PYTHON" -c 'import ipaddress, sys; ipaddress.ip_address(sys.argv[1])' "$name" 2>/dev/null; then san="IP:$name"
+        else san="DNS:$name"; fi
+        openssl req -x509 -newkey rsa:2048 -nodes -days 1825 -subj "/CN=${name:0:64}" -addext "subjectAltName=$san" \
             -keyout "$TLS/panel-key.pem" -out "$TLS/panel-cert.pem" >/dev/null 2>&1 \
             || die "could not make the panel's certificate"
     fi
     chown root:"$SVC_USER" "$TLS"/panel-*.pem
     chmod 0640 "$TLS"/panel-*.pem
-    old="$(get_env CACTAI_PANEL_PORT)"
+    old="$(get_env SENTRAI_PANEL_PORT)"
     [ -n "$old" ] && [ "$old" != "$PANEL" ] && open_panel_port "$old" remove
-    set_env CACTAI_PANEL_PORT "$PANEL"
-    set_env CACTAI_PANEL_HOST 0.0.0.0
-    set_env CACTAI_PANEL_CERT "$TLS/panel-cert.pem"
-    set_env CACTAI_PANEL_KEY "$TLS/panel-key.pem"
-    set_env CACTAI_PANEL_URL "${PANEL_URL:-https://$(hostname -f 2>/dev/null || hostname):$PANEL}"
-    set_env CACTAI_RISK_SCOPE host
+    set_env SENTRAI_PANEL_PORT "$PANEL"
+    set_env SENTRAI_PANEL_HOST 0.0.0.0
+    set_env SENTRAI_PANEL_CERT "$TLS/panel-cert.pem"
+    set_env SENTRAI_PANEL_KEY "$TLS/panel-key.pem"
+    set_env SENTRAI_PANEL_URL "${PANEL_URL:-https://$(hostname -f 2>/dev/null || hostname):$PANEL}"
+    set_env SENTRAI_RISK_SCOPE host
     open_panel_port "$PANEL"
 fi
 
@@ -496,23 +518,23 @@ if [ "$SEAL" = 1 ]; then
 fi
 
 # --- systemd ----------------------------------------------------------------
-UNITS=(cactai-core cactai-collector cactai-dashboard cactai-notifier)
+UNITS=(sentrai-core sentrai-collector sentrai-dashboard sentrai-notifier)
 for u in "${UNITS[@]}"; do
     sed -e "s|@PREFIX@|$PREFIX|g" -e "s|@USER@|$SVC_USER|g" -e "s|@LOGGROUPS@|${LOG_GROUPS[*]}|g" \
         "$SRC/deploy/$u.service" > "/etc/systemd/system/$u.service"
 done
 if [ "$NOTIFIER" = 0 ]; then
-    sed 's/ cactai-notifier.service//' "$SRC/deploy/cactai.target" > /etc/systemd/system/cactai.target
+    sed 's/ sentrai-notifier.service//' "$SRC/deploy/sentrai.target" > /etc/systemd/system/sentrai.target
 else
-    cp "$SRC/deploy/cactai.target" /etc/systemd/system/cactai.target
+    cp "$SRC/deploy/sentrai.target" /etc/systemd/system/sentrai.target
 fi
 systemctl daemon-reload
-systemctl enable cactai.target "${UNITS[@]:0:3}" >/dev/null
-if [ "$NOTIFIER" = 1 ]; then systemctl enable cactai-notifier >/dev/null
-else systemctl disable --now cactai-notifier >/dev/null 2>&1 || true; fi
+systemctl enable sentrai.target "${UNITS[@]:0:3}" >/dev/null
+if [ "$NOTIFIER" = 1 ]; then systemctl enable sentrai-notifier >/dev/null
+else systemctl disable --now sentrai-notifier >/dev/null 2>&1 || true; fi
 
 if [ "$START" = 1 ]; then
-    systemctl restart cactai.target
+    systemctl restart sentrai.target
     echo -n "Waiting for the core on $CORE_URL "
     for _ in $(seq 1 60); do
         if "$PYTHON" -c "import sys, urllib.request; urllib.request.urlopen(sys.argv[1] + '/health', timeout=2)" "$CORE_URL" 2>/dev/null; then
@@ -526,10 +548,10 @@ fi
 cat <<EOF
 
 SentrAI is installed.
-  Status:     systemctl status 'cactai-*'      Logs: journalctl -u cactai-core -f
-  Restart:    systemctl restart cactai.target  (after editing $ENV_FILE)
+  Status:     systemctl status 'sentrai-*'      Logs: journalctl -u sentrai-core -f
+  Restart:    systemctl restart sentrai.target  (after editing $ENV_FILE)
   Core API:   $CORE_URL
-  Find logs:  sudo cactai-scout find --root /var/log "where are the login and web logs?"
+  Find logs:  sudo sentrai-scout find --root /var/log "where are the login and web logs?"
 EOF
 echo
 if [ -n "$DASH_ALLOW" ]; then
@@ -552,8 +574,8 @@ else
     esac
 fi
 printf '%s\n' "$SIGN_IN" | sed 's/^/  /'
-echo "  People:     invite them on the dashboard's Team page. Locked out: sudo cactai-admin --reset"
-REMOTE_URL="$(get_env CACTAI_REMOTE_COPY_URL)"
+echo "  People:     invite them on the dashboard's Team page. Locked out: sudo sentrai-admin --reset"
+REMOTE_URL="$(get_env SENTRAI_REMOTE_COPY_URL)"
 if [ -n "$REMOTE_URL" ]; then
     echo "  Off-box copy: every audit record and log line goes to $REMOTE_URL as it happens."
     echo "              Status: curl $CORE_URL/audit/remote-copy"
@@ -564,14 +586,15 @@ if [ -n "$SEAL_KEY" ]; then
     echo "    $SEAL_KEY"
     echo "  Check the journal later with:  journalctl --verify --verify-key=<that key>"
 fi
-PANEL_PORT="$(get_env CACTAI_PANEL_PORT)"
+PANEL_PORT="$(get_env SENTRAI_PANEL_PORT)"
 if [ -n "$PANEL_PORT" ]; then
-    pin="$(openssl x509 -in "$(get_env CACTAI_PANEL_CERT)" -outform DER 2>/dev/null | sha256sum | cut -d' ' -f1)"
-    echo "  Central panel: agents join at $(get_env CACTAI_PANEL_URL) (only machine keys are answered there)."
+    pin="$(openssl x509 -in "$(get_env SENTRAI_PANEL_CERT)" -outform DER 2>/dev/null | sha256sum | cut -d' ' -f1)"
+    echo "  Central panel: agents join at $(get_env SENTRAI_PANEL_URL) (only machine keys are answered there)."
     echo "    Certificate pin: sha256:$pin   (the Machines page shows it with every join code)"
-    echo "    On each machine: sudo ./mvp/deploy/install-agent.sh --panel $(get_env CACTAI_PANEL_URL) --code <code> --pin sha256:$pin"
+    echo "    On each machine: sudo ./mvp/deploy/install-agent.sh --panel $(get_env SENTRAI_PANEL_URL) --code <code> --pin sha256:$pin"
 fi
 case "$CORE_HOST" in
     127.0.0.1|localhost|::1) ;;
     *) echo "  WARNING: the core API listens on $CORE_HOST:$CORE_PORT with no login; limit it in the firewall." ;;
 esac
+reinstall_other_after_cactai panel "$SRC/deploy"

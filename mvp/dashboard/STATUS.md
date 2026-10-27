@@ -7,7 +7,7 @@ Stopped on request, 2026-09-27 ~23:32. All servers I started (fake core :8900, S
   - Features: SentrAI branding; plotly 0-100 gauge colored by band with the threshold line at 80; risk-over-time chart from `/risk` history; KPI row; incident queue table; incident detail with [Acknowledge], [Approve & Patch], [Reject with Justification] (reject requires text), [Rollback] and [Make Permanent] for contained incidents; active containment from `/blocklist`; agent activity feed from `/audit` with a "Chain valid ✅" badge; evidence report viewer (`/reports/{id}.md`) with .md and .json download buttons.
   - Sidebar: core URL, operator name, auto-refresh every 2 s (`st.fragment(run_every=2)`).
   - When the core is down, a "CORE OFFLINE" panel is shown and the page keeps retrying.
-  - Helpers: `cactai_ui/api.py` (HTTP client), `cactai_ui/shaping.py` (pure functions for bands, tables, feed and figures).
+  - Helpers: `sentrai_ui/api.py` (HTTP client), `sentrai_ui/shaping.py` (pure functions for bands, tables, feed and figures).
   - `dev/fake_core.py`: FastAPI fake of the whole contract API. It defaults to port **8900** so it never collides with the real core. It plays a scripted scenario: brute force, then penalty growth, then SQLi, then autonomous containment and a report. There is also a dev-only `POST /dev/trigger/{category}`.
   - Checked by hand in a browser against the fake core: the gauge, chart, queue, reject validation (shows an error toast), reject with text, Make Permanent (recorded in the audit), the report viewer, and the offline panel.
 - `mvp/notifier/` with its own `.venv` and `requirements.txt`: `notifier.py` (Telegram mode with inline Approve/Reject buttons; reject asks for a reply with ForceReply; every button press calls `/ack` first, then `/decision`; containment alerts get Rollback/Make Permanent buttons; only the configured chat may press buttons), `formatting.py`, `core.py`. It switches to CONSOLE mode when `TELEGRAM_BOT_TOKEN` or `TELEGRAM_CHAT_ID` is missing, and marks alerts delivered with channel `console`. No tokens are hardcoded.
@@ -20,7 +20,7 @@ Stopped on request, 2026-09-27 ~23:32. All servers I started (fake core :8900, S
 ## Not done / how to resume
 1. **README.md files for both folders are NOT written yet.** Run commands for now:
    - Fake core: `cd mvp\dashboard; .venv\Scripts\python dev\fake_core.py` (serves http://127.0.0.1:8900)
-   - Dashboard: `cd mvp\dashboard; $env:CACTAI_CORE_URL="http://127.0.0.1:8000"; .venv\Scripts\streamlit run app.py` (http://127.0.0.1:8501; defaults to core :8000). Run it from `mvp\dashboard` so `.streamlit\config.toml` (the dark theme) is picked up.
+   - Dashboard: `cd mvp\dashboard; $env:SENTRAI_CORE_URL="http://127.0.0.1:8000"; .venv\Scripts\streamlit run app.py` (http://127.0.0.1:8501; defaults to core :8000). Run it from `mvp\dashboard` so `.streamlit\config.toml` (the dark theme) is picked up.
    - Notifier: `cd mvp\notifier; .venv\Scripts\python notifier.py` (console mode), or set `$env:TELEGRAM_BOT_TOKEN` and `$env:TELEGRAM_CHAT_ID` first for Telegram mode. `--once` delivers pending alerts once and exits, and `--core URL` overrides the core URL. The README still needs to cover @BotFather: /newbot gives the token; send /start to the bot, and it replies with the chat id.
    - Tests: `.venv\Scripts\python -m pytest -q` in each folder.
 2. Telegram mode has not been exercised against a real bot (no token available). The imports and handler wiring were checked, but not a live run.

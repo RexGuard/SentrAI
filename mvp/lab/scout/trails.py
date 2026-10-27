@@ -5,7 +5,7 @@ commands. Every step (which folder they opened, which file they looked inside, w
 they chose and why) is saved as one JSON line in ``scout/trails/``. Scout's confirmed
 finds are saved the same way. Scout reads the trails before each search, so it follows
 the same route an expert would and skips the dead ends they already ruled out.
-``CACTAI_SCOUT_TRAILS`` moves the folder (the server install keeps it under /var/lib/cactai).
+``SENTRAI_SCOUT_TRAILS`` moves the folder (the server install keeps it under /var/lib/sentrai).
 """
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from typing import Callable
 
 from .tools import SafeFS
 
-TRAILS_DIR = Path(os.environ.get("CACTAI_SCOUT_TRAILS") or Path(__file__).resolve().parent / "trails")
+TRAILS_DIR = Path(os.environ.get("SENTRAI_SCOUT_TRAILS") or Path(__file__).resolve().parent / "trails")
 LAYERS = ("web", "db", "os", "network", "cloud")
 MAX_LESSON_CHARS = 6000
 

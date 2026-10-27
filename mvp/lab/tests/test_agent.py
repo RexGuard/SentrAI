@@ -21,7 +21,7 @@ class FakeResponse:
 
 @pytest.fixture(autouse=True)
 def agent_file(tmp_path, monkeypatch):
-    monkeypatch.setenv("CACTAI_AGENT_FILE", str(tmp_path / "agent.json"))
+    monkeypatch.setenv("SENTRAI_AGENT_FILE", str(tmp_path / "agent.json"))
     return tmp_path / "agent.json"
 
 
@@ -76,7 +76,7 @@ def test_enforcer_adds_and_removes():
     calls, run = recorder()
     e = agent.Enforcer("iptables", True, {"127.0.0.1"}, runner=run)
     assert e.sync({"203.0.113.45"}) == {"added": ["203.0.113.45"], "removed": []}
-    assert ["iptables", "-I", "INPUT", "-s", "203.0.113.45", "-m", "comment", "--comment", "cactai", "-j", "DROP"] in calls
+    assert ["iptables", "-I", "INPUT", "-s", "203.0.113.45", "-m", "comment", "--comment", "sentrai", "-j", "DROP"] in calls
     assert e.sync({"203.0.113.45"}) == {"added": [], "removed": []}  # nothing new: no commands
     assert e.sync(set()) == {"added": [], "removed": ["203.0.113.45"]}
     assert calls[-1][:2] == ["iptables", "-D"] and e.applied == set()
@@ -187,13 +187,13 @@ def test_threat_scan_job_reads_only_local_folders(tmp_path, monkeypatch):
     site = tmp_path / "site"
     site.mkdir()
     (site / "shell.php").write_text("<?php eval($_POST['c']); ?>")
-    monkeypatch.setenv("CACTAI_THREAT_PATHS", str(site))
+    monkeypatch.setenv("SENTRAI_THREAT_PATHS", str(site))
     ok, result, err = tasks.run_job({"id": "j-1", "kind": "threat_scan"}, tmp_path)
     assert ok and err is None and result["files_checked"] == 1
     assert result["findings"] and all("real_path" not in f for f in result["findings"])
-    monkeypatch.delenv("CACTAI_THREAT_PATHS")
+    monkeypatch.delenv("SENTRAI_THREAT_PATHS")
     ok, result, _ = tasks.run_job({"id": "j-2", "kind": "threat_scan"}, tmp_path)
-    assert ok and result["files_checked"] == 0 and "CACTAI_THREAT_PATHS" in result["note"]
+    assert ok and result["files_checked"] == 0 and "SENTRAI_THREAT_PATHS" in result["note"]
 
 
 def test_backup_job_stays_on_this_machine(tmp_path, monkeypatch):
@@ -202,15 +202,15 @@ def test_backup_job_stays_on_this_machine(tmp_path, monkeypatch):
     data = tmp_path / "data"
     data.mkdir()
     (data / "a.txt").write_text("hello")
-    monkeypatch.setenv("CACTAI_BACKUP_PATHS", str(data))
-    monkeypatch.delenv("CACTAI_BACKUP_DIR", raising=False)
+    monkeypatch.setenv("SENTRAI_BACKUP_PATHS", str(data))
+    monkeypatch.delenv("SENTRAI_BACKUP_DIR", raising=False)
     ok, result, err = tasks.run_job({"id": "j-1", "kind": "backup"}, tmp_path / "agent")
     assert ok, err
     assert result["files"] == 1 and len(result["sha256"]) == 64
     assert (tmp_path / "agent" / "backups" / f"{result['id']}.tar.gz").is_file()
-    monkeypatch.delenv("CACTAI_BACKUP_PATHS")
+    monkeypatch.delenv("SENTRAI_BACKUP_PATHS")
     ok, _, err = tasks.run_job({"id": "j-2", "kind": "backup"}, tmp_path / "agent")
-    assert not ok and "CACTAI_BACKUP_PATHS" in err
+    assert not ok and "SENTRAI_BACKUP_PATHS" in err
     ok, _, err = tasks.run_job({"id": "j-3", "kind": "format_disk"}, tmp_path)
     assert not ok and "does not know" in err
 
@@ -220,7 +220,7 @@ def test_job_loop_picks_up_runs_and_reports(tmp_path, monkeypatch):
 
     from agent import tasks
 
-    monkeypatch.delenv("CACTAI_THREAT_PATHS", raising=False)
+    monkeypatch.delenv("SENTRAI_THREAT_PATHS", raising=False)
     stop = threading.Event()
     queue = [{"id": "j-1", "kind": "threat_scan"}]
     sent = []

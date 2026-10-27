@@ -24,14 +24,14 @@ function Wait-For([string]$What, [scriptblock]$Check, [int]$Seconds = 90) {
 }
 
 # --- a panel to join -------------------------------------------------------
-$env:CACTAI_CONFIG = Join-Path $env:RUNNER_TEMP "panel-config.json"
-$env:CACTAI_API_TOKEN = $Token
-$env:CACTAI_FIREWALL = "off"
-$env:CACTAI_RISK_SCOPE = "host"
+$env:SENTRAI_CONFIG = Join-Path $env:RUNNER_TEMP "panel-config.json"
+$env:SENTRAI_API_TOKEN = $Token
+$env:SENTRAI_FIREWALL = "off"
+$env:SENTRAI_RISK_SCOPE = "host"
 $core = Start-Process -FilePath (Join-Path $Mvp "core\.venv\Scripts\python.exe") -PassThru -NoNewWindow `
     -WorkingDirectory (Join-Path $Mvp "core") -ArgumentList "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "$Port" `
     -RedirectStandardOutput (Join-Path $env:RUNNER_TEMP "core.out.log") -RedirectStandardError (Join-Path $env:RUNNER_TEMP "core.err.log")
-foreach ($k in "CACTAI_CONFIG", "CACTAI_API_TOKEN", "CACTAI_FIREWALL", "CACTAI_RISK_SCOPE") { Remove-Item "env:$k" }
+foreach ($k in "SENTRAI_CONFIG", "SENTRAI_API_TOKEN", "SENTRAI_FIREWALL", "SENTRAI_RISK_SCOPE") { Remove-Item "env:$k" }
 Wait-For "panel core is up" { Invoke-RestMethod "$Panel/health" | Out-Null; $true }
 $code = (Invoke-RestMethod -Method Post "$Panel/fleet/join-codes" -Headers $Headers -ContentType "application/json" `
     -Body '{"operator": "ci", "name": "ci-win"}').code
@@ -50,13 +50,13 @@ try {
     }
     $acl = (Get-Acl $State).Access | ForEach-Object { $_.IdentityReference.Value }
     if ($acl | Where-Object { $_ -notmatch "SYSTEM|Administrators" }) { Fail "state folder is open to: $($acl -join ', ')" }
-    if (-not (Select-String -Path $Xml -SimpleMatch 'name="CACTAI_FIREWALL_ENFORCE" value="0"' -Quiet)) { Fail "first install is not a dry run" }
+    if (-not (Select-String -Path $Xml -SimpleMatch 'name="SENTRAI_FIREWALL_ENFORCE" value="0"' -Quiet)) { Fail "first install is not a dry run" }
     if (-not (Select-String -Path $Xml -SimpleMatch '203.0.113.10' -Quiet)) { Fail "-Protect was not kept" }
 
     # --- upgrade in place with -Enforce (no join code: the machine stays joined) ---
     & .\deploy\install-agent.ps1 -Enforce
     if ($LASTEXITCODE) { Fail "reinstall with -Enforce exited $LASTEXITCODE" }
-    if (-not (Select-String -Path $Xml -SimpleMatch 'name="CACTAI_FIREWALL_ENFORCE" value="1"' -Quiet)) { Fail "-Enforce was not saved" }
+    if (-not (Select-String -Path $Xml -SimpleMatch 'name="SENTRAI_FIREWALL_ENFORCE" value="1"' -Quiet)) { Fail "-Enforce was not saved" }
     if (-not (Select-String -Path $Xml -SimpleMatch '203.0.113.10' -Quiet)) { Fail "-Protect was lost on upgrade" }
     Wait-For "service is running after the upgrade" { (Get-Service SentrAIAgent).Status -eq "Running" }
     # A service stop must stop the agent itself, not only the wrapper.

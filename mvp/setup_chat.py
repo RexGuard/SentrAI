@@ -1,8 +1,8 @@
 """Guided setup in the dashboard's Chat page: Cyanide asks the setup questions in plain words.
 
-The same settings as the setup wizard and the Configuration page (cactai_config), asked one at a
+The same settings as the setup wizard and the Configuration page (sentrai_config), asked one at a
 time as a conversation, so a new user never has to open Configuration. Nothing is saved until
-the user confirms the summary at the end; the dashboard then saves through cactai_config.save().
+the user confirms the summary at the end; the dashboard then saves through sentrai_config.save().
 
 It is scripted, so it works without an AI key. Each question offers buttons, and typed answers
 are matched to them (by number, label or a few plain words). When an AI model is configured, the
@@ -21,14 +21,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-import cactai_config as cfg
+import sentrai_config as cfg
 
 Option = tuple[str, str]  # (value, button label)
 # interpret(question, options, answer) -> {"choice": value or "", "reply": text} or None when no model
 Interpret = Callable[[str, list[Option], str], "dict | None"]
 
 HIDDEN = "••••••"
-OWN_LOGS = cfg.FIELDS["CACTAI_LAB_LOGS"].default  # where apps write SentrAI's own JSON-lines logs
+OWN_LOGS = cfg.FIELDS["SENTRAI_LAB_LOGS"].default  # where apps write SentrAI's own JSON-lines logs
 YES = {"yes", "y", "ok", "okay", "sure", "yep", "yeah", "sounds good", "go ahead", "do it", "fine", "correct"}
 NO = {"no", "n", "none", "nope", "nothing", "skip", "no one", "nobody", "not now", "-"}
 FILLER = {"and", "the", "is", "are", "our", "my", "a", "an", "account", "accounts", "user", "users", "please"}
@@ -159,18 +159,18 @@ class SetupChat:
                  f"**Logs watched:** {logs_summary(self)}",
                  f"**Never blocked:** {v('PROTECTED_IPS') or 'nothing'}",
                  f"**Never locked:** {v('PROTECTED_USERS') or 'no accounts'}",
-                 f"**Your name:** {v('CACTAI_OPERATOR')}"]
+                 f"**Your name:** {v('SENTRAI_OPERATOR')}"]
         alerts = []
         if v("TELEGRAM_BOT_TOKEN") and v("TELEGRAM_CHAT_ID"):
             alerts.append(f"Telegram chat {v('TELEGRAM_CHAT_ID')}")
         if v("SMTP_HOST"):
             alerts.append(f"email to {v('ALERT_EMAIL_TO')} via {v('SMTP_HOST')}"
-                          + (" as a backup" if alerts and v("CACTAI_EMAIL_MODE") == "backup" else ""))
+                          + (" as a backup" if alerts and v("SENTRAI_EMAIL_MODE") == "backup" else ""))
         lines.append(f"**Alerts:** {', '.join(alerts) if alerts else 'shown in the console only'}")
-        if v(cfg.cactai_llm.GENERIC_KEY_ENV):
-            provider = v("CACTAI_LLM_PROVIDER")
-            model = v(cfg.MODEL_ENV) or cfg.cactai_llm.DEFAULT_MODEL.get(provider) or "?"
-            lines.append(f"**AI model:** {cfg.cactai_llm.LABEL.get(provider, provider)}, {model} (key set)")
+        if v(cfg.sentrai_llm.GENERIC_KEY_ENV):
+            provider = v("SENTRAI_LLM_PROVIDER")
+            model = v(cfg.MODEL_ENV) or cfg.sentrai_llm.DEFAULT_MODEL.get(provider) or "?"
+            lines.append(f"**AI model:** {cfg.sentrai_llm.LABEL.get(provider, provider)}, {model} (key set)")
         else:
             lines.append("**AI model:** none, fixed playbooks")
         lines.append(f"**Dashboard:** {dashboard_address(self)}")
@@ -286,7 +286,7 @@ def _logs_question(s: SetupChat) -> str:
 
 def _logs_options(s: SetupChat) -> list[Option]:
     opts = [("found", "Watch the logs I found")] if s.notes.get("found_logs") else []
-    if s.current.get("CACTAI_LAB_LOGS") not in ("", OWN_LOGS):
+    if s.current.get("SENTRAI_LAB_LOGS") not in ("", OWN_LOGS):
         opts.append(("keep", "Keep the current folder"))
     return opts + [("own", "SentrAI's own log folder")]
 
@@ -298,7 +298,7 @@ def _logs(s: SetupChat, answer: str) -> str:
     if answer == "keep":
         return "I'll keep watching the same folder."
     if answer == "own":
-        s.set(CACTAI_LAB_LOGS=OWN_LOGS)
+        s.set(SENTRAI_LAB_LOGS=OWN_LOGS)
         return "I'll watch SentrAI's own log folder."
     path = Path(answer.strip().strip('"').strip("'")).expanduser()
     if path.is_file():
@@ -306,7 +306,7 @@ def _logs(s: SetupChat, answer: str) -> str:
         return f"I'll watch {path.resolve()}."
     if not path.is_dir():
         raise Retry(f"I can't find a file or folder at {path} on this computer. Check the path and try again.")
-    s.set(CACTAI_LAB_LOGS=str(path.resolve()))
+    s.set(SENTRAI_LAB_LOGS=str(path.resolve()))
     found = [_log_file(f.resolve()) for f in sorted(path.iterdir())
              if f.is_file() and f.suffix not in (".jsonl", ".gz") and any(w in f.name.lower() for w in LOG_WORDS)][:10]
     if found:
@@ -317,7 +317,7 @@ def _logs(s: SetupChat, answer: str) -> str:
 
 def logs_summary(s: SetupChat) -> str:
     extra = [e["path"] for e in s.notes.get("log_sources", [])]
-    folder = s.value("CACTAI_LAB_LOGS")
+    folder = s.value("SENTRAI_LAB_LOGS")
     own = "SentrAI's own log folder" if folder == OWN_LOGS else folder
     return ", ".join(extra) + f" (plus {own})" if extra else own
 
@@ -366,7 +366,7 @@ def _operator(s: SetupChat, answer: str) -> str:
     if answer == "keep":
         return ""
     name = _nonblank(answer, "your name")[:60]
-    s.set(CACTAI_OPERATOR=name)
+    s.set(SENTRAI_OPERATOR=name)
     if s.value("ON_DUTY") == cfg.FIELDS["ON_DUTY"].default:  # still the placeholder responder
         s.set(ON_DUTY=name)
     return f"Nice to meet you, {name}."
@@ -381,9 +381,9 @@ def _alerts(s: SetupChat, choice: str) -> str:
     if choice == "telegram":
         s.set(SMTP_HOST="")
     if choice == "email":
-        s.set(TELEGRAM_BOT_TOKEN="", TELEGRAM_CHAT_ID="", CACTAI_EMAIL_MODE="always")
+        s.set(TELEGRAM_BOT_TOKEN="", TELEGRAM_CHAT_ID="", SENTRAI_EMAIL_MODE="always")
     if choice == "both":
-        s.set(CACTAI_EMAIL_MODE="backup")
+        s.set(SENTRAI_EMAIL_MODE="backup")
     return ""
 
 
@@ -457,21 +457,21 @@ def _email_to(s: SetupChat, answer: str) -> str:
 # 7. AI model
 def _ai_options(s: SetupChat) -> list[Option]:
     keep = []
-    if s.current.get(cfg.cactai_llm.GENERIC_KEY_ENV):
-        provider = s.current.get("CACTAI_LLM_PROVIDER", "")
-        keep = [("keep", f"Keep {cfg.cactai_llm.LABEL.get(provider, provider)}")]
-    return keep + [(p, cfg.cactai_llm.LABEL[p]) for p in cfg.cactai_llm.PROVIDERS] + [("none", "No key, skip")]
+    if s.current.get(cfg.sentrai_llm.GENERIC_KEY_ENV):
+        provider = s.current.get("SENTRAI_LLM_PROVIDER", "")
+        keep = [("keep", f"Keep {cfg.sentrai_llm.LABEL.get(provider, provider)}")]
+    return keep + [(p, cfg.sentrai_llm.LABEL[p]) for p in cfg.sentrai_llm.PROVIDERS] + [("none", "No key, skip")]
 
 
 def _ai(s: SetupChat, choice: str) -> str:
     s.notes["ai"] = choice
     if choice == "none":
-        s.set(**{cfg.cactai_llm.GENERIC_KEY_ENV: ""})
+        s.set(**{cfg.sentrai_llm.GENERIC_KEY_ENV: ""})
         return "No problem: I'll run on fixed playbooks, and chat answers from the core's own explanations."
     if choice != "keep":
-        s.set(CACTAI_LLM_PROVIDER=choice)
-        if s.current.get("CACTAI_LLM_PROVIDER") != choice:
-            s.set(**{cfg.MODEL_ENV: "", "CACTAI_LLM_BASE_URL": "", cfg.cactai_llm.GENERIC_KEY_ENV: ""})
+        s.set(SENTRAI_LLM_PROVIDER=choice)
+        if s.current.get("SENTRAI_LLM_PROVIDER") != choice:
+            s.set(**{cfg.MODEL_ENV: "", "SENTRAI_LLM_BASE_URL": "", cfg.sentrai_llm.GENERIC_KEY_ENV: ""})
     return ""
 
 
@@ -480,7 +480,7 @@ def _picked_ai(s: SetupChat) -> bool:
 
 
 def _ai_key(s: SetupChat, answer: str) -> str:
-    s.set(**{cfg.cactai_llm.GENERIC_KEY_ENV: _nonblank(answer, "the API key")})
+    s.set(**{cfg.sentrai_llm.GENERIC_KEY_ENV: _nonblank(answer, "the API key")})
     return "Got the key."
 
 
@@ -488,12 +488,12 @@ def _base_url(s: SetupChat, answer: str) -> str:
     url = _nonblank(answer, "the base URL")
     if not re.match(r"https?://", url):
         raise Retry("The base URL starts with https://, like https://llm.example.com/v1.")
-    s.set(CACTAI_LLM_BASE_URL=url)
+    s.set(SENTRAI_LLM_BASE_URL=url)
     return ""
 
 
 def _model_options(s: SetupChat) -> list[Option]:
-    default = cfg.cactai_llm.DEFAULT_MODEL.get(s.value("CACTAI_LLM_PROVIDER"))
+    default = cfg.sentrai_llm.DEFAULT_MODEL.get(s.value("SENTRAI_LLM_PROVIDER"))
     return [("default", f"Use {default}")] if default else []
 
 
@@ -593,7 +593,7 @@ STEPS: tuple[Step, ...] = (
     Step("users", lambda s: "Are there accounts SentrAI must never lock, like the one you sign in with?", _users,
          lambda s: [("none", "No")], words={"none": NO}),
     Step("operator", lambda s: "What name should appear on your approvals?", _operator,
-         lambda s: [("keep", f"Keep \"{s.current['CACTAI_OPERATOR']}\"")]),
+         lambda s: [("keep", f"Keep \"{s.current['SENTRAI_OPERATOR']}\"")]),
     Step("alerts", lambda s: "How should I alert you when something happens?", _alerts,
          lambda s: [("telegram", "Telegram"), ("email", "Email"), ("both", "Telegram, email as backup"),
                     ("console", "Just the dashboard")], typed=False,
@@ -617,10 +617,10 @@ STEPS: tuple[Step, ...] = (
     Step("ai", lambda s: "Do you have an AI key? With one I plan responses for your system and answer "
                          "questions in chat; without one SentrAI uses fixed playbooks.", _ai, _ai_options,
          typed=False, words={"none": NO | {"no key"}, "anthropic": {"claude"}}),
-    Step("ai_key", lambda s: f"Paste your {cfg.cactai_llm.LABEL[s.value('CACTAI_LLM_PROVIDER')]} API key.",
+    Step("ai_key", lambda s: f"Paste your {cfg.sentrai_llm.LABEL[s.value('SENTRAI_LLM_PROVIDER')]} API key.",
          _ai_key, when=_picked_ai, secret=True),
     Step("ai_url", lambda s: "What is the service's base URL?", _base_url,
-         when=lambda s: _picked_ai(s) and s.value("CACTAI_LLM_PROVIDER") == "compatible"),
+         when=lambda s: _picked_ai(s) and s.value("SENTRAI_LLM_PROVIDER") == "compatible"),
     Step("ai_model", lambda s: "Which model should I use?" + (
         "" if _model_options(s) else " This provider has no default, so type its name."), _model, _model_options,
          when=_picked_ai, words={"default": {"default", "yes", "ok"}}),

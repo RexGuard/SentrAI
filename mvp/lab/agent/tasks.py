@@ -3,9 +3,9 @@
 The agent asks the panel for work on its own outgoing calls, runs it here, and sends back a short
 result. What gets read is decided on this machine, never by the panel:
 
-  CACTAI_THREAT_PATHS   folders to scan for web shells, miners, reverse shells (OS path separator)
-  CACTAI_BACKUP_PATHS   folders to back up; CACTAI_BACKUP_KEEP (default 7), CACTAI_BACKUP_COPY_TO,
-                        CACTAI_BACKUP_DIR (default: "backups" next to the agent file)
+  SENTRAI_THREAT_PATHS   folders to scan for web shells, miners, reverse shells (OS path separator)
+  SENTRAI_BACKUP_PATHS   folders to back up; SENTRAI_BACKUP_KEEP (default 7), SENTRAI_BACKUP_COPY_TO,
+                        SENTRAI_BACKUP_DIR (default: "backups" next to the agent file)
 
 Backups stay on this machine (restoring one is done here, by a person). The panel only gets the
 backup's id, size and checksum, and the scan's findings with home folders hidden and secrets masked.
@@ -31,10 +31,10 @@ def _paths(name: str) -> list[str]:
 
 
 def run_threat_scan() -> dict[str, Any]:
-    roots = _paths("CACTAI_THREAT_PATHS")
+    roots = _paths("SENTRAI_THREAT_PATHS")
     if not roots:
         return {"roots": [], "files_checked": 0, "findings": [], "counts": {},
-                "note": "No folders to scan on this machine: set CACTAI_THREAT_PATHS for its agent."}
+                "note": "No folders to scan on this machine: set SENTRAI_THREAT_PATHS for its agent."}
     result = threatscan.scan(roots)
     for f in result["findings"]:
         f.pop("real_path", None)  # the panel sees the shown path only
@@ -83,7 +83,7 @@ class LocalCore:
 def run_backup(data_dir: Path) -> dict[str, Any]:
     watch = BackupWatch(LocalCore(data_dir))
     if not watch._roots(watch.config()):
-        return {"ok": False, "error": "No folders to back up on this machine: set CACTAI_BACKUP_PATHS for its agent."}
+        return {"ok": False, "error": "No folders to back up on this machine: set SENTRAI_BACKUP_PATHS for its agent."}
     out = watch.make("panel", "manual", include_sentrai=False)
     if out.get("ok"):
         out["folders"] = [procscan.hide_home(f, procscan._homes()) for f in out.get("folders") or []]

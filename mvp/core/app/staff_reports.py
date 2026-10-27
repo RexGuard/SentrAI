@@ -16,7 +16,7 @@ name the machine it is about (``host``, a name from ``GET /machines`` on a centr
 
 The reporter writes everything here, so nothing is trusted: text is capped and stripped of control
 characters, fenced as data for the AI, and the AI's answer is held to fixed choices. Reports are
-saved next to the core database (``staff_reports.json``, or ``CACTAI_STAFF_REPORTS``).
+saved next to the core database (``staff_reports.json``, or ``SENTRAI_STAFF_REPORTS``).
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-log = logging.getLogger("cactai.staff_reports")
+log = logging.getLogger("sentrai.staff_reports")
 
 SOURCE = "staff_report"
 MAX_TEXT = 4000
@@ -187,14 +187,14 @@ def _checked(answer: Any, text: str) -> dict[str, Any]:
 
 
 def store_file(db_path: Any) -> Path:
-    env = os.environ.get("CACTAI_STAFF_REPORTS")
+    env = os.environ.get("SENTRAI_STAFF_REPORTS")
     return Path(env) if env else Path(db_path).with_name("staff_reports.json")
 
 
 class StaffReports:
     def __init__(self, core: Any, provider: Callable[[], Any] = lambda: None) -> None:
         self.core = core
-        self.provider = provider  # returns the cactai_llm.Provider in use, or None for keyword sorting
+        self.provider = provider  # returns the sentrai_llm.Provider in use, or None for keyword sorting
         self.lock = threading.Lock()
         self._sent: dict[str, deque[float]] = {}
         self._all: deque[float] = deque()

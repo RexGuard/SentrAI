@@ -1,8 +1,8 @@
 [Unit]
 Description=SentrAI collector (tails approved logs, sends events to the core)
-PartOf=cactai.target
-After=cactai-core.service
-Wants=cactai-core.service
+PartOf=sentrai.target
+After=sentrai-core.service
+Wants=sentrai-core.service
 
 [Service]
 Type=simple
@@ -10,8 +10,8 @@ WorkingDirectory=@PREFIX@/mvp/lab
 ExecStart=@PREFIX@/mvp/lab/.venv/bin/python -m collector.collector
 User=@USER@
 Group=@USER@
-EnvironmentFile=/etc/cactai/cactai.env
-Environment=HOME=/var/lib/cactai PYTHONUNBUFFERED=1 PYTHONUTF8=1 PYTHONIOENCODING=utf-8
+EnvironmentFile=/etc/sentrai/sentrai.env
+Environment=HOME=/var/lib/sentrai PYTHONUNBUFFERED=1 PYTHONUTF8=1 PYTHONIOENCODING=utf-8
 Restart=on-failure
 RestartSec=5
 # Least privilege: reads logs through the log groups and writes only its read positions. It
@@ -38,8 +38,8 @@ UMask=0077
 SupplementaryGroups=@LOGGROUPS@
 CapabilityBoundingSet=
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
-ReadWritePaths=/var/lib/cactai/collector
-InaccessiblePaths=-/var/lib/cactai/core
+ReadWritePaths=/var/lib/sentrai/collector
+InaccessiblePaths=-/var/lib/sentrai/core
 
 [Install]
-WantedBy=cactai.target
+WantedBy=sentrai.target

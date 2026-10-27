@@ -1,0 +1,7 @@
+[Unit]
+Description=SentrAI (core, collector, dashboard, notifier)
+Documentation=https://github.com/RexGuard/sentrai/blob/main/mvp/deploy/README.md
+Wants=sentrai-core.service sentrai-collector.service sentrai-dashboard.service sentrai-notifier.service
+
+[Install]
+WantedBy=multi-user.target

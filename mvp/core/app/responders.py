@@ -22,7 +22,7 @@ from collections import Counter
 from collections.abc import Callable
 from typing import Any
 
-log = logging.getLogger("cactai.responders")
+log = logging.getLogger("sentrai.responders")
 
 Action = dict[str, Any]  # {"action_id", "type", "target", ...} built by Areole.apply
 

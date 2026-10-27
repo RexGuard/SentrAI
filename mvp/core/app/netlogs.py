@@ -88,11 +88,14 @@ def _int(v: Any) -> int | None:
         return None
 
 
+DEMO_FORMATS = ("sentrai_demo", "cactai_demo")  # the lab portal's lines (cactai_demo: saved before the rename)
+
+
 def parse_http(event: dict[str, Any]) -> HttpLine | None:
     """The request in an access-log event, or None when the event is not an HTTP access line."""
     raw = str(event.get("raw") or "").strip()
     parsed = event.get("parsed")
-    if isinstance(parsed, dict) and parsed.get("kind") == "http_request" and parsed.get("format") != "cactai_demo":
+    if isinstance(parsed, dict) and parsed.get("kind") == "http_request" and parsed.get("format") not in DEMO_FORMATS:
         path = str(parsed.get("path") or "")
         if parsed.get("query"):
             path += "?" + str(parsed["query"])

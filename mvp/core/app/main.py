@@ -25,7 +25,7 @@ from .backups import BackupWatch
 from .cyanide import Cyanide, default_planner
 from .saguaro import BadRequestError, ConflictError, Saguaro
 
-log = logging.getLogger("cactai.core")
+log = logging.getLogger("sentrai.core")
 
 
 class EventIn(BaseModel):
@@ -61,6 +61,11 @@ class AssignIn(BaseModel):
     operator: str
     assignee: str
     note: Optional[str] = None
+
+
+class RoutingIn(BaseModel):
+    operator: str
+    routing: dict[str, Any]
 
 
 class ResolveIn(BaseModel):
@@ -254,14 +259,15 @@ AGENT_ROUTES = frozenset({("POST", "/events"), ("POST", "/heartbeat"), ("GET", "
 
 # Open without a token: the launchers' readiness check, and the list the fake portal enforces
 # (it holds no personal data). A report opens with the signed link from its alert (?sig=). Every other endpoint needs "Authorization: Bearer <token>" or
-# the X-CactAI-Token header; the token is CACTAI_API_TOKEN from the setup wizard.
+# the X-SentrAI-Token header; the token is SENTRAI_API_TOKEN from the setup wizard.
 OPEN_PATHS = frozenset({"/health", "/blocklist", "/docs", "/openapi.json", "/fleet/enrol"})
-TOKEN_HEADER = "x-cactai-token"
+TOKEN_HEADER = "x-sentrai-token"
+OLD_TOKEN_HEADER = "x-cactai-token"  # sent by scripts written before the CactAI -> SentrAI rename
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
-    # Cyanide (Claude-planned) is the default orchestrator; CACTAI_ENGINE=saguaro keeps the fixed playbooks.
-    if os.getenv("CACTAI_ENGINE", "cyanide").lower() == "saguaro":
+    # Cyanide (Claude-planned) is the default orchestrator; SENTRAI_ENGINE=saguaro keeps the fixed playbooks.
+    if os.getenv("SENTRAI_ENGINE", "cyanide").lower() == "saguaro":
         core: Saguaro = Saguaro(settings or Settings())
     else:
         core = Cyanide(settings or Settings(), planner=default_planner())
@@ -328,7 +334,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         path = request.url.path
         request.state.agent = None
         auth = request.headers.get("authorization", "")
-        sent = auth[7:].strip() if auth[:7].lower() == "bearer " else request.headers.get(TOKEN_HEADER, "")
+        header = request.headers.get(TOKEN_HEADER) or request.headers.get(OLD_TOKEN_HEADER, "")
+        sent = auth[7:].strip() if auth[:7].lower() == "bearer " else header
         # One machine's block list (?host=) is only for that machine's agent or the operator,
         # and an agent asking for the open list still gets only its own.
         if path in OPEN_PATHS and not (path == "/blocklist" and ("host" in request.query_params
@@ -356,7 +363,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return
         if not (sent and hmac.compare_digest(sent.encode(), core.settings.api_token.encode())):
             raise HTTPException(status_code=401, detail="missing or wrong API token "
-                                "(python cactai_config.py token shows it)",
+                                "(python sentrai_config.py token shows it)",
                                 headers={"WWW-Authenticate": "Bearer"})
 
     app = FastAPI(title="SentrAI core", version="0.1.0", lifespan=lifespan, dependencies=[Depends(require_token)])
@@ -408,7 +415,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/risk")
     def get_risk(history: int = Query(600, ge=0, le=3600), host: Optional[str] = Query(None)) -> dict[str, Any]:
-        """The headline index, or one machine's own with ?host= (see CACTAI_RISK_SCOPE)."""
+        """The headline index, or one machine's own with ?host= (see SENTRAI_RISK_SCOPE)."""
         return core.risk(history=history, host=host)
 
     @app.get("/machines")
@@ -466,6 +473,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/routing")
     def get_routing() -> dict[str, Any]:
         return core.routing_public()
+
+    @app.post("/routing")
+    def post_routing(body: RoutingIn) -> dict[str, Any]:
+        """Save a whole new routing file (people, rules, follow-up) from the dashboard's map."""
+        try:
+            return core.routing_update(body.routing, body.operator)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail=f"could not write the routing file: {exc}")
 
     # Personal Telegram alerts (telegram_links.py): a contact links their private chat with a one-time code.
     @app.post("/telegram/link-codes")
@@ -833,7 +850,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/fleet/panel")
     def get_fleet_panel() -> dict[str, Any]:
-        """The address and certificate pin new machines use (CACTAI_PANEL_URL, CACTAI_PANEL_CERT)."""
+        """The address and certificate pin new machines use (SENTRAI_PANEL_URL, SENTRAI_PANEL_CERT)."""
         return fleet.panel_info()
 
     @app.post("/fleet/enrol")

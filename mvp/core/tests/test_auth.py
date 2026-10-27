@@ -42,12 +42,12 @@ def test_everything_else_needs_the_token(anon, method, path):
 
 def test_wrong_token_is_refused(anon):
     assert anon.get("/incidents", headers={"Authorization": "Bearer nope"}).status_code == 401
-    assert anon.get("/incidents", headers={"X-CactAI-Token": "nope"}).status_code == 401
+    assert anon.get("/incidents", headers={"X-SentrAI-Token": "nope"}).status_code == 401
 
 
 def test_bearer_or_header_token_is_accepted(anon):
     assert anon.get("/incidents", headers={"Authorization": "Bearer s3cret"}).status_code == 200
-    assert anon.get("/incidents", headers={"X-CactAI-Token": "s3cret"}).status_code == 200
+    assert anon.get("/incidents", headers={"X-SentrAI-Token": "s3cret"}).status_code == 200
     assert anon.post("/chat/clear", headers={"Authorization": "bearer s3cret"}).status_code == 200
 
 
@@ -72,3 +72,8 @@ def test_responses_carry_browser_security_headers(anon, path):
     assert r.headers["x-content-type-options"] == "nosniff"
     assert r.headers["x-frame-options"] == "DENY"
     assert r.headers["referrer-policy"] == "no-referrer"
+
+
+def test_old_token_header_still_works(anon):
+    """Scripts written before the CactAI -> SentrAI rename send X-CactAI-Token."""
+    assert anon.get("/incidents", headers={"X-CactAI-Token": "s3cret"}).status_code == 200

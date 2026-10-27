@@ -1,6 +1,6 @@
 """Operator chat: read-only answers, suggestions as buttons, never a state change by itself."""
 
-import cactai_llm
+import sentrai_llm
 from app.chat import OperatorChat
 
 from .conftest import brute_force, ev
@@ -23,7 +23,7 @@ class FakeConvo:
         return self.turns.pop(0)
 
 
-class FakeProvider(cactai_llm.Provider):
+class FakeProvider(sentrai_llm.Provider):
     name, model = "fake", "fake-1"
 
     def __init__(self, turns=None, error=None):
@@ -31,14 +31,14 @@ class FakeProvider(cactai_llm.Provider):
 
     def conversation(self, system, tools):
         if self.error:
-            raise cactai_llm.LLMError(self.error)
+            raise sentrai_llm.LLMError(self.error)
         c = FakeConvo(self.turns)
         self.convos.append(c)
         return c
 
 
 def call(name, **args):
-    return cactai_llm.ToolCall(f"t-{name}", name, args)
+    return sentrai_llm.ToolCall(f"t-{name}", name, args)
 
 
 def test_chat_without_a_key_explains_from_the_core(client):
@@ -88,10 +88,10 @@ def test_model_reads_with_tools_and_can_only_suggest(client):
     core = client.core
     before = core.get_incident(INC)["status"]
     provider = FakeProvider([
-        cactai_llm.Turn(tool_calls=[call("get_incident", incident=INC)], stop="tool_use"),
-        cactai_llm.Turn(tool_calls=[call("suggest_action", incident=INC, decision="approve",
+        sentrai_llm.Turn(tool_calls=[call("get_incident", incident=INC)], stop="tool_use"),
+        sentrai_llm.Turn(tool_calls=[call("suggest_action", incident=INC, decision="approve",
                                          reason="Guessing the admin password from one address")], stop="tool_use"),
-        cactai_llm.Turn(texts=[f"{INC} is a password-guessing attack. Press the button to block it."]),
+        sentrai_llm.Turn(texts=[f"{INC} is a password-guessing attack. Press the button to block it."]),
     ])
     chat = OperatorChat(core, provider)
     reply = chat.ask("erick", "should I block it?", INC)
@@ -107,9 +107,9 @@ def test_model_reads_with_tools_and_can_only_suggest(client):
 
 def test_unknown_incident_is_a_tool_error_not_a_crash(client):
     provider = FakeProvider([
-        cactai_llm.Turn(tool_calls=[call("suggest_action", incident="RSK-9999-999", decision="approve", reason="x")],
+        sentrai_llm.Turn(tool_calls=[call("suggest_action", incident="RSK-9999-999", decision="approve", reason="x")],
                         stop="tool_use"),
-        cactai_llm.Turn(texts=["I could not find that incident."]),
+        sentrai_llm.Turn(texts=["I could not find that incident."]),
     ])
     reply = OperatorChat(client.core, provider).ask("erick", "approve RSK-9999-999")
     assert reply["suggestions"] == []
@@ -123,7 +123,7 @@ def test_model_failure_falls_back(client):
 
 
 def test_earlier_messages_are_passed_to_the_model(client):
-    provider = FakeProvider([cactai_llm.Turn(texts=["first"]), cactai_llm.Turn(texts=["second"])])
+    provider = FakeProvider([sentrai_llm.Turn(texts=["first"]), sentrai_llm.Turn(texts=["second"])])
     chat = OperatorChat(client.core, provider)
     chat.ask("erick", "hello")
     chat.ask("erick", "and again?")
@@ -131,7 +131,7 @@ def test_earlier_messages_are_passed_to_the_model(client):
     assert "Operator: hello" in prompt and f"{client.core.name}: first" in prompt
 
 
-class SetupProvider(cactai_llm.Provider):
+class SetupProvider(sentrai_llm.Provider):
     name, model = "fake", "fake-1"
 
     def __init__(self, out=None, error=None):
@@ -139,7 +139,7 @@ class SetupProvider(cactai_llm.Provider):
 
     def complete_json(self, system, user, schema):
         if self.error:
-            raise cactai_llm.LLMError(self.error)
+            raise sentrai_llm.LLMError(self.error)
         self.asked.append((user, schema))
         return self.out
 

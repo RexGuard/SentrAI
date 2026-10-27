@@ -1,0 +1,50 @@
+[Unit]
+Description=SentrAI core (risk engine, agents, API)
+PartOf=sentrai.target
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=@PREFIX@/mvp/core
+# iptables takes this lock file before every change; /run is read-only to the service otherwise.
+ExecStartPre=-+/bin/sh -c 'touch /run/xtables.lock'
+# app.serve: the local API on SENTRAI_CORE_HOST:SENTRAI_CORE_PORT, plus the agents' HTTPS port when
+# SENTRAI_PANEL_PORT is set (install.sh --panel).
+ExecStart=@PREFIX@/mvp/core/.venv/bin/python -m app.serve
+User=@USER@
+Group=@USER@
+EnvironmentFile=/etc/sentrai/sentrai.env
+Environment=HOME=/var/lib/sentrai PYTHONUNBUFFERED=1 PYTHONUTF8=1 PYTHONIOENCODING=utf-8
+Restart=on-failure
+RestartSec=5
+# Least privilege: the only service that may change the firewall (SENTRAI_FIREWALL), and the only
+# one that can open the audit record in /var/lib/sentrai/core. Reads logs through the log groups.
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+UMask=0077
+SupplementaryGroups=@LOGGROUPS@
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+ReadWritePaths=/var/lib/sentrai/core /var/lib/sentrai/scout -/run/xtables.lock
+InaccessiblePaths=-/var/lib/sentrai/collector
+
+[Install]
+WantedBy=sentrai.target

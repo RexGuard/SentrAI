@@ -1,7 +1,7 @@
 """The log files the technician approved, read by the collector (``collector.default_sources``).
 
 Scout's proposals wait in a second file (``pending.json`` next to ``sources.json``, or
-``CACTAI_SCOUT_PENDING``) until a person approves or rejects them, from the terminal
+``SENTRAI_SCOUT_PENDING``) until a person approves or rejects them, from the terminal
 (``python -m scout approve``), or on the dashboard's Collector page. Each proposal is saved the
 moment Scout makes it, so stopping Scout, or running it with no terminal, loses nothing.
 """
@@ -17,11 +17,11 @@ DEFAULT_FILE = Path(__file__).resolve().parent / "sources.json"
 
 
 def sources_file() -> Path:
-    return Path(os.environ.get("CACTAI_SCOUT_SOURCES", str(DEFAULT_FILE)))
+    return Path(os.environ.get("SENTRAI_SCOUT_SOURCES", str(DEFAULT_FILE)))
 
 
 def pending_file() -> Path:
-    return Path(os.environ.get("CACTAI_SCOUT_PENDING") or sources_file().with_name("pending.json"))
+    return Path(os.environ.get("SENTRAI_SCOUT_PENDING") or sources_file().with_name("pending.json"))
 
 
 def proposal_id(path: str) -> str:

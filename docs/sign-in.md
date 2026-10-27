@@ -13,7 +13,7 @@ name. There is no open sign-up; people join by invite.
 ## Create the Owner account
 
 1. **Get a setup code.** On a new machine, `run.ps1` / `run.sh` prints a one-time **setup code**.
-   You can also make one with `python cactai_config.py admin` (laptop) or `sudo cactai-admin`
+   You can also make one with `python sentrai_config.py admin` (laptop) or `sudo sentrai-admin`
    (server). A setup code works once, for 24 hours.
 2. **Open the dashboard** (`http://127.0.0.1:8501` on a laptop, `https://<server>:8501` on a
    server). It opens on *Create your Owner account*. Type the setup code, your name, email and a
@@ -57,14 +57,14 @@ If no one else can sign in, reset from the machine itself:
 
 | | Laptop (from the `mvp` folder) | Server |
 | --- | --- | --- |
-| Who may sign in (a setup code on a new machine) | `python cactai_config.py admin` | `sudo cactai-admin` |
-| The first Owner: new password, printed once | `python cactai_config.py admin --reset` | `sudo cactai-admin --reset` |
-| The same for another account | `python cactai_config.py admin --reset --email you@example.com` | `sudo cactai-admin --reset --email you@example.com` |
+| Who may sign in (a setup code on a new machine) | `python sentrai_config.py admin` | `sudo sentrai-admin` |
+| The first Owner: new password, printed once | `python sentrai_config.py admin --reset` | `sudo sentrai-admin --reset` |
+| The same for another account | `python sentrai_config.py admin --reset --email you@example.com` | `sudo sentrai-admin --reset --email you@example.com` |
 
 After a reset, the authenticator app is added again at the next sign-in.
 
 For local testing where you do not want to sign in, start SentrAI with
-`CACTAI_DASHBOARD_LOGIN=off` (`$env:CACTAI_DASHBOARD_LOGIN = "off"` in PowerShell). Never use it
+`SENTRAI_DASHBOARD_LOGIN=off` (`$env:SENTRAI_DASHBOARD_LOGIN = "off"` in PowerShell). Never use it
 on a server.
 
 ## The API token
@@ -73,12 +73,12 @@ The dashboard, collector and notifier talk to the core with a token made on the 
 launchers and the installer pass it along, so you never need to type it. To call the API yourself:
 
 ```bash
-t=$(python cactai_config.py token)
+t=$(python sentrai_config.py token)
 curl -H "Authorization: Bearer $t" http://127.0.0.1:8000/incidents
 ```
 
 ```powershell
-$t = python cactai_config.py token
+$t = python sentrai_config.py token
 Invoke-RestMethod http://127.0.0.1:8000/incidents -Headers @{ Authorization = "Bearer $t" }
 ```
 
@@ -91,8 +91,8 @@ Invoke-RestMethod http://127.0.0.1:8000/incidents -Headers @{ Authorization = "B
 The shared email and password become personal accounts, so every approval shows who made it.
 
 1. **Create the Owner account.** A new machine opens on *Create your Owner account*. It asks for
-   a one-time **setup code**, printed by `run.ps1` / `run.sh`, `python cactai_config.py admin` or
-   `sudo cactai-admin`. A setup code lasts 24 hours.
+   a one-time **setup code**, printed by `run.ps1` / `run.sh`, `python sentrai_config.py admin` or
+   `sudo sentrai-admin`. A setup code lasts 24 hours.
 2. **Add an authenticator app.** Scan the QR code with any authenticator app (Google
    Authenticator, Microsoft Authenticator, 1Password and the like), then type the 6-digit code.
 3. **Save the recovery codes.** You get 8 one-time codes for when your phone is lost. Keep them

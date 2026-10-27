@@ -13,7 +13,7 @@ Server logs (nginx, sshd via syslog or journald, Suricata, MySQL/MariaDB, Postgr
 the Windows Event Log (``WindowsEventSource``) are parsed by ``collector/parsers.py``: events carry
 the log's own timestamp and host name and a ``parsed`` object (see "Parsed fields" in
 ``mvp/CONTRACT.md``). Read positions are saved in ``collector-state.json`` (next to the settings
-file, or ``CACTAI_COLLECTOR_STATE``) once core has accepted the events, so a restart carries on
+file, or ``SENTRAI_COLLECTOR_STATE``) once core has accepted the events, so a restart carries on
 where it stopped instead of re-sending whole files.
 
 Run:  python -m collector.collector           (from mvp/lab)
@@ -22,7 +22,7 @@ Run:  python -m collector.collector           (from mvp/lab)
                                                         and database logs (Windows: its event logs)
 
 On a new machine (no settings file yet) it first runs the setup wizard in
-``mvp/cactai_config.py``; the logs directory and file names come from there.
+``mvp/sentrai_config.py``; the logs directory and file names come from there.
 
 Handles file creation (logs may not exist yet), rotation (reads the rest of the rotated
 ``.1`` file first) and truncation.
@@ -52,11 +52,11 @@ import requests
 # Allow running both as ``python -m collector.collector`` and as a script.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.append(str(Path(__file__).resolve().parents[2]))
-import cactai_config  # noqa: E402
+import sentrai_config  # noqa: E402
 
 if __name__ == "__main__":
     # First run on this machine: ask for the settings before any path or log name is read.
-    cactai_config.ensure()
+    sentrai_config.ensure()
 from collector import parsers  # noqa: E402
 from collector import paths  # noqa: E402
 
@@ -77,8 +77,8 @@ def _now_iso() -> str:
 
 
 def real_host() -> str:
-    """This machine's name (``CACTAI_HOST`` overrides), for server logs that don't name their host."""
-    return os.environ.get("CACTAI_HOST") or socket.gethostname() or "unknown"
+    """This machine's name (``SENTRAI_HOST`` overrides), for server logs that don't name their host."""
+    return os.environ.get("SENTRAI_HOST") or socket.gethostname() or "unknown"
 
 
 def criticality_for(layer: str, record: dict) -> float:
@@ -126,7 +126,7 @@ def normalize(log_name: str, record: dict[str, Any]) -> dict[str, Any] | None:
 
 def _demo_fields(source: str, record: dict[str, Any]) -> dict[str, Any]:
     """The demo portal's JSON fields in the same ``parsed`` shape as real logs, so rules can use either."""
-    f: dict[str, Any] = {"format": "cactai_demo"}
+    f: dict[str, Any] = {"format": "sentrai_demo"}
     if source == "flask_access":
         f.update(kind="http_request", method=record.get("method"), path=record.get("path"),
                  status=record.get("status"))
@@ -145,8 +145,8 @@ def heartbeat_event() -> dict[str, Any]:
 
 
 def state_file() -> Path:
-    env = os.environ.get("CACTAI_COLLECTOR_STATE")
-    return Path(env) if env else cactai_config.config_path().parent / "collector-state.json"
+    env = os.environ.get("SENTRAI_COLLECTOR_STATE")
+    return Path(env) if env else sentrai_config.config_path().parent / "collector-state.json"
 
 
 def path_key(path: Path) -> str:
@@ -218,7 +218,7 @@ class OffsetStore:
 HEAD_BYTES = 256            # the start of a file identifies it across renames and restarts
 ROTATION_GRACE_S = 600      # a rotated copy (name.1, name.1.gz, name-20261002) this recent explains a shrink
 MAX_READ = 1 << 20          # read at most 1 MiB per file per poll
-BACKFILL = int(os.environ.get("CACTAI_COLLECTOR_BACKFILL_KB", "256")) * 1024
+BACKFILL = int(os.environ.get("SENTRAI_COLLECTOR_BACKFILL_KB", "256")) * 1024
 
 
 class Tailer:
@@ -529,7 +529,7 @@ class DiscoveredLogSource(FileSource):
     and user are guessed from the text.
 
     With no saved read position, a file that exists at startup is read from its last
-    ``CACTAI_COLLECTOR_BACKFILL_KB`` (256) KB, and one approved while running only from its end."""
+    ``SENTRAI_COLLECTOR_BACKFILL_KB`` (256) KB, and one approved while running only from its end."""
 
     def __init__(self, path: Path, layer: str, fmt: str = "text", from_end: bool = False,
                  saved: dict | None = None) -> None:
@@ -738,7 +738,7 @@ def default_sources(logs_dir: Path, heartbeat_interval: float = 10.0, store: Off
             HeartbeatSource(heartbeat_interval)]
 
 
-POLL_S = float(os.environ.get("CACTAI_COLLECTOR_POLL_S", "0.05"))  # how often logs are checked for new lines
+POLL_S = float(os.environ.get("SENTRAI_COLLECTOR_POLL_S", "0.05"))  # how often logs are checked for new lines
 RETRY_MAX_S = 30.0  # longest wait between attempts while the core is unreachable
 CHAIN_KEY = "_chain"  # the line chain's head in collector-state.json
 
@@ -876,13 +876,21 @@ WINDOWS_WHY = {"Security": "Windows sign-ins, lockouts, admin group changes and 
                "Microsoft-Windows-Windows Defender/Operational": "Microsoft Defender malware alerts"}
 
 
+def _is_file(p: Path) -> bool:
+    """Path.is_file that says False, instead of raising, for a folder this account may not look in."""
+    try:
+        return p.is_file()
+    except OSError:
+        return False
+
+
 def service_log_entries(root: Path = Path("/")) -> list[dict]:
     """Suricata, MySQL/MariaDB, PostgreSQL and MongoDB logs on this machine, as sources.json entries."""
     found = []
     for candidates, layer, fmt, why in SERVICE_LOGS:
         for pattern in candidates:
             rel = pattern.lstrip("/")
-            hits = [p for p in root.glob(rel) if p.is_file()] if "*" in rel else [root / rel] if (root / rel).is_file() else []
+            hits = [p for p in root.glob(rel) if _is_file(p)] if "*" in rel else [root / rel] if _is_file(root / rel) else []
             if hits:
                 newest = max(hits, key=lambda p: p.stat().st_mtime)
                 found.append({"path": str(newest), "layer": layer, "format": fmt, "why": why})
@@ -906,8 +914,8 @@ def system_log_entries(root: Path = Path("/"), has_journalctl: bool | None = Non
         return windows_log_entries() + service_log_entries(root)
 
     entries = [{"path": str(here(p)), "layer": layer, "format": fmt, "why": "nginx web server log"}
-               for p, layer, fmt in NGINX_LOGS if here(p).is_file()]
-    auth = next((here(p) for p in AUTH_LOGS if here(p).is_file()), None)
+               for p, layer, fmt in NGINX_LOGS if _is_file(here(p))]
+    auth = next((here(p) for p in AUTH_LOGS if _is_file(here(p))), None)
     if auth is not None:
         entries.append({"path": str(auth), "layer": "os", "format": "syslog", "why": "SSH logins (sshd)"})
     elif has_journalctl if has_journalctl is not None else shutil.which("journalctl"):
@@ -932,13 +940,13 @@ def add_system_logs() -> int:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="SentrAI log collector")
-    ap.add_argument("--core", default=os.environ.get("CACTAI_CORE_URL",
+    ap.add_argument("--core", default=os.environ.get("SENTRAI_CORE_URL",
                                                       "http://127.0.0.1:8000"))
     ap.add_argument("--logs", default=str(paths.logs_dir()))
     ap.add_argument("--flush-interval", type=float, default=1.0,
                     help="first wait before retrying when the core is unreachable (doubles up to 30 s)")
     ap.add_argument("--poll-interval", type=float, default=POLL_S,
-                    help="seconds between checks for new log lines (default 0.05; CACTAI_COLLECTOR_POLL_S)")
+                    help="seconds between checks for new log lines (default 0.05; SENTRAI_COLLECTOR_POLL_S)")
     ap.add_argument("--heartbeat-interval", type=float, default=10.0)
     ap.add_argument("--add-system-logs", action="store_true",
                     help="approve this machine's nginx, SSH login (auth.log, secure or journald), Suricata and "
@@ -950,7 +958,7 @@ def main() -> None:
     logs_dir = Path(args.logs)
     logs_dir.mkdir(parents=True, exist_ok=True)
     Collector(args.core, logs_dir, args.flush_interval,
-              args.heartbeat_interval, token=cactai_config.api_token(), poll_interval=args.poll_interval).run()
+              args.heartbeat_interval, token=sentrai_config.api_token(), poll_interval=args.poll_interval).run()
 
 
 if __name__ == "__main__":

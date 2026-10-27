@@ -1,4 +1,4 @@
-from cactai_ui import shaping as sh
+from sentrai_ui import shaping as sh
 
 
 def test_band_boundaries():
@@ -131,6 +131,10 @@ def test_machine_rows():
     assert ">31<" in rows and "Elevated" in rows and "width:31%" in rows and "threshold 80" in rows
     assert "Office &lt;PC&gt;" in rows and ">Offline<" in rows  # names are escaped
     assert "remove_moderator" in rows and "Protection off" in rows and "threshold 70" in rows
+    assert "m-more" not in rows  # no arrow unless the rows open details
+    assert 'class="machine clickable"' in sh.machine_rows_html([here], opened=False)
+    assert ">expand_more<" in sh.machine_rows_html([here], opened=False)
+    assert ">expand_less<" in sh.machine_rows_html([here], opened=True)
 
 
 def test_demote_headings():
@@ -167,6 +171,58 @@ def test_routing_tables_use_names():
     assert list(sh.contact_rows(routing)["Backup"]) == ["Lee", "-"]
     routing["contacts"][0]["telegram_linked"] = True
     assert list(sh.contact_rows(routing)["Alerts in Telegram"]) == ["Own chat", "Team group"]
+
+
+ROUTING_MAP = {"contacts": [{"id": "a", "name": "Amir", "role": "on_duty", "backup": "b"},
+                            {"id": "b", "name": "Lee", "role": "team_lead", "backup": "c"},
+                            {"id": "c", "name": "Ika", "telegram_linked": True}],
+               "rules": [{"name": "Inside", "match": {"category": ["malware"], "host": ["db-*"]}, "owner": "a",
+                          "notify": ["b", "c"]},
+                         {"name": "Everything else", "match": {}, "owner": "b", "notify": []}],
+               "follow_up": {"escalate_after_reminders": 2}}
+
+
+def test_routing_map_draws_rules_owners_told_and_backups():
+    dot = sh.routing_dot(ROUTING_MAP)
+    assert dot.startswith("digraph") and dot.rstrip().endswith("}")
+    assert 'rule1 [label="1. Inside\\nMalware found; machine\\ndb-*"' in dot  # wrapped
+    assert 'rule2 [label="2. Everything else"' in dot  # no "anything else" under it
+    assert 'rule1 -> "p_a" [label="owns"' in dot and 'rule1 -> "p_c" [color' in dot
+    assert '"p_a" -> "p_b" [label="backup"' in dot and '"p_c" ->' not in dot
+    assert 'own Telegram chat' in dot
+    odd = {"contacts": [{"id": "x", "name": 'Say "hi" \\ bye'}], "rules": []}
+    assert '"p_x" [label="Say \\"hi\\" \\\\ bye\\nin no rule yet", style="rounded,dashed"]' in sh.routing_dot(odd)
+
+
+def test_routing_doc_round_trips_to_the_file_shape():
+    doc = sh.routing_doc(ROUTING_MAP)
+    assert doc["contacts"]["a"] == {"name": "Amir", "role": "on_duty", "email": "", "telegram": "", "backup": "b"}
+    assert doc["rules"][0]["notify"] == ["b", "c"] and doc["follow_up"] == {"escalate_after_reminders": 2}
+    doc["rules"][0]["notify"].append("z")
+    assert ROUTING_MAP["rules"][0]["notify"] == ["b", "c"]  # a copy, not the fetched data
+    assert sh.new_contact_id(doc, "Amir Q.") == "amir-q"
+    doc["contacts"]["amir-q"] = {}
+    assert sh.new_contact_id(doc, "Amir Q.") == "amir-q-2" and sh.new_contact_id(doc, "!!") == "person"
+
+
+def test_removing_someone_who_owns_a_rule_is_refused():
+    doc = sh.routing_doc(ROUTING_MAP)
+    try:
+        sh.remove_contact(doc, "b")
+    except ValueError as exc:
+        assert "Lee owns Everything else" in str(exc)
+    else:
+        raise AssertionError("expected a refusal")
+    assert "b" in doc["contacts"]
+
+
+def test_removing_someone_passes_their_backup_on_and_drops_them_from_told():
+    doc = sh.routing_doc(ROUTING_MAP)
+    doc["rules"][1]["owner"] = "a"
+    notes = sh.remove_contact(doc, "b")
+    assert "b" not in doc["contacts"] and doc["contacts"]["a"]["backup"] == "c"
+    assert doc["rules"][0]["notify"] == ["c"]
+    assert notes == ["Amir's backup is now Ika", "Inside no longer tells Lee"]
 
 
 def test_panel_machines_merge_scores_and_joined_agents():
@@ -234,3 +290,71 @@ def test_job_rows_and_latest_findings():
     found = sh.job_findings(jobs)
     assert list(found["File"]) == ["/var/www/x.php"] and found["Severity"][0] == "critical"
     assert sh.job_findings([]).empty and sh.job_rows(None).empty
+
+
+def test_incident_target_names_the_live_block_then_the_source():
+    inc = {"src_ip": "1.2.3.4", "host": "web", "actions": [
+        {"target": "5.6.7.8", "status": "rolled_back"}, {"target": "9.9.9.9", "status": "active"}]}
+    assert sh.incident_target(inc) == "9.9.9.9 on web"
+    assert sh.incident_target({"src_ip": "1.2.3.4"}) == "1.2.3.4"
+    assert sh.incident_target({}) == "-"
+
+
+def test_times_from_the_core_show_in_local_time():
+    # Works on any machine's zone (Windows has no time.tzset): both spellings of one moment
+    # must print the same local clock time.
+    from datetime import datetime, timezone
+    local = datetime(2026, 10, 26, 18, 52, 58, tzinfo=timezone.utc).astimezone().strftime("%H:%M:%S")
+    assert sh.short_time("2026-10-26T18:52:58+00:00") == local  # UTC from the fleet / jobs code
+    assert sh.short_time("2026-10-27T02:52:58+08:00") == local  # same moment, another offset
+    assert sh.short_time("2026-10-26T18:52:58Z") == local
+    assert sh.short_time("2026-10-26T18:52:58") == "18:52:58"  # no offset: taken as local already
+
+
+def test_expiry_says_how_long_is_left():
+    from datetime import datetime, timedelta, timezone
+    now = datetime(2026, 10, 26, 18, 0, 0, tzinfo=timezone.utc)
+    soon = (now + timedelta(minutes=125, seconds=30)).isoformat()
+    assert sh.expires_label(soon, now=now).endswith("(in 2 h 5 min)")
+    assert sh.expires_label((now + timedelta(minutes=4)).isoformat(), now=now).endswith("(in 4 min)")
+    assert sh.expires_label((now + timedelta(seconds=20)).isoformat(), now=now).endswith("(in under 1 min)")
+    assert sh.expires_label((now - timedelta(minutes=1)).isoformat(), now=now).endswith("(expired)")
+    assert sh.expires_label(None) == "-"
+
+
+def test_approvals_headline_answers_first():
+    from datetime import datetime, timedelta, timezone
+    now = datetime(2026, 10, 26, 18, 0, tzinfo=timezone.utc)
+    soon = (now + timedelta(minutes=90)).isoformat()
+    later = (now + timedelta(minutes=110)).isoformat()
+    contained = [{"id": "a", "status": "contained", "actions": [{"status": "active", "expires_at": later}]},
+                 {"id": "b", "status": "contained", "actions": [{"status": "active", "expires_at": soon}]}]
+    text = sh.approvals_headline(contained, now=now)
+    assert text.startswith("2 waiting on you: 2 blocks to keep or roll back.")
+    assert "(in 1 h 30 min)" in text  # the earliest block, not the first row
+    opened = [{"id": "c", "status": "open", "actions": []}]
+    assert sh.approvals_headline(opened, now=now) == "1 waiting on you: 1 to approve or reject."
+    assert sh.approvals_headline([], now=now) == ""
+
+
+def test_incident_age_reads_like_speech():
+    assert sh.span_label(20) == "under 1 min"
+    assert sh.span_label(7 * 60) == "7 min"
+    assert sh.span_label(125 * 60) == "2 h 5 min"
+    assert sh.span_label((3 * 24 + 4) * 3600) == "3 d 4 h"
+    from datetime import datetime, timedelta
+    opened = (datetime.now().astimezone() - timedelta(minutes=7, seconds=5)).isoformat()
+    df = sh.board_rows([{"id": "A", "status": "open", "opened_at": opened}])
+    assert df.iloc[0]["Open for"] == "7 min"
+
+
+def test_actions_read_in_plain_words():
+    inc = {"id": "R1", "actions": [{"action_id": "a1", "type": "block_ip", "target": "1.2.3.4", "mode": "autonomous",
+                                   "status": "rolled_back"},
+                                  {"action_id": "a2", "type": "new_thing", "target": "x", "mode": "operator"}]}
+    df = sh.action_rows(inc)
+    assert list(df["Type"]) == ["Block IP", "New thing"]
+    assert list(df["Mode"]) == ["Automatic", "By a person"]
+    assert list(df["Status"]) == ["Rolled back", "-"]
+    rows = sh.build_containment_rows({"ips": ["1.2.3.4"], "users": ["bob"]}, [])
+    assert list(rows["Action"]) == ["Block IP", "Lock account"] and list(rows["Mode"]) == ["-", "-"]

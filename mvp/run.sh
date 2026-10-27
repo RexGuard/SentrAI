@@ -13,19 +13,24 @@
 #   ./run.sh                            real time: one real hour is one hour on the timers
 #   ./run.sh --speed 60                 faster timers for testing (1 real minute = 1 hour)
 #   ./run.sh --no-dashboard --no-browser
-#   ./run.sh --core-port 8100           when 8000 is taken (or set CACTAI_CORE_PORT; the dashboard
-#                                       port can come from CACTAI_DASHBOARD_PORT the same way)
+#   ./run.sh --core-port 8100           when 8000 is taken (or set SENTRAI_CORE_PORT; the dashboard
+#                                       port can come from SENTRAI_DASHBOARD_PORT the same way)
 #
 # For a server that should keep SentrAI running, use deploy/install.sh (systemd services) instead.
 #
 # Needs python3 with the venv module (Debian/Ubuntu: sudo apt install python3-venv).
 set -euo pipefail
 
+# Settings named before the CactAI -> SentrAI rename still count: CACTAI_X fills in an unset SENTRAI_X.
+for v in $(compgen -e | grep '^CACTAI_' || true); do
+    n="SENTRAI_${v#CACTAI_}"; [ -n "${!n+x}" ] || export "$n=${!v}"
+done
+
 DEMO_SPEED="${DEMO_SPEED:-1}"
 NO_DASHBOARD=0
 NO_BROWSER=0
-CORE_PORT="${CACTAI_CORE_PORT:-8000}"
-DASH_PORT="${CACTAI_DASHBOARD_PORT:-8501}"
+CORE_PORT="${SENTRAI_CORE_PORT:-8000}"
+DASH_PORT="${SENTRAI_DASHBOARD_PORT:-8501}"
 while [ $# -gt 0 ]; do
     case "$1" in
         --speed) DEMO_SPEED="$2"; shift 2 ;;
@@ -108,18 +113,18 @@ PY_DASH="$ROOT/dashboard/.venv/bin/python"
 PY_NOTIF="$ROOT/notifier/.venv/bin/python"
 
 # First run on this machine: ask for the settings (logs, rules, responder, alerts) once.
-"$PY_LAB" "$ROOT/cactai_config.py"
+"$PY_LAB" "$ROOT/sentrai_config.py"
 
 # The core API token (made and saved on first use). Every component gets the same one.
-CACTAI_API_TOKEN="$("$PY_LAB" "$ROOT/cactai_config.py" token | tail -n 1)"
-[ -n "$CACTAI_API_TOKEN" ] || { echo "Could not read the API token (python cactai_config.py token)." >&2; exit 1; }
-export CACTAI_API_TOKEN
+SENTRAI_API_TOKEN="$("$PY_LAB" "$ROOT/sentrai_config.py" token | tail -n 1)"
+[ -n "$SENTRAI_API_TOKEN" ] || { echo "Could not read the API token (python sentrai_config.py token)." >&2; exit 1; }
+export SENTRAI_API_TOKEN
 
 # Who may sign in to the dashboard; on a new machine, a one-time setup code for creating the Owner.
-SIGN_IN="$("$PY_LAB" "$ROOT/cactai_config.py" admin)" || { echo "Could not set up the dashboard sign-in." >&2; exit 1; }
+SIGN_IN="$("$PY_LAB" "$ROOT/sentrai_config.py" admin)" || { echo "Could not set up the dashboard sign-in." >&2; exit 1; }
 
 export PYTHONUTF8=1 PYTHONIOENCODING=utf-8 PYTHONUNBUFFERED=1
-export DEMO_SPEED CACTAI_CORE_URL="$CORE" CACTAI_PUBLIC_URL="${CACTAI_PUBLIC_URL:-$CORE}"
+export DEMO_SPEED SENTRAI_CORE_URL="$CORE" SENTRAI_PUBLIC_URL="${SENTRAI_PUBLIC_URL:-$CORE}"
 
 mkdir -p "$LOG_DIR"
 SETSID=""; command -v setsid >/dev/null 2>&1 && SETSID=setsid  # not on macOS; stop then kills the pid only

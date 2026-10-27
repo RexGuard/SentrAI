@@ -28,19 +28,18 @@ import dataclasses
 import json
 import logging
 import os
-import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
 from .agents import ACTION_TEXT, LayerAgent, Proposal
-from .config import Settings  # also puts mvp/ on sys.path, for cactai_llm
+from .config import Settings  # also puts mvp/ on sys.path, for sentrai_llm
 from .saguaro import BUTTONS_DECIDE, Saguaro
 
-import cactai_llm  # noqa: E402
+import sentrai_llm  # noqa: E402
 
-log = logging.getLogger("cactai.cyanide")
+log = logging.getLogger("sentrai.cyanide")
 
 # Action types whose target is an entity that must appear in the incident's own events.
 ENTITY_TARGETS = {"block_ip": ("src_ip",), "lock_user": ("user",), "kill_process": ("host",),
@@ -112,9 +111,9 @@ class Planner(Protocol):
 
 
 class LLMPlanner:
-    """Asks the configured model (see mvp/cactai_llm.py) for a plan as JSON matching PLAN_SCHEMA."""
+    """Asks the configured model (see mvp/sentrai_llm.py) for a plan as JSON matching PLAN_SCHEMA."""
 
-    def __init__(self, provider: cactai_llm.Provider) -> None:
+    def __init__(self, provider: sentrai_llm.Provider) -> None:
         self.provider = provider
         self.status = f"online ({provider.label})"
         self.calls = 0
@@ -125,7 +124,7 @@ class LLMPlanner:
         self.calls += 1
         try:
             return self.provider.complete_json(SYSTEM_PROMPT, json.dumps(context, indent=1, sort_keys=True), PLAN_SCHEMA)
-        except cactai_llm.LLMError as e:
+        except sentrai_llm.LLMError as e:
             self.failures += 1
             self.last_error = str(e)[:300]
             log.warning("Cyanide planner failed: %s", self.last_error)
@@ -148,9 +147,9 @@ def default_planner() -> Planner | None:
     if os.getenv("CYANIDE_ENABLED", "1") == "0":
         return None
     try:
-        provider = cactai_llm.from_env(effort=os.getenv("CYANIDE_EFFORT", "low"),
+        provider = sentrai_llm.from_env(effort=os.getenv("CYANIDE_EFFORT", "low"),
                                        timeout_s=float(os.getenv("CYANIDE_TIMEOUT_S", "20")))
-    except (ImportError, cactai_llm.LLMError) as e:
+    except (ImportError, sentrai_llm.LLMError) as e:
         log.warning("Cyanide runs on playbooks only: %s", e)
         return None
     if provider is None:
