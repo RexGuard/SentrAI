@@ -207,7 +207,12 @@ restore_backup() {  # DIR
     rm -f /etc/systemd/system/sentrai*.service /etc/systemd/system/sentrai*.timer /etc/systemd/system/sentrai.target
     rm -rf /etc/sentrai
     tar -C / -xpf "$dir/system.tar"
-    [ -f "$dir/data.tar" ] && tar -C /var/lib -xpf "$dir/data.tar"
+    if [ -f "$dir/data.tar" ]; then
+        # SQLite side files the newer version left (-wal, -shm, -journal) belong to its copy of a
+        # database; next to the saved one they make it "malformed". Drop them, then put the data back.
+        find /var/lib/sentrai \( -name '*.db-wal' -o -name '*.db-shm' -o -name '*.db-journal' \) -type f -delete 2>/dev/null || true
+        tar -C /var/lib -xpf "$dir/data.tar"
+    fi
     systemctl daemon-reload
     systemctl enable "${UNITS[@]}" >/dev/null 2>&1 || true
     if [ -f /etc/systemd/system/sentrai-update-check.timer ]; then systemctl enable --now sentrai-update-check.timer >/dev/null 2>&1 || true; fi
