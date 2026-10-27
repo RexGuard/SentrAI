@@ -10,18 +10,22 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import sys
 import time
 from pathlib import Path
 
-DEFAULT_FILE = Path(__file__).resolve().parent / "sources.json"
+sys.path.append(str(Path(__file__).resolve().parents[2]))  # mvp/
+import sentrai_paths  # noqa: E402
 
 
 def sources_file() -> Path:
-    return Path(os.environ.get("SENTRAI_SCOUT_SOURCES", str(DEFAULT_FILE)))
+    """scout/sources.json in the data root (SENTRAI_SCOUT_SOURCES moves it)."""
+    return sentrai_paths.path("scout.sources")
 
 
 def pending_file() -> Path:
-    return Path(os.environ.get("SENTRAI_SCOUT_PENDING") or sources_file().with_name("pending.json"))
+    """pending.json next to sources.json (SENTRAI_SCOUT_PENDING moves it)."""
+    return sentrai_paths.path("scout.pending")
 
 
 def proposal_id(path: str) -> str:

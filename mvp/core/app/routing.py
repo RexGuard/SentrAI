@@ -1,7 +1,7 @@
 """Who hears about an incident, who owns it, and who it goes to when nobody answers.
 
 Contacts, routing rules and the follow-up policy come from a JSON file (SENTRAI_ROUTING, default
-``routing.json`` next to the database). Without one, the four people in the settings (ON_DUTY,
+``people/routing.json`` next to the database). Without one, the four people in the settings (ON_DUTY,
 TEAM_LEAD, IT_MANAGER, CXO) form a chain where each one backs up the one before.
 
     {
@@ -41,6 +41,7 @@ from pathlib import Path
 from typing import Any
 
 from .risk import CATEGORIES, SEVERITIES
+import sentrai_paths
 
 log = logging.getLogger("sentrai.routing")
 
@@ -239,7 +240,8 @@ def load(path: Path, on_duty: str, team_lead: str, it_manager: str, cxo: str) ->
 
 
 def path_from_settings(s: Any) -> Path:
-    return Path(os.getenv("SENTRAI_ROUTING", "").strip() or s.db_path.parent / "routing.json")
+    """people/routing.json next to the database (SENTRAI_ROUTING moves it)."""
+    return sentrai_paths.path("core.routing", Path(s.db_path).parent)
 
 
 def from_settings(s: Any) -> Router:

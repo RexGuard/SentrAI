@@ -50,7 +50,8 @@ MVP_DIR = LAB_DIR.parent
 sys.path.insert(0, str(LAB_DIR))
 sys.path.append(str(MVP_DIR))
 sys.path.append(str(MVP_DIR / "core"))
-import sentrai_config  # noqa: E402
+import sentrai_config  # noqa: E402,F401  (old CACTAI_* names keep working)
+import sentrai_paths  # noqa: E402
 from app import firewall, protect  # noqa: E402  (the core's firewall commands and safety checks)
 from agent import offline, pinning  # noqa: E402
 
@@ -64,8 +65,8 @@ class AgentError(Exception):
 
 
 def agent_file() -> Path:
-    env = os.environ.get("SENTRAI_AGENT_FILE", "").strip()
-    return Path(env) if env else sentrai_config.config_path().parent / "agent.json"
+    """agent/agent.json in the data root (SENTRAI_AGENT_FILE moves it); backups go next to it."""
+    return sentrai_paths.path("agent.file")
 
 
 def load() -> dict[str, Any]:

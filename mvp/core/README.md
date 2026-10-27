@@ -44,7 +44,7 @@ Tests:
 | `UNDO_RETRY_S`, `UNDO_RETRIES` | `60`, `3` | A failed undo (the firewall rule or webhook did not confirm removal) is retried this often, this many times, then left to a person. Every undo is recorded as `action_undone` or `action_undo_failed`. |
 | `ON_DUTY` | `On-duty responder` | The responsible entity named in reports and notifications, e.g. `Amir Tan (SEC-409) / Night shift`. |
 | `TEAM_LEAD`, `IT_MANAGER`, `CXO` | role names | Escalation recipients. |
-| `SENTRAI_ROUTING` | `routing.json` next to the database | Contacts, routing rules and follow-up policy (see "Owners, routing and escalation"). Without the file, the four names above form the chain. |
+| `SENTRAI_ROUTING` | `people/routing.json` next to the database | Contacts, routing rules and follow-up policy (see "Owners, routing and escalation"). Without the file, the four names above form the chain. |
 | `SENTRAI_SUMMARY` | `daily` | How often the one-page client summary goes out on the alert channels: `daily`, `weekly` or `off`. A choice saved on the dashboard (Reports page, kept in `summary.json` next to the database) wins over this. |
 | `SENTRAI_SUMMARY_AT` / `SENTRAI_SUMMARY_DAY` | `08:00` / `mon` | Local time it goes out, and the weekday for `weekly`. |
 | `SENTRAI_SUMMARY_TO` | `Client` | Who the summary is addressed to (shown on the page). |
@@ -62,7 +62,7 @@ Tests:
 | `ABUSEIPDB_API_KEY` | unset | Look up each public attacking address on AbuseIPDB in the background and note it on the incident (context only, no score change). Answers kept `ABUSEIPDB_CACHE_HOURS` (24). |
 | `SLACK_WEBHOOK_URL` | unset | The notifier posts a copy of every alert there. The core only uses it for `POST /integrations/slack/test`. |
 | `SENTRAI_FIREWALL_ENFORCE` | `0` | `0` is a dry run: the command is logged and written to the audit trail, never run. `1` runs it (admin/root). Loopback, link-local, multicast and `PROTECTED_IPS` are never sent to the firewall. |
-| `SENTRAI_DB` | `data/sentrai.db` | SQLite audit chain. |
+| `SENTRAI_DB` | `core/sentrai.db` in the data root (`~/.sentrai`; see `../DATA.md`) | SQLite audit chain. The core's other files sit next to it. |
 | `BRUTE_FORCE_COUNT` / `BRUTE_FORCE_WINDOW_S` | `5` / `60` | Brute-force rule: this many failed logins from the same IP within this many seconds. |
 | `EXPORT_ROWS_THRESHOLD` | `100` | `/export` with at least this many rows counts as data exfiltration. |
 | `SSH_BRUTE_FORCE_COUNT` / `SSH_BRUTE_FORCE_WINDOW_S` | `5` / `600` | SSH brute force: this many failed guesses (not log lines) from one IP within this many seconds. |
@@ -112,7 +112,7 @@ chat once (`app/telegram_links.py`):
 1. On the dashboard's Incidents page (Who gets what), pick the person and press **Make link code**
    (or `POST /telegram/link-codes {"operator", "contact"}`). The code works once, for 30 minutes.
 2. The person sends `/link CODE` to the bot in a private chat (`/start CODE` from a `t.me/<bot>?start=CODE` link works too).
-3. The notifier passes the code and the chat on to `POST /telegram/link`. Links are kept in `telegram_links.json`
+3. The notifier passes the code and the chat on to `POST /telegram/link`. Links are kept in `people/telegram_links.json`
    next to the database (`SENTRAI_TELEGRAM_LINKS` to move it). A contact whose `telegram` in the routing file is a
    numeric chat id counts as linked already. `/unlink` in that chat, or the dashboard's Unlink button, stops it.
 
@@ -163,9 +163,9 @@ python -m app.anchor show        # the current fingerprint
 ```
 
 or `GET /audit/verify?fingerprint=...`. The notifier keeps the newest witness it delivered
-(`notifier/data/last_witness.txt`), so `/verify` in the Telegram chat, or
+(`notifier/last_witness.txt` in the data root), so `/verify` in the Telegram chat, or
 `python notifier.py --verify`, checks the live chain against it without pasting anything
-(`/verify <line>` checks an older one). An archived chain in `data/archive/` can be checked too;
+(`/verify <line>` checks an older one). An archived chain in `archive/` next to the database can be checked too;
 pass it with `--db`.
 | `PROTECTED_IPS` | `127.0.0.1,::1,localhost` | Comma-separated IPs or networks that Countersign will never approve blocking. |
 | `PROTECTED_NETS` | private ranges | Networks Countersign will not block on its own (RFC 1918, 100.64.0.0/10, fc00::/7); an operator can still approve a block. `off` disables. |
@@ -245,7 +245,7 @@ Scout follows a technician through the folders. The process scan (`app/procscan.
 - **How.** Windows: PowerShell/CIM (`Win32_Process`, plus `Win32_Service` for the service account). Linux: `/proc`. macOS: `ps`. Standard library only, no admin rights needed; processes it cannot read are listed by name only.
 - **Read-only.** It never starts, stops or signals a process and never reads log contents. It only checks which files exist.
 - **Private details stay out.** Command lines are cut down to log options with secrets masked, home folders show as `~`, personal accounts as `(user)`. Credential stores and sensitive system processes (lsass, KeePass, 1Password, ssh-agent and similar) are skipped, and the profile can add more with `"process_scan": {"skip_processes": ["veyon*"]}` or turn scanning off with `"enabled": false`.
-- **Nothing is watched until an operator says so.** Each file in a scan has an id. The dashboard's Collector page (Find logs on this computer) and Cyanide's chat buttons approve a file by that id, so neither the model nor a crafted request can point the collector at an arbitrary path. Approved files go to the same list Scout writes (`lab/scout/sources.json`), and the running collector starts tailing them within a few seconds, from the end of the file.
+- **Nothing is watched until an operator says so.** Each file in a scan has an id. The dashboard's Collector page (Find logs on this computer) and Cyanide's chat buttons approve a file by that id, so neither the model nor a crafted request can point the collector at an arbitrary path. Approved files go to the same list Scout writes (`scout/sources.json` in the data root), and the running collector starts tailing them within a few seconds, from the end of the file.
 - **Cyanide.** Chat has two new tools: `scan_system` and `suggest_log_source` (a button, like `suggest_action`). Without an AI key, asking the chat to "scan" gives the scanner's own list with buttons.
 
 Audit records: `system_scan` and `log_source_added`. The process scan also flags programs that look hostile (a known crypto miner, a mining-pool address or a reverse shell in the command line, a program running from `/tmp` or `/dev/shm`, or one whose file was deleted after it started); each is raised once as a `malware` alert (see below).
@@ -257,8 +257,8 @@ The process scan finds logs; the threat scan (`app/threatscan.py`, `app/threats.
 - **Which folders.** Only the ones you choose: `"threat_scan": {"paths": ["/var/lib/pterodactyl/volumes"], "every_minutes": 60}` in the system profile, or `SENTRAI_THREAT_PATHS` (separated by `:` on Linux, `;` on Windows). `every_minutes` repeats the scan in the background (default 60 when paths are set). SentrAI's own folders are always skipped.
 - **What it reads.** Scripts and web pages (`.php`, `.sh`, `.py`, `.js`, `.jsp`, `.asp`, `.ps1`, ...), configuration files (including `config.yml`), extensionless scripts that start with `#!`, cron files, and the text and class files inside `.jar` plugins (only strong signs count there: miners, reverse shells, escape tools). `tmp/` and `logs/` are scanned on purpose, since that is where malware hides. Package caches (`node_modules`, `.git`, virtualenvs) and minified bundles are skipped. Files over `max_file_mb` (default 10) are skipped.
 - **Tuning.** `"allow": ["*/plugins/dynmap/*"]` skips known-good paths; `"known_bad_sha256": [...]` flags exact files.
-- **Each finding is raised once.** Critical and high findings become events (`source: "threat_scan"`) that the rules classify as `malware` (critical, 65), so they open an incident and notify like any other. A fingerprint of the file contents and signature is kept in `data/threat_seen.json` (`SENTRAI_THREAT_STATE`), so an hourly scan does not repeat the same alert; a file that changes is new again. Medium findings are only listed.
-- **Nothing is deleted, and nothing happens on its own.** There is no auto-delete and no auto-suspend. An operator quarantines a file by its finding id (dashboard Collector page, or Cyanide's `suggest_quarantine` button). The file must be unchanged since the scan; it moves to `data/quarantine` (`SENTRAI_QUARANTINE`), read-only, with a note of where it came from, and `POST /quarantine/{id}/restore` puts it back.
+- **Each finding is raised once.** Critical and high findings become events (`source: "threat_scan"`) that the rules classify as `malware` (critical, 65), so they open an incident and notify like any other. A fingerprint of the file contents and signature is kept in `threats/threat_seen.json` next to the database (`SENTRAI_THREAT_STATE`), so an hourly scan does not repeat the same alert; a file that changes is new again. Medium findings are only listed.
+- **Nothing is deleted, and nothing happens on its own.** There is no auto-delete and no auto-suspend. An operator quarantines a file by its finding id (dashboard Collector page, or Cyanide's `suggest_quarantine` button). The file must be unchanged since the scan; it moves to `threats/quarantine/` next to the database (`SENTRAI_QUARANTINE`), read-only, with a note of where it came from, and `POST /quarantine/{id}/restore` puts it back.
 - **Private details stay out.** Matched lines are cut to 160 characters with secrets masked and home folders shown as `~`; the model sees them labelled as untrusted text.
 
 Audit records: `threat_scan`, `file_quarantined`, `file_restored`.
@@ -267,12 +267,12 @@ Audit records: `threat_scan`, `file_quarantined`, `file_restored`.
 
 `app/backups.py` copies chosen folders, plus SentrAI's own data, on a schedule, so a defaced site or a wiped game server can be put back.
 
-- **What.** The folders in `"backup": {"paths": ["/var/www"], "every_hours": 24, "keep": 7}` in the system profile, or `SENTRAI_BACKUP_PATHS`. SentrAI's own settings file, data folder (protection switch, signing key, threat state) and a consistent snapshot of the audit database are always included (`"include_sentrai": false` turns that off). `"exclude": ["*.log", "cache/*"]` skips files; `max_total_mb` (default 5120) refuses a backup that would fill the disk.
+- **What.** The folders in `"backup": {"paths": ["/var/www"], "every_hours": 24, "keep": 7}` in the system profile, or `SENTRAI_BACKUP_PATHS`. SentrAI's own settings file, the files next to the database (protection switch, signing key, contacts, threat state) and a consistent snapshot of the audit database are always included (`"include_sentrai": false` turns that off). `"exclude": ["*.log", "cache/*"]` skips files; `max_total_mb` (default 5120) refuses a backup that would fill the disk.
 - **Where.** One `.tar.gz` per backup in `backups/` next to the database (`SENTRAI_BACKUP_DIR`), readable by SentrAI's account only, with a note beside it. `"copy_to": "/mnt/usb/sentrai"` (or `SENTRAI_BACKUP_COPY_TO`) puts a second copy on another drive or share. The newest `keep` are kept.
 - **Proof.** Inside each archive, `manifest.json` lists every file with its SHA-256. The archive's own SHA-256 goes into the audit trail (`backup_made`), so **Check** (`POST /backups/{id}/verify`) catches a backup that was edited or swapped later.
 - **Alerts.** A failed backup (or a failed second copy) sends a `backup_failed` notice to the on-duty contact; a failed scheduled one is retried after an hour, not every minute.
 - **Restore needs a person**, and checks the backup first. By default files go into `restores/<id>-<time>/` next to the database and nothing live changes. Putting them back in place needs `in_place` and the backup id typed as `confirm`, and first takes a `before_restore` safety backup of the folders it will overwrite, so the restore can itself be undone. SentrAI's own data is never written over while the core runs; it is unpacked with a note on how to swap it in. The chat can show backups and offer a **Back up now** button, but cannot restore.
-- **On a hardened server** (`deploy/install.sh`), the core runs as its own account and may only write under `/var/lib/sentrai/core`. Files it cannot read are skipped and listed on the backup. To restore in place there, add the folders to `ReadWritePaths=` in `sentrai-core.service`, or restore into a new folder and copy back by hand.
+- **On a hardened server** (`deploy/install.sh`), the core runs as its own account and may only write under `/var/lib/sentrai/core` (and `/var/lib/sentrai/scout`, for approved log files). Files it cannot read are skipped and listed on the backup. To restore in place there, add the folders to `ReadWritePaths=` in `sentrai-core.service`, or restore into a new folder and copy back by hand.
 - **With the central panel** (planned agents on each machine), each agent runs this same code on its own machine and reports its backups to the panel.
 
 Audit records: `backup_made`, `backup_failed`, `backup_verified`, `backup_restored`, `backup_pruned`.

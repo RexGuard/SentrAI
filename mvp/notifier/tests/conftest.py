@@ -2,6 +2,7 @@ import os
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -11,6 +12,9 @@ import requests
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 os.environ["SENTRAI_CONFIG"] = str(ROOT / "tests" / "no-config.json")  # ignore this machine's saved settings
+os.environ["SENTRAI_HOME"] = tempfile.mkdtemp(prefix="sentrai-notifier-test-")  # data root: not the checkout
+# Never move a developer's own files (mvp/lab/scout, mvp/core/data ...) into a test's temp folder.
+os.environ["SENTRAI_MIGRATE"] = "off"
 os.environ["SENTRAI_API_TOKEN"] = "test-token"  # never generate (and save) a real token from tests
 os.environ.pop("SLACK_WEBHOOK_URL", None)  # never post to a real Slack from tests
 FAKE = ROOT.parent / "dashboard" / "dev" / "fake_core.py"

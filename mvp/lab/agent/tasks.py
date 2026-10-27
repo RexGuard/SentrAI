@@ -22,6 +22,7 @@ import requests
 
 from app import procscan, threatscan  # noqa: E402  (the core's scanner; agent.py puts core/ on the path)
 from app.backups import BackupWatch  # noqa: E402
+import sentrai_paths  # noqa: E402  (mvp/, put on the path by app/__init__.py)
 
 JOBS_EVERY_S = 15.0
 
@@ -80,8 +81,16 @@ class LocalCore:
         pass  # a failed backup comes back to the panel as a failed job, and the panel alerts
 
 
+class AgentBackups(BackupWatch):
+    """Backups in agent/backups next to the agent file (SENTRAI_BACKUP_DIR moves them). An older
+    version kept them next to the settings file; they move here the first time."""
+
+    def _dir(self) -> Path:
+        return sentrai_paths.path("agent.backups", self._data_dir())
+
+
 def run_backup(data_dir: Path) -> dict[str, Any]:
-    watch = BackupWatch(LocalCore(data_dir))
+    watch = AgentBackups(LocalCore(data_dir))
     if not watch._roots(watch.config()):
         return {"ok": False, "error": "No folders to back up on this machine: set SENTRAI_BACKUP_PATHS for its agent."}
     out = watch.make("panel", "manual", include_sentrai=False)

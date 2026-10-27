@@ -34,6 +34,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+import sentrai_paths
+
 log = logging.getLogger("sentrai.staff_reports")
 
 SOURCE = "staff_report"
@@ -187,8 +189,8 @@ def _checked(answer: Any, text: str) -> dict[str, Any]:
 
 
 def store_file(db_path: Any) -> Path:
-    env = os.environ.get("SENTRAI_STAFF_REPORTS")
-    return Path(env) if env else Path(db_path).with_name("staff_reports.json")
+    """people/staff_reports.json next to the database (SENTRAI_STAFF_REPORTS moves it)."""
+    return sentrai_paths.path("core.staff_reports", Path(db_path).parent)
 
 
 class StaffReports:

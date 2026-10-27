@@ -23,7 +23,7 @@
                                           the service wrapper (WinSW 2.12.0, checked by SHA-256)
                                           and its settings (PROTECTED_IPS, enforce on/off, paths)
     C:\ProgramData\SentrAI\agent          machine key, read positions, blocks in force, service logs
-                                          (SYSTEM and Administrators only)
+                                          (SYSTEM and Administrators only); INDEX.md lists every file
   The service runs as LocalSystem (Windows Firewall rules need it), starts with Windows and
   restarts itself 10 seconds after a crash.
 
@@ -174,9 +174,11 @@ function Copy-Tree([string]$From, [string]$To, [string[]]$Extra = @()) {
     Native robocopy.exe $From $To /MIR /NFL /NDL /NJH /NJS /NP /R:2 /W:2 /XD .venv __pycache__ .pytest_cache @Extra | Out-Null
     if ($LASTEXITCODE -ge 8) { Die "copying $From failed (robocopy exit $LASTEXITCODE)" }
 }
-Copy-Tree (Join-Path $Src "lab") (Join-Path $Mvp "lab") @((Join-Path $Src "lab\logs"), "/XF", "sources.json", "pending.json")
+# Not the checkout's own logs, approved log list, proposals or recorded trails (2*.jsonl: named by
+# date; the example trails are copied).
+Copy-Tree (Join-Path $Src "lab") (Join-Path $Mvp "lab") @((Join-Path $Src "lab\logs"), "/XF", "sources.json", "pending.json", "2*.jsonl")
 Copy-Tree (Join-Path $Src "core\app") (Join-Path $Mvp "core\app")
-foreach ($f in "sentrai_config.py", "sentrai_llm.py", "sentrai_env.py") { Copy-Item -Force (Join-Path $Src $f) (Join-Path $Mvp $f) }
+foreach ($f in "sentrai_config.py", "sentrai_llm.py", "sentrai_env.py", "sentrai_paths.py") { Copy-Item -Force (Join-Path $Src $f) (Join-Path $Mvp $f) }
 
 if (-not (Test-Path $VenvPy)) {
     $python = Find-Python
@@ -260,6 +262,7 @@ if ($Ca) {
 }
 
 $settings = [ordered]@{
+    SENTRAI_HOME             = $State
     SENTRAI_AGENT_FILE       = $AgentFile
     SENTRAI_CONFIG           = (Join-Path $State "config.json")
     SENTRAI_COLLECTOR_STATE  = (Join-Path $State "collector-state.json")
@@ -322,6 +325,25 @@ try {
     if ($LASTEXITCODE -ne 0) { Write-Host "No known logs found yet; approve logs later with Scout." }
 } finally {
     Pop-Location
+}
+# --- data index (INDEX.md in $State lists every file and where it is) ---------
+# Files older versions kept elsewhere move into $State first. Runs with the service's paths, and
+# the environment is put back afterwards.
+$envBefore = @{}
+foreach ($kv in $settings.GetEnumerator()) {
+    if ($kv.Key -like "SENTRAI_*") {
+        $envBefore[$kv.Key] = [Environment]::GetEnvironmentVariable($kv.Key)
+        Set-Item -Path "env:$($kv.Key)" -Value $kv.Value
+    }
+}
+try {
+    Native $VenvPy (Join-Path $Mvp "sentrai_paths.py") index | Out-Null
+    if ($LASTEXITCODE -ne 0) { Write-Warning "could not write $(Join-Path $State "INDEX.md") (python sentrai_paths.py index)" }
+} finally {
+    foreach ($k in $envBefore.Keys) {
+        if ($null -eq $envBefore[$k]) { Remove-Item -Path "env:$k" -ErrorAction SilentlyContinue }
+        else { Set-Item -Path "env:$k" -Value $envBefore[$k] }
+    }
 }
 # --- service ----------------------------------------------------------------
 if (-not (Get-Service -Name $ServiceId -ErrorAction SilentlyContinue)) {

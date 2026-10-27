@@ -135,7 +135,8 @@ sudo ./deploy/install.sh --protect 203.0.113.10 --admin-email you@example.com --
 | Program | `/opt/sentrai/mvp` |
 | Service settings (ports, addresses, protected IPs) | `/etc/sentrai/sentrai.env` |
 | Dashboard certificate | `/etc/sentrai/tls/` |
-| Saved settings, watched logs, the audit record | `/var/lib/sentrai/` |
+| Saved settings, watched logs, the audit record, one folder per part (`core/`, `collector/`, `scout/`, `notifier/`) | `/var/lib/sentrai/` |
+| A list of every file SentrAI keeps there | `/var/lib/sentrai/INDEX.md` |
 | Services | `sentrai-core`, `sentrai-collector`, `sentrai-dashboard`, `sentrai-notifier`, grouped as `sentrai.target` |
 
 The services run as the `sentrai` account, each locked down to what its job needs. After editing

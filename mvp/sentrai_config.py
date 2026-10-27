@@ -39,17 +39,19 @@ from typing import Callable
 
 import sentrai_env  # first: old CACTAI_* names still work
 import sentrai_llm
+import sentrai_paths  # where every part keeps its data
 
 MVP_DIR = Path(__file__).resolve().parent
 
 
 def config_path() -> Path:
-    return Path(os.environ.get("SENTRAI_CONFIG") or sentrai_env.home_dir() / "config.json")
+    """config.json in the data root (SENTRAI_CONFIG moves it; see sentrai_paths.py for the whole tree)."""
+    return sentrai_paths.path("config")
 
 
 def accounts_path() -> Path:
-    """The dashboard accounts (sentrai_accounts.py), next to the settings file."""
-    return Path(os.environ.get("SENTRAI_ACCOUNTS") or config_path().parent / "accounts.json")
+    """The dashboard accounts (sentrai_accounts.py), next to the settings file (SENTRAI_ACCOUNTS moves it)."""
+    return sentrai_paths.path("accounts")
 
 
 def _write_private(path: Path, text: str) -> None:
@@ -118,7 +120,7 @@ SECTIONS = (
         Field(PRESET_ENV, "Preset", DEFAULT_PRESET, choices=PRESET_CHOICES),
     )),
     Section("collector", "1. Collector", "Where the logs are and where to send events.", (
-        Field("SENTRAI_LAB_LOGS", "Logs directory", str(MVP_DIR / "lab" / "logs")),
+        Field("SENTRAI_LAB_LOGS", "Logs directory", str(sentrai_paths.default("logs"))),
         Field("SENTRAI_LOG_ACCESS", "Web access log file name", "access.jsonl"),
         Field("SENTRAI_LOG_AUTH", "Login log file name", "auth.jsonl"),
         Field("SENTRAI_LOG_DB", "Database log file name", "db.jsonl"),

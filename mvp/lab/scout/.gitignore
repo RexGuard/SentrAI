@@ -1,3 +1,4 @@
 sources.json
+pending.json
 trails/*.jsonl
 !trails/example-*.jsonl

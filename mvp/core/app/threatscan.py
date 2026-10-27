@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from .config import CORE_DIR
+import sentrai_paths
 from . import procscan
 from .procscan import Proc, hide_home, mask
 
@@ -226,8 +227,9 @@ def _glob_match(path: str, patterns: Iterable[str]) -> bool:
 
 
 def _own_dirs() -> list[str]:
-    """SentrAI's own install and data folders: never scanned (its signature lists match themselves)."""
-    dirs = [MVP_DIR, Path(os.environ.get("SENTRAI_QUARANTINE", CORE_DIR / "data" / "quarantine"))]
+    """SentrAI's own install and data folders: never scanned (its signature lists match themselves,
+    the quarantine and backups hold what was found)."""
+    dirs = [MVP_DIR, *sentrai_paths.own_dirs()]
     return [os.path.normcase(os.path.abspath(d)) for d in dirs]
 
 
