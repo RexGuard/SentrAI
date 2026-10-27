@@ -106,6 +106,7 @@
 .re-node:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; }
 .re-node.sel { border-color: var(--brand); box-shadow: 0 0 0 1px var(--brand); }
 .re-node.bad { border-color: var(--critical); }
+.re-node.you { border-color: var(--brand); border-width: 2px; }
 .re-node.bad.sel { box-shadow: 0 0 0 1px var(--critical); }
 .re-node.warn { border-color: color-mix(in srgb, var(--amber) 70%, var(--line)); }
 .re-node.loose, .re-node.dim { border-style: dashed; }

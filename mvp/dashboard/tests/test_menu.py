@@ -59,7 +59,7 @@ def test_risk_breakdown_counts_only_active_incidents():
 APP = str(Path(__file__).resolve().parents[1] / "app.py")
 
 
-@pytest.mark.parametrize("page", ["config", "approvals", "incidents", "staff", "chat", "collector", "classifier", "responder",
+@pytest.mark.parametrize("page", ["flow", "config", "approvals", "incidents", "staff", "chat", "collector", "classifier", "responder",
                                   "machines", "review", "reports", "audit", "backups", "extensions"])
 def test_every_page_renders(fake_core, page, tmp_path, monkeypatch):
     from streamlit.testing.v1 import AppTest
@@ -483,7 +483,7 @@ def test_approvals_rows_roll_back_in_one_click(fake_core, tmp_path, monkeypatch)
 
 # ------------------------------------------- Incidents: "Who gets what" as a map (sentrai_ui/routing_editor.mjs)
 
-def _incidents_page(fake_core, tmp_path, monkeypatch, role: str = ""):
+def _incidents_page(fake_core, tmp_path, monkeypatch, role: str = "", operator: str = "erick"):
     """The Incidents page with sign-in off, seen as `role` (SENTRAI_DASHBOARD_ROLE; empty: the default Owner)."""
     from streamlit.testing.v1 import AppTest
 
@@ -495,18 +495,30 @@ def _incidents_page(fake_core, tmp_path, monkeypatch, role: str = ""):
     at = AppTest.from_file(APP, default_timeout=20)
     at.session_state["core_url"] = fake_core
     at.session_state["auto_refresh"] = False
-    at.session_state["operator"] = "erick"
+    at.session_state["operator"] = operator
     at.session_state["page"] = "incidents"
     at.run()
     return at
 
 
+def _maps(at):
+    """Every "Who gets what" map on the page with the data Python gave it. AppTest has no element class for a
+    components v2 component: it lists it as a "bidi_component" whose proto carries that data as JSON."""
+    return [(el, json.loads(el.proto.json)) for el in at.get("bidi_component")
+            if el.proto.component_name.endswith("routing_editor")]
+
+
 def _routing_editor(at):
-    """The map editor on the page and the data Python gave it. AppTest has no element class for a components v2
-    component: it lists it as a "bidi_component" whose proto carries that data as JSON."""
-    found = [el for el in at.get("bidi_component") if el.proto.component_name.endswith("routing_editor")]
-    assert len(found) == 1, f"expected the routing editor once, found {len(found)}"
-    return found[0], json.loads(found[0].proto.json)
+    """The whole team's map (one person's own part is drawn by the same component, with a focus)."""
+    found = [(el, data) for el, data in _maps(at) if not data.get("focus")]
+    assert len(found) == 1, f"expected the whole map once, found {len(found)}"
+    return found[0]
+
+
+def _my_map(at):
+    found = [(el, data) for el, data in _maps(at) if data.get("focus")]
+    assert len(found) <= 1, f"expected at most one person's own map, found {len(found)}"
+    return found[0] if found else (None, None)
 
 
 def _press_save(at, event: dict) -> None:
@@ -533,12 +545,140 @@ def test_incidents_page_draws_who_gets_what_as_a_map_to_edit(fake_core, tmp_path
     assert data == sh.routing_editor_data(routing)  # an Owner may change it, and has not saved anything yet
 
 
+def _show_whole_map(at):
+    """An Auditor sees their own part first; the whole team's map waits behind a switch."""
+    assert not [d for _, d in _maps(at) if not d.get("focus")]
+    at.toggle(key="whole_map").set_value(True).run()
+
+
 def test_incidents_page_as_an_auditor_shows_the_map_read_only(fake_core, tmp_path, monkeypatch):
     at = _incidents_page(fake_core, tmp_path, monkeypatch, role="auditor")
+    assert not at.exception, at.exception
+    _show_whole_map(at)
     assert not at.exception, at.exception
     _, data = _routing_editor(at)
     routing = requests.get(f"{fake_core}/routing", timeout=3).json()
     assert data == sh.routing_editor_data(routing, read_only=True, lock_reason=READ_ONLY_MESSAGE)
+
+
+def test_an_auditor_who_is_one_of_the_people_sees_their_own_part(fake_core, tmp_path, monkeypatch):
+    at = _incidents_page(fake_core, tmp_path, monkeypatch, role="auditor", operator="Team lead")
+    assert not at.exception, at.exception
+    _, data = _my_map(at)
+    assert data["focus"] == "team_lead" and data["read_only"]
+    assert data["numbers"] == [1, 2, 3]  # told about Critical, Attacker inside and High, by their places in the list
+    assert {c["id"] for c in data["routing"]["contacts"]} == {"team_lead", "on_duty", "it_manager"}  # not the CXO
+    assert "part_as" not in [s.key for s in at.selectbox]  # only Owners and Admins look as someone else
+    assert any("You are told about" in m.value for m in at.markdown)
+
+
+def test_someone_who_is_not_one_of_the_people_is_told_how_to_become_one(fake_core, tmp_path, monkeypatch):
+    at = _incidents_page(fake_core, tmp_path, monkeypatch, role="auditor", operator="Visitor")
+    assert not at.exception, at.exception
+    assert _my_map(at) == (None, None)
+    assert any("not one of the people" in i.value for i in at.info)
+
+
+def test_an_owner_can_see_the_page_as_anyone(fake_core, tmp_path, monkeypatch):
+    at = _incidents_page(fake_core, tmp_path, monkeypatch)
+    assert _my_map(at) == (None, None)  # "erick" is none of the people yet
+    at.selectbox(key="part_as").set_value("IT manager").run()
+    assert not at.exception, at.exception
+    _, data = _my_map(at)
+    assert data["focus"] == "it_manager" and data["read_only"]
+    _routing_editor(at)  # the whole map stays, to change
+
+
+def test_how_it_works_draws_every_step_and_each_opens_a_page(fake_core, tmp_path, monkeypatch):
+    from streamlit.testing.v1 import AppTest
+
+    monkeypatch.setenv("SENTRAI_CONFIG", str(tmp_path / "config.json"))
+    at = AppTest.from_file(APP, default_timeout=20)
+    at.session_state["core_url"] = fake_core
+    at.session_state["auto_refresh"] = False
+    at.session_state["page"] = "flow"
+    at.run()
+    assert not at.exception, at.exception
+    found = [json.loads(el.proto.json) for el in at.get("bidi_component") if el.proto.component_name.endswith("flow_map")]
+    assert len(found) == 1
+    data = found[0]
+    pages = {"approvals", "incidents", "collector", "classifier", "responder", "review", "audit", "extensions", "config"}
+    assert {n["id"] for n in data["nodes"]} == {"logs", "sort", "score", "ask", "auto", "block", "edge", "owner",
+                                                "alerts", "record"}
+    assert {n["page"] for n in data["nodes"]} <= pages
+    ids = {n["id"] for n in data["nodes"]}
+    assert all(e["from"] in ids and e["to"] in ids for e in data["edges"])
+
+
+def _flow_page(fake_core, tmp_path, monkeypatch, role: str = ""):
+    from streamlit.testing.v1 import AppTest
+
+    monkeypatch.setenv("SENTRAI_CONFIG", str(tmp_path / "config.json"))
+    if role:
+        monkeypatch.setenv("SENTRAI_DASHBOARD_ROLE", role)
+    else:
+        monkeypatch.delenv("SENTRAI_DASHBOARD_ROLE", raising=False)
+    at = AppTest.from_file(APP, default_timeout=20)
+    at.session_state["core_url"] = fake_core
+    at.session_state["auto_refresh"] = False
+    at.session_state["page"] = "flow"
+    at.run()
+    return at
+
+
+def _limits_map(at):
+    found = [el for el in at.get("bidi_component") if el.proto.component_name.endswith("limits_map")]
+    assert len(found) == 1
+    return found[0], json.loads(found[0].proto.json)
+
+
+def _press(at, el, event: str, value: dict) -> None:
+    """What a component's trigger does in a browser (see _press_save)."""
+    try:
+        from streamlit.components.v2.bidi_component.main import _make_trigger_id
+        from streamlit.proto.WidgetStates_pb2 import WidgetState
+        states = at._tree.get_widget_states()
+        run = at._run
+    except (ImportError, AttributeError) as exc:
+        pytest.skip(f"cannot press a component's trigger in this Streamlit's AppTest: {exc}")
+    states.widgets.append(WidgetState(id=_make_trigger_id(el.proto.id, "events"),
+                                      json_trigger_value=json.dumps([{"event": event, "value": value}])))
+    run(states)
+
+
+def test_the_limits_map_saves_to_the_settings_file(fake_core, tmp_path, monkeypatch):
+    import sentrai_config as cfg
+
+    at = _flow_page(fake_core, tmp_path, monkeypatch)
+    assert not at.exception, at.exception
+    el, data = _limits_map(at)
+    assert not data["read_only"] and data["settings"]["AUTO_ACTIONS"] == "block_ip,rate_limit,waf_rule"
+    sent = data["settings"] | {"AUTO_ACTIONS": "lock_user,block_ip", "RISK_THRESHOLD": "70"}
+    _press(at, el, "save", {"id": "save-1", "settings": sent})
+    assert all("fragment" in str(e.value) for e in at.exception), at.exception  # as with the routing editor
+    saved = cfg.read()
+    assert saved["AUTO_ACTIONS"] == "block_ip,lock_user" and saved["RISK_THRESHOLD"] == "70"
+    at.run()
+    _, data = _limits_map(at)
+    assert data["result"]["ok"] and data["settings"]["RISK_THRESHOLD"] == "70"
+
+    el, _ = _limits_map(at)
+    _press(at, el, "save", {"id": "save-2", "settings": sent | {"NEEDLE_MIN_CONFIDENCE": "7"}})
+    at.run()
+    _, data = _limits_map(at)
+    assert data["result"] == {"id": "save-2", "ok": False, "message": "Not saved: How sure it must be is out of range."}
+    assert cfg.read()["NEEDLE_MIN_CONFIDENCE"] == "0.6"
+
+
+def test_an_auditor_sees_the_limits_but_never_saves_them(fake_core, tmp_path, monkeypatch):
+    import sentrai_config as cfg
+
+    at = _flow_page(fake_core, tmp_path, monkeypatch, role="auditor")
+    el, data = _limits_map(at)
+    assert data["read_only"] and data["lock_reason"] == READ_ONLY_MESSAGE
+    _press(at, el, "save", {"id": "save-1", "settings": data["settings"] | {"RISK_THRESHOLD": "1"}})
+    assert not at.exception, at.exception
+    assert cfg.read().get("RISK_THRESHOLD") != "1"
 
 
 def test_saving_the_map_reaches_the_core_and_the_editor_hears_how_it_went(fake_core, tmp_path, monkeypatch):
@@ -583,6 +723,7 @@ def test_an_auditors_map_never_saves(fake_core, tmp_path, monkeypatch):
     """Even when an Auditor's browser sends a Save (from the developer tools, say), nothing reaches the core."""
     before = requests.get(f"{fake_core}/routing", timeout=3).json()
     at = _incidents_page(fake_core, tmp_path, monkeypatch, role="auditor")
+    _show_whole_map(at)
     _, data = _routing_editor(at)
     data["routing"]["rules"][0]["name"] = "Changed by an auditor"
     _press_save(at, {"id": "save-1", "routing": data["routing"], "summary": "Should not happen"})

@@ -1175,7 +1175,7 @@ def routing_version(routing: dict | None) -> str:
 
 
 def routing_editor_data(routing: dict | None, read_only: bool = False, lock_reason: str = "",
-                        result: dict | None = None) -> dict:
+                        result: dict | None = None, focus: str = "") -> dict:
     """What the "Who gets what" editor draws: the routing (people in file order), the choices its panel
     offers, whether this person may change anything, and how their last save went."""
     routing = routing or {}
@@ -1191,6 +1191,8 @@ def routing_editor_data(routing: dict | None, read_only: bool = False, lock_reas
         "read_only": bool(read_only),
         "lock_reason": lock_reason,
         "result": result,
+        "focus": focus,  # a person to mark "you" (a person's own part of the map)
+        "numbers": list(routing.get("numbers") or []),  # each rule's place in the full list, when cut down
     }
 
 
@@ -1217,6 +1219,214 @@ def routing_from_editor(routing: Any) -> dict:
     out = {"contacts": contacts, "rules": rules, "follow_up": dict(part("follow_up", dict))}
     if isinstance(routing.get("layout"), dict):
         out["layout"] = routing["layout"]
+    return out
+
+
+# ------------------------------------------------- each person's own part of "Who gets what"
+
+def _same(a: Any, b: Any) -> bool:
+    a, b = str(a or "").strip().lower().lstrip("@"), str(b or "").strip().lower().lstrip("@")
+    return bool(a) and a == b
+
+
+def find_person(routing: dict | None, email: str = "", name: str = "") -> dict | None:
+    """The person in "Who gets what" a signed-in account is: same email first, else the same name."""
+    contacts = (routing or {}).get("contacts") or []
+    return (next((c for c in contacts if email and _same(c.get("email"), email)), None)
+            or next((c for c in contacts if name and _same(c.get("name"), name)), None))
+
+
+def my_part(routing: dict | None, cid: str, incidents: Iterable[dict] = ()) -> dict:
+    """What one person does in "Who gets what": the rules they own or hear about, who backs them up,
+    whom they back up, and the incidents that reach them (owned, backing up, or told once)."""
+    routing = routing or {}
+    contacts = {str(c.get("id")): c for c in routing.get("contacts") or [] if c.get("id")}
+    me = contacts.get(cid) or {}
+    name = str(me.get("name") or "")
+    rules = list(routing.get("rules") or [])
+    owns = [(i, r) for i, r in enumerate(rules) if r.get("owner") == cid]
+    told = [(i, r) for i, r in enumerate(rules) if r.get("owner") != cid and cid in (r.get("notify") or [])]
+    backup = contacts.get(str(me.get("backup") or ""))
+    covers = [c for c in contacts.values() if c.get("backup") == cid and str(c.get("id")) != cid]
+    mine, backing, heard = [], [], []
+    for inc in incidents or []:
+        if _same(inc.get("owner"), name):
+            mine.append(inc)
+        elif _same(inc.get("backup"), name):
+            backing.append(inc)
+        elif any(_same(n, name) for n in inc.get("notify") or []):
+            heard.append(inc)
+    return {"person": me, "owns": owns, "told": told, "backup": backup, "covers": covers,
+            "mine": mine, "backing": backing, "heard": heard}
+
+
+def my_routing(routing: dict | None, cid: str) -> dict:
+    """The same routing cut down to one person's part, to draw read-only: the rules that reach them and
+    who owns each, their backup and the people they back up (others those rules tell are left out). Boxes keep the places
+    they have on the whole map, and ``numbers`` keeps each rule's place in the full list."""
+    routing = routing or {}
+    part = my_part(routing, cid)
+    picked = sorted(part["owns"] + part["told"], key=lambda x: x[0])
+    keep = {cid} | {str(c.get("id")) for c in part["covers"]}
+    if part["backup"]:
+        keep.add(str(part["backup"].get("id")))
+    keep.update(str(r.get("owner")) for _, r in picked)
+    contacts = []
+    for c in routing.get("contacts") or []:
+        if str(c.get("id")) in keep:
+            c = dict(c)
+            if c.get("backup") not in keep:  # drawn only between people on this map
+                c["backup"] = ""
+            contacts.append(c)
+    layout = routing.get("layout") or {}
+    spots = layout.get("rules") or []
+    cut = {k: v for k, v in layout.items() if k in ("incident",)}
+    if spots:
+        cut["rules"] = [spots[i] if i < len(spots) else None for i, _ in picked]
+    if layout.get("contacts"):
+        cut["contacts"] = {k: v for k, v in layout["contacts"].items() if k in keep}
+    rules = [{**r, "notify": [x for x in r.get("notify") or [] if x in keep]} for _, r in picked]
+    return {**routing, "contacts": contacts, "rules": rules, "layout": cut,
+            "numbers": [i + 1 for i, _ in picked]}
+
+
+# ------------------------------------------------- "How an attack is handled" map (flow_map.mjs)
+
+# Every kind of action the core takes (core/app/agents.py ACTION_TEXT), in plain words, in a fixed order.
+ACTION_WORDS = {"block_ip": "block an address", "rate_limit": "slow an address down", "waf_rule": "add a web firewall rule",
+                "lock_user": "lock an account", "kill_process": "stop a program", "revoke_public_acl": "make a public file private"}
+ALERT_EXTENSIONS = ("telegram", "slack")
+
+
+def _ext(extensions: Iterable[dict] | None, name: str) -> dict | None:
+    return next((r for r in extensions or [] if r.get("name") == name), None)
+
+
+def _ext_on(row: dict | None) -> bool:
+    return bool(row and row.get("added") and row.get("configured") and not (row.get("error") or row.get("last_error")))
+
+
+def flow_map_data(risk: dict | None, incidents: Iterable[dict] | None, agents: Iterable[dict] | None,
+                  blocklist: dict | None, extensions: Iterable[dict] | None, records: list[dict] | None,
+                  settings: dict[str, str] | None, chain_ok: bool | None = None) -> dict:
+    """The steps an attack goes through, each with what it is doing right now, for the read-only map:
+    logs come in, get sorted, scored, then wait for a person or are acted on, blocked, and the owner and
+    alert channels hear about it, all written down. Each step names the page that shows it in full."""
+    risk, settings = risk or {}, settings or {}
+    incidents, agents, records = list(incidents or []), list(agents or []), list(records or [])
+    blocklist = blocklist or {}
+    open_ = [i for i in incidents if i.get("status") in OPEN_STATUSES]
+    layer = [a for a in agents if "analyzed" in a]
+    events = sum(int(a.get("analyzed") or 0) for a in layer)
+    collectors = (next((a for a in agents if a.get("name") == "Watchdog"), {}) or {}).get("collectors") or []
+    silent = records_of(records, "collector_silent")
+    attacks = records_of(records, "event_classified")
+    jev = next((a for a in agents if a.get("name") == "Jev"), {})
+    ai, ai_note = ai_classifier_state(jev.get("status"), _ext(extensions, "typesafe"))
+    idx, threshold = risk.get("risk_index"), float(risk.get("threshold") or settings.get("RISK_THRESHOLD") or 80)
+    band = resolve_band(risk) if risk else "unknown"
+    waiting = pending_approvals(incidents)
+    watch_only = bool(risk.get("monitor_only"))
+    allowed = [x.strip() for x in str(settings.get("AUTO_ACTIONS") or "").split(",") if x.strip()]
+    per_hour = settings.get("MAX_AUTO_ACTIONS_PER_HOUR") or "10"
+    ips, users = len(blocklist.get("ips") or []), len(blocklist.get("users") or [])
+    hours = settings.get("HOTPATCH_TTL_HOURS") or "2"
+    no_owner = sum(1 for i in open_ if not i.get("owner"))
+    edge = _ext(extensions, "cloudflare")
+    email_on = bool(settings.get("SMTP_HOST") and settings.get("ALERT_EMAIL_TO"))
+    channels = (["email"] if email_on else []) + [n.capitalize() for n in ALERT_EXTENSIONS if _ext_on(_ext(extensions, n))]
+    broken = [str(r.get("title") or r.get("name")) for r in extensions or []
+              if r.get("added") and (r.get("error") or r.get("last_error"))]
+
+    def node(nid, col, row, title, what, value, note, state, page, ico):
+        return {"id": nid, "col": col, "row": row, "title": title, "what": what, "value": value, "note": note,
+                "state": state, "page": page, "icon": ico}
+
+    nodes = [
+        node("logs", 0, 1, "Logs come in", "every line from your machines", f"{events:,}", "lines read" +
+             (f" · {plural(len(silent), 'source')} went quiet" if silent else
+              f" · {plural(len(collectors), 'source')} reporting" if collectors else ""),
+             "busy" if silent else "ok" if events or collectors else "idle", "collector", "input"),
+        node("sort", 1, 1, "Sorted", "attack or normal: rules first, then AI", str(len(attacks)),
+             f"looked like attacks · AI {ai.lower()}", "alert" if attacks else "ok", "classifier", "category"),
+        node("score", 2, 1, "Scored", "how dangerous right now, 0 to 100", "-" if idx is None else f"{idx}",
+             f"acts on its own from {threshold:.0f}", "unknown" if idx is None else
+             "alert" if band in ("red", "critical") else "busy" if band == "amber" else "ok", "review", "speed"),
+        node("ask", 3, 0, "Waits for a person", "unsure, or not allowed on its own", str(len(waiting)),
+             "waiting for approval" if waiting else "nothing waiting", "busy" if waiting else "ok", "approvals",
+             "pending_actions"),
+        node("auto", 3, 1, "Acts on its own", "only what you allowed", "Off" if watch_only else "On",
+             "watching only, blocks nothing" if watch_only else
+             (f"may {', '.join(ACTION_WORDS.get(a, a.replace('_', ' ')) for a in allowed)}; at most {per_hour} an hour"
+              if allowed else "nothing allowed: everything waits for a person"),
+             "off" if watch_only or not allowed else "ok", "config", "smart_toy"),
+        node("block", 4, 0.5, "Blocks the attacker", f"undoes itself after {hours} h unless kept", str(ips + users),
+             f"{plural(ips, 'address', 'addresses')}, {plural(users, 'account')} blocked now",
+             "busy" if ips + users else "ok", "responder", "block"),
+        node("edge", 5, 0.5, "Blocks at the edge", "stops them before your servers too",
+             "On" if _ext_on(edge) else "Off", "Cloudflare" if edge else "not available",
+             "ok" if _ext_on(edge) else "alert" if edge and edge.get("added") else "off", "extensions", "public"),
+        node("owner", 3, 2, "Owner gets it", "who gets what decides who", str(len(open_)),
+             f"open · {no_owner} with no owner" if no_owner else "open, each with an owner",
+             "alert" if no_owner else "busy" if open_ else "ok", "incidents", "assignment_ind"),
+        node("alerts", 4, 2, "Alerts go out", "messages with buttons to act", str(len(channels)),
+             (", ".join(channels) if channels else "no channel set up") + (f" · {', '.join(broken)} failing" if broken else ""),
+             "alert" if broken else "ok" if channels else "off", "extensions", "send"),
+        node("record", 5, 2, "Written down", "every step, sealed so it cannot be changed quietly", f"{len(records):,}",
+             "records · chain intact" if chain_ok else "records · chain broken" if chain_ok is False else "records",
+             "alert" if chain_ok is False else "ok", "audit", "link"),
+    ]
+    # Two lanes after scoring: stopping the attacker (top) and telling people (bottom); all of it is written down.
+    edges = [("logs", "sort"), ("sort", "score"), ("score", "ask"), ("score", "auto"), ("ask", "block"),
+             ("auto", "block"), ("block", "edge"), ("score", "owner"), ("owner", "alerts"), ("alerts", "record"),
+             ("block", "record")]
+    live = {n["id"]: n["state"] in ("busy", "alert") for n in nodes}
+    return {"nodes": nodes, "edges": [{"from": a, "to": b, "live": live[a] and live[b]} for a, b in edges],
+            "colors": {"ok": BAND_COLORS["green"], "busy": BAND_COLORS["amber"], "alert": BAND_COLORS["critical"]}}
+
+
+# ------------------------------------------------- "What it may do on its own" map (limits_map.mjs)
+
+LIMIT_FIELDS = ("AUTO_ACTIONS", "NEEDLE_MIN_CONFIDENCE", "RISK_THRESHOLD", "MAX_AUTO_ACTIONS_PER_HOUR",
+                "HOTPATCH_TTL_HOURS", "MAX_TTL_HOURS", "PROTECTED_IPS", "PROTECTED_USERS")
+
+
+def limits_map_data(settings: dict[str, str] | None, read_only: bool = False, lock_reason: str = "",
+                    result: dict | None = None) -> dict:
+    """What the limits map draws: these settings, the actions it can move between "on its own" and "asks a
+    person", whether this person may change them, and how their last save went."""
+    settings = {k: str((settings or {}).get(k) or "") for k in LIMIT_FIELDS}
+    return {"settings": settings, "actions": [[k, v] for k, v in ACTION_WORDS.items()],
+            "version": hashlib.sha256(json.dumps(settings, sort_keys=True).encode()).hexdigest()[:16],
+            "read_only": bool(read_only), "lock_reason": lock_reason, "result": result}
+
+
+def check_limits(sent: Any) -> dict[str, str]:
+    """The map's Save checked again here: only these settings, every number in range, the allowed actions
+    only ones the core knows. ValueError with a reason a person can act on."""
+    sent = sent if isinstance(sent, dict) else {}
+    out = {k: str(sent.get(k) or "").strip() for k in LIMIT_FIELDS}
+    auto = [a.strip() for a in out["AUTO_ACTIONS"].split(",") if a.strip()]
+    if any(a not in ACTION_WORDS for a in auto):
+        raise ValueError("an action SentrAI does not know was in the list")
+    out["AUTO_ACTIONS"] = ",".join(a for a in ACTION_WORDS if a in auto)
+
+    def number(key: str, kind, lo: float, hi: float | None, what: str) -> None:
+        try:
+            v = kind(out[key])
+        except ValueError:
+            raise ValueError(f"{what} must be a {'whole ' if kind is int else ''}number") from None
+        if v < lo or (hi is not None and v > hi) or (key.endswith("HOURS") and v <= 0):
+            raise ValueError(f"{what} is out of range")
+    number("NEEDLE_MIN_CONFIDENCE", float, 0, 1, "How sure it must be")
+    number("RISK_THRESHOLD", int, 0, 100, "The danger level")
+    number("MAX_AUTO_ACTIONS_PER_HOUR", int, 0, None, "Actions in one hour")
+    number("HOTPATCH_TTL_HOURS", float, 0, None, "How long a block lasts")
+    number("MAX_TTL_HOURS", float, 0, None, "The longest block")
+    if float(out["HOTPATCH_TTL_HOURS"]) > float(out["MAX_TTL_HOURS"]):
+        raise ValueError("a block cannot last longer than the longest block allowed")
+    for key in ("PROTECTED_IPS", "PROTECTED_USERS"):
+        out[key] = ",".join(x.strip() for x in out[key].split(",") if x.strip())
     return out
 
 

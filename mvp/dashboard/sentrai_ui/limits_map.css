@@ -1,0 +1,63 @@
+/* "What it may do on its own" map (limits_map.mjs). Shadow root: the colour variables from theme.py come in
+   from the page, nothing else does. Hairlines, colour only where it means something, nothing under 12 px. */
+
+:host { display: block; }
+.lm { display: flex; flex-direction: column; gap: .7rem; font-family: var(--font); color: var(--ink);
+      font-size: .9rem; line-height: 1.4; --ok: #4fb67c; --busy: #e8b34a; --alert: #e5484d; }
+.mi { font-family: "Material Symbols Rounded"; font-weight: normal; font-style: normal; font-size: 1.1em; line-height: 1;
+      letter-spacing: normal; text-transform: none; display: inline-block; white-space: nowrap;
+      font-feature-settings: "liga"; -webkit-font-feature-settings: "liga"; flex: none; }
+
+.lm-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.lm-spacer { flex: 1 1 auto; }
+.lm-status { font-size: .8rem; color: var(--ink-soft); display: inline-flex; align-items: center; gap: .4rem; }
+.lm-status.dirty { color: var(--ink); font-weight: 600; }
+.lm-status.dirty::before { content: ""; width: .5rem; height: .5rem; border-radius: 50%; background: var(--busy); }
+.lm-btn { font: inherit; font-size: .85rem; font-weight: 500; display: inline-flex; align-items: center; gap: .35rem;
+          min-height: 2.15rem; padding: .3rem .8rem; border-radius: 8px; border: 1px solid var(--line);
+          background: var(--surface); color: var(--ink); cursor: pointer; }
+.lm-btn:hover:not(:disabled) { background: var(--surface-2); border-color: var(--ink-faint); }
+.lm-btn.primary { background: var(--brand); border-color: var(--brand); color: var(--on-brand, #fff); }
+.lm-btn:disabled { opacity: .45; cursor: not-allowed; }
+.lm-btn:focus-visible, .lm-chip:focus-visible, .lm-in:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+.lm-note { display: flex; align-items: center; gap: .45rem; font-size: .85rem; color: var(--ink-soft);
+           padding: .45rem .7rem; border: 1px solid var(--line-soft, var(--line)); border-radius: 8px; }
+.lm-note.bad { color: var(--ink); border-color: color-mix(in srgb, var(--alert) 60%, var(--line)); }
+.lm-problems { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: .25rem; font-size: .85rem; }
+.lm-problems li { display: flex; align-items: center; gap: .4rem; }
+.lm-problems .mi { color: var(--alert); }
+
+.lm-flow { display: flex; align-items: stretch; gap: .25rem; overflow-x: auto; padding: 2px 2px .4rem; }
+.lm-arrow { display: flex; align-items: center; color: var(--ink-faint); flex: none; }
+.lm-box, .lm-lane, .lm-fence { border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2);
+                               padding: .6rem .7rem; display: flex; flex-direction: column; gap: .45rem; }
+.lm-box { flex: 1 1 8rem; min-width: 8rem; }
+.lm-box.start { flex: .7 1 6.5rem; min-width: 6.5rem; }
+.lm-head { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
+.lm-sub { font-size: .8rem; color: var(--ink-soft); font-weight: 400; }
+.lm-no { margin-top: auto; display: flex; align-items: flex-start; gap: .3rem; font-size: .8rem; color: var(--ink-soft); }
+
+.lm-field { display: flex; flex-direction: column; gap: .2rem; font-size: .8rem; color: var(--ink-soft); }
+.lm-field.wide { flex: 1 1 16rem; }
+.lm-in { font: inherit; font-size: .9rem; color: var(--ink); background: var(--surface); border: 1px solid var(--line);
+         border-radius: 6px; padding: .3rem .45rem; min-height: 2rem; box-sizing: border-box; width: 100%; }
+.lm-in:disabled { opacity: .7; }
+
+.lm-lanes { flex: 1.6 1 12.5rem; min-width: 12.5rem; display: flex; flex-direction: column; gap: .5rem; }
+.lm-lane { flex: 1 1 auto; transition: border-color .15s ease-out, background-color .15s ease-out; }
+.lm-lane.auto { border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); }
+.lm-lane.ask { border-color: color-mix(in srgb, var(--busy) 45%, var(--line)); border-style: dashed; }
+.lm-lane.over { background: var(--surface); border-color: var(--brand); }
+.lm-chips { display: flex; flex-wrap: wrap; gap: .35rem; }
+.lm-chip { font: inherit; font-size: .82rem; display: inline-flex; align-items: center; gap: .3rem; padding: .25rem .55rem;
+           border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: grab; }
+.lm-chip.auto .mi { color: var(--ok); }
+.lm-chip:not(.auto) .mi { color: var(--busy); }
+.lm-chip:hover:not(:disabled) { border-color: var(--ink-faint); }
+.lm-chip:disabled { cursor: default; }
+.lm-empty { font-size: .8rem; color: var(--ink-faint); }
+
+.lm-fence { border-style: dashed; }
+.lm-fence .mi { color: var(--ink-soft); }
+.lm-fence-fields { display: flex; flex-wrap: wrap; gap: .6rem; }

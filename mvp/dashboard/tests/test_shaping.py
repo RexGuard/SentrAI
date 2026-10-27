@@ -266,7 +266,7 @@ def test_routing_editor_data_is_what_the_map_draws():
     sent = copy.deepcopy(result)
     data = sh.routing_editor_data(ROUTING_MAP, read_only=True, lock_reason="Auditors look only.", result=result)
     assert set(data) == {"routing", "version", "linked", "categories", "severities", "roles", "read_only",
-                         "lock_reason", "result"}
+                         "lock_reason", "result", "focus", "numbers"}
     routing = data["routing"]
     assert list(routing) == ["contacts", "rules", "follow_up", "layout"]
     assert routing["contacts"] == [  # a list, in file order, each person with their id
@@ -519,3 +519,98 @@ def test_actions_read_in_plain_words():
     assert list(df["Status"]) == ["Rolled back", "-"]
     rows = sh.build_containment_rows({"ips": ["1.2.3.4"], "users": ["bob"]}, [])
     assert list(rows["Action"]) == ["Block IP", "Lock account"] and list(rows["Mode"]) == ["-", "-"]
+
+
+# ------------------------------------------------- each person's own part of "Who gets what"
+
+def test_find_person_matches_the_sign_in_email_first_then_the_name():
+    routing = {"contacts": [{"id": "a", "name": "Amir", "email": "Amir@Example.com"}, {"id": "b", "name": "Lee"}]}
+    assert sh.find_person(routing, "amir@example.com", "Lee")["id"] == "a"
+    assert sh.find_person(routing, "nobody@example.com", "@lee")["id"] == "b"
+    assert sh.find_person(routing, "", "") is None
+    assert sh.find_person(None, "amir@example.com") is None
+
+
+def test_my_part_lists_rules_backups_and_the_incidents_that_reach_a_person():
+    incidents = [{"id": "1", "owner": "Lee"}, {"id": "2", "owner": "Amir", "backup": "Lee"},
+                 {"id": "3", "owner": "Amir", "notify": ["Lee", "Ika"]}, {"id": "4", "owner": "Ika"}]
+    part = sh.my_part(ROUTING_MAP, "b", incidents)
+    assert [r["name"] for _, r in part["owns"]] == ["Everything else"]
+    assert [(i, r["name"]) for i, r in part["told"]] == [(0, "Inside")]
+    assert part["backup"]["name"] == "Ika" and [c["name"] for c in part["covers"]] == ["Amir"]
+    assert [[i["id"] for i in part[k]] for k in ("mine", "backing", "heard")] == [["1"], ["2"], ["3"]]
+
+
+def test_my_routing_cuts_the_map_down_to_one_person_and_keeps_rule_numbers_and_places():
+    cut = sh.my_routing(ROUTING_MAP, "c")  # Ika: told about rule 1, backs up Lee
+    assert [r["name"] for r in cut["rules"]] == ["Inside"] and cut["numbers"] == [1]
+    assert {c["id"] for c in cut["contacts"]} == {"a", "b", "c"}
+    amir = sh.my_routing(ROUTING_MAP, "a")  # owns Inside, which also tells Lee and Ika: only Lee (his backup) stays
+    assert {c["id"] for c in amir["contacts"]} == {"a", "b"} and amir["rules"][0]["notify"] == ["b"]
+    assert cut["layout"]["rules"] == [[210, 0]] and cut["layout"]["contacts"] == {"a": [620, 40]}
+    lone = sh.my_routing({**ROUTING_MAP, "contacts": ROUTING_MAP["contacts"] + [
+        {"id": "d", "name": "Dee", "backup": "a"}]}, "d")  # in no rule; their backup stays, Amir's does not
+    assert lone["rules"] == [] and {c["id"]: c["backup"] for c in lone["contacts"]} == {"a": "", "d": "a"}
+    data = sh.routing_editor_data(cut, read_only=True, focus="c")
+    assert data["focus"] == "c" and data["numbers"] == [1] and data["read_only"]
+
+
+# ------------------------------------------------- "How an attack is handled" map
+
+def _flow(**kw):
+    args = dict(risk={"risk_index": 12, "band": "green", "threshold": 80}, incidents=[], agents=[], blocklist={},
+                extensions=[], records=[], settings={"AUTO_ACTIONS": "block_ip", "HOTPATCH_TTL_HOURS": "2"}, chain_ok=True)
+    data = sh.flow_map_data(**(args | kw))
+    return {n["id"]: n for n in data["nodes"]}, data["edges"]
+
+
+def test_a_quiet_system_shows_every_step_fine_and_nothing_moving():
+    nodes, edges = _flow()
+    assert nodes["score"]["value"] == "12" and nodes["score"]["state"] == "ok"
+    assert nodes["auto"]["value"] == "On" and "block an address" in nodes["auto"]["note"]
+    assert nodes["record"]["note"] == "records · chain intact"
+    assert not any(e["live"] for e in edges)
+
+
+def test_an_attack_in_progress_lights_its_path():
+    waiting = {"id": "1", "status": "open", "category": "brute_force", "recommended_action": "block_ip",
+               "requires_approval": True, "owner": ""}
+    nodes, edges = _flow(risk={"risk_index": 85, "band": "critical", "threshold": 80}, incidents=[waiting],
+                         blocklist={"ips": ["203.0.113.4"], "users": []})
+    assert nodes["score"]["state"] == "alert" and nodes["block"]["state"] == "busy"
+    assert nodes["owner"]["state"] == "alert" and "1 with no owner" in nodes["owner"]["note"]
+    assert {(e["from"], e["to"]) for e in edges if e["live"]} >= {("score", "owner")}
+
+
+def test_watch_only_and_broken_extensions_say_so():
+    nodes, _ = _flow(risk={"risk_index": 5, "monitor_only": True},
+                     extensions=[{"name": "telegram", "title": "Telegram", "added": True, "configured": True,
+                                  "last_error": "401"}], chain_ok=False)
+    assert nodes["auto"]["value"] == "Off" and nodes["auto"]["state"] == "off"
+    assert nodes["alerts"]["state"] == "alert" and "Telegram failing" in nodes["alerts"]["note"]
+    assert nodes["edge"]["value"] == "Off" and nodes["record"]["state"] == "alert"
+    assert _flow(settings={"AUTO_ACTIONS": ""})[0]["auto"]["note"].startswith("nothing allowed")
+
+
+# ------------------------------------------------- "What it may do on its own" map
+
+LIMITS = {"AUTO_ACTIONS": "rate_limit,block_ip", "NEEDLE_MIN_CONFIDENCE": "0.6", "RISK_THRESHOLD": "80",
+          "MAX_AUTO_ACTIONS_PER_HOUR": "10", "HOTPATCH_TTL_HOURS": "2", "MAX_TTL_HOURS": "24",
+          "PROTECTED_IPS": " 10.0.0.0/8 ,, 127.0.0.1", "PROTECTED_USERS": ""}
+
+
+def test_limits_map_data_carries_only_the_limits_and_every_action():
+    data = sh.limits_map_data(LIMITS | {"SMTP_PASSWORD": "secret"}, read_only=True, lock_reason="Look only.")
+    assert set(data["settings"]) == set(sh.LIMIT_FIELDS) and "SMTP_PASSWORD" not in json.dumps(data)
+    assert [a for a, _ in data["actions"]] == list(sh.ACTION_WORDS) and data["read_only"]
+    assert data["version"] != sh.limits_map_data(LIMITS | {"RISK_THRESHOLD": "70"})["version"]
+
+
+def test_check_limits_tidies_a_save_and_refuses_what_the_core_could_not_use():
+    out = sh.check_limits(LIMITS | {"SMTP_HOST": "evil.example"})
+    assert out["AUTO_ACTIONS"] == "block_ip,rate_limit" and out["PROTECTED_IPS"] == "10.0.0.0/8,127.0.0.1"
+    assert "SMTP_HOST" not in out
+    for bad in ({"AUTO_ACTIONS": "rm_rf"}, {"NEEDLE_MIN_CONFIDENCE": "1.5"}, {"RISK_THRESHOLD": "eighty"},
+                {"MAX_AUTO_ACTIONS_PER_HOUR": "-1"}, {"HOTPATCH_TTL_HOURS": "0"}, {"HOTPATCH_TTL_HOURS": "30"}):
+        with pytest.raises(ValueError):
+            sh.check_limits(LIMITS | bad)

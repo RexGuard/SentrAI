@@ -13,6 +13,7 @@ import pytest
 DASHBOARD = Path(__file__).resolve().parents[1]
 # Relative to DASHBOARD, with forward slashes on every OS: newer Node reads the --test argument as a glob.
 TEST_FILE = "tests/routing_editor.test.mjs"
+MAPS_FILE = "tests/maps.test.mjs"  # the "How it works" maps (flow_map.mjs, limits_map.mjs)
 MIN_NODE = 20
 TIMEOUT = 120  # seconds
 # The count in the summary node prints last: "<info sign> pass 65" from the spec reporter, "# pass 65" from TAP.
@@ -40,7 +41,9 @@ def _text(data: bytes | str | None) -> str:
     return data or ""
 
 
-def test_routing_editor_model_passes_its_node_tests():
+@pytest.mark.parametrize("test_file", [TEST_FILE, MAPS_FILE])
+def test_routing_editor_model_passes_its_node_tests(test_file):
+    TEST_FILE = test_file  # noqa: N806  (the messages below name the file that ran)
     node = _node()
     try:
         proc = subprocess.run([node, "--test", "--test-reporter=spec", TEST_FILE], cwd=str(DASHBOARD),
