@@ -17,6 +17,10 @@ from urllib.parse import urlsplit
 # poster(url, body bytes, headers) -> HTTP status; raises on network errors (same shape as responders.Poster).
 Poster = Callable[[str, bytes, dict[str, str]], int]
 
+
+def _n(n: int, word: str, many: str = "") -> str:
+    return f"{n} {word if n == 1 else (many or word + 's')}"
+
 CATALOG: dict[str, dict[str, Any]] = {
     "cloudflare": {
         "title": "Cloudflare", "kind": "Blocking",
@@ -94,12 +98,12 @@ def status(core: Any) -> list[dict[str, Any]]:
         "cloudflare": {"configured": cf is not None,
                        "detail": (f"{'IP list' if cf.method == 'list' else 'IP Access rules, ' + cf.mode} on "
                                   f"{'zone ' + s.cloudflare_zone_id if s.cloudflare_zone_id and cf.method != 'list' else 'account'}"
-                                  f" · {len(cf.status()['blocked'])} address(es) blocked now") if cf else
+                                  f" · {_n(len(cf.status()['blocked']), 'address', 'addresses')} blocked now") if cf else
                                  "Paste an API token and a zone or account id to turn it on.",
                        "last_ok": _when(cf.last_ok) if cf else None, "last_error": cf.last_error if cf else None,
                        "testable": cf is not None, "error": core.cloudflare_error},
         "abuseipdb": {"configured": rep is not None,
-                      "detail": f"{rep.lookups} lookup(s) since start, answers kept {s.abuseipdb_cache_hours:g} h"
+                      "detail": f"{_n(rep.lookups, 'lookup')} since start, answers kept {s.abuseipdb_cache_hours:g} h"
                                 if rep else "Paste a free API key to turn it on.",
                       "last_ok": _when(rep.last_ok) if rep else None, "last_error": rep.last_error if rep else None,
                       "testable": rep is not None},

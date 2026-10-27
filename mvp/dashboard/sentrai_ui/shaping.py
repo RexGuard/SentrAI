@@ -96,6 +96,50 @@ STATUS_LABELS = {
 
 CLASSIFIER_LABELS = {"rules": "Rules", "jev": "Jev (AI)", "fallback": "Fallback"}
 
+ACTION_LABELS = {
+    "block_ip": "Block IP",
+    "lock_user": "Lock account",
+    "rate_limit": "Rate limit",
+    "waf_rule": "Web firewall rule",
+    "kill_process": "Stop process",
+    "revoke_public_acl": "Make private again",
+}
+
+# Who decided: the two-key automatic path, or a person pressing Approve.
+MODE_LABELS = {"autonomous": "Automatic", "operator": "By a person"}
+
+
+def action_label(kind: Any) -> str:
+    if not kind or kind == "-":
+        return "-"
+    return ACTION_LABELS.get(str(kind), str(kind).replace("_", " ").capitalize())
+
+
+def mode_label(mode: Any) -> str:
+    if not mode or mode == "-":
+        return "-"
+    return MODE_LABELS.get(str(mode), str(mode).replace("_", " ").capitalize())
+
+
+def ai_classifier_state(status: Any) -> tuple[str, str]:
+    """The AI classifier's tile: ("On" | "Off" | "Unknown", why). Never claims "On" when the core said nothing."""
+    text = str(status or "").strip()
+    if text.startswith("enabled"):
+        return "On", "asked when the rules are unsure"
+    if text.startswith("disabled"):
+        why = text.split(":", 1)[1].split("(")[0].strip() if ":" in text else ""
+        return "Off", why or "keyword fallback in use"
+    return "Unknown", "the core did not report it"
+
+
+def plural(n: Any, word: str, many: str = "") -> str:
+    """'1 action', '2 actions', '2 addresses': no '(s)' in what people read."""
+    try:
+        one = int(n) == 1
+    except (TypeError, ValueError):
+        one = False
+    return f"{n} {word if one else (many or word + 's')}"
+
 
 def category_label(category: str | None) -> str:
     if not category:
@@ -115,14 +159,41 @@ def parse_ts(value: Any) -> datetime | None:
     if isinstance(value, (int, float)):
         return datetime.fromtimestamp(float(value))
     try:
-        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        ts = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     except ValueError:
         return None
+    # The core writes some times in UTC and some with this computer's offset; show them all in local time,
+    # like the page's own clock, so one screen never mixes two time zones.
+    return ts.astimezone() if ts.tzinfo else ts
 
 
 def short_time(value: Any) -> str:
     ts = parse_ts(value)
     return ts.strftime("%H:%M:%S") if ts else (str(value) if value else "-")
+
+
+def expires_label(value: Any, now: datetime | None = None) -> str:
+    """When a block runs out, with how long is left: "20:52:58 (in 1 h 59 min)"."""
+    ts = parse_ts(value)
+    if not ts:
+        return str(value) if value else "-"
+    now = now or datetime.now(ts.tzinfo)
+    left = (ts - now).total_seconds()
+    if left <= 0:
+        return f"{ts.strftime('%H:%M:%S')} (expired)"
+    return f"{ts.strftime('%H:%M:%S')} (in {span_label(left)})"
+
+
+def span_label(seconds: float) -> str:
+    """A length of time the way people say it: "under 1 min", "7 min", "2 h 5 min", "3 d 4 h"."""
+    mins = int(max(0.0, seconds) // 60)
+    if mins < 1:
+        return "under 1 min"
+    if mins < 60:
+        return f"{mins} min"
+    if mins < 24 * 60:
+        return f"{mins // 60} h {mins % 60} min"
+    return f"{mins // 1440} d {mins % 1440 // 60} h"
 
 
 def short_hash(value: str | None, n: int = 10) -> str:
@@ -247,16 +318,25 @@ def undo_text(a: dict) -> str:
     return "done" if undo.get("ok") else "unconfirmed"
 
 
+def incident_target(inc: dict) -> str:
+    """What the incident is about, in a few words: the blocked thing if there is one, else the source and host."""
+    acts = [a for a in inc.get("actions") or [] if isinstance(a, dict) and a.get("target")]
+    live = [a for a in acts if a.get("status") == "active"] or acts
+    who = str(live[-1]["target"]) if live else str(inc.get("src_ip") or "")
+    host = str(inc.get("host") or "")
+    return " on ".join(x for x in (who, host) if x) or "-"
+
+
 def action_rows(inc: dict) -> pd.DataFrame:
     rows = [
         {
             "Action": a.get("action_id", "-"),
-            "Type": str(a.get("type", "-")).replace("_", " "),
+            "Type": action_label(a.get("type")),
             "Target": a.get("target", "-"),
-            "Mode": a.get("mode", "-"),
+            "Mode": mode_label(a.get("mode")),
             "Approved by": agent_label(a.get("approved_by", "-")),
-            "Status": a.get("status", "-"),
-            "Expires": short_time(a.get("expires_at")),
+            "Status": str(a.get("status") or "-").replace("_", " ").capitalize(),
+            "Expires": expires_label(a.get("expires_at")) if a.get("status") == "active" else short_time(a.get("expires_at")),
             "Checked": check_text(a),
             "Undo": undo_text(a),
             "Snapshot": short_hash(a.get("snapshot_hash")),
@@ -292,11 +372,11 @@ def build_containment_rows(blocklist: dict | None, incidents: Iterable[dict]) ->
                 {
                     "Kind": kind,
                     "Target": target,
-                    "Action": str(a.get("type", "block_ip" if kind == "IP" else "lock_user")).replace("_", " "),
+                    "Action": action_label(a.get("type", "block_ip" if kind == "IP" else "lock_user")),
                     "Incident": a.get("incident", "-"),
-                    "Mode": a.get("mode", "-"),
+                    "Mode": mode_label(a.get("mode")),
                     "Approved by": agent_label(a.get("approved_by", "-")),
-                    "Expires": "permanent" if a.get("status") == "permanent" else short_time(a.get("expires_at")),
+                    "Expires": "permanent" if a.get("status") == "permanent" else expires_label(a.get("expires_at")),
                 }
             )
     # Non-blocklist containment (rate limits, WAF rules...) still worth showing.
@@ -307,11 +387,11 @@ def build_containment_rows(blocklist: dict | None, incidents: Iterable[dict]) ->
             {
                 "Kind": "Rule",
                 "Target": target,
-                "Action": str(a.get("type", "-")).replace("_", " "),
+                "Action": action_label(a.get("type")),
                 "Incident": a.get("incident", "-"),
-                "Mode": a.get("mode", "-"),
+                "Mode": mode_label(a.get("mode")),
                 "Approved by": agent_label(a.get("approved_by", "-")),
-                "Expires": short_time(a.get("expires_at")),
+                "Expires": expires_label(a.get("expires_at")),
             }
         )
     return pd.DataFrame(rows, columns=["Kind", "Target", "Action", "Incident", "Mode", "Approved by", "Expires"])
@@ -456,6 +536,32 @@ def build_activity_feed(records: list[dict], limit: int = 30) -> list[dict]:
             }
         )
     return feed
+
+
+def agent_table(agents: list[dict] | None, records: list[dict]) -> pd.DataFrame:
+    """Who does what, and how busy each one has been in the records on screen.
+
+    Without the core's agent list, the agents seen in the records still show, so the box is never empty
+    while the feed beside it is full."""
+    seen: dict[str, dict] = {}
+    for rec in records or []:
+        name = agent_for(rec).split(":", 1)[0]
+        row = seen.setdefault(name, {"n": 0, "ts": None})
+        row["n"] += 1
+        ts = parse_ts(rec.get("ts"))
+        if ts and (row["ts"] is None or ts > row["ts"]):
+            row["ts"] = ts
+    rows = [{"Agent": agent_label(a.get("name")), "Role": a.get("role") or "-",
+             "Can act": "Yes" if a.get("can_execute") else "No"} for a in agents or [] if isinstance(a, dict)]
+    if not rows:
+        rows = [{"Agent": name, "Role": "-", "Can act": "-"} for name in seen]
+    for r in rows:
+        hit = seen.get(r["Agent"], {})
+        r["Records"] = hit.get("n", 0)
+        r["Last"] = hit["ts"].strftime("%H:%M:%S") if hit.get("ts") else "-"
+    rows.sort(key=lambda r: -r["Records"])
+    cols = ["Agent", "Role", "Can act", "Records", "Last"] if agents else ["Agent", "Records", "Last"]
+    return pd.DataFrame(rows, columns=cols)
 
 
 def verify_chain_links(records: list[dict]) -> bool:
@@ -625,12 +731,13 @@ def join_commands(panel_url: str, code: str, name: str | None = None, pin: str |
     }
 
 
-def machine_rows_html(machines: list[dict]) -> str:
+def machine_rows_html(machines: list[dict], opened: bool | None = None) -> str:
     """The machine list: one row per SentrAI program, like a game's server-status screen.
 
     Status shield on the left (protecting, protection off, or offline), the machine's name with a small
     risk bar under it, and the risk number with its band word on the right. Styled by .machines in
-    console.css; only the data-driven widths and colours are inline."""
+    console.css; only the data-driven widths and colours are inline. With opened set (True or False) the
+    rows open their details on click, so they end with an arrow pointing down (closed) or up (open)."""
     rows = []
     for m in machines:
         name, place = html.escape(str(m["name"])), html.escape(str(m["place"]))
@@ -652,15 +759,16 @@ def machine_rows_html(machines: list[dict]) -> str:
             place = f"{place} · threshold {m['threshold']:.0f}"
             if m.get("services"):
                 place = f"{place} · {services_text(m['services'])}"
+        more = "" if opened is None else f'<span class="m-more mi" aria-hidden="true">{"expand_less" if opened else "expand_more"}</span>'
         rows.append(
-            f'<li class="machine">'
+            f'<li class="machine{"" if opened is None else " clickable"}">'
             f'<span class="m-icon mi" style="color:{tone}" aria-hidden="true">{icon}</span>'
             f'<span class="m-main"><span class="m-name">{name}</span>'
             f'<span class="m-sub"><span class="m-bar" aria-hidden="true"><i style="width:{width:.0f}%;background:{color}"></i></span>'
             f'<span class="sr">{state}. </span>{place}</span></span>'
             f'<span class="m-risk"><span class="m-num"{" style=color:var(--ink-muted)" if not m["online"] else ""}>{num}</span>'
             f'<span class="m-word" style="color:{color}">{word}</span></span>'
-            f'</li>'
+            f'{more}</li>'
         )
     return f'<ul class="machines" aria-label="SentrAI machines">{"".join(rows)}</ul>'
 
@@ -799,13 +907,14 @@ def risk_breakdown(incidents: Iterable[dict]) -> pd.DataFrame:
             "Criticality": "-" if inc.get("asset_criticality") is None else str(inc["asset_criticality"]),
             "Points": round(float(inc.get("points") or 0), 1),
             "Inaction penalty": round(float(inc.get("inaction_penalty") or 0), 1),
-            "Unaddressed (h)": round(float(inc.get("time_unaddressed_hours") or 0), 1),
+            "Unanswered for": span_label(float(inc.get("time_unaddressed_hours") or 0) * 3600)
+            if inc.get("status") in ACTIVE_STATUSES else "-",
             "Counts now": incident_contribution(inc) if inc.get("status") in ACTIVE_STATUSES else 0.0,
         }
         for inc in incidents or []
     ]
     df = pd.DataFrame(rows, columns=["Incident", "Category", "Status", "Base", "Confidence", "Criticality",
-                                     "Points", "Inaction penalty", "Unaddressed (h)", "Counts now"])
+                                     "Points", "Inaction penalty", "Unanswered for", "Counts now"])
     return df.sort_values("Counts now", ascending=False).reset_index(drop=True) if not df.empty else df
 
 
@@ -878,7 +987,7 @@ def board_counts(incidents: Iterable[dict], me: str = "") -> dict[str, int]:
     }
 
 
-BOARD_COLUMNS = ["Incident", "What", "Host", "Severity", "Status", "Owner", "Backup", "Age (h)", "Needs"]
+BOARD_COLUMNS = ["Incident", "What", "Host", "Severity", "Status", "Owner", "Backup", "Open for", "Needs"]
 
 
 def board_rows(incidents: Iterable[dict], include_closed: bool = False) -> pd.DataFrame:
@@ -897,7 +1006,7 @@ def board_rows(incidents: Iterable[dict], include_closed: bool = False) -> pd.Da
             "Status": status_label(inc.get("status")),
             "Owner": inc.get("owner") or "Nobody",
             "Backup": inc.get("backup") or "-",
-            "Age (h)": round(_age_hours(inc), 1),
+            "Open for": span_label(_age_hours(inc) * 3600) if not closed else "-",
             "Needs": ("Closed by " + str(inc.get("resolved_by") or inc.get("acked_by") or "-")) if closed
             else ("; ".join(needs) if needs else "In hand"),
             "_rank": (closed, not needs, SEVERITY_RANK.get(str(inc.get("severity")), 9)),
@@ -938,6 +1047,155 @@ def contact_rows(routing: dict | None) -> pd.DataFrame:
              "Alerts in Telegram": "Own chat" if c.get("telegram_linked") else "Team group",
              "Backup": names.get(c.get("backup"), "-") if c.get("backup") else "-"} for c in contacts]
     return pd.DataFrame(rows, columns=["Contact", "Role", "Email", "Telegram", "Alerts in Telegram", "Backup"])
+
+
+# ------------------------------------------------- "Who gets what" map and editing
+
+SEVERITY_CHOICES = ["low", "medium", "high", "critical"]
+ROLE_CHOICES = ["", "on_duty", "team_lead", "it_manager", "cxo"]
+
+
+def rule_when(match: dict | None) -> str:
+    """A rule's match in plain words: "Malware found or Log tampering; critical"."""
+    parts = []
+    for key, values in (match or {}).items():
+        if key == "category":
+            parts.append(" or ".join(category_label(v) for v in values))
+        elif key == "host":
+            parts.append("machine " + " or ".join(values))
+        elif key == "layer":
+            parts.append("layer " + " or ".join(values))
+        else:
+            parts.append(" or ".join(values))
+    return "; ".join(parts) or "anything else"
+
+
+def routing_doc(routing: dict | None) -> dict:
+    """GET /routing turned into the file shape POST /routing takes, to edit and send back."""
+    routing = routing or {}
+    contacts = {str(c.get("id")): {k: str(c.get(k) or "") for k in ("name", "role", "email", "telegram", "backup")}
+                for c in routing.get("contacts") or [] if c.get("id")}
+    rules = [{"name": str(r.get("name") or ""), "match": {k: list(v) for k, v in (r.get("match") or {}).items()},
+              "owner": str(r.get("owner") or ""), "notify": list(r.get("notify") or [])}
+             for r in routing.get("rules") or []]
+    return {"contacts": contacts, "rules": rules, "follow_up": dict(routing.get("follow_up") or {})}
+
+
+def new_contact_id(doc: dict, name: str) -> str:
+    """A short id from the name (lee, lee-2, ...) that no one in the routing has yet."""
+    base = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:30] or "person"
+    cid, n = base, 1
+    while cid in doc["contacts"]:
+        n += 1
+        cid = f"{base}-{n}"
+    return cid
+
+
+def remove_contact(doc: dict, cid: str) -> list[str]:
+    """Take someone out of the routing. Whoever they backed up gets their backup instead, and they
+    drop off every "also told" list. Refuses (ValueError) while they own a rule. Returns what changed."""
+    gone = doc["contacts"].get(cid)
+    if gone is None:
+        raise ValueError("that person is not in the routing")
+    if len(doc["contacts"]) == 1:
+        raise ValueError("keep at least one person")
+    owns = [r["name"] for r in doc["rules"] if r.get("owner") == cid]
+    if owns:
+        raise ValueError(f"{gone['name']} owns {', '.join(owns)}. Give "
+                         f"{'that rule' if len(owns) == 1 else 'those rules'} to someone else first.")
+    del doc["contacts"][cid]
+    notes = []
+    nxt = gone.get("backup") if gone.get("backup") in doc["contacts"] else ""
+    for other, c in doc["contacts"].items():
+        if c.get("backup") == cid:
+            c["backup"] = nxt if nxt != other else ""
+            notes.append(f"{c['name']}'s backup is now {doc['contacts'][c['backup']]['name'] if c['backup'] else 'nobody'}")
+    for r in doc["rules"]:
+        if cid in (r.get("notify") or []):
+            r["notify"] = [x for x in r["notify"] if x != cid]
+            notes.append(f"{r['name']} no longer tells {gone['name']}")
+    return notes
+
+
+def _dot(text: Any) -> str:
+    return str(text).replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _wrap(text: str, width: int = 26) -> str:
+    """Break a long label into lines at commas and spaces (DOT has no automatic wrapping)."""
+    out, line = [], ""
+    for word in text.split(" "):
+        if line and len(line) + len(word) + 1 > width:
+            out.append(line)
+            line = word
+        else:
+            line = f"{line} {word}".strip()
+    out.append(line)
+    return "\\n".join(_dot(x) for x in out)
+
+
+def routing_dot(routing: dict | None, colors: dict[str, str] | None = None) -> str:
+    """The routing as a left-to-right mind map in Graphviz DOT: incident -> rules -> owner / told -> backup."""
+    c = {"ink": "#f5f5f5", "ink-muted": "#8c8c8c", "surface": "#141414", "surface-3": "#262626",
+         "line": "#2e2e2e", "brand": "#f5f5f5", "amber": "#e8b34a"} | (colors or {})
+    font = "IBM Plex Sans, Segoe UI, Arial, sans-serif"
+    routing = routing or {}
+    contacts = {str(x.get("id")): x for x in routing.get("contacts") or []}
+    out = ["digraph routing {",
+           f'  graph [rankdir=LR, bgcolor="transparent", nodesep=0.3, ranksep=0.9, fontname="{font}"];',
+           f'  node [fontname="{font}", fontsize=15, fontcolor="{c["ink"]}", color="{c["line"]}", '
+           f'style="rounded,filled", fillcolor="{c["surface"]}", shape=box, margin="0.14,0.07"];',
+           f'  edge [fontname="{font}", fontsize=11, fontcolor="{c["ink-muted"]}", arrowsize=0.6];',
+           f'  incident [label="New incident", shape=ellipse, style=filled, fillcolor="{c["brand"]}", '
+           f'fontcolor="{c["surface"]}", color="{c["brand"]}", fontsize=14, ordering=out];']
+    for n, r in enumerate(routing.get("rules") or [], 1):
+        rid = f"rule{n}"
+        when = rule_when(r.get("match"))
+        label = f"{n}. {_dot(r.get('name') or '')}" + \
+            ("" if when.lower() == str(r.get("name") or "").lower() or not r.get("match") else f"\\n{_wrap(when)}")
+        out.append(f'  {rid} [label="{label}", fillcolor="{c["surface-3"]}"];')
+        out.append(f'  incident -> {rid} [color="{c["line"]}", arrowhead=none];')
+        if r.get("owner") in contacts:
+            out.append(f'  {rid} -> "p_{_dot(r["owner"])}" [label="owns", color="{c["brand"]}", penwidth=2];')
+        for x in r.get("notify") or []:
+            if x in contacts:
+                out.append(f'  {rid} -> "p_{_dot(x)}" [color="{c["ink-muted"]}", style=dashed];')
+    used = {r.get("owner") for r in routing.get("rules") or []} | \
+        {x for r in routing.get("rules") or [] for x in r.get("notify") or []} | \
+        {p.get("backup") for p in contacts.values()}
+    for cid, p in contacts.items():
+        role = str(p.get("role") or "").replace("_", " ")
+        bits = [role if role.lower() != str(p.get("name") or "").lower() else ""]
+        if cid not in used and not p.get("backup"):
+            bits.append("in no rule yet")
+        if p.get("telegram_linked"):
+            bits.append("own Telegram chat")
+        sub = " · ".join(b for b in bits if b)
+        label = _dot(p.get("name") or cid) + (f"\\n{_dot(sub)}" if sub else "")
+        loose = ', style="rounded,dashed"' if "in no rule yet" in bits else ""
+        out.append(f'  "p_{_dot(cid)}" [label="{label}"{loose}];')
+        b = p.get("backup")
+        if b and b in contacts and b != cid:
+            out.append(f'  "p_{_dot(cid)}" -> "p_{_dot(b)}" [label="backup", color="{c["amber"]}", '
+                       f'fontcolor="{c["amber"]}", style=dotted, penwidth=1.5];')
+    out.append("}")
+    return "\n".join(out)
+
+
+def approvals_headline(waiting: list[dict], now: datetime | None = None) -> str:
+    """The answer first: how many decisions wait, of which kind, and when the first block undoes itself."""
+    if not waiting:
+        return ""
+    decide = sum(1 for i in waiting if available_actions(i)["decide"])
+    keep = len(waiting) - decide
+    parts = [f"{decide} to approve or reject" if decide else "", f"{keep} block{'s' if keep != 1 else ''} to keep or roll back" if keep else ""]
+    text = f"{len(waiting)} waiting on you: " + " and ".join(p for p in parts if p) + "."
+    ends = [t for i in waiting for a in i.get("actions") or []
+            if isinstance(a, dict) and a.get("status") == "active" and (t := parse_ts(a.get("expires_at")))]
+    if ends:
+        first = min(ends)
+        text += f" The first block undoes itself at {expires_label(first, now)} unless someone keeps it."
+    return text
 
 
 def pending_approvals(incidents: Iterable[dict]) -> list[dict]:
