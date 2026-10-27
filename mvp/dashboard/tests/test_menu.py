@@ -1,4 +1,6 @@
 """Sidebar menu bubbles, the part views, and a smoke test of every page."""
+import copy
+import json
 import sys
 from pathlib import Path
 
@@ -6,6 +8,7 @@ import pytest
 import requests
 
 from sentrai_ui import shaping as sh
+from sentrai_ui.api import READ_ONLY_MESSAGE, CoreClient, CoreError
 
 sys.path.append(str(Path(__file__).resolve().parents[2]))
 import sentrai_config as cfg  # noqa: E402
@@ -420,3 +423,139 @@ def test_approvals_rows_roll_back_in_one_click(fake_core, tmp_path, monkeypatch)
     inc = requests.get(f"{fake_core}/incidents/{iid}", timeout=3).json()
     assert inc["actions"] and all(a["status"] != "active" for a in inc["actions"]), inc["actions"]
     assert any(a["status"] == "rolled_back" for a in inc["actions"])
+
+
+# ------------------------------------------- Incidents: "Who gets what" as a map (sentrai_ui/routing_editor.mjs)
+
+def _incidents_page(fake_core, tmp_path, monkeypatch, role: str = ""):
+    """The Incidents page with sign-in off, seen as `role` (SENTRAI_DASHBOARD_ROLE; empty: the default Owner)."""
+    from streamlit.testing.v1 import AppTest
+
+    monkeypatch.setenv("SENTRAI_CONFIG", str(tmp_path / "config.json"))
+    if role:
+        monkeypatch.setenv("SENTRAI_DASHBOARD_ROLE", role)
+    else:
+        monkeypatch.delenv("SENTRAI_DASHBOARD_ROLE", raising=False)
+    at = AppTest.from_file(APP, default_timeout=20)
+    at.session_state["core_url"] = fake_core
+    at.session_state["auto_refresh"] = False
+    at.session_state["operator"] = "erick"
+    at.session_state["page"] = "incidents"
+    at.run()
+    return at
+
+
+def _routing_editor(at):
+    """The map editor on the page and the data Python gave it. AppTest has no element class for a components v2
+    component: it lists it as a "bidi_component" whose proto carries that data as JSON."""
+    found = [el for el in at.get("bidi_component") if el.proto.component_name.endswith("routing_editor")]
+    assert len(found) == 1, f"expected the routing editor once, found {len(found)}"
+    return found[0], json.loads(found[0].proto.json)
+
+
+def _press_save(at, event: dict) -> None:
+    """What the editor's Save does in a browser: set its "save" trigger to the event, which reruns the page part.
+    AppTest cannot set a component's trigger, so this adds the widget state the browser would send."""
+    try:  # Streamlit internals, not a promise: skip rather than fail when they move
+        from streamlit.components.v2.bidi_component.main import _make_trigger_id
+        from streamlit.proto.WidgetStates_pb2 import WidgetState
+        states = at._tree.get_widget_states()
+        run = at._run
+    except (ImportError, AttributeError) as exc:
+        pytest.skip(f"cannot press the editor's Save in this Streamlit's AppTest: {exc}")
+    el, _ = _routing_editor(at)
+    states.widgets.append(WidgetState(id=_make_trigger_id(el.proto.id, "events"),
+                                      json_trigger_value=json.dumps([{"event": "save", "value": event}])))
+    run(states)
+
+
+def test_incidents_page_draws_who_gets_what_as_a_map_to_edit(fake_core, tmp_path, monkeypatch):
+    at = _incidents_page(fake_core, tmp_path, monkeypatch)
+    assert not at.exception, at.exception
+    _, data = _routing_editor(at)
+    routing = requests.get(f"{fake_core}/routing", timeout=3).json()
+    assert data == sh.routing_editor_data(routing)  # an Owner may change it, and has not saved anything yet
+
+
+def test_incidents_page_as_an_auditor_shows_the_map_read_only(fake_core, tmp_path, monkeypatch):
+    at = _incidents_page(fake_core, tmp_path, monkeypatch, role="auditor")
+    assert not at.exception, at.exception
+    _, data = _routing_editor(at)
+    routing = requests.get(f"{fake_core}/routing", timeout=3).json()
+    assert data == sh.routing_editor_data(routing, read_only=True, lock_reason=READ_ONLY_MESSAGE)
+
+
+def test_saving_the_map_reaches_the_core_and_the_editor_hears_how_it_went(fake_core, tmp_path, monkeypatch):
+    original = requests.get(f"{fake_core}/routing", timeout=3).json()
+    at = _incidents_page(fake_core, tmp_path, monkeypatch)
+    _, data = _routing_editor(at)
+    routing = data["routing"]
+    routing["rules"][0]["name"] = "Critical, all hands"
+    routing["layout"] = {"incident": [0, 160], "rules": [[220, 0], [220, 90], [220, 180], [220, 270]],
+                         "contacts": {"on_duty": [640, 40]}}
+    try:
+        _press_save(at, {"id": "save-1", "routing": routing, "summary": "Renamed Critical"})
+        # AppTest runs the whole script, so the save's rerun of just the page part raises here; a browser reruns it.
+        assert all("fragment" in str(e.value) for e in at.exception), at.exception
+        saved = requests.get(f"{fake_core}/routing", timeout=3).json()
+        assert saved["rules"][0]["name"] == "Critical, all hands" and saved["layout"] == routing["layout"]
+        record = [r for r in requests.get(f"{fake_core}/audit", timeout=3).json()["records"]
+                  if r["type"] == "routing_changed"][-1]["data"]
+        assert record["operator"] == "erick" and record["summary"] == "Renamed Critical"
+        at.run()
+        assert not at.exception, at.exception
+        _, data = _routing_editor(at)
+        assert data["result"] == {"id": "save-1", "ok": True, "message": "Saved. Renamed Critical"}
+        assert data["version"] == sh.routing_version(saved)  # the editor takes the saved routing as its own
+        assert any("Who gets what saved" in t.value for t in at.toast)
+
+        refused = copy.deepcopy(data["routing"])
+        refused["rules"][0]["owner"] = "ghost"
+        _press_save(at, {"id": "save-2", "routing": refused, "summary": "Gave Critical to a ghost"})
+        at.run()
+        _, data = _routing_editor(at)
+        assert data["result"] == {"id": "save-2", "ok": False,  # the core's own words, for the editor to show
+                                  "message": "rule 'Critical, all hands' needs an owner who is one of the people"}
+        assert any("Who gets what not saved" in t.value for t in at.toast)
+        assert requests.get(f"{fake_core}/routing", timeout=3).json() == saved
+    finally:  # the fake core is shared by this file's tests: put the routing back
+        requests.post(f"{fake_core}/routing", timeout=3, json={
+            "routing": {**sh.routing_doc(original), "layout": original.get("layout") or {}}, "operator": "test"})
+
+
+def test_an_auditors_map_never_saves(fake_core, tmp_path, monkeypatch):
+    """Even when an Auditor's browser sends a Save (from the developer tools, say), nothing reaches the core."""
+    before = requests.get(f"{fake_core}/routing", timeout=3).json()
+    at = _incidents_page(fake_core, tmp_path, monkeypatch, role="auditor")
+    _, data = _routing_editor(at)
+    data["routing"]["rules"][0]["name"] = "Changed by an auditor"
+    _press_save(at, {"id": "save-1", "routing": data["routing"], "summary": "Should not happen"})
+    assert not at.exception, at.exception
+    assert requests.get(f"{fake_core}/routing", timeout=3).json() == before
+    assert "rt_result" not in at.session_state
+
+
+def test_a_routing_blip_keeps_the_map_on_screen(fake_core, tmp_path, monkeypatch):
+    """When one read of the routing fails, the map keeps the last copy, and with it a change half made there."""
+    real = CoreClient.routing
+    down = {"now": True}
+
+    def routing(self):
+        if down["now"]:
+            raise CoreError("Core unreachable (ConnectionError)")
+        return real(self)
+
+    monkeypatch.setattr(CoreClient, "routing", routing)  # AppTest runs the app in this process
+    at = _incidents_page(fake_core, tmp_path, monkeypatch)
+    assert not at.exception, at.exception
+    assert not at.get("bidi_component")  # no copy yet: nothing to draw
+    assert any("Could not load the routing rules" in c.value for c in at.caption)
+    down["now"] = False
+    at.run()
+    _, before = _routing_editor(at)
+    down["now"] = True
+    at.run()
+    assert not at.exception, at.exception
+    _, data = _routing_editor(at)
+    assert data == before  # the same routing and version: the editor keeps what is on screen
+    assert any("Showing the last copy" in c.value for c in at.caption)

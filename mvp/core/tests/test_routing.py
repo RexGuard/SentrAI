@@ -224,3 +224,140 @@ def test_saved_routing_starts_from_defaults_when_there_was_no_file(client, tmp_p
         "contacts": {c["id"]: c for c in client.get("/routing").json()["contacts"]},
         "rules": [{"name": "Everything else", "match": {}, "owner": "on_duty"}]}})
     assert out.status_code == 200 and out.json()["source"].endswith("routing.json")
+
+
+# ------------------------------------------------------------ the map layout and the audit summary
+
+def test_clean_layout_keeps_good_points_rounded_and_drops_the_rest():
+    from app.routing import LAYOUT_LIMIT, clean_layout
+    contacts = {"amir": 1, "lee": 1}
+    raw = {"incident": [10.4, -20.6],
+           "rules": [[1, 2], [True, 3], ["4", 5], [float("nan"), 1], [1, 2, 3], [LAYOUT_LIMIT + 1, 0], [7, 8]],
+           "contacts": {"amir": [100.5001, 200], "lee": [float("inf"), 0], "ghost": [1, 1]}}
+    assert clean_layout(raw, contacts, 6) == {
+        "incident": [10, -21],
+        "rules": [[1, 2], None, None, None, None, None],  # one entry per rule: [7, 8] is past the 6th
+        "contacts": {"amir": [101, 200]}}
+    assert clean_layout(raw, contacts, 1)["rules"] == [[1, 2]]
+    assert clean_layout({"incident": (LAYOUT_LIMIT, -LAYOUT_LIMIT)}, contacts, 0) == {
+        "incident": [LAYOUT_LIMIT, -LAYOUT_LIMIT]}  # the limit itself is in range
+    for bad in (None, [], "x", 3, [[1, 2]]):
+        assert clean_layout(bad, contacts, 3) == {}
+    # Empty parts are left out rather than kept as [] / {}.
+    assert clean_layout({"incident": "here", "rules": [None, [1]], "contacts": {"ghost": [1, 1]}}, contacts, 2) == {}
+    assert clean_layout({"rules": "no", "contacts": ["amir"]}, contacts, 2) == {}
+    assert clean_layout({"rules": [[1, 2]]}, contacts, 0) == {}
+
+
+def test_validate_keeps_a_cleaned_layout_and_leaves_out_an_empty_one():
+    from app import routing
+    out = routing.validate({**ROUTING, "layout": {"incident": [0.4, 1], "contacts": {"amir": [5, 6], "zed": [1, 1]},
+                                                  "rules": [[1, 1], [2, 2], [3, 3], [4, 4]]}})
+    assert out["layout"] == {"incident": [0, 1], "contacts": {"amir": [5, 6]}, "rules": [[1, 1], [2, 2], [3, 3]]}
+    assert "layout" not in routing.validate(ROUTING)
+    assert "layout" not in routing.validate({**ROUTING, "layout": {"contacts": {"zed": [1, 1]}}})
+    assert "layout" not in routing.validate({**ROUTING, "layout": "not a map"})
+
+
+def test_layout_survives_save_and_load(tmp_path):
+    from app import routing
+    path = routing_file(tmp_path)
+    layout = {"incident": [0, 120], "rules": [[210, 0], None, [210, 180]], "contacts": {"amir": [620, 40]}}
+    routing.save(path, routing.validate({**ROUTING, "layout": layout}))
+    r = routing.load(path, "a", "b", "c", "d")
+    assert r.layout == layout and r.public()["layout"] == layout
+    # A file edited by hand with a bad layout still loads; only the bad parts go.
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["layout"] = {"incident": ["x", 1], "contacts": {"amir": [1, 2], "gone": [3, 4]}}
+    path.write_text(json.dumps(data), encoding="utf-8")
+    assert routing.load(path, "a", "b", "c", "d").layout == {"contacts": {"amir": [1, 2]}}
+    assert routing.defaults("a", "b", "c", "d").layout == {}
+    assert routing.defaults("a", "b", "c", "d").public()["layout"] == {}
+
+
+def test_changed_parts_names_each_part_that_differs():
+    from app import routing
+    before = routing.validate({**ROUTING, "layout": {"incident": [0, 0]}})
+    assert routing.changed_parts(before, json.loads(json.dumps(before))) == []
+    people = json.loads(json.dumps(before))
+    people["contacts"]["amir"]["email"] = "amir2@example.test"
+    assert routing.changed_parts(before, people) == ["people"]
+    rules = json.loads(json.dumps(before))
+    rules["rules"].reverse()
+    assert routing.changed_parts(before, rules) == ["rules"]
+    fu = json.loads(json.dumps(before))
+    fu["follow_up"]["max_escalations"] = 5
+    assert routing.changed_parts(before, fu) == ["follow_up"]
+    moved = {**before, "layout": {"incident": [5, 5]}}
+    assert routing.changed_parts(before, moved) == ["layout"]
+    assert routing.changed_parts({k: v for k, v in before.items() if k != "layout"}, {**before, "layout": {}}) == []
+    several = json.loads(json.dumps(rules))
+    several["follow_up"]["max_escalations"] = 5
+    several.pop("layout")
+    assert routing.changed_parts(before, several) == ["rules", "follow_up", "layout"]
+
+
+def test_post_routing_records_the_summary_and_what_changed_and_saves_the_layout(tmp_path):
+    c = routed_client(tmp_path)
+    layout = {"incident": [0, 120], "rules": [[210, 0], [210, 90], [210, 180], [210, 270]],
+              "contacts": {"amir": [620, 40], "lee": [620.7, 140]}}
+    words = "  Moved   Amir\n and\tLee  " + "x" * 400
+    r = c.post("/routing", json={"operator": "Erick", "routing": {**ROUTING, "layout": layout}, "summary": words})
+    assert r.status_code == 200, r.text
+    saved = json.loads(routing_file(tmp_path).read_text(encoding="utf-8"))
+    # The file keeps the three rules sent (the core's own "Everything else" is added on load, not written),
+    # so the layout keeps one place per rule in the file and the fourth point goes.
+    assert len(saved["rules"]) == 3 and len(saved["layout"]["rules"]) == 3
+    assert saved["layout"]["incident"] == [0, 120] and saved["layout"]["contacts"] == {"amir": [620, 40],
+                                                                                       "lee": [621, 140]}
+    assert saved["layout"]["rules"][:3] == [[210, 0], [210, 90], [210, 180]]
+    assert c.get("/routing").json()["layout"] == c.core.router.layout == saved["layout"]
+    rec = [x for x in c.core.audit.records() if x["type"] == "routing_changed"][-1]["data"]
+    assert rec["summary"] == ("Moved Amir and Lee " + "x" * 400)[:300] and len(rec["summary"]) == 300
+    assert rec["changed"] == ["layout"]  # same people, rules and follow-up as the file it replaced
+    # Only the map moves: the audit says so, and no summary is fine.
+    layout2 = {**saved["layout"], "incident": [10, 10]}
+    r = c.post("/routing", json={"operator": "Erick", "routing": {**saved, "layout": layout2}})
+    assert r.status_code == 200, r.text
+    rec = [x for x in c.core.audit.records() if x["type"] == "routing_changed"][-1]["data"]
+    assert rec["changed"] == ["layout"] and rec["summary"] == ""
+    # A people-only edit names only the people.
+    people = json.loads(json.dumps({**saved, "layout": layout2}))
+    people["contacts"]["amir"]["telegram"] = "@amir2"
+    assert c.post("/routing", json={"operator": "Erick", "routing": people, "summary": "Amir's Telegram"}
+                  ).status_code == 200
+    rec = [x for x in c.core.audit.records() if x["type"] == "routing_changed"][-1]["data"]
+    assert rec["changed"] == ["people"] and rec["summary"] == "Amir's Telegram"
+
+
+def test_a_layout_naming_someone_not_in_the_file_is_dropped_silently(tmp_path):
+    c = routed_client(tmp_path)
+    layout = {"contacts": {"amir": [1, 2], "nobody": [3, 4]}}
+    r = c.post("/routing", json={"operator": "Erick", "routing": {**ROUTING, "layout": layout}})
+    assert r.status_code == 200, r.text
+    saved = json.loads(routing_file(tmp_path).read_text(encoding="utf-8"))
+    assert saved["layout"] == {"contacts": {"amir": [1, 2]}}
+
+
+def test_an_oversized_or_malformed_layout_is_cleaned_not_a_server_error(tmp_path):
+    """Seen: 200 with the bad parts dropped (never 400, never 500)."""
+    c = routed_client(tmp_path)
+    huge = {"incident": [1e300, 1], "rules": [[i, i] for i in range(5000)],
+            "contacts": {f"p{i}": [i, i] for i in range(5000)}}
+    for layout in (huge, "nonsense", [1, 2], 42, None, {"incident": {"x": 1}, "rules": {"a": 1}, "contacts": [1]},
+                   {"contacts": {"amir": [[1], [2]]}, "rules": [["a", "b"], {}, [None, None]]}):
+        r = c.post("/routing", json={"operator": "Erick", "routing": {**ROUTING, "layout": layout}})
+        assert r.status_code == 200, (layout if not isinstance(layout, dict) else list(layout), r.text[:200])
+        saved = json.loads(routing_file(tmp_path).read_text(encoding="utf-8"))
+        assert all(p is None or (len(p) == 2 and all(isinstance(n, int) for n in p))
+                   for p in saved.get("layout", {}).get("rules", []))
+        assert "incident" not in saved.get("layout", {})
+        assert len(saved.get("layout", {}).get("rules", [])) <= len(saved["rules"])
+        assert set(saved.get("layout", {}).get("contacts", {})) <= set(saved["contacts"])
+    # NaN, Infinity and 1e999 (which Python reads as inf) in the raw JSON body.
+    body = json.dumps({"operator": "Erick", "routing": ROUTING})[:-2] + \
+        ', "layout": {"incident": [NaN, 1], "contacts": {"amir": [Infinity, 1], "lee": [1e999, 2], "it": [3, 4]}}}}'
+    r = c.post("/routing", content=body, headers={**AUTH, "Content-Type": "application/json"})
+    assert r.status_code == 200, r.text[:200]  # seen: 200, cleaned
+    saved = json.loads(routing_file(tmp_path).read_text(encoding="utf-8"))
+    assert saved["layout"] == {"contacts": {"it": [3, 4]}}

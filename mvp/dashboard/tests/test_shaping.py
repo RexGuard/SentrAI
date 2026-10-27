@@ -1,3 +1,13 @@
+import copy
+import importlib
+import importlib.util
+import json
+import re
+import sys
+from pathlib import Path
+
+import pytest
+
 from sentrai_ui import shaping as sh
 
 
@@ -172,56 +182,207 @@ def test_routing_tables_use_names():
     assert list(sh.contact_rows(routing)["Alerts in Telegram"]) == ["Own chat", "Team group"]
 
 
-ROUTING_MAP = {"contacts": [{"id": "a", "name": "Amir", "role": "on_duty", "backup": "b"},
+# ---------------------------------------------- "Who gets what" editor (sentrai_ui/routing_editor.mjs)
+
+# GET /routing as the core sends it: people as a list, Telegram links, where each box sits on the map.
+ROUTING_MAP = {"source": "routing.json",
+               "contacts": [{"id": "a", "name": "Amir", "role": "on_duty", "backup": "b"},
                             {"id": "b", "name": "Lee", "role": "team_lead", "backup": "c"},
                             {"id": "c", "name": "Ika", "telegram_linked": True}],
                "rules": [{"name": "Inside", "match": {"category": ["malware"], "host": ["db-*"]}, "owner": "a",
                           "notify": ["b", "c"]},
                          {"name": "Everything else", "match": {}, "owner": "b", "notify": []}],
-               "follow_up": {"escalate_after_reminders": 2}}
+               "follow_up": {"escalate_after_reminders": 2},
+               "layout": {"incident": [0, 120], "rules": [[210, 0], [210, 90]], "contacts": {"a": [620, 40]}}}
+BLANK_PERSON = {"name": "", "role": "", "email": "", "telegram": "", "backup": ""}
+
+# What the editor's Save sends back: people as a list in the editor's order, untrimmed text, boxes it has not
+# placed as null, and keys of its own that are not part of the file.
+EDITOR_SAVE = {
+    "contacts": [{"id": "lee", "name": " Lee ", "role": "team_lead", "email": " lee@example.com ", "telegram": "@lee ",
+                  "backup": "amir", "telegram_linked": True},
+                 {"id": "amir", "name": "Amir", "role": "", "email": "", "telegram": "", "backup": ""}],
+    "rules": [{"key": "r0", "name": " Web ", "match": {"category": ["xss", " "], "severity": [], "host": " web-* "},
+               "owner": "lee", "notify": ["amir"]},
+              {"key": "r1", "name": "Everything else", "match": {}, "owner": "amir", "notify": []}],
+    "follow_up": {"escalate_after_reminders": 3, "max_escalations": 2, "resolve_within_hours": 12},
+    "layout": {"incident": [0, 120], "rules": [[210, 0], None], "contacts": {"lee": [620, 40], "amir": None}},
+    "version": "0123456789abcdef", "linked": {"lee": True}, "source": "routing.json",
+}
 
 
-def test_routing_map_draws_rules_owners_told_and_backups():
-    dot = sh.routing_dot(ROUTING_MAP)
-    assert dot.startswith("digraph") and dot.rstrip().endswith("}")
-    assert 'rule1 [label="1. Inside\\nMalware found; machine\\ndb-*"' in dot  # wrapped
-    assert 'rule2 [label="2. Everything else"' in dot  # no "anything else" under it
-    assert 'rule1 -> "p_a" [label="owns"' in dot and 'rule1 -> "p_c" [color' in dot
-    assert '"p_a" -> "p_b" [label="backup"' in dot and '"p_c" ->' not in dot
-    assert 'own Telegram chat' in dot
-    odd = {"contacts": [{"id": "x", "name": 'Say "hi" \\ bye'}], "rules": []}
-    assert '"p_x" [label="Say \\"hi\\" \\\\ bye\\nin no rule yet", style="rounded,dashed"]' in sh.routing_dot(odd)
-
-
-def test_routing_doc_round_trips_to_the_file_shape():
+def test_routing_doc_is_the_file_shape_and_a_copy():
     doc = sh.routing_doc(ROUTING_MAP)
+    assert list(doc) == ["contacts", "rules", "follow_up"]  # what POST /routing takes: no source, map or links
+    assert list(doc["contacts"]) == ["a", "b", "c"]  # keyed by id, in file order
     assert doc["contacts"]["a"] == {"name": "Amir", "role": "on_duty", "email": "", "telegram": "", "backup": "b"}
-    assert doc["rules"][0]["notify"] == ["b", "c"] and doc["follow_up"] == {"escalate_after_reminders": 2}
+    assert doc["contacts"]["c"] == {**BLANK_PERSON, "name": "Ika"}
+    assert doc["rules"][0] == {"name": "Inside", "match": {"category": ["malware"], "host": ["db-*"]}, "owner": "a",
+                               "notify": ["b", "c"]}
+    assert doc["follow_up"] == {"escalate_after_reminders": 2}
     doc["rules"][0]["notify"].append("z")
+    doc["rules"][0]["match"]["host"].append("web-*")
+    doc["follow_up"]["max_escalations"] = 9
     assert ROUTING_MAP["rules"][0]["notify"] == ["b", "c"]  # a copy, not the fetched data
-    assert sh.new_contact_id(doc, "Amir Q.") == "amir-q"
-    doc["contacts"]["amir-q"] = {}
-    assert sh.new_contact_id(doc, "Amir Q.") == "amir-q-2" and sh.new_contact_id(doc, "!!") == "person"
+    assert ROUTING_MAP["rules"][0]["match"]["host"] == ["db-*"]
+    assert ROUTING_MAP["follow_up"] == {"escalate_after_reminders": 2}
+    assert sh.routing_doc(None) == {"contacts": {}, "rules": [], "follow_up": {}}
+    ids = sh.routing_doc({"contacts": [{"name": "No id"}, {"id": "", "name": "Blank"}, {"id": 7, "name": None}]})
+    assert ids["contacts"] == {"7": BLANK_PERSON}  # a rule can only name someone who has an id
 
 
-def test_removing_someone_who_owns_a_rule_is_refused():
-    doc = sh.routing_doc(ROUTING_MAP)
-    try:
-        sh.remove_contact(doc, "b")
-    except ValueError as exc:
-        assert "Lee owns Everything else" in str(exc)
-    else:
-        raise AssertionError("expected a refusal")
-    assert "b" in doc["contacts"]
+def test_routing_version_tells_one_saved_routing_from_another():
+    version = sh.routing_version(ROUTING_MAP)
+    assert re.fullmatch(r"[0-9a-f]{16}", version)
+    assert sh.routing_version(copy.deepcopy(ROUTING_MAP)) == version  # same routing, same version
+
+    def changed(edit) -> str:
+        routing = copy.deepcopy(ROUTING_MAP)
+        edit(routing)
+        return sh.routing_version(routing)
+
+    # Everything the editor can change makes a new version: a moved box, a rule, a person, the follow-up.
+    assert changed(lambda r: r["layout"]["contacts"].update(a=[620, 41])) != version
+    assert changed(lambda r: r["layout"].pop("rules")) != version
+    assert changed(lambda r: r["rules"][0].update(name="Inside job")) != version
+    assert changed(lambda r: r["rules"][0]["match"].update(severity=["critical"])) != version
+    assert changed(lambda r: r["rules"][0].update(notify=["b"])) != version
+    assert changed(lambda r: r["rules"].reverse()) != version  # the first rule that matches wins: order counts
+    assert changed(lambda r: r["contacts"][2].update(email="ika@example.com")) != version
+    assert changed(lambda r: r["contacts"].pop()) != version
+    assert changed(lambda r: r["follow_up"].update(escalate_after_reminders=3)) != version
+    # What it cannot change keeps the version, so the editor does not take it for someone else's save.
+    assert changed(lambda r: r["contacts"][2].update(telegram_linked=False)) == version
+    assert changed(lambda r: r.update(source="defaults")) == version
+    # People are keyed by id, so the order of the list is not a change: the map orders them by the rules.
+    assert changed(lambda r: r["contacts"].reverse()) == version
+    assert changed(lambda r: r.update(layout=None)) == changed(lambda r: r.update(layout={}))
+    assert sh.routing_version(None) == sh.routing_version({})
 
 
-def test_removing_someone_passes_their_backup_on_and_drops_them_from_told():
-    doc = sh.routing_doc(ROUTING_MAP)
-    doc["rules"][1]["owner"] = "a"
-    notes = sh.remove_contact(doc, "b")
-    assert "b" not in doc["contacts"] and doc["contacts"]["a"]["backup"] == "c"
-    assert doc["rules"][0]["notify"] == ["c"]
-    assert notes == ["Amir's backup is now Ika", "Inside no longer tells Lee"]
+def test_routing_editor_data_is_what_the_map_draws():
+    result = {"id": "save-2", "ok": False, "message": "rule 'Inside' needs an owner who is one of the people"}
+    sent = copy.deepcopy(result)
+    data = sh.routing_editor_data(ROUTING_MAP, read_only=True, lock_reason="Auditors look only.", result=result)
+    assert set(data) == {"routing", "version", "linked", "categories", "severities", "roles", "read_only",
+                         "lock_reason", "result"}
+    routing = data["routing"]
+    assert list(routing) == ["contacts", "rules", "follow_up", "layout"]
+    assert routing["contacts"] == [  # a list, in file order, each person with their id
+        {"id": "a", "name": "Amir", "role": "on_duty", "email": "", "telegram": "", "backup": "b"},
+        {"id": "b", "name": "Lee", "role": "team_lead", "email": "", "telegram": "", "backup": "c"},
+        {"id": "c", **BLANK_PERSON, "name": "Ika"}]
+    assert routing["rules"] == sh.routing_doc(ROUTING_MAP)["rules"]
+    assert routing["follow_up"] == {"escalate_after_reminders": 2}
+    assert routing["layout"] == ROUTING_MAP["layout"]
+    assert data["version"] == sh.routing_version(ROUTING_MAP)
+    assert data["linked"] == {"c": True}  # only whether someone has their own Telegram chat
+    assert data["categories"] == [[k, v] for k, v in sh.CATEGORY_LABELS.items()]  # [value, label] pairs
+    assert ["malware", "Malware found"] in data["categories"]
+    assert data["severities"] == ["low", "medium", "high", "critical"]
+    assert data["roles"] == [["", "none"], ["on_duty", "on duty"], ["team_lead", "team lead"],
+                             ["it_manager", "IT manager"], ["cxo", "CXO"]]
+    assert data["read_only"] is True and data["lock_reason"] == "Auditors look only."
+    assert data["result"] == sent and result == sent  # as it was: the editor matches it to its save by id
+    assert json.loads(json.dumps(data)) == data  # it reaches the browser as JSON, unchanged
+
+    mine = sh.routing_editor_data(ROUTING_MAP)
+    assert mine["read_only"] is False and mine["lock_reason"] == "" and mine["result"] is None
+    assert sh.routing_editor_data(ROUTING_MAP, read_only=1)["read_only"] is True
+    empty = sh.routing_editor_data(None)
+    assert empty["routing"] == {"contacts": [], "rules": [], "follow_up": {}, "layout": {}}
+    assert empty["version"] == sh.routing_version(None) and empty["linked"] == {}
+
+
+def test_routing_editor_data_gives_the_browser_nothing_else():
+    """Only what the map draws reaches the page: not a Telegram chat id, a token or whatever else the core adds."""
+    routing = copy.deepcopy(ROUTING_MAP)
+    routing["token"] = "core-token-123"
+    routing["contacts"][0].update(chat_id="99887766", password="hunter2")
+    routing["rules"][0]["api_key"] = "key-abc"
+    data = sh.routing_editor_data(routing)
+    assert data == sh.routing_editor_data(ROUTING_MAP)  # the extras change nothing
+    text = json.dumps(data)
+    assert not any(secret in text for secret in ("core-token-123", "99887766", "hunter2", "key-abc"))
+
+
+def test_every_role_the_panel_offers_has_plain_words():
+    assert list(sh.ROLE_LABELS) == sh.ROLE_CHOICES  # one label per choice, in the panel's order
+    assert sh.ROLE_LABELS[""] == "none" and sh.ROLE_LABELS["it_manager"] == "IT manager"
+    assert all(label and "_" not in label for label in sh.ROLE_LABELS.values())
+
+
+def test_routing_from_editor_is_the_file_the_core_takes():
+    out = sh.routing_from_editor(EDITOR_SAVE)
+    assert list(out) == ["contacts", "rules", "follow_up", "layout"]  # none of the editor's own keys
+    assert list(out["contacts"]) == ["lee", "amir"]  # keyed by id, in the editor's order
+    assert out["contacts"]["lee"] == {"name": "Lee", "role": "team_lead", "email": "lee@example.com",
+                                      "telegram": "@lee", "backup": "amir"}  # trimmed, no Telegram link
+    assert out["rules"] == [{"name": "Web", "match": {"category": ["xss"], "host": ["web-*"]}, "owner": "lee",
+                             "notify": ["amir"]},
+                            {"name": "Everything else", "match": {}, "owner": "amir", "notify": []}]
+    assert out["follow_up"] == EDITOR_SAVE["follow_up"]
+    assert out["layout"] == EDITOR_SAVE["layout"]  # as sent: the core drops the boxes it cannot place
+    assert "layout" not in sh.routing_from_editor({**EDITOR_SAVE, "layout": "junk"})
+    # What the editor was given comes back as the same file (and the same map) when nothing was changed.
+    given = sh.routing_editor_data(ROUTING_MAP)["routing"]
+    assert sh.routing_from_editor(given) == {**sh.routing_doc(ROUTING_MAP), "layout": ROUTING_MAP["layout"]}
+
+
+GARBAGE = [None, "", "routing", 42, [], [{"id": "a", "name": "A"}],
+           {"contacts": None, "rules": None, "follow_up": None, "layout": None},
+           {"contacts": "abc", "rules": "abc", "layout": [1, 2]},
+           {"contacts": {"a": {"name": "A"}}, "rules": {"a": 1}},  # objects where the editor sends lists
+           {"contacts": [None, 3, "x", [], {"id": ""}, {"name": "no id"}], "rules": [None, 3, "x", {"match": "x"}]},
+           {"rules": [{"name": None, "owner": None, "notify": None, "match": {"severity": [None, "", " "]}}]}]
+# Wrong-typed parts become empty ones, for the core to refuse with its own words.
+WRONG_TYPES = [{"contacts": 5}, {"rules": 5}, {"rules": [{"name": "Web", "owner": "a", "notify": 5}]},
+                {"follow_up": "soon"}, {"follow_up": [1, 2]}, {"follow_up": 5}]
+
+
+@pytest.mark.parametrize("sent", GARBAGE + WRONG_TYPES)
+def test_routing_from_editor_copes_with_garbage(sent):
+    out = sh.routing_from_editor(sent)
+    assert isinstance(out["contacts"], dict) and isinstance(out["rules"], list) and isinstance(out["follow_up"], dict)
+    assert all(isinstance(c, dict) for c in out["contacts"].values())
+    assert all(isinstance(r["match"], dict) and isinstance(r["notify"], list) for r in out["rules"])
+    json.dumps(out)  # still something to post
+
+
+CORE_APP = Path(__file__).resolve().parents[2] / "core" / "app"
+
+
+@pytest.fixture(scope="module")
+def core_routing():
+    """The core's own checks for a routing file (mvp/core/app/routing.py, standard library only): they decide
+    whether a save from the map is written. Loaded under a name of its own, since "app" here is the dashboard."""
+    if not (CORE_APP / "routing.py").is_file():
+        pytest.skip("the core is not in this checkout")
+    name = "sentrai_core_app"
+    if name not in sys.modules:
+        spec = importlib.util.spec_from_file_location(name, CORE_APP / "__init__.py",
+                                                      submodule_search_locations=[str(CORE_APP)])
+        package = importlib.util.module_from_spec(spec)
+        sys.modules[name] = package
+        spec.loader.exec_module(package)
+    return importlib.import_module(f"{name}.routing")
+
+
+def test_the_core_takes_what_the_editor_sends(core_routing):
+    clean = core_routing.validate(sh.routing_from_editor(EDITOR_SAVE))
+    assert list(clean["contacts"]) == ["lee", "amir"] and clean["contacts"]["lee"]["email"] == "lee@example.com"
+    assert [r["name"] for r in clean["rules"]] == ["Web", "Everything else"]
+    assert clean["rules"][0]["match"] == {"category": ["xss"], "host": ["web-*"]}
+    assert clean["follow_up"] == {"escalate_after_reminders": 3, "max_escalations": 2, "resolve_within_hours": 12}
+    assert clean["layout"] == {"incident": [0, 120], "rules": [[210, 0], None], "contacts": {"lee": [620, 40]}}
+
+
+OFFERED = sh.routing_editor_data(None)
+CHOICES = [("category", v) for v, _ in OFFERED["categories"]] + [("severity", v) for v in OFFERED["severities"]]
+@pytest.mark.parametrize("key,value", [pytest.param(k, v, id=f"{k}-{v}") for k, v in CHOICES])
+def test_every_choice_the_editor_offers_is_one_the_core_accepts(core_routing, key, value):
+    doc = {"contacts": {"amir": {"name": "Amir"}}, "rules": [{"name": "Rule", "match": {key: [value]}, "owner": "amir"}]}
+    assert core_routing.validate(doc)["rules"][0]["match"] == {key: [value]}
 
 
 def test_panel_machines_merge_scores_and_joined_agents():

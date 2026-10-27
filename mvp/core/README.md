@@ -97,11 +97,14 @@ unanswered reminders, the incident is handed to the owner's backup (`escalated` 
 `incident_escalated` audit record), up to `max_escalations` times. Acknowledging stops it. An acknowledged incident
 that is still not resolved after `resolve_within_hours` gets a `resolve_reminder` to its owner (up to 3).
 
-The dashboard's **Incidents > Who gets what** draws this as a map (incident, rules, owner, also told, backup) and has
-forms to add or remove people, change which incident types go to whom, reorder rules and set the follow-up. They save
-through `POST /routing`, which checks the whole file first (owners and backups must be people in it, categories and
-severities must be known ones) and writes it in one step, so a bad edit never half-applies. Owners and Admins can edit;
-Auditors see the forms greyed out. Each save is a `routing_changed` audit record with who did it.
+The dashboard's **Incidents > Who gets what** draws this as a map you edit in place: drag a rule to change its turn,
+drag a rule's owner or "tells" handle onto a person (or onto empty space for a new person), drag a person's backup
+handle onto whoever takes over, and click anything to change its details or the follow-up in the panel beside the map.
+Save sends the whole file through `POST /routing` (with a `summary` of the change in plain words), which checks it
+first (owners and backups must be people in it, categories and severities must be known ones) and writes it in one
+step, so a bad edit never half-applies. The file's optional `layout` part is only where the map draws each box;
+routing ignores it. Owners and Admins can edit; Auditors see the map read-only. Each save is a `routing_changed`
+audit record with who did it, the summary and which parts changed (people, rules, follow_up, layout).
 
 Each notification carries `deliver_to` (the recipients' email and Telegram from the contacts): the notifier
 emails those addresses instead of `ALERT_EMAIL_TO`. The Telegram **Take it** button makes whoever pressed it the owner.
