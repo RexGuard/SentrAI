@@ -20,19 +20,20 @@ from pathlib import Path
 from typing import Any
 
 from . import procscan
-from .config import CORE_DIR
+from . import config as _config  # noqa: F401  (first: it puts the saved settings in the environment)
+import sentrai_paths
 
-MVP_DIR = CORE_DIR.parent
 LAB_LOG_NAMES = ("access.jsonl", "auth.jsonl", "db.jsonl", "os.jsonl")
 LAYERS = ("web", "db", "os", "network", "cloud")
 
 
 def sources_file() -> Path:
-    return Path(os.environ.get("SENTRAI_SCOUT_SOURCES", str(MVP_DIR / "lab" / "scout" / "sources.json")))
+    """scout/sources.json in the data root (SENTRAI_SCOUT_SOURCES), shared with lab/scout/sources.py."""
+    return sentrai_paths.path("scout.sources")
 
 
 def pending_file() -> Path:
-    return Path(os.environ.get("SENTRAI_SCOUT_PENDING") or sources_file().with_name("pending.json"))
+    return sentrai_paths.path("scout.pending")
 
 
 def _read(f: Path) -> list[dict[str, Any]]:
@@ -60,7 +61,7 @@ def load_pending() -> list[dict[str, Any]]:
 
 
 def lab_logs_dir() -> Path:
-    return Path(os.environ.get("SENTRAI_LAB_LOGS") or MVP_DIR / "lab" / "logs")
+    return sentrai_paths.path("logs")
 
 
 class Discovery:

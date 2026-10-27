@@ -1,3 +1,4 @@
+import os
 import socket
 import subprocess
 import sys
@@ -9,6 +10,8 @@ import requests
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+# Never move a developer's own files (mvp/lab/scout, mvp/core/data ...) into a test's temp folder.
+os.environ["SENTRAI_MIGRATE"] = "off"
 
 
 @pytest.fixture(autouse=True)

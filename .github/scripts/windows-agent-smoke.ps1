@@ -52,6 +52,7 @@ try {
     if ($acl | Where-Object { $_ -notmatch "SYSTEM|Administrators" }) { Fail "state folder is open to: $($acl -join ', ')" }
     if (-not (Select-String -Path $Xml -SimpleMatch 'name="SENTRAI_FIREWALL_ENFORCE" value="0"' -Quiet)) { Fail "first install is not a dry run" }
     if (-not (Select-String -Path $Xml -SimpleMatch '203.0.113.10' -Quiet)) { Fail "-Protect was not kept" }
+    if (-not (Test-Path (Join-Path $State "INDEX.md"))) { Fail "install-agent.ps1 did not write $State\INDEX.md" }
 
     # --- upgrade in place with -Enforce (no join code: the machine stays joined) ---
     & .\deploy\install-agent.ps1 -Enforce

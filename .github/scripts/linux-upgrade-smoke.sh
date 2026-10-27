@@ -82,6 +82,8 @@ done
 grep -q '^SENTRAI_PANEL_PORT=8443' /etc/sentrai/sentrai.env || fail "the panel port was lost"
 grep -q '^SENTRAI_FIREWALL_ENFORCE=1' /etc/sentrai/agent.env || fail "the agent's --enforce was lost"
 [ -f /var/lib/sentrai/core/sentrai.db ] || fail "the audit record was not renamed to sentrai.db"
+[ -f /var/lib/sentrai/INDEX.md ] || fail "install.sh did not write /var/lib/sentrai/INDEX.md"
+grep -q '^SENTRAI_HOME=/var/lib/sentrai$' /etc/sentrai/sentrai.env || fail "SENTRAI_HOME missing from sentrai.env"
 echo "ok: services, folders, settings and account moved"
 
 # The same token and audit record; the agent is still the one machine that joined.

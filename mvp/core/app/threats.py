@@ -30,7 +30,8 @@ from pathlib import Path
 from typing import Any
 
 from . import threatscan
-from .config import CORE_DIR
+from . import config as _config  # noqa: F401  (first: it puts the saved settings in the environment)
+import sentrai_paths
 from . import procscan
 from .procscan import hide_home
 
@@ -38,12 +39,18 @@ RAISE = ("critical", "high")
 SEEN_LIMIT = 5000
 
 
-def state_file() -> Path:
-    return Path(os.environ.get("SENTRAI_THREAT_STATE", str(CORE_DIR / "data" / "threat_seen.json")))
+def _core_dir(db_path: Path | str | None) -> Path | None:
+    return Path(db_path).parent if db_path else None
 
 
-def quarantine_dir() -> Path:
-    return Path(os.environ.get("SENTRAI_QUARANTINE", str(CORE_DIR / "data" / "quarantine")))
+def state_file(db_path: Path | str | None = None) -> Path:
+    """threats/threat_seen.json next to the database (SENTRAI_THREAT_STATE moves it)."""
+    return sentrai_paths.path("core.threat_state", _core_dir(db_path))
+
+
+def quarantine_dir(db_path: Path | str | None = None) -> Path:
+    """threats/quarantine next to the database (SENTRAI_QUARANTINE moves it)."""
+    return sentrai_paths.path("core.quarantine", _core_dir(db_path))
 
 
 def threat_event(text: str, host: str | None = None) -> dict[str, Any]:
@@ -72,6 +79,10 @@ class ThreatWatch:
         self.last: dict[str, Any] | None = None
         self._files: dict[str, dict[str, Any]] = {}  # finding id -> finding (with real path)
 
+    def _db(self) -> Any:
+        """The database the state and quarantine sit next to (None: the data root's core/ folder)."""
+        return getattr(getattr(self.core, "settings", None), "db_path", None)
+
     # ------------------------------------------------------------ settings
     def config(self) -> dict[str, Any]:
         """``threat_scan`` from the system profile; SENTRAI_THREAT_PATHS (separated by the OS path
@@ -91,13 +102,13 @@ class ThreatWatch:
     # ---------------------------------------------------------- seen state
     def _seen(self) -> dict[str, str]:
         try:
-            data = json.loads(state_file().read_text(encoding="utf-8"))
+            data = json.loads(state_file(self._db()).read_text(encoding="utf-8"))
             return data if isinstance(data, dict) else {}
         except (OSError, json.JSONDecodeError):
             return {}
 
     def _save_seen(self, seen: dict[str, str]) -> None:
-        f = state_file()
+        f = state_file(self._db())
         f.parent.mkdir(parents=True, exist_ok=True)
         if len(seen) > SEEN_LIMIT:  # oldest first out
             seen = dict(sorted(seen.items(), key=lambda kv: kv[1])[-SEEN_LIMIT:])
@@ -202,7 +213,7 @@ class ThreatWatch:
             raise ValueError("that file is gone or unreadable; scan again")
         if hashlib.sha256(data).hexdigest() != f["sha256"]:
             raise ValueError("that file changed since the scan; scan again before quarantining it")
-        qdir = quarantine_dir()
+        qdir = quarantine_dir(self._db())
         qdir.mkdir(parents=True, exist_ok=True)
         qid = f"q-{time.strftime('%Y%m%d%H%M%S')}-{f['sha256'][:8]}"
         meta = {"id": qid, "original": str(src), "name": src.name, "sha256": f["sha256"], "size": len(data),
@@ -229,7 +240,7 @@ class ThreatWatch:
                 "note": "Moved out of reach, not deleted. Restore puts it back."}
 
     def quarantined(self) -> list[dict[str, Any]]:
-        qdir = quarantine_dir()
+        qdir = quarantine_dir(self._db())
         if not qdir.is_dir():
             return []
         homes = procscan._homes()
@@ -244,7 +255,7 @@ class ThreatWatch:
         return out
 
     def restore(self, qid: str, operator: str) -> dict[str, Any]:
-        qdir = quarantine_dir()
+        qdir = quarantine_dir(self._db())
         if not qid.startswith("q-") or "/" in qid or "\\" in qid:
             raise KeyError(f"{qid} is not in quarantine")
         meta_f, bin_f = qdir / f"{qid}.json", qdir / f"{qid}.bin"
