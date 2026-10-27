@@ -56,6 +56,12 @@
   --sn-warn: #a16207;
   --sn-danger: #dc2626;
   --sn-shadow: 0 1px 2px rgba(0, 0, 0, .05), 0 8px 24px rgba(0, 0, 0, .06);
+  /* Depth: panels are set apart by shading, not outlines (a faint gradient, a soft shadow, a dotted page). */
+  --sn-card: linear-gradient(180deg, #ffffff 0%, #fbfbfb 100%);
+  --sn-card-shadow: 0 1px 2px rgba(10, 10, 10, .06), 0 8px 24px -10px rgba(10, 10, 10, .12);
+  --sn-card-shadow-hover: 0 2px 4px rgba(10, 10, 10, .06), 0 16px 36px -12px rgba(10, 10, 10, .18);
+  --sn-band: #f2f2f2;
+  --sn-dots: rgba(0, 0, 0, .06);
   color-scheme: light;
 }
 
@@ -82,6 +88,11 @@
     --sn-warn: #e8b34a;
     --sn-danger: #e5484d;
     --sn-shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .4);
+    --sn-card: linear-gradient(180deg, #1c1c1c 0%, #151515 100%);
+    --sn-card-shadow: inset 0 1px 0 rgba(255, 255, 255, .05), 0 1px 2px rgba(0, 0, 0, .6), 0 12px 28px -14px rgba(0, 0, 0, .8);
+    --sn-card-shadow-hover: inset 0 1px 0 rgba(255, 255, 255, .08), 0 2px 4px rgba(0, 0, 0, .6), 0 20px 40px -14px rgba(0, 0, 0, .9);
+    --sn-band: #101010;
+    --sn-dots: rgba(255, 255, 255, .045);
     color-scheme: dark;
   }
 }
@@ -106,5 +117,10 @@
   --sn-warn: #e8b34a;
   --sn-danger: #e5484d;
   --sn-shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .4);
+  --sn-card: linear-gradient(180deg, #1c1c1c 0%, #151515 100%);
+  --sn-card-shadow: inset 0 1px 0 rgba(255, 255, 255, .05), 0 1px 2px rgba(0, 0, 0, .6), 0 12px 28px -14px rgba(0, 0, 0, .8);
+  --sn-card-shadow-hover: inset 0 1px 0 rgba(255, 255, 255, .08), 0 2px 4px rgba(0, 0, 0, .6), 0 20px 40px -14px rgba(0, 0, 0, .9);
+  --sn-band: #101010;
+  --sn-dots: rgba(255, 255, 255, .045);
   color-scheme: dark;
 }
