@@ -1292,8 +1292,9 @@ def my_routing(routing: dict | None, cid: str) -> dict:
 
 # ------------------------------------------------- "How an attack is handled" map (flow_map.mjs)
 
+# Every kind of action the core takes (core/app/agents.py ACTION_TEXT), in plain words, in a fixed order.
 ACTION_WORDS = {"block_ip": "block an address", "rate_limit": "slow an address down", "waf_rule": "add a web firewall rule",
-                "lock_user": "lock an account", "isolate_host": "cut a machine off", "kill_process": "stop a program"}
+                "lock_user": "lock an account", "kill_process": "stop a program", "revoke_public_acl": "make a public file private"}
 ALERT_EXTENSIONS = ("telegram", "slack")
 
 
@@ -1382,6 +1383,51 @@ def flow_map_data(risk: dict | None, incidents: Iterable[dict] | None, agents: I
     live = {n["id"]: n["state"] in ("busy", "alert") for n in nodes}
     return {"nodes": nodes, "edges": [{"from": a, "to": b, "live": live[a] and live[b]} for a, b in edges],
             "colors": {"ok": BAND_COLORS["green"], "busy": BAND_COLORS["amber"], "alert": BAND_COLORS["critical"]}}
+
+
+# ------------------------------------------------- "What it may do on its own" map (limits_map.mjs)
+
+LIMIT_FIELDS = ("AUTO_ACTIONS", "NEEDLE_MIN_CONFIDENCE", "RISK_THRESHOLD", "MAX_AUTO_ACTIONS_PER_HOUR",
+                "HOTPATCH_TTL_HOURS", "MAX_TTL_HOURS", "PROTECTED_IPS", "PROTECTED_USERS")
+
+
+def limits_map_data(settings: dict[str, str] | None, read_only: bool = False, lock_reason: str = "",
+                    result: dict | None = None) -> dict:
+    """What the limits map draws: these settings, the actions it can move between "on its own" and "asks a
+    person", whether this person may change them, and how their last save went."""
+    settings = {k: str((settings or {}).get(k) or "") for k in LIMIT_FIELDS}
+    return {"settings": settings, "actions": [[k, v] for k, v in ACTION_WORDS.items()],
+            "version": hashlib.sha256(json.dumps(settings, sort_keys=True).encode()).hexdigest()[:16],
+            "read_only": bool(read_only), "lock_reason": lock_reason, "result": result}
+
+
+def check_limits(sent: Any) -> dict[str, str]:
+    """The map's Save checked again here: only these settings, every number in range, the allowed actions
+    only ones the core knows. ValueError with a reason a person can act on."""
+    sent = sent if isinstance(sent, dict) else {}
+    out = {k: str(sent.get(k) or "").strip() for k in LIMIT_FIELDS}
+    auto = [a.strip() for a in out["AUTO_ACTIONS"].split(",") if a.strip()]
+    if any(a not in ACTION_WORDS for a in auto):
+        raise ValueError("an action SentrAI does not know was in the list")
+    out["AUTO_ACTIONS"] = ",".join(a for a in ACTION_WORDS if a in auto)
+
+    def number(key: str, kind, lo: float, hi: float | None, what: str) -> None:
+        try:
+            v = kind(out[key])
+        except ValueError:
+            raise ValueError(f"{what} must be a {'whole ' if kind is int else ''}number") from None
+        if v < lo or (hi is not None and v > hi) or (key.endswith("HOURS") and v <= 0):
+            raise ValueError(f"{what} is out of range")
+    number("NEEDLE_MIN_CONFIDENCE", float, 0, 1, "How sure it must be")
+    number("RISK_THRESHOLD", int, 0, 100, "The danger level")
+    number("MAX_AUTO_ACTIONS_PER_HOUR", int, 0, None, "Actions in one hour")
+    number("HOTPATCH_TTL_HOURS", float, 0, None, "How long a block lasts")
+    number("MAX_TTL_HOURS", float, 0, None, "The longest block")
+    if float(out["HOTPATCH_TTL_HOURS"]) > float(out["MAX_TTL_HOURS"]):
+        raise ValueError("a block cannot last longer than the longest block allowed")
+    for key in ("PROTECTED_IPS", "PROTECTED_USERS"):
+        out[key] = ",".join(x.strip() for x in out[key].split(",") if x.strip())
+    return out
 
 
 def approvals_headline(waiting: list[dict], now: datetime | None = None) -> str:

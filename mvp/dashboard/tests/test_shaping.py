@@ -590,3 +590,27 @@ def test_watch_only_and_broken_extensions_say_so():
     assert nodes["alerts"]["state"] == "alert" and "Telegram failing" in nodes["alerts"]["note"]
     assert nodes["edge"]["value"] == "Off" and nodes["record"]["state"] == "alert"
     assert _flow(settings={"AUTO_ACTIONS": ""})[0]["auto"]["note"].startswith("nothing allowed")
+
+
+# ------------------------------------------------- "What it may do on its own" map
+
+LIMITS = {"AUTO_ACTIONS": "rate_limit,block_ip", "NEEDLE_MIN_CONFIDENCE": "0.6", "RISK_THRESHOLD": "80",
+          "MAX_AUTO_ACTIONS_PER_HOUR": "10", "HOTPATCH_TTL_HOURS": "2", "MAX_TTL_HOURS": "24",
+          "PROTECTED_IPS": " 10.0.0.0/8 ,, 127.0.0.1", "PROTECTED_USERS": ""}
+
+
+def test_limits_map_data_carries_only_the_limits_and_every_action():
+    data = sh.limits_map_data(LIMITS | {"SMTP_PASSWORD": "secret"}, read_only=True, lock_reason="Look only.")
+    assert set(data["settings"]) == set(sh.LIMIT_FIELDS) and "SMTP_PASSWORD" not in json.dumps(data)
+    assert [a for a, _ in data["actions"]] == list(sh.ACTION_WORDS) and data["read_only"]
+    assert data["version"] != sh.limits_map_data(LIMITS | {"RISK_THRESHOLD": "70"})["version"]
+
+
+def test_check_limits_tidies_a_save_and_refuses_what_the_core_could_not_use():
+    out = sh.check_limits(LIMITS | {"SMTP_HOST": "evil.example"})
+    assert out["AUTO_ACTIONS"] == "block_ip,rate_limit" and out["PROTECTED_IPS"] == "10.0.0.0/8,127.0.0.1"
+    assert "SMTP_HOST" not in out
+    for bad in ({"AUTO_ACTIONS": "rm_rf"}, {"NEEDLE_MIN_CONFIDENCE": "1.5"}, {"RISK_THRESHOLD": "eighty"},
+                {"MAX_AUTO_ACTIONS_PER_HOUR": "-1"}, {"HOTPATCH_TTL_HOURS": "0"}, {"HOTPATCH_TTL_HOURS": "30"}):
+        with pytest.raises(ValueError):
+            sh.check_limits(LIMITS | bad)

@@ -72,6 +72,9 @@ _UI = Path(__file__).parent / "sentrai_ui"
 ROUTING_EDITOR = st.components.v2.component(
     "routing_editor", js=(_UI / "routing_editor.mjs").read_text(encoding="utf-8"),
     css=(_UI / "routing_editor.css").read_text(encoding="utf-8")) if hasattr(st.components, "v2") else None
+LIMITS_MAP = st.components.v2.component(
+    "limits_map", js=(_UI / "limits_map.mjs").read_text(encoding="utf-8"),
+    css=(_UI / "limits_map.css").read_text(encoding="utf-8")) if hasattr(st.components, "v2") else None
 FLOW_MAP = st.components.v2.component(
     "flow_map", js=(_UI / "flow_map.mjs").read_text(encoding="utf-8"),
     css=(_UI / "flow_map.css").read_text(encoding="utf-8")) if hasattr(st.components, "v2") else None
@@ -2143,6 +2146,7 @@ def backup_suggestion(mid: Any, n: int, s: dict) -> None:
 @st.fragment(run_every=AUTO)
 def page_flow() -> None:
     """How an attack is handled, as one map with what each step is doing now. Click a step to open its page."""
+    show_flash()
     if header("How it works", "how an attack is handled, step by step · click a step to open it") is None:
         return
     risk, _ = fetch("risk", {})
@@ -2162,8 +2166,37 @@ def page_flow() -> None:
         picked = FLOW_MAP(key="flow_map", data=data, on_open_change=lambda: None).get("open")
         if picked in PAGES and page_allowed(picked):
             go(picked)
-    st.caption("Nothing on this map changes a setting. Each step's own page shows it in full, and the settings "
-               "behind it are on the Configuration page.")
+    st.caption("Nothing on this map changes a setting. Each step's own page shows it in full.")
+    with st.container(border=True):
+        section("What it may do on its own", "drag an action between the lanes, change a number, then Save",
+                "smart_toy")
+        limits_map(settings)
+
+
+def limits_map(settings: dict[str, str]) -> None:
+    """The limits on acting without a person, as a map to change (sentrai_ui/limits_map.mjs). Saved to the
+    settings file like the Configuration page does; Owners and Admins only, everyone else looks."""
+    if LIMITS_MAP is None:
+        st.caption("This Streamlit is too old to draw the map. The same settings are under 3. Responder on the "
+                   "Configuration page.")
+        return
+    off = locked("configure")
+    data = sh.limits_map_data(settings, read_only=off, lock_reason=why_locked("configure") or "",
+                              result=st.session_state.get("lm_result"))
+    save = LIMITS_MAP(key="limits_map", data=data, on_save_change=lambda: None).get("save")
+    if save and not off and save.get("id") != (st.session_state.get("lm_result") or {}).get("id"):
+        try:
+            changed = sh.check_limits(save.get("settings"))
+        except ValueError as exc:
+            st.session_state["lm_result"] = {"id": save.get("id"), "ok": False, "message": f"Not saved: {exc}."}
+        else:
+            values = {f.env: f.default for f in cfg.FIELDS.values()} | cfg.read() | changed
+            path = cfg.save(values)
+            st.session_state["lm_result"] = {"id": save.get("id"), "ok": True,
+                                             "message": f"Saved to {short_path(path)}. Restart SentrAI (run.sh or "
+                                                        "run.ps1) so the core uses the new limits."}
+            st.session_state["flash"] = ("What SentrAI may do on its own: saved", OK_ICON)
+        st.rerun(scope="fragment")
 
 
 def page_collector() -> None:

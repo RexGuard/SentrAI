@@ -610,6 +610,77 @@ def test_how_it_works_draws_every_step_and_each_opens_a_page(fake_core, tmp_path
     assert all(e["from"] in ids and e["to"] in ids for e in data["edges"])
 
 
+def _flow_page(fake_core, tmp_path, monkeypatch, role: str = ""):
+    from streamlit.testing.v1 import AppTest
+
+    monkeypatch.setenv("SENTRAI_CONFIG", str(tmp_path / "config.json"))
+    if role:
+        monkeypatch.setenv("SENTRAI_DASHBOARD_ROLE", role)
+    else:
+        monkeypatch.delenv("SENTRAI_DASHBOARD_ROLE", raising=False)
+    at = AppTest.from_file(APP, default_timeout=20)
+    at.session_state["core_url"] = fake_core
+    at.session_state["auto_refresh"] = False
+    at.session_state["page"] = "flow"
+    at.run()
+    return at
+
+
+def _limits_map(at):
+    found = [el for el in at.get("bidi_component") if el.proto.component_name.endswith("limits_map")]
+    assert len(found) == 1
+    return found[0], json.loads(found[0].proto.json)
+
+
+def _press(at, el, event: str, value: dict) -> None:
+    """What a component's trigger does in a browser (see _press_save)."""
+    try:
+        from streamlit.components.v2.bidi_component.main import _make_trigger_id
+        from streamlit.proto.WidgetStates_pb2 import WidgetState
+        states = at._tree.get_widget_states()
+        run = at._run
+    except (ImportError, AttributeError) as exc:
+        pytest.skip(f"cannot press a component's trigger in this Streamlit's AppTest: {exc}")
+    states.widgets.append(WidgetState(id=_make_trigger_id(el.proto.id, "events"),
+                                      json_trigger_value=json.dumps([{"event": event, "value": value}])))
+    run(states)
+
+
+def test_the_limits_map_saves_to_the_settings_file(fake_core, tmp_path, monkeypatch):
+    import sentrai_config as cfg
+
+    at = _flow_page(fake_core, tmp_path, monkeypatch)
+    assert not at.exception, at.exception
+    el, data = _limits_map(at)
+    assert not data["read_only"] and data["settings"]["AUTO_ACTIONS"] == "block_ip,rate_limit,waf_rule"
+    sent = data["settings"] | {"AUTO_ACTIONS": "lock_user,block_ip", "RISK_THRESHOLD": "70"}
+    _press(at, el, "save", {"id": "save-1", "settings": sent})
+    assert all("fragment" in str(e.value) for e in at.exception), at.exception  # as with the routing editor
+    saved = cfg.read()
+    assert saved["AUTO_ACTIONS"] == "block_ip,lock_user" and saved["RISK_THRESHOLD"] == "70"
+    at.run()
+    _, data = _limits_map(at)
+    assert data["result"]["ok"] and data["settings"]["RISK_THRESHOLD"] == "70"
+
+    el, _ = _limits_map(at)
+    _press(at, el, "save", {"id": "save-2", "settings": sent | {"NEEDLE_MIN_CONFIDENCE": "7"}})
+    at.run()
+    _, data = _limits_map(at)
+    assert data["result"] == {"id": "save-2", "ok": False, "message": "Not saved: How sure it must be is out of range."}
+    assert cfg.read()["NEEDLE_MIN_CONFIDENCE"] == "0.6"
+
+
+def test_an_auditor_sees_the_limits_but_never_saves_them(fake_core, tmp_path, monkeypatch):
+    import sentrai_config as cfg
+
+    at = _flow_page(fake_core, tmp_path, monkeypatch, role="auditor")
+    el, data = _limits_map(at)
+    assert data["read_only"] and data["lock_reason"] == READ_ONLY_MESSAGE
+    _press(at, el, "save", {"id": "save-1", "settings": data["settings"] | {"RISK_THRESHOLD": "1"}})
+    assert not at.exception, at.exception
+    assert cfg.read().get("RISK_THRESHOLD") != "1"
+
+
 def test_saving_the_map_reaches_the_core_and_the_editor_hears_how_it_went(fake_core, tmp_path, monkeypatch):
     original = requests.get(f"{fake_core}/routing", timeout=3).json()
     at = _incidents_page(fake_core, tmp_path, monkeypatch)
