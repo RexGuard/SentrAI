@@ -127,6 +127,7 @@ div[data-testid="stMarkdownContainer"] ul.machines > li.machine { position: rela
 .m-stat { display: flex; flex-direction: column; gap: .15rem; min-width: 5.5rem; }
 .m-stat-label { color: var(--ink-muted); font-size: .8rem; font-weight: 500; }
 .m-stat-value { color: var(--ink); font-size: .9rem; font-weight: 500; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.m-stat.hw { min-width: 3.25rem; }
 @container machines (max-width: 760px) { .m-stats { display: none; } }
 /* A clickable machine row: its button is stretched invisibly over the whole card (app.py machine_list). */
 div[class*="st-key-mrow-"] { position: relative; gap: 0; }

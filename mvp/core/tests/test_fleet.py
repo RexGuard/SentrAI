@@ -164,3 +164,74 @@ def test_service_of():
     assert service_of({"parsed": {"program": "postfix/smtpd"}}) == "postfix/smtpd"
     assert service_of({"source": "flask_auth"}) == "flask_auth"
     assert service_of({"service": "minecraft", "source": "x"}) == "minecraft"
+
+
+def reading(cpu=12.0, mem=40.0, disk=50.0, temp=None):
+    r = {"cpu": {"percent": cpu, "cores": 4, "load": [0.5, 0.4, 0.3]},
+         "memory": {"total": 8 * 2**30, "used": int(8 * 2**30 * mem / 100), "percent": mem},
+         "disks": [{"mount": "/", "total": 100 * 2**30, "used": int(100 * 2**30 * disk / 100), "percent": disk}],
+         "net": {"sent": 1000, "recv": 5000, "sent_rate": 10.0, "recv_rate": 50.0},
+         "uptime_s": 3600, "os": "Linux 6.8"}
+    if temp is not None:
+        r["temps"] = [{"label": "coretemp Package id 0", "current": temp, "high": 100}]
+    return r
+
+
+def test_agent_reports_its_hardware(panel):
+    key = join(panel, "web-01")["key"]
+    assert panel.post("/fleet/hardware", json=reading(), headers=as_agent(key)).json() == {"ok": True, "alerts": 0}
+    other = panel.post("/fleet/hardware", json=reading(), params={"host": "office-pc"}, headers=as_agent(key))
+    assert other.status_code == 403  # an agent speaks for its own machine only
+    m = {x["host"]: x for x in panel.get("/machines").json()}
+    hw = m["web-01"]["hardware"]
+    assert hw["cpu"]["percent"] == 12.0 and hw["disks"][0]["mount"] == "/" and hw["at"] and hw["warnings"] == []
+    view = panel.get("/fleet/hardware", params={"host": "web-01"}).json()
+    assert view["history"][-1]["cpu"] == 12.0 and view["history"][-1]["net_in"] == 50.0
+    assert view["limits"]["disk"] == 90
+    assert panel.get("/fleet/hardware", params={"host": "web-01"}, headers=as_agent(key)).status_code == 403
+    bad = panel.post("/fleet/hardware", json={"cpu": {"percent": 140}}, headers=as_agent(key))
+    assert bad.status_code == 422
+    assert panel.post("/fleet/hardware", json=reading()).status_code == 400  # operator must name the host
+
+
+def test_hardware_alerts_once_and_clears(panel, monkeypatch):
+    key = join(panel, "web-01")["key"]
+    health = panel.app.state.health
+    now = [1_000_000.0]
+    health.clock = lambda: now[0]
+
+    def send(**kw):
+        return panel.post("/fleet/hardware", json=reading(**kw), headers=as_agent(key)).json()["alerts"]
+
+    def told():
+        return [n for n in panel.core.notifications if n["kind"] == "hardware"]
+
+    assert send(disk=95) == 1  # a full disk counts at once
+    assert "disk / is 95% full" in told()[-1]["title"]
+    assert send(disk=96) == 0  # told once until it comes back down
+    assert send(disk=88) == 0 and panel.get("/machines").json()[0]["hardware"]["warnings"]  # not clear yet
+    send(disk=50)
+    assert panel.get("/machines").json()[0]["hardware"]["warnings"] == []
+    types = [r["type"] for r in panel.get("/audit").json()["records"]]
+    assert "machine_health" in types and "machine_health_ok" in types
+
+    assert send(cpu=99) == 0  # a CPU spike must last SENTRAI_HW_FOR_MIN (5 min) first
+    now[0] += 200
+    assert send(cpu=99) == 0
+    now[0] += 120
+    assert send(cpu=99) == 1 and "CPU at 99%" in told()[-1]["title"]
+    now[0] += 30
+    assert send(temp=91) == 0  # heat waits too
+    now[0] += 301
+    assert send(temp=92) == 1 and "temperature is 92 °C" in told()[-1]["title"]
+
+    monkeypatch.setenv("SENTRAI_HW_ALERTS", "off")
+    assert send(disk=99) == 0  # still shown, never sent
+    assert panel.get("/machines").json()[0]["hardware"]["warnings"]
+
+
+def test_revoking_forgets_hardware(panel):
+    out = join(panel, "web-01")
+    panel.post("/fleet/hardware", json=reading(), headers=as_agent(out["key"]))
+    panel.post(f"/fleet/agents/{out['agent_id']}/revoke", json={"operator": "erick"})
+    assert panel.get("/fleet/hardware", params={"host": "web-01"}).json()["latest"] is None

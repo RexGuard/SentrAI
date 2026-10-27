@@ -630,3 +630,54 @@ def test_update_status(tmp_path):
     assert not sh.update_status(version, check)["available"]
     check.write_text("not json")
     assert not sh.update_status(version, check)["available"]
+
+
+# ---------------------------------------------------------------- hardware (core hardware.py)
+HW = {"cpu": {"percent": 12.4, "cores": 4, "load": [0.5, 0.4, 0.3]},
+      "memory": {"total": 8 * 2**30, "used": 5 * 2**30, "percent": 62.5},
+      "disks": [{"mount": "/data", "total": 500 * 2**30, "used": 100 * 2**30, "percent": 20.0},
+                {"mount": "/", "total": 80 * 2**30, "used": 75 * 2**30, "percent": 93.0}],
+      "net": {"recv_rate": 15360.0, "sent_rate": 2048.0},
+      "temps": [{"label": "nvme Composite", "current": 41.0, "high": 84.8},
+                {"label": "coretemp Package id 0", "current": 58.2, "high": 100.0}],
+      "uptime_s": 3 * 86400 + 4 * 3600, "os": "Linux 6.8.0", "at": "2026-10-27T02:45:20+00:00",
+      "warnings": ["disk / is 93% full (limit 90%)"]}
+
+
+def test_hardware_labels():
+    assert sh.bytes_label(1536) == "1.5 KB" and sh.bytes_label(8 * 2**30) == "8.0 GB" and sh.bytes_label(None) == "-"
+    assert sh.rate_label(2048.0) == "2.0 KB/s" and sh.pct_label(41.0) == "41%"
+    assert sh.hardware_text(HW) == "4 cores · 8.0 GB memory · Linux 6.8.0 · up 3 d 4 h"
+    assert sh.hardware_text(None) == ""
+
+
+def test_hardware_cells_mark_what_is_over_its_limit():
+    assert sh.hardware_hot(HW) == {"disk"}
+    assert sh.hardware_cells(HW) == [("CPU", "12%", False), ("Memory", "62%", False), ("Disk", "93%", True)]
+    stats = {label: (value, note, hot) for label, value, note, hot in sh.hardware_stats(HW)}
+    assert stats["Fullest disk"] == ("93%", "/ · 80.0 GB", True)
+    assert stats["Hottest"][0] == "58 °C" and stats["Network in"] == ("15.0 KB/s", "out 2.0 KB/s", False)
+    assert sh.hardware_cells(None) == [] and sh.hardware_stats({}) == []
+
+
+def test_machine_row_shows_hardware_when_online():
+    m = {"name": "web-01", "place": "Agent", "host": "web-01", "online": True, "index": 10.0, "band": "green",
+         "threshold": 80, "monitor_only": False, "open": 0, "contained": 0, "blocked": 0, "last_seen": None,
+         "hardware": HW}
+    row = sh.machine_rows_html([m])
+    assert 'm-stat hw' in row and ">93%<" in row and "Incidents" in row
+    assert "m-stat hw" not in sh.machine_rows_html([{**m, "online": False}])  # an offline machine's numbers are old
+
+
+def test_hardware_tables_and_charts():
+    disks = sh.disk_rows(HW)
+    assert list(disks["Disk"]) == ["/", "/data"] and disks["Full"].iloc[0] == 93.0
+    assert list(sh.temp_rows(HW)["Sensor"]) == ["nvme Composite", "coretemp Package id 0"]
+    df = sh.hardware_frame([{"t": "2026-10-27T02:45:50+00:00", "cpu": 20.0, "memory": 60.0, "disk": 93.0,
+                             "net_in": 100.0, "net_out": None},
+                            {"t": "2026-10-27T02:45:20+00:00", "cpu": 10.0, "memory": "x"}, {"t": "bad"}])
+    assert list(df["cpu"]) == [10.0, 20.0] and df["memory"].isna().iloc[0]
+    fig = sh.usage_figure(df, {"alerts": True, "cpu": 90})
+    assert [t.name for t in fig.data] == ["CPU", "Memory", "Fullest disk"]
+    assert [t.name for t in sh.network_figure(df).data] == ["In"]
+    assert sh.usage_figure(sh.hardware_frame([]), {}).data == ()

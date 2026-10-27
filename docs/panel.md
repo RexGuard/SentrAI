@@ -159,6 +159,7 @@ On Windows use `.\.venv\Scripts\python.exe` in place of `.venv/bin/python`.
 | --- | --- |
 | See every machine, its risk and its services | dashboard, **Machines** |
 | Open one machine's own page | **Machines**, click the machine. Its address (`?machine=<name>`) can be shared or bookmarked |
+| See one machine's CPU, memory, disks, network and temperatures | on its page, the **Hardware** tab (the list shows CPU, memory and fullest disk too) |
 | See one machine's incidents, blocks or services | on its page, the **Incidents**, **Blocks** or **Services** tab |
 | Scan a machine for threats, or back it up | on its page, press **Scan for threats** or **Back up now** |
 | Remove a machine from the panel | on its page, **Agent** tab: tick **Yes, stop accepting its key**, press **Revoke key** |
@@ -178,6 +179,14 @@ SENTRAI_BACKUP_PATHS=/srv/app/data
 
 The agent picks a job up within about 15 seconds. Serious scan findings open an incident on that
 machine, and backups stay on the machine.
+
+**Hardware** comes from the agent every 30 seconds: CPU, memory, each disk, network traffic, uptime,
+and temperatures where the machine has sensors it can read (most Linux machines; usually none on
+Windows or in a cloud VM). The panel keeps the last hour for the charts. It alerts the on-duty person
+once when a disk passes 90% full, or CPU or memory stays over 90%, or a sensor stays over 85 °C, for
+5 minutes. Change the limits with `SENTRAI_HW_*` in the panel's settings (see the
+[API reference](api/fleet.html#post-fleethardware)), or set `SENTRAI_HW_ALERTS=off` to only show them.
+Agents installed before this need an update (`sudo sentrai-update`) to start sending it.
 
 ## Update the agents
 
