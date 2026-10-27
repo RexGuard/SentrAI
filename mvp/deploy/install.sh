@@ -489,6 +489,11 @@ open_panel_port() {  # PORT [remove]: ufw and firewalld drop it on their own
         firewall-cmd -q --reload || true
     fi
 }
+# --panel-url on its own (the advice printed below) changes the address of a panel that is already on.
+if [ -z "$PANEL" ] && [ -n "$PANEL_URL" ]; then
+    PANEL="$(get_env SENTRAI_PANEL_PORT)"
+    PANEL="${PANEL:-8443}"
+fi
 if [ "$PANEL" = off ]; then
     old="$(get_env SENTRAI_PANEL_PORT)"
     [ -n "$old" ] && open_panel_port "$old" remove
@@ -515,6 +520,8 @@ elif [ -n "$PANEL" ]; then
     set_env SENTRAI_PANEL_HOST 0.0.0.0
     set_env SENTRAI_PANEL_CERT "$TLS/panel-cert.pem"
     set_env SENTRAI_PANEL_KEY "$TLS/panel-key.pem"
+    # A rerun without --panel-url keeps the address given before, not this server's own (maybe internal) name.
+    [ -n "$PANEL_URL" ] || PANEL_URL="$(get_env SENTRAI_PANEL_URL)"
     set_env SENTRAI_PANEL_URL "${PANEL_URL:-https://$(hostname -f 2>/dev/null || hostname):$PANEL}"
     set_env SENTRAI_RISK_SCOPE host
     open_panel_port "$PANEL"
