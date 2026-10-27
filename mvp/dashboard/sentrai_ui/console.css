@@ -114,7 +114,8 @@ div[class*="st-key-mrow-"] .stButton button { opacity: 0; cursor: pointer; }
 div[class*="st-key-mrow-"]:hover li.machine.clickable { background: var(--surface-3); }
 div[class*="st-key-mrow-"]:hover li.machine.clickable .m-bar { background: var(--line); }
 div[class*="st-key-mrow-"]:has(button:focus-visible) li.machine.clickable { outline: 2px solid var(--brand); outline-offset: 2px; }
-.m-icon { font-size: 1.9rem; padding-right: 1rem; border-right: 1px solid var(--line); vertical-align: 0; }
+.m-icon { font-size: 1.9rem; font-variation-settings: "FILL" 1; padding-right: 1rem; border-right: 1px solid var(--line);
+          vertical-align: 0; }
 .m-main { display: flex; flex-direction: column; gap: .3rem; min-width: 0; }
 .m-name { color: var(--ink); font-weight: 600; font-size: 1.05rem; line-height: 1.2; overflow-wrap: anywhere; }
 .m-sub { display: flex; align-items: center; gap: .6rem; color: var(--ink-soft); font-size: .85rem; flex-wrap: wrap; }
