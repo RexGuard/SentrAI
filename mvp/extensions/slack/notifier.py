@@ -1,7 +1,7 @@
-"""Slack: a copy of every alert in a channel, through an incoming webhook.
+"""Slack extension, notifier part: a copy of every alert in a channel, through an incoming webhook.
 
-Env:
-  SLACK_WEBHOOK_URL   https://hooks.slack.com/services/... (Slack > Apps > Incoming Webhooks), blank = off
+Settings (extension.json): SLACK_WEBHOOK_URL, https://hooks.slack.com/services/... (Slack > Apps >
+Incoming Webhooks).
 
 Slack is a read-only copy next to Telegram, email or the console: decisions stay in Telegram and the
 dashboard, so a Slack message has a link to the report but no buttons. A Slack failure is logged and
@@ -11,12 +11,11 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-from typing import Callable
+from typing import Any, Callable
 
 from formatting import BAND_EMOJI, BRAND, alert_fields, is_notice, notice_lines
 
-log = logging.getLogger("sentrai.notifier.slack")
+log = logging.getLogger("sentrai.ext.slack")
 
 # poster(url, body bytes, headers) -> HTTP status; raises on network errors
 Poster = Callable[[str, bytes, dict], int]
@@ -73,8 +72,9 @@ def slack_sender(url: str, poster: Poster | None = None) -> Callable[[dict, "dic
     return send
 
 
-def slack_from_env():
-    url = os.environ.get("SLACK_WEBHOOK_URL", "").strip()
+def copy_channel(ctx: Any) -> Callable | None:
+    """The notifier posts a copy of each alert with this, next to its main channel. None while the URL is blank."""
+    url = ctx.setting("SLACK_WEBHOOK_URL")
     if not url:
         return None
     try:
@@ -82,23 +82,3 @@ def slack_from_env():
     except ValueError as exc:
         log.warning("Slack is off: %s", exc)
         return None
-
-
-def with_slack(primary: Callable, slack: Callable | None) -> Callable:
-    """Send by `primary`, then post a copy to Slack. A Slack failure is only logged."""
-    if slack is None:
-        return primary
-
-    def send(n: dict, incident: dict | None, risk: dict | None):
-        result = primary(n, incident, risk)
-        try:
-            copy = slack(n, incident, risk)
-        except Exception as exc:
-            log.warning("Slack copy of %s failed: %s", n.get("id"), exc)
-            return result
-        if isinstance(result, list):  # one receipt per person (direct Telegram messages): Slack is one more
-            return [*result, ("slack", str(copy), None)]
-        used, message_id = result if isinstance(result, tuple) else (None, result)
-        return (f"{used}+slack", message_id) if used else result
-
-    return send

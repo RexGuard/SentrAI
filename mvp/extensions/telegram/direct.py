@@ -1,4 +1,5 @@
-"""Who gets a Telegram message for each alert: each person in their own chat, the group when needed.
+"""Telegram extension: who gets a Telegram message for each alert, each person in their own chat and
+the group when needed.
 
 The core puts the people an alert is for under ``deliver_to``; each one carries ``telegram_chat``
 once that person has linked a private chat with the bot (``/link CODE``). Those people get the alert
@@ -16,7 +17,7 @@ import logging
 from dataclasses import dataclass
 from typing import Callable
 
-log = logging.getLogger("sentrai.notifier")
+log = logging.getLogger("sentrai.ext.telegram")
 
 GROUP_MODES = ("fallback", "always", "off")
 
@@ -62,17 +63,6 @@ def plan(notification: dict, group_chat: str, mode: str = "fallback") -> list[Ta
     if need_group and group_chat and group_chat not in seen:
         direct.append(Target(group_chat, None))
     return direct
-
-
-def receipts(result, channel: str) -> list[tuple[str, str, str | None]]:
-    """A sender's result as (channel, message id, person) receipts, for POST /notifications/{id}/delivered.
-
-    A sender may return a message id, (channel, message id), or a list of (channel, message id, person)."""
-    if isinstance(result, list):
-        return [(str(c), str(m), p) for c, m, p in result]
-    if isinstance(result, tuple):
-        return [(str(result[0]), str(result[1]), None)]
-    return [(channel, str(result), None)]
 
 
 def deliver(targets: list[Target], send_one: Callable[[Target], str], group_chat: str,

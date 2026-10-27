@@ -65,3 +65,12 @@ def test_take_it_and_who_the_alert_is_for():
     text = format_telegram({**NOTIF, "deliver_to": [{"name": "Amir", "telegram": "amir"},
                                                     {"name": "Lee", "telegram": "-100123"}]}, INC)
     assert "For: @amir" in text and "-100123" not in text
+
+
+def test_a_direct_message_does_not_mention_people():
+    alert = {"id": "ntf-0001", "incident": "RSK-1", "kind": "incident_opened", "title": "Brute force",
+             "deliver_to": [{"id": "amir", "name": "Amir", "telegram": "@amir", "telegram_chat": "111"},
+                            {"id": "lee", "name": "Lee", "telegram": "@lee", "telegram_chat": ""}]}
+    group = format_telegram(alert, {"id": "RSK-1", "status": "open"})
+    mine = format_telegram(alert, {"id": "RSK-1", "status": "open"}, personal=True)
+    assert "For: @amir @lee" in group and "For:" not in mine

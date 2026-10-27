@@ -1,57 +1,55 @@
-"""SentrAI notifier: delivers core alerts to Telegram (or the console) and relays operator decisions.
+"""SentrAI notifier: delivers core alerts to the console, email and the alert extensions, and relays
+operator decisions.
 
 Env:
   SENTRAI_CORE_URL      core API base URL (default http://127.0.0.1:8000)
   SENTRAI_API_TOKEN     core API token (default: the one saved by the setup wizard)
-  TELEGRAM_BOT_TOKEN   bot token from @BotFather  (never hardcode it)
-  TELEGRAM_CHAT_ID     group chat for alerts that are not for one person, and for people who have
-                       not linked their own chat yet; its members may press buttons
-  TELEGRAM_GROUP_COPY  fallback (default): the group gets an alert only when someone it is for has
-                       no linked chat; always: the group gets a copy of every alert; off: never,
-                       unless nobody could be reached directly (see direct.py)
   SENTRAI_OPERATOR      fallback operator name (default "operator")
   NOTIFIER_POLL_SECONDS poll interval (default 2)
   NOTIFIER_WITNESS_FILE where the last delivered audit fingerprint is kept (default notifier/data/last_witness.txt)
-  SMTP_HOST, ALERT_EMAIL_TO, ...  email backup channel, see emailer.py
-  SLACK_WEBHOOK_URL    also post a copy of every alert to a Slack channel, see slack.py
-If TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is missing, runs in CONSOLE mode.
-Email is off until SMTP_HOST and ALERT_EMAIL_TO are set. Then it is sent when Telegram fails
-(SENTRAI_EMAIL_MODE=backup, the default), next to every Telegram alert (always), and next to
-the console in CONSOLE mode.
+  SMTP_HOST, ALERT_EMAIL_TO, ...  email channel, see emailer.py
+
+Alert extensions (mvp/extensions/<name>/notifier.py) bring the other channels: Telegram runs a bot that
+sends alerts with Approve / Reject buttons, Slack posts a read-only copy of each alert. Which ones run is
+what the core says (GET /extensions, the dashboard's Extensions page); the notifier asks again every
+15 s and switches without a restart. With no alert extension added, or Telegram's token or chat id
+blank, it runs in CONSOLE mode.
+
+Email is off until SMTP_HOST and ALERT_EMAIL_TO are set. Then it is sent when the main channel fails
+(SENTRAI_EMAIL_MODE=backup, the default), next to every alert (always), and next to the console in
+CONSOLE mode.
 
 Usage:  python notifier.py [--console] [--once] [--core URL]
         python notifier.py --verify [LINE]   check the core's audit chain against the last witnessed
                                              fingerprint (or LINE); exit 1 if it was changed
 In Telegram, /verify does the same.
-
-Personal alerts: each person in the routing file links their own private chat once by sending the
-bot /link CODE (the code comes from the dashboard's Incidents page). After that, alerts routed to
-them arrive in that chat with the buttons, and a button pressed there is recorded under their name.
-/unlink in that chat stops it.
 """
 from __future__ import annotations
 
 import argparse
-import asyncio
 import logging
 import os
 import sys
 import time
+from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 from core import Core, CoreError
-from direct import Target, deliver, group_mode, plan, receipts
 from emailer import EmailConfig, email_sender
-from slack import slack_from_env, with_slack
-from formatting import (APPROVE, REJECT, ROLLBACK, TAKE, button_specs, format_console,
-                        format_telegram, incident_id_of, parse_callback, witness_of)
+from formatting import format_console, incident_id_of, witness_of
+
+MVP_DIR = Path(__file__).resolve().parents[1]
+if str(MVP_DIR) not in sys.path:
+    sys.path.append(str(MVP_DIR))  # sentrai_config and sentrai_extensions live one level up
+import sentrai_extensions as se  # noqa: E402
 
 log = logging.getLogger("sentrai.notifier")
 
 DEFAULT_CORE = "http://127.0.0.1:8000"
 DEFAULT_WITNESS = Path(__file__).resolve().parent / "data" / "last_witness.txt"
+CHECK_S = 15.0  # how often the notifier asks which alert extensions are on
 
 
 # ------------------------------------------------------------------ audit witness
@@ -93,8 +91,19 @@ def verify_witness(core: Core, line: str) -> tuple[bool | None, str]:
 # ------------------------------------------------------------------ shared delivery loop
 
 # A sender returns the message id, (channel, message id) when the channel it used varies, or a list
-# of (channel, message id, person) when it sent one message per person (direct.receipts).
+# of (channel, message id, person) when it sent one message per person (see receipts()).
 SendFn = Callable[[dict, "dict | None", "dict | None"], "str | tuple[str, str] | list[tuple[str, str, str | None]]"]
+
+
+def receipts(result, channel: str) -> list[tuple[str, str, str | None]]:
+    """A sender's result as (channel, message id, person) receipts, for POST /notifications/{id}/delivered.
+
+    A sender may return a message id, (channel, message id), or a list of (channel, message id, person)."""
+    if isinstance(result, list):
+        return [(str(c), str(m), p) for c, m, p in result]
+    if isinstance(result, tuple):
+        return [(str(result[0]), str(result[1]), None)]
+    return [(channel, str(result), None)]
 
 
 def process_pending(core: Core, send: SendFn, channel: str, seen: set[str] | None = None,
@@ -165,6 +174,31 @@ def email_from_env() -> tuple[EmailConfig | None, SendFn | None]:
     return cfg, (email_sender(cfg) if cfg else None)
 
 
+# ------------------------------------------------------------------ copies (Slack, ...)
+
+def with_copies(primary: SendFn, copies: list[tuple[str, SendFn]]) -> SendFn:
+    """Send by `primary`, then a read-only copy by each of `copies` ((name, send) of the copy channels the
+    alert extensions bring, such as Slack). A failed copy is only logged: the alert already went out."""
+    if not copies:
+        return primary
+
+    def send(n: dict, incident: dict | None, risk: dict | None):
+        result = primary(n, incident, risk)
+        for name, copy in copies:
+            try:
+                mid = copy(n, incident, risk)
+            except Exception as exc:
+                log.warning("%s copy of %s failed: %s", name, n.get("id"), exc)
+                continue
+            if isinstance(result, list):  # one receipt per person (direct messages): the copy is one more
+                result = [*result, (name, str(mid), None)]
+            elif isinstance(result, tuple):
+                result = (f"{result[0]}+{name}", result[1])
+        return result
+
+    return send
+
+
 # ------------------------------------------------------------------ console mode
 
 def console_sender(out=None, color: bool | None = None) -> SendFn:
@@ -182,14 +216,18 @@ def console_sender(out=None, color: bool | None = None) -> SendFn:
     return send
 
 
-def run_console(core: Core, poll: float, once: bool = False) -> None:
-    print("🛡️ SentrAI notifier · CONSOLE mode (set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID for Telegram)")
+def run_console(core: Core, poll: float, once: bool = False, copies: list[tuple[str, SendFn]] | None = None,
+                changed: Callable[[], bool] | None = None, seen: set[str] | None = None) -> None:
+    """Prints each alert, until `changed()` says the alert extensions changed (or once, with `once`)."""
+    print("🛡️ SentrAI notifier · CONSOLE mode (add the Telegram extension for alerts with buttons)")
     print(f"   polling {core.base_url}/notifications/pending every {poll:g} s. Ctrl+C to stop.")
     email_cfg, email = email_from_env()
     print(f"   email alerts to {', '.join(email_cfg.recipients)} via {email_cfg.host}" if email_cfg
           else "   email alerts off (set SMTP_HOST + ALERT_EMAIL_TO to turn them on)")
-    send = with_slack(with_email(console_sender(), "console", email, always=True), slack_from_env())
-    seen: set[str] = set()
+    if copies:
+        print(f"   a copy of each alert goes to {', '.join(name for name, _ in copies)}")
+    send = with_copies(with_email(console_sender(), "console", email, always=True), copies or [])
+    seen = set() if seen is None else seen
     witness = WitnessStore()
     down = False
     while True:
@@ -202,277 +240,187 @@ def run_console(core: Core, poll: float, once: bool = False) -> None:
             if not down:
                 print(f"   core unavailable ({exc}); retrying...")
             down = True
-        if once:
+        if once or (changed is not None and changed()):
             return
         time.sleep(poll)
 
 
-# ------------------------------------------------------------------ telegram mode
+# ------------------------------------------------------------------ alert extensions
 
-def run_telegram(core: Core, token: str, chat_id: str, poll: float, fallback_operator: str,
-                 group_copy: str = "fallback") -> None:
-    from telegram import ForceReply, InlineKeyboardButton, InlineKeyboardMarkup, Update
-    from telegram.constants import ChatType, ParseMode
-    from telegram.error import Forbidden
-    from telegram.ext import (Application, CallbackQueryHandler, CommandHandler, ContextTypes,
-                              MessageHandler, filters)
+class Context:
+    """What an alert extension's notifier part gets (main_channel(ctx), copy_channel(ctx)). Use these,
+    not the notifier's own functions: when the notifier runs as a script it must not be imported again."""
 
-    allowed_chat = str(chat_id)
-    mode = group_mode(group_copy)
-    seen: set[str] = set()
-    witness = WitnessStore()
-    email_cfg, email = email_from_env()
-    # Private chats linked to routing contacts: chat id -> the core's link (with the contact's name).
-    links: dict[str, dict] = {}
+    def __init__(self, manifest: se.Manifest, core: Core, poll: float, operator: str,
+                 changed: Callable[[], bool], environ: Mapping[str, str] | None = None) -> None:
+        self.manifest = manifest
+        self.name = manifest.name
+        self.log = logging.getLogger(f"sentrai.ext.{manifest.name}")
+        self.core = core
+        self.poll = poll
+        self.operator = operator  # the name a decision is recorded under when nothing better is known
+        self.changed = changed  # True once the alert extensions or their settings changed: return then
+        self.copies: list[tuple[str, SendFn]] = []  # the other extensions' copy channels
+        self.witness = WitnessStore()
+        self._environ = os.environ if environ is None else environ
 
-    def refresh_links() -> None:
-        found = {str(x.get("chat_id")): x for x in core.telegram_links() if x.get("chat_id")}
-        if found or not links:  # keep the last good list when the core is briefly unreachable
-            links.clear()
-            links.update(found)
+    def setting(self, env: str) -> str:
+        """One of its settings: the environment variable, its _FILE, or the manifest's default."""
+        value = se.setting(env, self._environ)
+        return value or next((s.default for s in self.manifest.settings if s.env == env), "")
 
-    def chat_of(update: Update) -> str:
-        return str(update.effective_chat.id) if update.effective_chat is not None else ""
+    def number(self, env: str, fallback: float) -> float:
+        try:
+            return float(self.setting(env) or fallback)
+        except ValueError:
+            return fallback
 
-    def operator_of(update: Update) -> str:
-        """In a linked private chat, the contact's name from the routing file; in the group, the Telegram user."""
-        link = links.get(chat_of(update))
-        if link and link.get("name"):
-            return str(link["name"])
-        u = update.effective_user
-        if u is None:
-            return fallback_operator
-        return u.username or u.full_name or fallback_operator
+    def process_pending(self, send: SendFn, channel: str, seen: set[str] | None = None) -> list[str]:
+        """Delivers every pending alert once with `send`, marks it delivered and keeps its fingerprint."""
+        return process_pending(self.core, send, channel, seen, self.witness)
 
-    def is_allowed(update: Update) -> bool:
-        chat = chat_of(update)
-        return bool(chat) and (chat == allowed_chat or chat in links)
+    def verify(self, line: str) -> tuple[bool | None, str]:
+        """(ok, message) for /verify: does the core's audit chain still hold this fingerprint line?"""
+        return verify_witness(self.core, line)
 
-    def is_private(update: Update) -> bool:
-        return update.effective_chat is not None and update.effective_chat.type == ChatType.PRIVATE
+    def email(self) -> tuple[EmailConfig | None, SendFn | None]:
+        return email_from_env()
 
-    async def poll_loop(app: Application) -> None:
-        loop = asyncio.get_running_loop()
-        down = False
+    def with_email(self, send: SendFn, channel: str) -> SendFn:
+        """Email as the backup of `send`, or next to it (SENTRAI_EMAIL_MODE=always)."""
+        cfg, email = email_from_env()
+        return with_email(send, channel, email, always=bool(cfg and cfg.mode == "always"))
 
-        def send_one(target: Target, n: dict, incident: dict | None, risk: dict | None) -> str:
-            specs = button_specs(n, incident)
-            markup = InlineKeyboardMarkup([[InlineKeyboardButton(label, callback_data=data)
-                                            for label, data in specs]]) if specs else None
-            fut = asyncio.run_coroutine_threadsafe(
-                app.bot.send_message(chat_id=target.chat_id,
-                                     text=format_telegram(n, incident, risk, personal=target.direct),
-                                     parse_mode=ParseMode.HTML, reply_markup=markup), loop)
-            return str(fut.result(timeout=20).message_id)
+    def with_copies(self, send: SendFn) -> SendFn:
+        return with_copies(send, [c for c in self.copies if c[0] != self.name])
 
-        def send(n: dict, incident: dict | None, risk: dict | None) -> list[tuple[str, str, str | None]]:
-            """Each linked person in their own chat, and the group when direct.plan says so."""
-            out = deliver(plan(n, allowed_chat, mode), lambda t: send_one(t, n, incident, risk), allowed_chat,
-                          lambda e: "blocked the bot or left the chat" if isinstance(e, Forbidden) else str(e))
-            log.info("delivered %s: %s", n.get("id"),
-                     ", ".join(f"{to} directly" if to else "the group" for _, _, to in out))
-            return out
 
-        send_all = with_slack(with_email(send, "telegram", email, always=bool(email_cfg and email_cfg.mode == "always")),
-                              slack_from_env())
-        while True:
+class Channels:
+    """Which alert extensions are added (the core decides; the settings when it cannot be asked), and
+    whether that changed. A change of their settings counts too, so a new token takes effect."""
+
+    def __init__(self, core: Core, environ: Mapping[str, str] | None = None, check_s: float = CHECK_S,
+                 reload: Callable[[], Any] | None = None, clock: Callable[[], float] = time.monotonic) -> None:
+        self.core = core
+        self.environ = os.environ if environ is None else environ
+        self.check_s = check_s
+        self.reload = reload  # re-reads the settings file (sentrai_config.load(refresh=True))
+        self.clock = clock
+        self.source = ""  # where the last answer came from: core, last (core away) or settings
+        self._from_core: list[str] | None = None
+        self.names = self.decide()
+        self.key = self._key(self.names)
+        self.switch = False  # set by changed(): the runner returned because of a change
+        self._next = clock() + check_s
+
+    def parts(self) -> dict[str, se.Manifest]:
+        return {n: m for n, m in se.installed(self.environ).items() if "notifier" in m.parts}
+
+    def decide(self) -> list[str]:
+        parts = self.parts()
+        try:
+            rows = self.core.extensions()
+        except CoreError as exc:
+            if exc.status not in (404, 405):  # unreachable for now: keep what it said last time
+                if self._from_core is not None:
+                    self.source = "last"
+                    return [n for n in self._from_core if n in parts]
+            rows = None  # never reached it yet, or an older core without extensions: the settings decide
+        if rows is not None:
+            added = {str(r.get("name")) for r in rows if r.get("added")}
+            self._from_core = [n for n in parts if n in added]
+            self.source = "core"
+            return list(self._from_core)
+        self.source = "settings"
+        return [n for n, (on, _) in se.decide(parts, {}, self.environ).items() if on]
+
+    def _key(self, names: list[str]) -> tuple[tuple[str, str], ...]:
+        parts = self.parts()
+        return tuple((n, se.fingerprint(parts[n], self.environ)) for n in names if n in parts)
+
+    def changed(self) -> bool:
+        """True once the added alert extensions or their settings changed. Asks at most every check_s."""
+        if self.switch:
+            return True
+        now = self.clock()
+        if now < self._next:
+            return False
+        self._next = now + self.check_s
+        if self.reload is not None:
             try:
-                await asyncio.to_thread(refresh_links)
-                await asyncio.to_thread(process_pending, core, send_all, "telegram", seen, witness)
-                if down:
-                    log.info("core reachable again")
-                down = False
-            except CoreError as exc:
-                if not down:
-                    log.warning("core unavailable: %s", exc)
-                down = True
-            except Exception:  # keep the bot alive whatever happens
-                log.exception("poll loop error")
-            await asyncio.sleep(poll)
+                self.reload()
+            except Exception as exc:  # a half-written settings file: try again next time
+                log.warning("could not re-read the settings: %s", exc)
+        names = self.decide()
+        if self._key(names) != self.key:
+            log.info("alert extensions changed: %s -> %s", ", ".join(self.names) or "none", ", ".join(names) or "none")
+            self.names, self.key, self.switch = names, self._key(names), True
+        return self.switch
 
-    async def post_init(app: Application) -> None:
-        await asyncio.to_thread(refresh_links)
-        app.bot_data["poller"] = asyncio.create_task(poll_loop(app))
-        app.bot_data.setdefault("reject_prompts", {})
-        log.info("SentrAI notifier online in TELEGRAM mode, group chat %s, %d personal chat(s) linked, "
-                 "group copy: %s, core %s", allowed_chat, len(links), mode, core.base_url)
-        log.info("email alerts: %s", email_cfg.describe() if email_cfg else "off (no SMTP_HOST / ALERT_EMAIL_TO)")
+    def settle(self) -> None:
+        """The runner stopped for the change: the next one runs what changed() found."""
+        self.switch = False
 
-    async def tell_group(context: ContextTypes.DEFAULT_TYPE, update: Update, text: str) -> None:
-        """A decision made in someone's private chat is also noted in the group, so the team sees it."""
-        if mode == "off" or not allowed_chat or chat_of(update) == allowed_chat:
-            return
-        try:
-            await context.bot.send_message(chat_id=allowed_chat, text=text)
-        except Exception as exc:
-            log.warning("could not note the decision in the group: %s", exc)
 
-    async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        query = update.callback_query
-        if not is_allowed(update):
-            await query.answer("This chat is not linked to SentrAI. Send /link with your code first.", show_alert=True)
-            return
-        parsed = parse_callback(query.data or "")
-        if not parsed:
-            await query.answer("Unknown action")
-            return
-        verb, iid = parsed
-        op = operator_of(update)
-        here = chat_of(update)
-        try:
-            await asyncio.to_thread(core.ack, iid, op, "telegram")
-        except CoreError as exc:
-            log.warning("ack failed for %s: %s", iid, exc)
-        stamp = datetime.now().strftime("%H:%M:%S")
-        try:
-            if verb == TAKE:
-                await asyncio.to_thread(core.assign, iid, op, op, "Taken via Telegram")
-                result = f"🙋 {iid} taken by {op} at {stamp}. It is yours until it is resolved."
-            elif verb == APPROVE:
-                await asyncio.to_thread(core.decision, iid, op, "approve", "Approved via Telegram")
-                result = f"✅ {iid} approved & patch applied by {op} at {stamp}"
-            elif verb == REJECT:
-                await query.answer("Reply with your justification")
-                prompt = await context.bot.send_message(
-                    chat_id=here,
-                    text=f"⛔ Rejecting <b>{iid}</b>. Reply to this message with your justification "
-                         "(it is written to the hash-chained audit log).",
-                    parse_mode=ParseMode.HTML, reply_markup=ForceReply(selective=True))
-                target = (iid, here, query.message.message_id)
-                context.bot_data.setdefault("reject_prompts", {})[(here, prompt.message_id)] = target
-                context.user_data["awaiting_reject"] = target
-                return
-            elif verb == ROLLBACK:
-                await asyncio.to_thread(core.rollback, iid, op, "Rolled back via Telegram")
-                result = f"↩️ {iid} rolled back by {op} at {stamp}"
-            else:  # PERMANENT
-                await asyncio.to_thread(core.permanent, iid, op, "Made permanent via Telegram")
-                result = f"📌 {iid} made permanent by {op} at {stamp}"
-        except CoreError as exc:
-            await query.answer("Core rejected the action", show_alert=True)
-            await context.bot.send_message(chat_id=here, text=f"❌ {iid}: {exc}")
-            return
-        await query.answer("Recorded")
-        await query.edit_message_reply_markup(reply_markup=None)
-        await query.message.reply_text(result)
-        await tell_group(context, update, result)
-
-    async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        if not is_allowed(update) or update.message is None:
-            return
-        here = chat_of(update)
-        prompts = context.bot_data.get("reject_prompts", {})
-        target = None
-        reply_to = update.message.reply_to_message
-        if reply_to is not None and (here, reply_to.message_id) in prompts:
-            target = prompts.pop((here, reply_to.message_id))
-        elif context.user_data.get("awaiting_reject"):
-            target = context.user_data["awaiting_reject"]
-        if not target:
-            return
-        context.user_data.pop("awaiting_reject", None)
-        iid, alert_chat, alert_msg_id = target
-        justification = (update.message.text or "").strip()
-        if not justification:
-            await update.message.reply_text("A justification is required to reject.")
-            return
-        op = operator_of(update)
-        try:
-            await asyncio.to_thread(core.decision, iid, op, "reject", justification)
-        except CoreError as exc:
-            await update.message.reply_text(f"❌ {iid}: {exc}")
-            return
-        try:
-            await context.bot.edit_message_reply_markup(chat_id=alert_chat, message_id=alert_msg_id, reply_markup=None)
-        except Exception:  # message may be too old to edit
-            pass
-        await update.message.reply_text(f"⛔ {iid} rejected by {op}. Justification logged.")
-        await tell_group(context, update, f"⛔ {iid} rejected by {op}: {justification}")
-
-    async def link_with(update: Update, code: str) -> None:
-        """/link CODE (or /start CODE from a t.me link) in a private chat: alerts for that contact come here."""
-        if update.message is None:
-            return
-        if not is_private(update):
-            await update.message.reply_text("Send /link to me in a private chat, not in a group, so alerts "
-                                            "reach only you.")
-            return
-        u = update.effective_user
-        try:
-            res = await asyncio.to_thread(core.telegram_link, code, chat_of(update), (u.username or "") if u else "")
-        except CoreError as exc:
-            await update.message.reply_text("❌ " + (exc.detail or "Could not reach SentrAI. Try again in a minute."))
-            return
-        await asyncio.to_thread(refresh_links)
-        await update.message.reply_text(
-            f"✅ Linked. SentrAI alerts for {res.get('name')} now come to this chat, with the buttons to "
-            "approve, reject or take them. Send /unlink to stop.")
-
-    async def on_link(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        code = " ".join(context.args or []).strip()
-        if not code:
-            if update.message is not None:
-                await update.message.reply_text("Send /link followed by the code from the SentrAI dashboard "
-                                                "(Incidents page, Telegram for each person).")
-            return
-        await link_with(update, code)
-
-    async def on_unlink(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        if update.message is None or not is_private(update):
-            return
-        link = links.get(chat_of(update))
-        if not link:
-            await update.message.reply_text("This chat is not linked to anyone.")
-            return
-        try:
-            await asyncio.to_thread(core.telegram_unlink, chat_of(update), operator_of(update))
-        except CoreError as exc:
-            await update.message.reply_text(f"❌ {exc}")
-            return
-        await asyncio.to_thread(refresh_links)
-        links.pop(chat_of(update), None)
-        await update.message.reply_text(f"Unlinked. Alerts for {link.get('name')} go to the team group again.")
-
-    async def on_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        if context.args:  # t.me/<bot>?start=CODE
-            await link_with(update, context.args[0])
-            return
-        here = chat_of(update)
-        if here in links:
-            status = f"Alerts for {links[here].get('name')} are delivered here."
-        elif here == allowed_chat:
-            status = "This is the team group: alerts for people without their own linked chat come here."
-        elif is_private(update):
-            status = "To get your alerts here, send /link with the code from the SentrAI dashboard."
+def run(core: Core, poll: float, operator: str, console_only: bool = False, once: bool = False,
+        channels: Channels | None = None) -> None:
+    """Runs the main alert channel (an extension's, such as Telegram, or the console) with every added
+    extension's copy channel next to it, and starts again whenever the alert extensions change."""
+    channels = channels or Channels(core)
+    seen: set[str] = set()  # alerts this process delivered, kept across switches
+    while True:
+        parts = channels.parts()
+        copies: list[tuple[str, SendFn]] = []
+        ctxs: list[tuple[Context, Any]] = []
+        for name in channels.names:
+            try:
+                mod = se.load_part(parts[name], "notifier")
+            except Exception as exc:  # a missing package or a broken part: the others run on
+                log.error("the %s extension's notifier part could not load: %s: %s", name, type(exc).__name__, exc)
+                continue
+            ctx = Context(parts[name], core, poll, operator, channels.changed, channels.environ)
+            ctxs.append((ctx, mod))
+            make = getattr(mod, "copy_channel", None)
+            try:
+                copy = make(ctx) if make else None
+            except Exception as exc:
+                log.error("the %s extension's copy channel could not start: %s", name, exc)
+                copy = None
+            if copy is not None:
+                copies.append((name, copy))
+        main: Callable[[], Any] | None = None
+        if not console_only and not once:
+            for ctx, mod in ctxs:
+                ctx.copies = copies
+                make = getattr(mod, "main_channel", None)
+                try:
+                    main = make(ctx) if make else None
+                except Exception as exc:
+                    log.error("the %s extension could not start as the alert channel: %s", ctx.name, exc)
+                    main = None
+                if main is not None:
+                    log.info("alerts go out through the %s extension%s", ctx.name,
+                             f", with a copy to {', '.join(n for n, _ in copies if n != ctx.name)}"
+                             if any(n != ctx.name for n, _ in copies) else "")
+                    break
+        if main is None:
+            run_console(core, poll, once=once, copies=copies, changed=channels.changed, seen=seen)
         else:
-            status = "This chat is NOT the configured alert chat."
-        await update.message.reply_text(f"🛡️ SentrAI notifier is running.\nThis chat id: {here}\n{status}")
-
-    async def on_verify(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """/verify: is the audit log on the server still what the last alert witnessed?
-        /verify SENTRAI-FP v1 ... checks an older line copied from this chat instead."""
-        if not is_allowed(update) or update.message is None:
-            return
-        line = " ".join(context.args or []).strip() or witness.last()
-        _, message = await asyncio.to_thread(verify_witness, core, line)
-        await update.message.reply_text(message)
-
-    app = Application.builder().token(token).post_init(post_init).build()
-    app.add_handler(CommandHandler("start", on_start))
-    app.add_handler(CommandHandler("link", on_link))
-    app.add_handler(CommandHandler("unlink", on_unlink))
-    app.add_handler(CommandHandler("verify", on_verify))
-    app.add_handler(CallbackQueryHandler(on_button))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
+            try:
+                main()
+            except Exception:  # a wrong token, a network failure at start: the console takes over
+                log.exception("the alert channel stopped; alerts go to the console until the settings change")
+                run_console(core, poll, copies=copies, changed=channels.changed, seen=seen)
+        if once or not channels.switch:
+            return  # stopped by Ctrl+C or a stop signal, not by a change
+        channels.settle()
 
 
 # ------------------------------------------------------------------ entry point
 
 def main(argv: list[str] | None = None) -> int:
-    sys.path.append(str(Path(__file__).resolve().parents[1]))
     import sentrai_config
-    sentrai_config.load()  # saved settings (bot token, chat id, operator) as env defaults
+    sentrai_config.load()  # saved settings (email, operator, the extensions' keys) as env defaults
 
     p = argparse.ArgumentParser(description="SentrAI notifier")
     p.add_argument("--core", default=os.environ.get("SENTRAI_CORE_URL", DEFAULT_CORE))
@@ -493,15 +441,10 @@ def main(argv: list[str] | None = None) -> int:
         ok, message = verify_witness(core, args.verify.strip() or WitnessStore().last())
         print(message)
         return 0 if ok else (1 if ok is False else 2)
-    token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
-    chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
     operator = os.environ.get("SENTRAI_OPERATOR", "operator")
-
     try:
-        if args.console or args.once or not (token and chat_id):
-            run_console(core, args.poll, once=args.once)
-        else:
-            run_telegram(core, token, chat_id, args.poll, operator, os.environ.get("TELEGRAM_GROUP_COPY", "fallback"))
+        channels = Channels(core, reload=lambda: sentrai_config.load(refresh=True))
+        run(core, args.poll, operator, console_only=args.console, once=args.once, channels=channels)
     except KeyboardInterrupt:
         print("\nnotifier stopped.")
     return 0

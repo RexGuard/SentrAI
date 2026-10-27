@@ -1,9 +1,15 @@
-"""Slack copy of each alert. A fake poster stands in for Slack: nothing is really posted."""
+"""Slack extension, notifier side: a copy of each alert. A fake poster stands in for Slack: nothing is
+really posted."""
 import json
+from types import SimpleNamespace
 
 import pytest
 
-from slack import format_slack, slack_sender, with_slack
+import sentrai_extensions as se
+from notifier import with_copies
+
+sl = se.load_part(se.installed()["slack"], "notifier")
+format_slack, slack_sender = sl.format_slack, sl.slack_sender
 
 NOTE = {"id": "N-1", "incident_id": "INC-7", "kind": "reminder", "risk_index": 72,
         "text": "Still <unacknowledged> after 2 h & counting.", "src_ip": "203.0.113.9", "user": "admin",
@@ -38,6 +44,15 @@ def test_slack_is_a_copy_and_never_blocks_the_main_alert():
     def broken_slack(n, i, r):
         raise RuntimeError("Slack answered HTTP 500")
 
-    assert with_slack(telegram, lambda n, i, r: "slack-1")(NOTE, INCIDENT, None) == ("telegram+slack", "4242")
-    assert with_slack(telegram, broken_slack)(NOTE, INCIDENT, None) == ("telegram", "4242")
-    assert with_slack(telegram, None) is telegram
+    assert with_copies(telegram, [("slack", lambda n, i, r: "slack-1")])(NOTE, INCIDENT, None) == ("telegram+slack", "4242")
+    assert with_copies(telegram, [("slack", broken_slack)])(NOTE, INCIDENT, None) == ("telegram", "4242")
+    assert with_copies(telegram, []) is telegram
+
+
+def test_copy_channel_needs_an_https_url():
+    def ctx(url):
+        return SimpleNamespace(setting=lambda env: url if env == "SLACK_WEBHOOK_URL" else "")
+
+    assert sl.copy_channel(ctx("")) is None
+    assert sl.copy_channel(ctx("http://hooks.slack.com/x")) is None  # logged, never posted in the clear
+    assert callable(sl.copy_channel(ctx("https://hooks.slack.com/services/T/B/x")))

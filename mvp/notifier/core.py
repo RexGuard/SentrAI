@@ -7,9 +7,10 @@ import requests
 
 
 class CoreError(Exception):
-    def __init__(self, message: str, detail: str = "") -> None:
+    def __init__(self, message: str, detail: str = "", status: int | None = None) -> None:
         super().__init__(message)
         self.detail = detail  # the core's own explanation ("detail" of an HTTP error), if it gave one
+        self.status = status  # the HTTP status, None when the core could not be reached
 
 
 class Core:
@@ -30,11 +31,19 @@ class Core:
                 detail = str((r.json() or {}).get("detail") or "")
             except (ValueError, AttributeError):
                 detail = ""
-            raise CoreError(f"{method} {path} -> HTTP {r.status_code}: {r.text[:200]}", detail)
+            raise CoreError(f"{method} {path} -> HTTP {r.status_code}: {r.text[:200]}", detail, r.status_code)
         try:
             return r.json()
         except ValueError:
             return None
+
+    def request(self, method: str, path: str, body: Any | None = None) -> Any:
+        """Any core API call (extensions use this for their own routes). Raises CoreError."""
+        return self._req(method, path, body)
+
+    def extensions(self) -> list[dict]:
+        """The extension rows the dashboard's Extensions page shows (GET /extensions). Raises CoreError."""
+        return [x for x in self._req("GET", "/extensions") or [] if isinstance(x, dict)]
 
     def verify(self, line: str) -> dict:
         """Asks the core whether its audit chain still matches a witnessed fingerprint line."""
@@ -44,7 +53,7 @@ class Core:
         except requests.RequestException as exc:
             raise CoreError(f"core unreachable at {self.base_url}: {exc.__class__.__name__}") from exc
         if r.status_code >= 400:
-            raise CoreError(f"GET /audit/verify -> HTTP {r.status_code}: {r.text[:200]}")
+            raise CoreError(f"GET /audit/verify -> HTTP {r.status_code}: {r.text[:200]}", status=r.status_code)
         return r.json()
 
     def pending(self) -> list[dict]:
@@ -58,20 +67,6 @@ class Core:
         if to:  # a direct message to one person
             body["to"] = to
         return self._req("POST", f"/notifications/{notification_id}/delivered", body)
-
-    def telegram_links(self) -> list[dict]:
-        """Private chats linked to routing contacts; [] when the core is older or unreachable."""
-        try:
-            data = self._req("GET", "/telegram/links")
-        except CoreError:
-            return []
-        return [x for x in data or [] if isinstance(x, dict)]
-
-    def telegram_link(self, code: str, chat_id: str, username: str) -> dict:
-        return self._req("POST", "/telegram/link", {"code": code, "chat_id": str(chat_id), "username": username})
-
-    def telegram_unlink(self, chat_id: str, operator: str) -> Any:
-        return self._req("POST", "/telegram/unlink", {"chat_id": str(chat_id), "operator": operator})
 
     def incident(self, incident_id: str) -> dict | None:
         try:
