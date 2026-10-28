@@ -34,7 +34,7 @@ from .agents import (
     next_steps,
 )
 from . import firewall
-from . import anchor, remote_copy, routing
+from . import anchor, protect, remote_copy, routing
 from . import summary as client_summary
 from .audit import AuditLog
 from .classifier import Classification, default_chain
@@ -45,8 +45,9 @@ from .integrity import IntegrityGuard
 from .netlogs import enrich
 from .responders import Responder, Responders, SimulatedResponder, WebhookResponder
 from .risk import SEVERITY, band, band_rank, inaction_penalty, risk_index
-from .rules import TRIPWIRE_REASONS, RulesEngine
+from .rules import TRIPWIRE_REASONS, TRIPWIRE_SOURCES, RulesEngine
 from .state import StateStore
+from .waves import Waves, wave_points
 
 log = logging.getLogger("sentrai.saguaro")
 
@@ -68,6 +69,13 @@ TITLES = {
     "prompt_injection": "Prompt injection",
     "staff_report": "Staff report",
 }
+
+# What a wave's addresses are doing, in a sentence: "312 addresses scanning game-01".
+WAVE_DOING = {"port_scan": "scanning", "brute_force": "guessing passwords on"}
+# Folded alert kinds, as the summary words them.
+FOLDED_WORDS = {"incident_opened": "new", "needs_operator": "waiting for a person", "needs_review": "need a look",
+                "autonomous_action": "blocked automatically", "operator_action": "blocked by a person",
+                "action_expired": "blocks expired", "sla_reminder": "reminders"}
 
 BUTTONS_DECIDE = [
     {"label": "Approve & Patch", "action": "approve"},
@@ -325,6 +333,9 @@ class Saguaro(Agent):
         self._host_history: dict[str, deque[dict[str, Any]]] = {}
         self._host_services: dict[str, dict[str, Any]] = {}  # machine -> {"services": [...], "at": iso} from its agent
         self._reported: set[str] = set()
+        s = self.settings
+        self._band_alerted: dict[str, float] = {}  # band -> when it was last alerted (busy servers only)
+        self.waves = Waves(s.wave_min_addresses, s.wave_window_min * 60.0, s.wave_update_min * 60.0, s.wave_categories)
 
     def _next_incident_from_audit(self) -> int:
         best = self.settings.id_start - 1
@@ -496,6 +507,11 @@ class Saguaro(Agent):
                 with self.lock:
                     self.events[ev["event_id"]].update(category="benign", classified_by="rules", reason="heartbeat")
                 continue
+            if self._trusted(ev):
+                with self.lock:
+                    self.events[ev["event_id"]].update(category="benign", classified_by="trusted",
+                                                       reason="trusted address (TRUSTED_IPS): not analysed")
+                continue
             agent = self._route(ev)
             cls = agent.analyze(ev, now)  # may call an outside classifier (Jev): done outside the lock
             with self.lock:
@@ -508,6 +524,11 @@ class Saguaro(Agent):
             self._evaluate(now)
             self._record_history(now)
             return {"accepted": accepted, "risk_index": self._last_risk["risk_index"]}
+
+    def _trusted(self, ev: dict[str, Any]) -> bool:
+        """A line from a known-good address (TRUSTED_IPS). A decoy touch is never trusted."""
+        return (bool(self.settings.trusted_ips) and ev.get("source") not in TRIPWIRE_SOURCES
+                and protect.matches(ev.get("src_ip"), self.settings.trusted_ips))
 
     def _trim_events(self, limit: int = 20000) -> None:
         while len(self.events) > limit:
@@ -543,6 +564,7 @@ class Saguaro(Agent):
         if inc is None:
             inc = self._open_incident(ev, cls, agent, needs_review, now)
             inc.setdefault("service", service_of(ev))
+            self._join_wave(inc, now)
         else:
             self._attach(inc, ev, cls, needs_review, now)
         self.scribe.record(
@@ -707,8 +729,14 @@ class Saguaro(Agent):
         for inc in self.incidents.values():
             self._refresh_incident(inc, now)
         by_host: dict[str, float] = {}
+        in_waves: dict[tuple[str, str], list[float]] = {}  # (wave, machine) -> its members' contributions
         for inc in self.incidents.values():
+            if inc.get("wave") and inc["contribution"]:
+                in_waves.setdefault((inc["wave"], _host(inc)), []).append(inc["contribution"])
+                continue
             by_host[_host(inc)] = by_host.get(_host(inc), 0.0) + inc["contribution"]
+        for (_, host), contributions in in_waves.items():
+            by_host[host] = by_host.get(host, 0.0) + wave_points(contributions)
         self._host_risk = {h: _score(v) for h, v in by_host.items()}
         if self.settings.risk_scope == "host":
             # Each machine on its own: the headline is the worst machine, not the sum of all of them.
@@ -844,6 +872,7 @@ class Saguaro(Agent):
         r = self._compute(now)
         self._sla_reminders(now, r)
         self._notify_open_incidents(now, r)
+        self._wave_updates(now)
         self._band_changes(now, r)
         if r["risk_index"] >= self.settings.threshold:
             if not self._above_threshold:
@@ -964,6 +993,12 @@ class Saguaro(Agent):
 
     def _notify(self, now: float, kind: str, incident_id: str | None, recipients: list[str], title: str,
                 text: str, buttons: list[dict[str, str]]) -> dict[str, Any]:
+        inc = self.incidents.get(incident_id) if incident_id else None
+        if inc is not None and (wave := self.waves.get(inc.get("wave"))) is not None:
+            # A wave member: counted into the wave's next summary instead of sent on its own.
+            self.waves.fold(wave, kind)
+            self._timeline(inc, now, "notified", f"{kind.replace('_', ' ')} folded into the {wave['id']} summary")
+            return {"id": None, "incident": incident_id, "kind": kind, "folded": wave["id"]}
         nid = f"ntf-{self._next_notif:04d}"
         self._next_notif += 1
         r = self._last_risk
@@ -1001,6 +1036,78 @@ class Saguaro(Agent):
             self._timeline(inc, now, "notified", f"{kind.replace('_', ' ')} queued for {', '.join(recipients)} ({nid})")
         return n
 
+    # ------------------------------------------------------------------- waves
+    def _join_wave(self, inc: dict[str, Any], now: float) -> None:
+        """Put a new incident in its wave (waves.py), or start one when enough addresses are at it."""
+        joined = self.waves.consider(inc, self.incidents, now)
+        if joined is None:
+            return
+        wave, members = joined
+        for m in members:
+            self._timeline(m, now, "wave", f"Part of {wave['id']}: {len(wave['addresses'])} addresses doing the "
+                                           f"same to {wave['host']}; alerts go into its summary")
+        if len(members) > 1 or len(wave["incidents"]) == 1:  # it just started
+            self.scribe.record(self.name, "wave_started", {
+                "wave": wave["id"], "host": wave["host"], "category": wave["category"],
+                "incidents": list(wave["incidents"]), "addresses": list(wave["addresses"])})
+            first = self.incidents.get(wave["incidents"][0], inc)
+            self._notify(now, "wave_started", None, self._recipients(first), self._wave_title(wave),
+                         f"{self._wave_title(wave)} in the last {self.settings.wave_window_min:g} min."
+                         f"{self._wave_networks(wave)}\nThis looks like background noise on a public server. "
+                         f"From now on these come as one summary every {self.settings.wave_update_min:g} min "
+                         f"instead of one alert per address. Approve or block them together on Approvals "
+                         f"(group by type).", [])
+
+    def _wave_title(self, wave: dict[str, Any]) -> str:
+        doing = WAVE_DOING.get(wave["category"], f"{TITLES.get(wave['category'], wave['category']).lower()} on")
+        return f"{wave['id']}: {len(wave['addresses'])} addresses {doing} {wave['host']}"
+
+    def _wave_networks(self, wave: dict[str, Any]) -> str:
+        top = self.waves.top_networks(wave)
+        if not top:
+            return ""
+        share = sum(c for _, c in top) * 100 // max(1, len(wave["addresses"]))
+        return f" Top networks ({share}% of them): " + ", ".join(f"{net} ({c})" for net, c in top) + "."
+
+    def _wave_updates(self, now: float) -> None:
+        """One summary per wave with alerts held back since the last one."""
+        for wave in self.waves.due(now):
+            counts = ", ".join(f"{n} {FOLDED_WORDS.get(k, k.replace('_', ' '))}"
+                               for k, n in sorted(wave["folded"].items(), key=lambda kv: -kv[1]))
+            first = self.incidents.get(wave["incidents"][0]) if wave["incidents"] else None
+            waiting = sum(1 for iid in wave["incidents"] if (i := self.incidents.get(iid)) is not None
+                          and i["status"] == "open" and i.get("_autonomous_denied"))
+            going = "still going" if now - wave["_last_ts"] <= self.waves.window_s else "quiet now"
+            text = (f"{self._wave_title(wave)} ({going}).{self._wave_networks(wave)}\n"
+                    f"Since the last summary: {counts}.")
+            if waiting:
+                text += f"\n{waiting} wait for a person: approve them together on Approvals (group by type)."
+            self.scribe.record(self.name, "wave_update", {"wave": wave["id"], "folded": dict(wave["folded"]),
+                                                          "addresses": len(wave["addresses"])})
+            self._notify(now, "wave_update", None, self._recipients(first) if first else [self.settings.on_duty],
+                         self._wave_title(wave), text, [])
+            self.waves.sent_update(wave, now)
+
+    def _open_list(self) -> list[str]:
+        """Open incident ids for an alert, a wave's members as one entry ("WAVE-001 (312 addresses)")."""
+        out: list[str] = []
+        seen: set[str] = set()
+        for i in self.incidents.values():
+            if i["status"] not in RISK_STATUSES:
+                continue
+            wave = self.waves.get(i.get("wave"))
+            if wave is None:
+                out.append(i["id"])
+            elif wave["id"] not in seen:
+                seen.add(wave["id"])
+                out.append(f"{wave['id']} ({len(wave['addresses'])} addresses)")
+        return out
+
+    def list_waves(self) -> list[dict[str, Any]]:
+        with self.lock:
+            now = self.clock.now()
+            return [self.waves.public(w, now, self.clock.iso) for w in reversed(list(self.waves.waves.values()))]
+
     def _headline(self, inc: dict[str, Any], r: dict[str, Any]) -> str:
         where = f"{inc['host']}"
         who = f", account '{inc['user']}'" if inc.get("user") else ""
@@ -1027,8 +1134,15 @@ class Saguaro(Agent):
             return
         self.scribe.record(self.name, "band_changed", {"from": old, "to": new, "risk_index": r["risk_index"]})
         if band_rank(new) > band_rank(old):
-            open_ids = [i["id"] for i in self.incidents.values() if i["status"] in RISK_STATUSES]
+            open_ids = self._open_list()
             s = self.settings
+            if self.waves.enabled:
+                # Busy server: the index wobbles around a band as blocks start and new addresses arrive.
+                # Say each band once per summary period, not on every wobble.
+                if now - self._band_alerted.get(new, -math.inf) < s.wave_update_min * 60.0:
+                    self._last_band = new
+                    return
+                self._band_alerted[new] = now
             if band_rank(old) < band_rank("red") <= band_rank(new):
                 self._notify(now, "escalation", None, [s.on_duty, s.team_lead],
                              f"Risk RED ({r['risk_index']}/100): team lead copied",
@@ -1472,7 +1586,7 @@ class Saguaro(Agent):
                 "next_notif": self._next_notif, "last_band": self._last_band,
                 "above_threshold": self._above_threshold, "started_ts": self._started_ts,
                 "clock_offset": self.clock._offset,
-            }},
+            }, "waves": self.waves.saved()},
         })
 
     def _restore(self) -> None:
@@ -1490,6 +1604,7 @@ class Saguaro(Agent):
             self._last_band = c.get("last_band", "green")
             self._above_threshold = bool(c.get("above_threshold", False))
             self._started_ts = float(c.get("started_ts", self._started_ts))
+            self.waves.restore(saved["meta"].get("waves"))
             self.events = dict(sorted(saved["events"].items(), key=lambda kv: kv[0]))
             self.actions = sorted(saved["actions"].values(), key=lambda a: a["action_id"])
             by_id = {a["action_id"]: a for a in self.actions}

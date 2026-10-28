@@ -178,6 +178,10 @@ SECTIONS = (
         Field("SENTRAI_HEALTH_URL", "A page that must keep working while SentrAI blocks (checked after each action)"),
         Field("PROTECTED_IPS", "IPs or networks never to block (comma-separated)", "127.0.0.1,::1,localhost"),
         Field("PROTECTED_USERS", "More accounts never to lock (admin and service accounts always are)"),
+        Field("BUSY_SERVER", "Busy server (game server, big network): group many attackers into one wave and alert "
+              "with a summary", "off", choices=("off", "on"), advanced=True),
+        Field("TRUSTED_IPS", "Known-good IPs or networks never analysed (players' relay, CDN, monitoring)",
+              advanced=True),
         Field("ON_DUTY", "On-duty responder shown in alerts (name, ID, shift)", "On-duty responder"),
     )),
     Section("notifications", "4. Notifications", "Email alerts. Telegram and Slack alerts are extensions, "

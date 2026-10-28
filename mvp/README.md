@@ -132,6 +132,9 @@ behind an arrow.
 | `PROTECTED_USERS` | empty | core: more accounts never auto-locked; admin and service accounts (root, admin, administrator, www-data, nginx, postgres, ...) are always protected |
 | `PROTECTED_NETS` | private ranges | core: networks Countersign never blocks on its own (an operator still can); `10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,100.64.0.0/10,fc00::/7` by default, `off` for a lab whose attackers sit on a private network |
 | `INFRA_ALLOWLIST` | empty | core: gateways, DNS, monitoring and other infrastructure never blocked (addresses or networks). This machine's DNS servers and default gateway are added automatically (`INFRA_AUTODETECT=0` turns that off) |
+| `BUSY_SERVER` | `off` | core: `on` groups many addresses doing the same attack to one machine into one wave (one alert, a summary every `WAVE_UPDATE_MIN`, a capped share of the risk index); for game servers and big networks |
+| `WAVE_MIN_ADDRESSES` / `WAVE_WINDOW_MIN` / `WAVE_UPDATE_MIN` / `WAVE_CATEGORIES` | `10` with `BUSY_SERVER=on`, else `0` (off) / `15` / `15` / `port_scan,brute_force` | core: how many addresses within how many minutes make a wave, minutes between its summaries, which kinds can make one |
+| `TRUSTED_IPS` | empty | core: addresses or networks (a players' relay, a CDN, monitoring) whose lines are never analysed; a decoy touch is still reported |
 | `CONTAIN_MIN_SEVERITY` / `CONTAIN_MIN_POINTS` | `high` / `20` | core: an incident is only contained without a person when its own severity and points reach these, whatever the overall risk index |
 | `SENTRAI_FIREWALL` | `off` | core: also block IPs in the host firewall (`auto`, `nftables`, `iptables`, `netsh`); `off` keeps blocks on SentrAI's own blocklist only |
 | `SENTRAI_FIREWALL_ENFORCE` | `0` | core: `0` is a dry run that only logs the firewall command; `1` really runs it (needs admin/root) |

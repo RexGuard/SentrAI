@@ -557,7 +557,7 @@ def _get(base_url: str, what: str) -> Any:
     c = CoreClient(base_url, token=TOKEN)
     return {"risk": c.risk, "incidents": c.incidents, "blocklist": c.blocklist, "agents": c.agents,
             "machines": c.machines, "fleet": c.fleet_agents, "extensions": c.extensions,
-            "audit": lambda: c.audit(AUDIT_WINDOW), "staff": c.staff_reports}[what]()
+            "audit": lambda: c.audit(AUDIT_WINDOW), "staff": c.staff_reports, "waves": c.waves}[what]()
 
 
 def held() -> bool:
@@ -1928,20 +1928,34 @@ def page_incidents() -> None:
 
     with card():
         section("Needs attention", "most urgent first", "notification_important")
-        todo = sh.needs_attention(incidents)
-        if not todo:
+        todo, todo_waves = sh.split_waves(sh.needs_attention(incidents))
+        if not todo and not todo_waves:
             empty("Nothing needs a person right now. Every open incident is in hand.", "check_circle", good=True)
+        for wid, members in todo_waves.items():  # a busy server's background noise: one line per wave
+            st.markdown(f"**{wid}** · {sh.wave_line(members)}. Approve or reject them together on "
+                        "**Approvals** (group by type).")
         for inc in todo:
             note = f"{inc.get('owner') or 'no owner'} · {'; '.join(sh.attention(inc))}"
             incident_row(inc, "todo", note, lambda inc=inc: incident_card(inc, contacts, "todo_"))
 
+    waves, _ = fetch("waves", [])
+    if waves:
+        with card():
+            section("Waves", "many addresses doing the same thing to one machine, handled as one", "groups")
+            st.caption("On a busy server, scans and password guessing from many addresses are grouped: one alert "
+                       "when a wave starts, then a summary every few minutes. Each address keeps its own "
+                       "incident below.")
+            table(sh.wave_rows(waves), "")
+
     with card():
         section("All incidents", "owner, backup and what each one still needs", "assignment_ind")
-        t1, t2 = st.columns(2)
+        t1, t2, t3 = st.columns(3)
         closed = t1.toggle("Show resolved and rejected", key="board_closed")
         mine = t2.toggle(f"Only mine ({me})", key="board_mine")
+        grouped = t3.toggle("One row per wave", value=True, key="board_waves", disabled=not waves,
+                            help="Many addresses doing the same thing to one machine are one row")
         shown = [i for i in incidents if not mine or str(i.get("owner") or "").lower().lstrip("@") == me.lower().lstrip("@")]
-        table(sh.board_rows(shown, include_closed=closed), "No incidents. All quiet at the gate.")
+        table(sh.board_rows(shown, include_closed=closed, group_waves=grouped), "No incidents. All quiet at the gate.")
         ids = [str(i.get("id")) for i in shown if closed or i.get("status") in sh.OPEN_STATUSES]
         if ids:
             pick = st.selectbox("Open one to assign, resolve or decide", ["-", *ids], key="board_pick")

@@ -66,6 +66,34 @@ that target there is no `incidents` list, and `answer` says `192.0.2.77 is not i
 curl -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:8000/helpdesk/why?target=203.0.113.45"
 ```
 
+### `GET /waves`
+
+Waves, newest first. A wave is many addresses doing the same kind of attack (a scan, password
+guessing) to one machine within a few minutes, the background noise of a public game server or a big
+network. Each address keeps its own incident, which carries the wave's `id` in its `wave` field; the
+wave counts on the risk index about as much as its worst incident, and its alerts arrive as one
+summary every few minutes. Waves are on with `BUSY_SERVER=on` (or `WAVE_MIN_ADDRESSES`), see
+[Busy servers](../settings.html#busy-servers).
+
+**Returns**
+
+```json
+[
+  {
+    "id": "WAVE-001",
+    "host": "game-01",
+    "category": "port_scan",
+    "addresses": 312,
+    "incidents": ["RSK-2026-081", "RSK-2026-082"],
+    "networks": [{"network": "45.0.1.0/24", "addresses": 120}],
+    "started_at": "2026-10-28T14:02:11+08:00",
+    "last_seen_at": "2026-10-28T14:31:40+08:00",
+    "active": true,
+    "updates_sent": 2
+  }
+]
+```
+
 ## Decide what happens next
 
 Each of these answers with the updated [incident record](#the-incident-record) and adds a line to its
@@ -394,6 +422,7 @@ What every incident endpoint answers with, trimmed:
 | `owner`, `owner_id`, `backup`, `backup_id` | who handles it and who takes over when they do not answer; the ids are routing contacts, `null` for a name outside the routing file |
 | `assigned_by`, `assigned_at`, `route`, `notify` | `routing: <rule>`, an operator or `escalation`; when; the routing rule that matched; who else it told |
 | `escalation_level`, `escalations` | each move to the backup after unanswered reminders: `from`, `to`, `at`, `level`, `why` |
+| `wave` | the [wave](#get-waves) it is part of (`WAVE-001`), when many addresses did the same thing to this machine at once; absent otherwise |
 | `resolved_by`, `resolution` | who resolved it and the note; `auto-close` when a port scan or password guessing went quiet for 60 minutes (`AUTO_CLOSE_QUIET_MIN`) |
 | `reputation`, `planned_by` | only sometimes: what AbuseIPDB knows about `src_ip` when a key is set, and `Cyanide` when the AI responder planned the steps |
 
