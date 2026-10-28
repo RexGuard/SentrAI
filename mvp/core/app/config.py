@@ -64,6 +64,10 @@ def _set(name: str, default: str) -> set[str]:
     return {x.strip() for x in os.getenv(name, default).split(",") if x.strip()}
 
 
+def _busy() -> bool:
+    return os.getenv("BUSY_SERVER", "off").strip().lower() not in protect.OFF
+
+
 def _type_hours(text: str) -> dict[str, float]:
     """'lock_user=1, block_ip=4' -> {'lock_user': 1.0, 'block_ip': 4.0}; bad entries are skipped."""
     out: dict[str, float] = {}
@@ -113,6 +117,18 @@ class Settings:
     auto_close_categories: set[str] = field(
         default_factory=lambda: {x.strip() for x in os.getenv("AUTO_CLOSE_CATEGORIES", "port_scan,brute_force").split(",") if x.strip()}
     )
+    # Busy servers (game servers, big networks; waves.py). BUSY_SERVER=on turns waves on with the defaults
+    # below; each value can still be set on its own. WAVE_MIN_ADDRESSES=0 keeps waves off.
+    busy_server: bool = field(default_factory=_busy)
+    # This many addresses doing the same kind of attack to one machine within WAVE_WINDOW_MIN make one wave:
+    # one alert, one share of the risk index, and a summary every WAVE_UPDATE_MIN instead of one alert each.
+    wave_min_addresses: int = field(default_factory=lambda: _i("WAVE_MIN_ADDRESSES", 10 if _busy() else 0))
+    wave_window_min: float = field(default_factory=lambda: _f("WAVE_WINDOW_MIN", 15.0))
+    wave_update_min: float = field(default_factory=lambda: _f("WAVE_UPDATE_MIN", 15.0))
+    wave_categories: set[str] = field(default_factory=lambda: _set("WAVE_CATEGORIES", "port_scan,brute_force"))
+    # Known-good addresses or networks (a players' relay, a CDN, monitoring): their lines are never analysed.
+    # Unlike PROTECTED_IPS (never blocked, still watched), nothing from these opens an incident.
+    trusted_ips: set[str] = field(default_factory=lambda: protect.split(os.getenv("TRUSTED_IPS", "")))
     watchdog_silence_s: float = field(default_factory=lambda: _f("WATCHDOG_SILENCE_S", 30.0))
     tick_s: float = field(default_factory=lambda: _f("TICK_S", 1.0))
     # Integrity guard (integrity.py): how often the audit chain is re-checked, and how big a clock

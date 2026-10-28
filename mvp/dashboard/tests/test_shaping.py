@@ -689,3 +689,24 @@ def test_hardware_tables_and_charts():
     assert [t.name for t in fig.data] == ["CPU", "Memory", "Fullest disk"]
     assert [t.name for t in sh.network_figure(df).data] == ["In"]
     assert sh.usage_figure(sh.hardware_frame([]), {}).data == ()
+
+
+def test_waves_fold_into_one_board_row_and_one_attention_line():
+    scan = {"category": "port_scan", "host": "game-01", "severity": "medium", "status": "open", "owner": "Amir"}
+    members = [{**scan, "id": f"R{n}", "src_ip": f"198.51.100.{n}", "wave": "WAVE-001"} for n in range(30)]
+    other = {"id": "S1", "category": "sql_injection", "host": "game-01", "severity": "high", "status": "open"}
+    singles, waves = sh.split_waves([*members, other])
+    assert [i["id"] for i in singles] == ["S1"] and len(waves["WAVE-001"]) == 30
+    assert sh.wave_line(waves["WAVE-001"]) == "30 addresses scanning game-01 need a person"
+    df = sh.board_rows([*members, other], group_waves=True)
+    assert sorted(df["Incident"]) == ["S1", "WAVE-001 (30)"]
+    row = df[df["Incident"] == "WAVE-001 (30)"].iloc[0]
+    assert row["Status"] == "30 open" and row["Owner"] == "Amir"
+    assert len(sh.board_rows([*members, other])) == 31  # not grouped: one row each
+    w = sh.wave_rows([{"id": "WAVE-001", "category": "port_scan", "host": "game-01", "addresses": 30,
+                       "networks": [{"network": "198.51.100.0/24", "addresses": 30}],
+                       "started_at": "2026-10-28T14:02:11+08:00", "last_seen_at": "2026-10-28T14:31:40+08:00",
+                       "active": True}])
+    assert list(w.iloc[0][["Wave", "Addresses", "Top networks", "Started", "Now"]]) == [
+        "WAVE-001", 30, "198.51.100.0/24 (30)", "14:02", "Going"]
+    assert sh.wave_rows([]).empty
