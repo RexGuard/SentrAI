@@ -194,3 +194,11 @@ describe("canvas: the panel", () => {
     assert.equal(over.x, 800 - 200 - 4, "kept inside on the right");
   });
 });
+
+describe("canvas: it fills the page", () => {
+  test("it runs from where it starts to the bottom of the window, never shorter than the minimum", () => {
+    assert.equal(c.fillHeight(200, 1000), 1000 - 200 - c.BOTTOM_GAP);
+    assert.equal(c.fillHeight(900, 1000), c.MIN_H);
+    assert.equal(c.fillHeight(-50, 800), 800 - c.BOTTOM_GAP);
+  });
+});
