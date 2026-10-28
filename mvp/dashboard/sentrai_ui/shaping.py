@@ -8,6 +8,7 @@ import hashlib
 import html
 import ipaddress
 import json
+import math
 import re
 from datetime import datetime, timezone
 from typing import Any, Iterable
@@ -1459,7 +1460,7 @@ def my_routing(routing: dict | None, cid: str) -> dict:
             "numbers": [i + 1 for i, _ in picked]}
 
 
-# ------------------------------------------------- "How an attack is handled" map (flow_map.mjs)
+# ------------------------------------------------- the pipeline's steps (flow_canvas.mjs, pipeline ribbon)
 
 # Every kind of action the core takes (core/app/agents.py ACTION_TEXT), in plain words, in a fixed order.
 ACTION_WORDS = {"block_ip": "block an address", "rate_limit": "slow an address down", "waf_rule": "add a web firewall rule",
@@ -1478,9 +1479,10 @@ def _ext_on(row: dict | None) -> bool:
 def flow_map_data(risk: dict | None, incidents: Iterable[dict] | None, agents: Iterable[dict] | None,
                   blocklist: dict | None, extensions: Iterable[dict] | None, records: list[dict] | None,
                   settings: dict[str, str] | None, chain_ok: bool | None = None) -> dict:
-    """The steps an attack goes through, each with what it is doing right now, for the read-only map:
-    logs come in, get sorted, scored, then wait for a person or are acted on, blocked, and the owner and
-    alert channels hear about it, all written down. Each step names the page that shows it in full."""
+    """The steps an attack goes through, each with what it is doing right now, for the overview canvas and
+    the ribbon on each step's page: logs come in, get sorted, scored, then wait for a person or are acted on,
+    blocked, and the owner and alert channels hear about it, all written down. Each step names the page that
+    shows it in full."""
     risk, settings = risk or {}, settings or {}
     incidents, agents, records = list(incidents or []), list(agents or []), list(records or [])
     blocklist = blocklist or {}
@@ -1581,6 +1583,269 @@ def pipeline_ribbon(flow: dict) -> list[dict]:
              ("block", "blocked now"))
     return [{"value": by_id[k]["value"], "label": label, "page": by_id[k]["page"], "state": by_id[k]["state"]}
             for k, label in words if k in by_id]
+
+
+# ------------------------------------------------- Pipeline overview canvas (flow_canvas.mjs)
+
+# The settings each step's block offers on the canvas: its own, from the same fields as the Configuration
+# page and Automation guardrails, so a value saved here shows there too. Never a key or a token.
+BLOCK_SETTINGS = {
+    "logs": ("SENTRAI_LAB_LOGS", "SENTRAI_LOG_ACCESS", "SENTRAI_LOG_AUTH", "SENTRAI_LOG_DB", "SENTRAI_LOG_OS"),
+    "sort": ("BRUTE_FORCE_COUNT", "BRUTE_FORCE_WINDOW_S", "EXPORT_ROWS_THRESHOLD"),
+    "score": ("RISK_THRESHOLD",),
+    "ask": ("SLA_HOURS",),
+    "auto": ("AUTO_ACTIONS", "MAX_AUTO_ACTIONS_PER_HOUR", "NEEDLE_MIN_CONFIDENCE"),
+    "block": ("HOTPATCH_TTL_HOURS", "MAX_TTL_HOURS", "PROTECTED_IPS", "PROTECTED_USERS", "SENTRAI_HEALTH_URL"),
+    "alerts": ("SMTP_HOST", "SMTP_PORT", "SMTP_SECURITY", "SMTP_USER", "ALERT_EMAIL_FROM", "ALERT_EMAIL_TO",
+               "SENTRAI_EMAIL_MODE", "ON_DUTY"),
+}
+# Which step an extension plugs into, and which way things go: alerts and blocks go out to the service,
+# lookups and AI verdicts come in to the sorting step.
+EXTENSION_STEPS = {"Alerts": ("alerts", "out"), "Blocking": ("edge", "out"), "Classifier": ("sort", "in"),
+                   "Lookups": ("sort", "in"), "Other": ("record", "out")}
+EXTENSION_ICONS = {"Alerts": "send", "Blocking": "public", "Classifier": "smart_toy", "Lookups": "travel_explore",
+                   "Other": "extension"}
+CANVAS_MOST = {"ids": 400, "notes": 100, "note_chars": 2000, "wires": 500, "coord": 100_000, "id_chars": 200}
+_NOTE_ID = re.compile(r"note:\d{1,6}")
+
+
+def setting_specs(envs: Iterable[str], fields: dict, values: dict[str, str]) -> list[dict]:
+    """The settings a block's panel shows, from the same fields as the Configuration page (sentrai_config.Field):
+    label, saved value, kind (int, float, choice, set or str) and the choices. A key, token or generated value
+    never goes to the browser."""
+    out = []
+    for env in envs:
+        f = fields.get(env)
+        if f is None or getattr(f, "secret", False) or getattr(f, "generated", False):
+            continue
+        kind = "int" if f.kind is int else "float" if f.kind is float else "choice" if f.choices else "str"
+        choices: list = list(f.choices)
+        if env == "AUTO_ACTIONS":  # a set of the actions the core knows, as tick boxes
+            kind, choices = "set", [[k, v] for k, v in ACTION_WORDS.items()]
+        out.append({"env": env, "label": f.prompt, "value": str(values.get(env, f.default)), "default": str(f.default),
+                    "kind": kind, "choices": choices})
+    return out
+
+
+def check_block_settings(changes: Any, specs: Iterable[dict] | None) -> dict[str, str]:
+    """A block's Save checked again here: only settings the block offers, each of the right kind. The values,
+    cleaned, or ValueError with a reason a person can act on. The guardrail limits get check_limits after."""
+    changes = changes if isinstance(changes, dict) else {}
+    by_env = {s["env"]: s for s in specs or []}
+    out: dict[str, str] = {}
+    for env, raw in changes.items():
+        s = by_env.get(str(env))
+        if s is None:
+            raise ValueError(f"{env} is not a setting of this block")
+        value = str(raw if raw is not None else "").strip()
+        if len(value) > 2000:
+            raise ValueError(f"{s['label']} is too long")
+        if s["kind"] == "int":
+            try:
+                int(value)
+            except ValueError:
+                raise ValueError(f"{s['label']} must be a whole number") from None
+        elif s["kind"] == "float":
+            try:
+                number = float(value)
+            except ValueError:
+                raise ValueError(f"{s['label']} must be a number") from None
+            if not math.isfinite(number):
+                raise ValueError(f"{s['label']} must be a number")
+        elif s["kind"] == "choice":
+            if value not in s["choices"]:
+                raise ValueError(f"{s['label']} must be one of: {', '.join(s['choices'])}")
+        elif s["kind"] == "set":
+            keys = [k for k, _ in s["choices"]]
+            picked = [x.strip() for x in value.split(",") if x.strip()]
+            if any(p not in keys for p in picked):
+                raise ValueError("an action SentrAI does not know was in the list")
+            value = ",".join(k for k in keys if k in picked)
+        out[str(env)] = value
+    if not out:
+        raise ValueError("nothing changed")
+    return out
+
+
+def clean_canvas_doc(raw: Any) -> dict:
+    """The saved canvas file (overview-canvas.json), in shape: which default blocks are hidden, which others were
+    added, the notes, where each block sits and the wires drawn or taken away by hand. Anything else in the
+    file is dropped, so a hand-edited or damaged file never breaks the page."""
+    raw = raw if isinstance(raw, dict) else {}
+    most = CANVAS_MOST
+
+    def an_id(x: Any) -> bool:
+        return isinstance(x, str) and 0 < len(x) <= most["id_chars"]
+
+    def ids(v: Any) -> list[str]:
+        return list(dict.fromkeys(x for x in (v if isinstance(v, list) else []) if an_id(x)))[:most["ids"]]
+
+    notes = {k: v[:most["note_chars"]] for k, v in (raw.get("notes") or {}).items()
+             if isinstance(k, str) and _NOTE_ID.fullmatch(k) and isinstance(v, str)} if isinstance(raw.get("notes"), dict) else {}
+    notes = dict(list(notes.items())[:most["notes"]])
+    pos: dict[str, list[int]] = {}
+    for k, v in (raw.get("pos") or {}).items() if isinstance(raw.get("pos"), dict) else []:
+        if an_id(k) and isinstance(v, list) and len(v) == 2 and all(
+                isinstance(n, (int, float)) and not isinstance(n, bool) and math.isfinite(n) for n in v):
+            pos[k] = [int(max(-most["coord"], min(most["coord"], round(n)))) for n in v]
+        if len(pos) >= most["ids"]:
+            break
+
+    def pairs(v: Any) -> list[list[str]]:
+        out, seen = [], set()
+        for w in v if isinstance(v, list) else []:
+            if isinstance(w, list) and len(w) == 2 and all(an_id(x) for x in w) and w[0] != w[1] and tuple(w) not in seen:
+                seen.add(tuple(w))
+                out.append([w[0], w[1]])
+            if len(out) >= most["wires"]:
+                break
+        return out
+
+    wires = raw.get("wires") if isinstance(raw.get("wires"), dict) else {}
+    return {"version": 1, "hidden": ids(raw.get("hidden")), "added": ids(raw.get("added")), "notes": notes, "pos": pos,
+            "wires": {"added": pairs(wires.get("added")), "removed": pairs(wires.get("removed"))}}
+
+
+def extension_removal_note(kind: Any, title: str) -> str:
+    """What turning an extension off will do, said before the person confirms (Extensions page and canvas)."""
+    what = {"Blocking": f"Blocks it added at {title} are taken out there again; SentrAI's own blocks stay.",
+            "Alerts": f"Alerts stop going to {title} within 15 seconds; the console and email still get them.",
+            "Classifier": f"Events are classified by the rules and the keyword fallback, without {title}.",
+            "Lookups": f"New incidents get no {title} lookups; what earlier ones show stays."}.get(kind, "")
+    return f"{what} Its settings are kept, so adding it back restores it.".strip()
+
+
+def _short(text: Any, most: int = 90) -> str:
+    text = " ".join(str(text or "").split())
+    return text if len(text) <= most else text[:most - 1].rstrip() + "…"
+
+
+def machine_block(m: dict, panel: bool, now: datetime | None = None) -> dict:
+    """One machine as a block on the canvas: its risk number, what state it is in, and its facts for the panel.
+    On a central panel the block opens the machine's own page; otherwise the Machines page."""
+    host = str(m.get("host") or m.get("name") or "")
+    _, state_word, _ = _machine_state(m)
+    online, idx = bool(m.get("online")), m.get("index")
+    open_, contained, blocked = int(m.get("open") or 0), int(m.get("contained") or 0), int(m.get("blocked") or 0)
+    if m.get("waiting"):
+        state = "unknown"
+    elif not online:
+        state = "alert"
+    elif open_ or m.get("band") in ("red", "critical"):
+        state = "alert"
+    elif m.get("monitor_only") or m.get("band") == "amber":
+        state = "busy"
+    else:
+        state = "ok"
+    bits = [state_word.lower()]
+    if open_:
+        bits.append(plural(open_, "open incident"))
+    if blocked:
+        bits.append(f"{plural(blocked, 'block')} in force")
+    if "last_seen" in m and not m.get("waiting"):
+        bits.append(f"seen {seen_ago(m.get('last_seen'), now)}")
+    facts = [["Status", state_word]]
+    if online and idx is not None:
+        facts.append(["Risk", f"{idx:.0f} of 100 · acts from {float(m.get('threshold') or 80):.0f}"])
+    if "open" in m:
+        found = [f"{open_} open" if open_ else "", f"{contained} contained" if contained else ""]
+        facts.append(["Incidents", " · ".join(x for x in found if x) or "none open"])
+        facts.append(["Blocks", f"{blocked} in force" if blocked else "none"])
+    if "last_seen" in m:
+        facts.append(["Last seen", seen_ago(m.get("last_seen"), now)])
+    if m.get("hardware"):
+        facts.append(["Hardware", hardware_text(m.get("hardware"))])
+    if m.get("services"):
+        facts.append(["Services", services_text(m["services"])])
+    if m.get("place"):
+        facts.append(["Where", str(m["place"])])
+    if panel and m.get("host"):
+        what = (f"{m.get('name') or host} reports to this panel: its logs come in here and SentrAI scores and "
+                "blocks on it on its own. Click Open for its incidents, blocks, hardware and agent.")
+    elif m.get("place") == "Remote":
+        what = f"{m.get('name') or host}: another SentrAI core, listed in SENTRAI_PEERS, watched from here."
+    else:
+        what = "This computer: the logs SentrAI reads here and everything it does about them."
+    return {"id": f"machine:{host}", "kind": "machine", "step": "logs", "title": str(m.get("name") or host), "icon": "dns",
+            "what": what, "value": "-" if idx is None or not online else f"{float(idx):.0f}",
+            "unit": "" if idx is None or not online else "/ 100", "note": _short(" · ".join(bits)), "state": state,
+            "badge": None, "page": "machine" if panel and m.get("host") else "machines",
+            "host": host if panel and m.get("host") else "", "settings": [], "facts": facts}
+
+
+def extension_block(r: dict, fields: dict, ext_fields: dict[str, Iterable[str]], values: dict[str, str],
+                    managed: bool = False) -> dict:
+    """One extension as a block: on or off, set up or not, its settings (never its key) and the step it plugs
+    into. The switch turns it on or off like the Extensions page's Add and Remove."""
+    name, title = str(r.get("name") or ""), str(r.get("title") or r.get("name") or "")
+    kind = str(r.get("kind") or "Other")
+    step, direction = EXTENSION_STEPS.get(kind, EXTENSION_STEPS["Other"])
+    added, configured = bool(r.get("added")), bool(r.get("configured"))
+    trouble = str(r.get("error") or r.get("last_error") or "")
+    if added and trouble:
+        state, note = "alert", trouble
+    elif added and configured:
+        state, note = "ok", str(r.get("detail") or "on")
+    elif added:
+        state, note = "alert", "on, but not set up: it needs its key"
+    else:
+        state, note = "off", "off · turn it on in the panel"
+    facts = [["Kind", kind], ["State", "On" if added else "Off"]]
+    if added and r.get("configured") is not None:
+        facts.append(["Set up", "yes" if configured else "no, it needs its key"])
+    if r.get("last_ok"):
+        facts.append(["Last worked", str(r["last_ok"])])
+    if trouble:
+        facts.append(["Problem", trouble])
+    if r.get("changed_by") and r.get("added_by") == "dashboard":
+        facts.append(["Changed", f"{'added' if added else 'removed'} by {r['changed_by']}, {day_time(r.get('changed_at'))}"])
+    if added and r.get("detail"):
+        facts.append(["Detail", str(r["detail"])])
+    return {"id": f"ext:{name}", "kind": "ext", "step": step, "direction": direction, "title": title,
+            "icon": EXTENSION_ICONS.get(kind, "extension"), "what": str(r.get("what") or ""), "value": None, "unit": "",
+            "note": _short(note), "state": state, "badge": "On" if added else "Off", "page": "extensions", "host": "",
+            "settings": setting_specs(ext_fields.get(name, ()), fields, values), "facts": facts,
+            "switch": {"name": name, "title": title, "on": added, "managed": bool(managed),
+                       "off_note": extension_removal_note(kind, title)}}
+
+
+def flow_canvas_data(flow: dict, machines: Iterable[dict] | None, extensions: Iterable[dict] | None,
+                     settings: dict[str, str] | None, fields: dict, ext_fields: dict[str, Iterable[str]] | None,
+                     doc: Any, read_only: bool = False, lock_reason: str = "", results: Iterable[dict] | None = None,
+                     panel: bool = False, ext_managed: bool = False, now: datetime | None = None) -> dict:
+    """What the canvas draws: every block that can be on it (the steps from flow_map_data, each machine, each
+    installed extension) with what it is doing now and the settings it offers, the wires between them, which
+    blocks are on by default, the saved layout and its version, whether this person may change anything, and
+    the answers to the canvas's last requests."""
+    settings = settings or {}
+    blocks = [{**n, "id": f"step:{n['id']}", "kind": "step", "host": "",
+               "settings": setting_specs(BLOCK_SETTINGS.get(n["id"], ()), fields, settings), "facts": []}
+              for n in flow.get("nodes") or []]
+    wires = [{"from": f"step:{e['from']}", "to": f"step:{e['to']}", "live": bool(e.get("live"))}
+             for e in flow.get("edges") or []]
+    live = {b["id"]: b["state"] in ("busy", "alert") for b in blocks}
+    for m in machines or []:
+        if not isinstance(m, dict) or not (m.get("host") or m.get("name")):
+            continue
+        b = machine_block(m, panel, now)
+        blocks.append(b)
+        wires.append({"from": b["id"], "to": "step:logs", "live": b["state"] == "alert" and live.get("step:logs", False)})
+    defaults = [b["id"] for b in blocks]
+    for r in extensions or []:
+        if not isinstance(r, dict) or r.get("built_in") or not r.get("name"):
+            continue
+        b = extension_block(r, fields, ext_fields or {}, settings, ext_managed)
+        blocks.append(b)
+        step = f"step:{b['step']}"
+        a, z = (step, b["id"]) if b["direction"] == "out" else (b["id"], step)
+        wires.append({"from": a, "to": z, "live": b["state"] == "ok" and live.get(step, False)})
+        if b["switch"]["on"]:
+            defaults.append(b["id"])
+    doc = clean_canvas_doc(doc)
+    return {"blocks": blocks, "wires": wires, "defaults": defaults, "doc": doc,
+            "version": hashlib.sha256(json.dumps(doc, sort_keys=True).encode()).hexdigest()[:16],
+            "read_only": bool(read_only), "lock_reason": lock_reason, "results": [r for r in results or [] if isinstance(r, dict)],
+            "panel": bool(panel)}
 
 
 # What each step's page says under "How this step works": a few plain sentences, the answer first.

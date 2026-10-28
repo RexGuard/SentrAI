@@ -22,6 +22,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import streamlit as st
+from streamlit.errors import StreamlitInvalidLayoutContextError
 
 from sentrai_ui import shaping as sh
 from sentrai_ui import signin
@@ -101,9 +102,9 @@ ROUTING_EDITOR = st.components.v2.component(
 LIMITS_MAP = st.components.v2.component(
     "limits_map", js=(_UI / "limits_map.mjs").read_text(encoding="utf-8"),
     css=(_UI / "limits_map.css").read_text(encoding="utf-8")) if hasattr(st.components, "v2") else None
-FLOW_MAP = st.components.v2.component(
-    "flow_map", js=(_UI / "flow_map.mjs").read_text(encoding="utf-8"),
-    css=(_UI / "flow_map.css").read_text(encoding="utf-8")) if hasattr(st.components, "v2") else None
+FLOW_CANVAS = st.components.v2.component(
+    "flow_canvas", js=(_UI / "flow_canvas.mjs").read_text(encoding="utf-8"),
+    css=(_UI / "flow_canvas.css").read_text(encoding="utf-8")) if hasattr(st.components, "v2") else None
 
 
 def _apply_streamlit_theme() -> bool:
@@ -1433,12 +1434,7 @@ def extension_chip(r: dict) -> str:
 
 def removal_note(r: dict) -> str:
     """What removing it will do, said before the person confirms."""
-    title = r.get("title") or r["name"]
-    what = {"Blocking": f"Blocks it added at {title} are taken out there again; SentrAI's own blocks stay.",
-            "Alerts": f"Alerts stop going to {title} within 15 seconds; the console and email still get them.",
-            "Classifier": f"Events are classified by the rules and the keyword fallback, without {title}.",
-            "Lookups": f"New incidents get no {title} lookups; what earlier ones show stays."}.get(r.get("kind"), "")
-    return f"{what} Its settings are kept, so adding it back restores it.".strip()
+    return sh.extension_removal_note(r.get("kind"), r.get("title") or r["name"])
 
 
 def removed_message(r: dict, out: dict) -> tuple[str, str]:
@@ -2355,7 +2351,7 @@ def backup_suggestion(mid: Any, n: int, s: dict) -> None:
 
 
 def flow_data() -> dict:
-    """What every step of the pipeline is doing now (shaping.flow_map_data), for the overview map and the
+    """What every step of the pipeline is doing now (shaping.flow_map_data), for the overview canvas and the
     live-numbers ribbon on each step's page."""
     risk, _ = fetch("risk", {})
     incidents, _ = fetch("incidents", [])
@@ -2367,27 +2363,186 @@ def flow_data() -> dict:
     return sh.flow_map_data(risk, incidents, agents, blocklist, exts, records, settings, valid)
 
 
+CANVAS_FILE = "overview-canvas.json"  # where each block sits on the Pipeline overview, and its notes; next to the settings
+RESULTS_KEPT = 12  # the canvas's last answers (by request id), handed back until the browser has taken them
+_NAME = re.compile(r"[a-z][a-z0-9_]{1,31}")  # an extension's name (sentrai_extensions)
+
+
+def canvas_doc() -> dict:
+    """The saved canvas layout, in shape (empty when nobody has moved anything yet)."""
+    try:
+        raw = json.loads((cfg.config_path().parent / CANVAS_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        raw = {}
+    return sh.clean_canvas_doc(raw)
+
+
+def canvas_data(risk: dict) -> dict:
+    """Everything the canvas draws: the steps with their live numbers, each machine, each extension, the
+    settings each block offers, the saved layout and this person's rights."""
+    exts, _ = fetch("extensions", [])
+    exts = [r for r in exts or [] if isinstance(r, dict)]
+    settings = {f.env: f.default for f in cfg.FIELDS.values()} | cfg.read()
+    return sh.flow_canvas_data(flow_data(), machines(), exts, settings, cfg.FIELDS,
+                               {n: [f.env for f in s.fields] for n, s in cfg.EXTENSION_SECTIONS.items()}, canvas_doc(),
+                               read_only=locked("configure"), lock_reason=why_locked("configure") or "",
+                               results=st.session_state.get("fc_results"), panel=panel_mode(risk),
+                               ext_managed=any(r.get("added_by") == "SENTRAI_EXTENSIONS" for r in exts))
+
+
 @st.fragment(run_every=AUTO)
 def page_flow() -> None:
-    """The pipeline, as one live map of what each step is doing now. Only looks: click a step to open its page.
-    The policy it follows has its own page (Automation guardrails), which does not refresh under your typing."""
+    """The pipeline as a canvas: every step, machine and extension is a block with its live numbers. Drag them
+    anywhere, open one for its settings, add or take blocks off, draw wires, join a new machine. The layout saves
+    itself. The policy SentrAI follows keeps its own page (Automation guardrails), which does not refresh under
+    your typing."""
     show_flash()
-    if header("Pipeline overview", "what each step is doing right now · point at a step for what it does, "
-              "click it to open it") is None:
+    risk = header("Pipeline overview", "every step, machine and extension as a block · click one for its numbers "
+                  "and settings, drag it anywhere, + Add for more")
+    if risk is None:
         return
-    data = flow_data()
-    with card():
-        if FLOW_MAP is None:
-            st.caption("This Streamlit is too old to draw the map: run `pip install -r requirements.txt` in "
+    panel = panel_mode(risk)
+    data = canvas_data(risk)
+    with card(name="flow-canvas"):  # a steady key, so a refresh never redraws the canvas from scratch
+        if FLOW_CANVAS is None:
+            st.caption("This Streamlit is too old to draw the canvas: run `pip install -r requirements.txt` in "
                        "mvp/dashboard. The same steps as a list:")
-            table(sh.pd.DataFrame([{"Step": n["title"], "Now": n["value"] if n["value"] is not None else n["badge"],
-                                    "": n["note"]} for n in data["nodes"]]), "")
+            steps = [b for b in data["blocks"] if b["kind"] == "step"]
+            table(sh.pd.DataFrame([{"Step": b["title"], "Now": b["value"] if b["value"] is not None else b["badge"],
+                                    "": b["note"]} for b in steps]), "")
             return
-        picked = FLOW_MAP(key="flow_map", data=data, on_open_change=lambda: None).get("open")
-        if picked in PAGES and page_allowed(picked):
-            go(picked)
-    if st.button("Automation guardrails: what it may do on its own", icon=":material/policy:", key="flow_guardrails"):
-        go("guardrails")
+        events = FLOW_CANVAS(key="flow_canvas", data=data, on_open_change=lambda: None, on_save_layout_change=lambda: None,
+                             on_save_settings_change=lambda: None, on_toggle_change=lambda: None,
+                             on_add_machine_change=lambda: None)
+        canvas_events(events, data, panel)
+    if st.session_state.get("fc_add_machine"):
+        join_under_canvas(panel)
+
+
+def canvas_events(events, data: dict, panel: bool) -> None:
+    """What the canvas asked for in this run: open a page, save the layout, save a block's settings, turn an
+    extension on or off, or open the join form. Each request carries an id and is handled once; everyone may
+    open pages, the rest takes the configure right."""
+    picked = events.get("open")
+    if isinstance(picked, dict):
+        if picked.get("host") and panel:
+            open_machine(str(picked["host"]))
+        elif picked.get("page") in PAGES and page_allowed(str(picked["page"])):
+            go(str(picked["page"]))
+    for name, handler in (("save_layout", save_canvas_layout), ("save_settings", save_block_settings),
+                          ("toggle", toggle_extension_block), ("add_machine", open_join_form)):
+        event = events.get(name)
+        if not isinstance(event, dict) or not event.get("id") or _canvas_seen(str(event["id"])):
+            continue
+        if locked("configure"):
+            canvas_result(event, False, READ_ONLY_MESSAGE)
+        handler(event, data)
+
+
+def _canvas_seen(event_id: str) -> bool:
+    done = st.session_state.setdefault("fc_done", [])
+    if event_id in done:
+        return True
+    done.append(event_id)
+    del done[:-50]
+    return False
+
+
+def canvas_result(event: dict, ok: bool, message: str) -> None:
+    """Tell the canvas (by the request's id) how it went, then redraw with the answer."""
+    kept = [r for r in st.session_state.get("fc_results") or [] if r.get("id") != event.get("id")][-RESULTS_KEPT:]
+    st.session_state["fc_results"] = kept + [{"id": event.get("id"), "ok": ok, "message": message}]
+    rerun_here()
+
+
+def rerun_here() -> None:
+    """Draw this page again now: its live fragment alone when this is one of the fragment's own runs (a click or
+    a canvas request), the whole page otherwise (a full run, as in a test)."""
+    try:
+        st.rerun(scope="fragment")
+    except StreamlitInvalidLayoutContextError:
+        st.rerun()
+
+
+def save_canvas_layout(event: dict, data: dict) -> None:
+    """Where the blocks sit, which are hidden, the notes and the hand-drawn wires: one file next to the
+    settings, shared by everyone who opens this console."""
+    doc = sh.clean_canvas_doc(event.get("doc"))
+    path = cfg.config_path().parent / CANVAS_FILE
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(doc, indent=1) + "\n", encoding="utf-8")
+    except OSError as exc:
+        canvas_result(event, False, f"could not write {short_path(path)} ({exc.strerror or exc}).")
+    canvas_result(event, True, "Layout saved.")
+
+
+def save_block_settings(event: dict, data: dict) -> None:
+    """A block's Save: only the settings that block offers, checked like the Configuration page checks them,
+    the guardrail limits checked like Automation guardrails checks them, then written to the settings file."""
+    block = next((b for b in data["blocks"] if b["id"] == event.get("block")), None)
+    if block is None:
+        canvas_result(event, False, "That block is not on the canvas any more.")
+    try:
+        changed = sh.check_block_settings(event.get("changes"), block.get("settings"))
+        values = {f.env: f.default for f in cfg.FIELDS.values()} | cfg.read() | changed
+        limits = any(env in sh.LIMIT_FIELDS for env in changed)
+        if limits:
+            values |= sh.check_limits(values)
+    except ValueError as exc:
+        canvas_result(event, False, f"Not saved: {exc}.")
+    path = cfg.save(values)
+    if limits:
+        note_guardrails_change(path)
+    if block["kind"] == "ext":
+        _, err = safe(client.reload_extensions)  # a new setting takes effect now
+        message = f"Saved to {short_path(path)}. " + ("The extension uses the new settings now." if not err else
+                                                      "Restart SentrAI (run.sh or run.ps1) so the extension picks them up.")
+    else:
+        message = f"Saved to {short_path(path)}. Restart SentrAI (run.sh or run.ps1) so the core uses the new values."
+    st.session_state["flash"] = (f"{block['title']}: settings saved", OK_ICON)
+    _get.clear()
+    canvas_result(event, True, message)
+
+
+def toggle_extension_block(event: dict, data: dict) -> None:
+    """The switch on an extension's block: Add or Remove, as on the Extensions page."""
+    name, on = str(event.get("name") or ""), bool(event.get("on"))
+    title = str(event.get("title") or name)
+    if not _NAME.fullmatch(name):
+        canvas_result(event, False, "That is not an extension's name.")
+    if on:
+        out, err = safe(lambda: client.add_extension(name, st.session_state.operator))
+        message = f"Could not add {title}: {err}" if err else f"Added {title}" + (
+            "." if (out or {}).get("configured") else ". Save its key in its settings to set it up.")
+    else:
+        out, err = safe(lambda: client.remove_extension(name, st.session_state.operator))
+        message = f"Could not remove {title}: {err}" if err else removed_message({"name": name, "title": title}, out or {})[0]
+    _get.clear()
+    st.session_state["flash"] = (message, WARN_ICON if err else OK_ICON)
+    canvas_result(event, not err, message)
+
+
+def open_join_form(event: dict, data: dict) -> None:
+    """"New machine" in the canvas's + Add menu: the join form opens under the canvas, in this same run."""
+    st.session_state["fc_add_machine"] = True
+
+
+def close_join_form() -> None:
+    for k in ("join_made", "join_before", "fc_add_machine"):
+        st.session_state.pop(k, None)
+
+
+def join_under_canvas(panel: bool) -> None:
+    """The Machines page's join form, under the canvas. It closes itself once the new machine has joined, and
+    the machine turns up on the canvas when its agent calls in."""
+    joined = sh.newly_joined(fetch("fleet", [])[0] if panel else [], st.session_state.get("join_before"))
+    if st.session_state.get("join_made") and joined:
+        close_join_form()
+        st.toast(f"{', '.join(joined)} joined this panel. It turns up on the canvas once its agent calls in.", icon=OK_ICON)
+        return
+    add_machine(panel)
+    st.button("Close", key="fc_join_close", icon=":material/close:", on_click=close_join_form)
 
 
 GUARDRAILS_NOTE = "guardrails-changed.json"  # who saved Automation guardrails last, and when; next to the settings
@@ -2441,17 +2596,22 @@ def limits_map(settings: dict[str, str]) -> None:
         else:
             values = {f.env: f.default for f in cfg.FIELDS.values()} | cfg.read() | changed
             path = cfg.save(values)
-            try:
-                (Path(path).parent / GUARDRAILS_NOTE).write_text(json.dumps(
-                    {"at": datetime.now(timezone.utc).isoformat(), "by": ME["name"] if ME else st.session_state.operator}),
-                    encoding="utf-8")
-            except OSError:
-                pass  # the chip falls back to the settings file's time
+            note_guardrails_change(path)
             st.session_state["lm_result"] = {"id": save.get("id"), "ok": True,
                                              "message": f"Saved to {short_path(path)}. Restart SentrAI (run.sh or "
                                                         "run.ps1) so the core uses the new limits."}
             st.session_state["flash"] = ("Automation guardrails: saved", OK_ICON)
         st.rerun()
+
+
+def note_guardrails_change(path) -> None:
+    """Who saved the guardrail limits last, and when: the small note the "last changed" chip reads."""
+    try:
+        (Path(path).parent / GUARDRAILS_NOTE).write_text(json.dumps(
+            {"at": datetime.now(timezone.utc).isoformat(), "by": ME["name"] if ME else st.session_state.operator}),
+            encoding="utf-8")
+    except OSError:
+        pass  # the chip falls back to the settings file's time
 
 
 # ------------------------------------------------------------------ "How this step works", on each step's page
