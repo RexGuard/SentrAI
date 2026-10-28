@@ -577,8 +577,9 @@ def fetch(what: str, default: Any = None) -> tuple[Any, str | None]:
 
 
 def fresh() -> None:
-    """Forget the snapshot: after an action the next draw reads the core again."""
+    """Forget the snapshot and the one-second read cache: after an action the next draw reads the core again."""
     st.session_state.pop("snap", None)
+    _get.clear()
 
 
 def protection_off() -> bool:
