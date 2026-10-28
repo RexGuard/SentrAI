@@ -1766,6 +1766,30 @@ def pending_approvals(incidents: Iterable[dict]) -> list[dict]:
     return sorted(waiting, key=lambda i: (not available_actions(i)["decide"], -incident_contribution(i)))
 
 
+# Fields that change on every read without anything a person would see change: heartbeats, clocks, and the
+# risk history the core appends to every second. fingerprint() leaves them out, so the page only redraws
+# when something real moved.
+VOLATILE_KEYS = frozenset({"timestamp", "last_seen", "services_at", "history", "demo_hours_elapsed", "now",
+                           "uptime", "uptime_s", "checked_at", "generated_at"})
+
+
+def fingerprint(payload: Any) -> str:
+    """A short hash of a core reply, without its volatile fields."""
+    def strip(x: Any) -> Any:
+        if isinstance(x, dict):
+            return {k: strip(v) for k, v in x.items() if k not in VOLATILE_KEYS}
+        if isinstance(x, list):
+            return [strip(v) for v in x]
+        return x
+    text = json.dumps(strip(payload), sort_keys=True, default=str)
+    return hashlib.sha1(text.encode("utf-8")).hexdigest()[:16]
+
+
+def changed_reads(seen: dict[str, str], now: dict[str, str]) -> list[str]:
+    """Which watched reads differ from what the page last drew. A read seen for the first time is no change."""
+    return [w for w, fp in now.items() if w in seen and seen[w] != fp]
+
+
 APPROVAL_GROUPS = {"Attacker": "attacker", "Machine": "machine", "Type": "type"}
 
 

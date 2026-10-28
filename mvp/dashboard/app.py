@@ -524,6 +524,7 @@ def run_action(label: str, fn, rerun: bool = True) -> None:
         st.session_state["flash"] = (f"{label}", OK_ICON)
     except CoreError as exc:
         st.session_state["flash"] = (f"{label} failed: {exc}", WARN_ICON)
+    fresh()
     if rerun:
         st.rerun(scope="fragment")
 
@@ -558,9 +559,27 @@ def _get(base_url: str, what: str) -> Any:
             "audit": lambda: c.audit(AUDIT_WINDOW), "staff": c.staff_reports, "waves": c.waves}[what]()
 
 
+def held() -> bool:
+    """Someone is in the middle of picking approvals: the page keeps showing what they picked from."""
+    return st.session_state.get("page") == "approvals" and bool(st.session_state.get("picked"))
+
+
 def fetch(what: str, default: Any = None) -> tuple[Any, str | None]:
-    """One cached read per second, shared by the menu and the page."""
-    return safe(lambda: _get(st.session_state.core_url, what), default)
+    """One cached read per second, shared by the menu and the page. Each read is also noted for watch(),
+    and kept as the snapshot the page shows while held(), so a list never reshuffles under someone's clicks."""
+    st.session_state.setdefault("watching", {}).setdefault(st.session_state.get("page"), set()).add(what)
+    snap = st.session_state.setdefault("snap", {})
+    if held() and what in snap:
+        return snap[what]
+    got = safe(lambda: _get(st.session_state.core_url, what), default)
+    snap[what] = got
+    return got
+
+
+def fresh() -> None:
+    """Forget the snapshot and the one-second read cache: after an action the next draw reads the core again."""
+    st.session_state.pop("snap", None)
+    _get.clear()
 
 
 def protection_off() -> bool:
@@ -689,7 +708,7 @@ def side_risk(waiting: int = 0) -> None:
     )
 
 
-@st.fragment(run_every=AUTO)
+@st.fragment
 def menu() -> None:
     records, _, _ = audit_records()
     incidents, _ = fetch("incidents", [])
@@ -741,7 +760,8 @@ with st.sidebar:
     update_notice(UPDATE)
     menu()
     st.markdown('<div class="side-sep"></div>', unsafe_allow_html=True)
-    st.toggle(f"Auto-refresh every {REFRESH_SECONDS} s", key="auto_refresh")
+    st.toggle("Live updates", key="auto_refresh",
+              help=f"Checks the core every {REFRESH_SECONDS} s and redraws the page only when something changed")
     if ME:
         st.caption(f"{ME['name']} · {acc.ROLE_LABEL[ME['role']]}")
         if st.button("Sign out", icon=":material/logout:", width="stretch", help=f"Signed in as {ME['email']}"):
@@ -776,8 +796,9 @@ def header(title: str, note: str = "", eyebrow: str = "", chips: str | None = No
         if risk.get("monitor_only"):
             chips = status("Protection off", sh.BAND_COLORS["amber"]) + chips
     if own is None:
-        chips += status(f"Live {now_s}" if AUTO else f"Paused {now_s}", sh.BAND_COLORS["green"] if AUTO else sh.UNKNOWN_COLOR,
-                        pulse=bool(AUTO))
+        # The page redraws only when its data changes (watch()), so the time says when that last happened.
+        chips += status(f"Live · updated {now_s}" if AUTO else f"Paused {now_s}",
+                        sh.BAND_COLORS["green"] if AUTO else sh.UNKNOWN_COLOR, pulse=bool(AUTO))
     st.markdown(
         f'<div class="page-head"><div class="page-title">'
         f'<div class="eyebrow">{icon(ico)} {html.escape(eyebrow or group)}</div><h1>{html.escape(title)}</h1>'
@@ -975,13 +996,13 @@ def quick_actions(inc: dict, where: str) -> None:
             run_action(f"Acknowledged {inc_id}", lambda: client.ack(inc_id, op))
 
 
-def incident_row(inc: dict, where: str, note: str = "", details=None, pick: str | None = None) -> None:
+def incident_row(inc: dict, where: str, note: str = "", details=None, pick: bool = False) -> None:
     """One short line per incident with its quick buttons; everything else waits behind Details.
     With pick, a tick box in front adds the incident to the Approvals page's bulk selection."""
     with card(name=re.sub(r"[^A-Za-z0-9_-]", "_", f"{where}-{inc.get('id')}")):
         if pick:
             p, a, b = st.columns([0.3, 3, 2], vertical_alignment="center")
-            p.checkbox("Pick", key=pick, label_visibility="collapsed", help="Pick to approve or reject together")
+            pick_box(p, str(inc.get("id")))
         else:
             a, b = st.columns([3, 2], vertical_alignment="center")
         sev = str(inc.get("severity") or "unknown").capitalize()
@@ -1521,14 +1542,26 @@ def extension_card(r: dict, results: dict, managed: bool) -> None:
         st.error(f"Test failed: {result.get('error')}")
 
 
-def pick_key(inc_id) -> str:
-    # The round in the key lets one bump clear every tick after a bulk action (a drawn widget can't be reset).
-    return f"pick_{st.session_state.get('pick_round', 0)}_{inc_id}"
+def picked_ids() -> set[str]:
+    """The approvals ticked on this page, by incident id: a redraw or a reshuffled list never unticks one."""
+    return st.session_state.setdefault("picked", set())
 
 
-def pick_all(ids: list[str], key: str) -> None:
-    for i in ids:
-        st.session_state[pick_key(i)] = st.session_state[key]
+def set_picked(ids: list[str], key: str) -> None:
+    (picked_ids().update if st.session_state[key] else picked_ids().difference_update)(ids)
+
+
+def pick_box(where, inc_id: str) -> None:
+    key = f"pick_{inc_id}"
+    st.session_state[key] = inc_id in picked_ids()  # the set decides, before the box is drawn
+    where.checkbox("Pick", key=key, label_visibility="collapsed", help="Pick to approve or reject together",
+                   on_change=set_picked, args=([inc_id], key))
+
+
+def clear_picks() -> None:
+    picked_ids().clear()
+    st.session_state["pick_round"] = st.session_state.get("pick_round", 0) + 1  # empties the reason boxes too
+    fresh()
 
 
 def run_bulk(verb: str, items: list[dict], fn) -> None:
@@ -1541,7 +1574,7 @@ def run_bulk(verb: str, items: list[dict], fn) -> None:
         except CoreError as exc:
             failed.append((str(inc.get("id")), str(exc)))
     st.session_state["flash"] = (sh.bulk_result(verb, done, failed), WARN_ICON if failed else OK_ICON)
-    st.session_state["pick_round"] = st.session_state.get("pick_round", 0) + 1
+    clear_picks()
     st.rerun(scope="fragment")
 
 
@@ -1601,7 +1634,7 @@ def summary_line(items: list[dict], title: str, ico: str) -> None:
 def save_groups(groups: dict[str, list[str]], flash: str) -> None:
     cfg.save_approval_groups(groups)
     st.session_state["flash"] = (flash, OK_ICON)
-    st.session_state["pick_round"] = st.session_state.get("pick_round", 0) + 1
+    clear_picks()
     st.rerun(scope="fragment")
 
 
@@ -1623,7 +1656,7 @@ def bulk_bar(picked: list[dict], waiting: list[dict], saved: dict[str, list[str]
                 save_groups(sh.add_to_group(saved, name.strip(), ids, {str(i.get("id")) for i in waiting}),
                             f"Grouped {len(ids)} under {name.strip()}")
         if clear_col.button("Clear", icon=":material/close:", key="bulk_clear", width="stretch"):
-            st.session_state["pick_round"] = k + 1
+            clear_picks()
             st.rerun(scope="fragment")
 
 
@@ -1644,7 +1677,7 @@ def group_card(n: int, name: str, members: list[dict], saved: dict[str, list[str
 GROUP_ICONS = {"attacker": "person", "machine": "dns", "type": "category"}
 
 
-@st.fragment(run_every=AUTO)
+@st.fragment
 def page_approvals() -> None:
     show_flash()
     if header("Approvals", "requests waiting on a person · nothing permanent happens without one") is None:
@@ -1664,7 +1697,9 @@ def page_approvals() -> None:
     # Read-only roles see the list and the groups, but get no tick boxes: there is nothing they could do with them.
     picking = not locked() and len(rest) > 1
     if picking:
-        picked = [i for i in rest if st.session_state.get(pick_key(i.get("id")))]
+        ids_now = {str(i.get("id")) for i in rest}
+        picked_ids().intersection_update(ids_now)  # decided elsewhere, or put in a group: not picked any more
+        picked = [i for i in rest if str(i.get("id")) in picked_ids()]
         if picked:
             bulk_bar(picked, waiting, saved)
     if made:
@@ -1678,10 +1713,10 @@ def page_approvals() -> None:
         if label:
             section(html.escape(label), f"{len(group)} waiting", GROUP_ICONS.get(by, ""))
         if picking and len(group) > 1:
-            key = f"pickall_{st.session_state.get('pick_round', 0)}_{by}_{label}"
-            st.session_state[key] = all(st.session_state.get(pick_key(i)) for i in ids)
+            key = f"pickall_{by}_{label}"
+            st.session_state[key] = set(ids) <= picked_ids()
             st.checkbox(f"Pick all {len(group)}" + (f" from {label}" if label else ""), key=key,
-                        on_change=pick_all, args=(ids, key))
+                        on_change=set_picked, args=(ids, key))
         for inc in group:
             verb = "Approve or reject" if sh.available_actions(inc)["decide"] else "Keep or roll back"
 
@@ -1694,7 +1729,7 @@ def page_approvals() -> None:
                         go("staff")
                 decision_controls(inc)
                 table(sh.action_rows(inc), "No containment actions yet.")
-            incident_row(inc, "appr", verb, details, pick=pick_key(inc.get("id")) if picking else None)
+            incident_row(inc, "appr", verb, details, pick=picking)
 
 
 STAFF_FILTERS = {"Open": "open", "New": "new", "Reviewing": "reviewing", "Resolved": "resolved",
@@ -1713,7 +1748,7 @@ def report_link() -> str:
     return f"{base or 'http://<this dashboard>'}/?report"
 
 
-@st.fragment(run_every=AUTO)
+@st.fragment
 def page_staff() -> None:
     show_flash()
     if header("Staff reports", "what people at the business flagged · a person reads and closes each one") is None:
@@ -1869,7 +1904,7 @@ def incident_card(inc: dict, contacts: list[dict], where: str = "") -> None:
         decision_controls(inc, where)
 
 
-@st.fragment(run_every=AUTO)
+@st.fragment
 def page_incidents() -> None:
     show_flash()
     if header("Incidents", "who owns each incident, and what still needs a person") is None:
@@ -2381,7 +2416,7 @@ def flow_data() -> dict:
     return sh.flow_map_data(risk, incidents, agents, blocklist, exts, records, settings, valid)
 
 
-@st.fragment(run_every=AUTO)
+@st.fragment
 def page_flow() -> None:
     """The pipeline, as one live map of what each step is doing now. Only looks: click a step to open its page.
     The policy it follows has its own page (Automation guardrails), which does not refresh under your typing."""
@@ -2714,7 +2749,7 @@ def scan_suggestion(s: dict) -> None:
             st.rerun()
 
 
-@st.fragment(run_every=AUTO)
+@st.fragment
 def page_classifier() -> None:
     if header("Classifier", "Step 2 of 3 · decides which events are attacks: rules first, then AI, then keywords") is None:
         return
@@ -2750,7 +2785,7 @@ def page_classifier() -> None:
             "Malicious": st.column_config.ProgressColumn("Malicious", min_value=0, max_value=1, format="%.2f")})
 
 
-@st.fragment(run_every=AUTO)
+@st.fragment
 def page_responder() -> None:
     show_flash()
     if header("Action taker", "Step 3 of 3 · temporary blocks that undo themselves unless a person keeps them") is None:
@@ -2782,7 +2817,7 @@ def page_responder() -> None:
                                                          "auto_rollback", "action_rolled_back"), limit=15))
 
 
-@st.fragment(run_every=AUTO)
+@st.fragment
 def page_review() -> None:
     risk = header("Review", "how close SentrAI is to acting on its own, and why")
     if risk is None:
@@ -2902,7 +2937,7 @@ def add_machine(panel: bool) -> None:
                         "panel's certificate against the usual authorities.", icon=":material/lock:")
 
 
-@st.fragment(run_every=AUTO)
+@st.fragment
 def page_machines() -> None:
     show_flash()
     risk = header("Machines", "every computer that reports to this panel, and adding a new one")
@@ -2989,7 +3024,7 @@ def machine_note(m: dict, agent: dict | None) -> str:
     return " · ".join(p for p in parts if p)
 
 
-@st.fragment(run_every=AUTO)
+@st.fragment
 def page_machine() -> None:
     """One machine's own page, laid out like a server's page in Pterodactyl or Calagopus: a status card
     with its quick actions (their power buttons), then tabs. Its address can be bookmarked or shared."""
@@ -3223,7 +3258,7 @@ def machine_agent(m: dict, incs: list[dict], agent: dict | None, mine: list[dict
             go("machines")
 
 
-@st.fragment(run_every=AUTO)
+@st.fragment
 def page_reports() -> None:
     header("Reports", "a one-page summary for the client, and one evidence report for every incident")
     client_summary()
@@ -3247,7 +3282,7 @@ def page_reports() -> None:
         report_viewer(inc_id)
 
 
-@st.fragment(run_every=AUTO)
+@st.fragment
 def page_audit() -> None:
     if header("Audit trail", "every step by every agent and person, hash-chained") is None:
         return
@@ -3542,6 +3577,42 @@ def page_team() -> None:
 
 if not page_allowed(st.session_state.page):
     st.session_state.page = "config"
+
+
+@st.fragment(run_every=AUTO)
+def watch() -> None:
+    """The only thing that runs on a timer. It re-reads what this page showed (cheap: one cached read each)
+    and redraws the page only when something in it changed. While someone is picking approvals it does not
+    redraw at all: a bar offers the new state instead, so nothing moves under their clicks."""
+    page = st.session_state.page
+    reads = sorted(st.session_state.get("watching", {}).get(page, ()))
+    now = {w: sh.fingerprint(safe(lambda w=w: _get(st.session_state.core_url, w))[0]) for w in reads}
+    now["minute"] = datetime.now().strftime("%H:%M")  # countdowns ("undoes itself in 2 min") move once a minute
+    seen = st.session_state.setdefault("shown", {}).setdefault(page, {})
+    changed = sh.changed_reads(seen, now)
+    for w, fp in now.items():
+        seen.setdefault(w, fp)
+    if not changed:
+        return
+    if held():
+        if changed == ["minute"]:
+            return
+        c1, c2 = st.columns([4, 1], vertical_alignment="center")
+        c1.markdown(f'<div class="lead">{icon("notifications")}<span>New activity since you started picking. '
+                    'The list stays as it is until you show it; your picks are kept.</span></div>',
+                    unsafe_allow_html=True)
+        if c2.button("Show", icon=":material/refresh:", key="watch_show", width="stretch"):
+            seen.update(now)
+            fresh()
+            st.rerun()
+        return
+    seen.update(now)
+    st.rerun()
+
+
+# A full run has just drawn the page from fresh reads (or the held snapshot): that is what was shown.
+st.session_state.setdefault("shown", {})[st.session_state.page] = {}
+watch()
 {
     "config": page_config, "approvals": page_approvals, "incidents": page_incidents, "staff": page_staff, "chat": page_chat,
     "flow": page_flow, "collector": page_collector, "classifier": page_classifier, "responder": page_responder, "machines": page_machines,
