@@ -1,0 +1,19 @@
+Oct 28 10:20:00 web-01 sshd[4100]: Accepted publickey for erick from 203.0.113.5 port 51234 ssh2: ED25519 SHA256:Q7w3cZk2u5Yd9bJm1LxkfA0Hn6Rr8PtEoSvNqGiCz4U
+Oct 28 10:20:00 web-01 sshd[4100]: pam_unix(sshd:session): session opened for user erick(uid=1000) by (uid=0)
+Oct 28 10:20:00 web-01 systemd-logind[812]: New session 5 of user erick.
+Oct 28 10:21:00 web-01 sudo:    erick : TTY=pts/0 ; PWD=/home/erick ; USER=root ; COMMAND=/usr/bin/systemctl stop sentrai-core
+Oct 28 10:21:00 web-01 sudo: pam_unix(sudo:session): session opened for user root(uid=0) by erick(uid=1000)
+Oct 28 10:21:01 web-01 sudo: pam_unix(sudo:session): session closed for user root
+Oct 28 10:21:30 web-01 sudo:    erick : TTY=pts/0 ; PWD=/home/erick ; USER=root ; COMMAND=/usr/sbin/iptables -A INPUT -s 198.51.100.9 -j DROP
+Oct 28 10:22:00 web-01 sudo:    guest : user NOT in sudoers ; TTY=pts/1 ; PWD=/home/guest ; USER=root ; COMMAND=/bin/bash
+Oct 28 10:22:10 web-01 sudo:   deploy : command not allowed ; TTY=pts/2 ; PWD=/srv/app ; USER=root ; COMMAND=/usr/bin/bash
+Oct 28 10:22:20 web-01 sudo: pam_unix(sudo:auth): authentication failure; logname=guest uid=1001 euid=0 tty=/dev/pts/1 ruser=guest rhost=  user=guest
+Oct 28 10:22:30 web-01 sudo:    guest : 3 incorrect password attempts ; TTY=pts/1 ; PWD=/home/guest ; USER=root ; COMMAND=/usr/bin/cat /etc/shadow
+Oct 28 10:23:00 web-01 su: (to root) erick on pts/0
+Oct 28 10:23:00 web-01 su[2200]: pam_unix(su:session): session opened for user root(uid=0) by erick(uid=1000)
+Oct 28 10:23:30 web-01 su: FAILED SU (to root) guest on pts/1
+Oct 28 10:23:30 web-01 su: pam_unix(su:auth): authentication failure; logname=guest uid=1001 euid=0 tty=/dev/pts/1 ruser=guest rhost=  user=root
+Oct 28 10:24:00 web-01 su[2200]: pam_unix(su-l:session): session closed for user root
+Oct 28 10:25:00 web-01 systemd-logind[812]: Session 5 logged out. Waiting for processes to exit.
+Oct 28 10:25:00 web-01 systemd-logind[812]: Removed session 5.
+Oct 28 10:25:01 web-01 systemd-logind[812]: Watching system buttons on /dev/input/event0 (Power Button)

@@ -235,10 +235,23 @@ def _wait_too_long(ip: str) -> bool:
     return bool(wait)
 
 
+def _vouch_sign_in(email: str, ip: str) -> None:
+    """Tell the core who signed in and from where (its POST /admins/sign-in): an Owner's or Admin's address counts
+    as an administrator's for a while, so their own root work on the servers is recorded, not raised as an attack
+    (core admins.py). Best effort: a core that is down, or older than this, never holds up the sign-in."""
+    me = acc.get(email) or {}
+    role = acc.ROLE_LABEL.get(str(me.get("role") or ""), str(me.get("role") or ""))
+    try:
+        CoreClient(st.session_state.get("core_url") or DEFAULT_CORE, token=cfg.api_token()).admin_signed_in(email, role, ip)
+    except Exception:  # noqa: BLE001 - the sign-in must never wait on, or fail with, the core
+        pass
+
+
 def _signed_in(email: str, note: str = "") -> None:
     ip = _client_ip()
     before, where = acc.record_sign_in(email, ip)
     signin.succeeded(ip)
+    _vouch_sign_in(email, ip)
     for key in ("pending", "totp_secret", "recovery_codes"):
         st.session_state.pop(key, None)
     st.session_state.signed_in = email
@@ -617,8 +630,8 @@ def machines() -> list[dict]:
 
 
 # One machine's page has its own address (?machine=web-01&tab=incidents), like a server's page in a game panel.
-MACHINE_TABS = {"Overview": "", "Hardware": "hardware", "Incidents": "incidents", "Blocks": "blocks", "Services": "services",
-                "Scans and backups": "scans", "Agent": "agent"}  # tab label: its name in the address
+MACHINE_TABS = {"Overview": "", "Hardware": "hardware", "Incidents": "incidents", "Blocks": "blocks", "Admins": "admins",
+                "Services": "services", "Scans and backups": "scans", "Agent": "agent"}  # tab label: its name in the address
 
 
 def follow_address() -> None:
@@ -878,6 +891,13 @@ def incident_summary(inc: dict) -> None:
         '</div>',
         unsafe_allow_html=True,
     )
+    facts = sh.actor_facts(inc.get("actor"))
+    if facts:  # the person behind it: who, how they got in, from where, and whether SentrAI knew them (core admins.py)
+        st.markdown('<div class="detail-grid">' + "".join(
+            f'<div><span>{html.escape(k)}</span><b>{html.escape(v)}</b></div>' for k, v in facts) + "</div>",
+            unsafe_allow_html=True)
+        st.markdown(f'<p class="explain">{icon("person")} {html.escape(sh.actor_sentence(inc.get("actor")))}</p>',
+                    unsafe_allow_html=True)
     if inc.get("explanation"):
         st.markdown(f'<p class="explain">{html.escape(str(inc["explanation"]))}</p>', unsafe_allow_html=True)
     rep = inc.get("reputation") or {}
@@ -892,8 +912,78 @@ def incident_summary(inc: dict) -> None:
     st.write("")
 
 
+MINE_HELP = ("Teach SentrAI this sign-in: its address, SSH key and account become a known administrator's, "
+             "and the alert closes")
+NOT_ME_HELP = "Block the address now, as Approve & Patch does; written to the audit log"
+PROTECTION_OFF_HELP = "Protection is off (monitor only): turn it on in Configuration to apply a hotpatch."
+
+
+def ack_then(inc_id: str, op: str, decision: str, just: str):
+    """What Approve and Reject do: acknowledge the alert (if nobody has yet), then decide."""
+    def _run() -> None:
+        try:
+            client.ack(inc_id, op)
+        except CoreError:
+            pass
+        client.decision(inc_id, op, decision, just)
+    return _run
+
+
+def was_me(inc_id: str, op: str) -> None:
+    """"This was me": the core learns the sign-in and closes the alert. What it learned stays on screen
+    (taught_notice) after the refresh, since the incident leaves the list."""
+    try:
+        out = client.mine(inc_id, op)
+    except CoreError as exc:
+        st.session_state["flash"] = (f"This was me failed for {inc_id}: {exc}", WARN_ICON)
+    else:
+        st.session_state["taught"] = sh.learned_text(inc_id, out)
+        st.session_state["flash"] = (f"{inc_id} closed: this was you", OK_ICON)
+    st.rerun(scope="fragment")
+
+
+def taught_notice() -> None:
+    """After "This was me": the alert closed, and what SentrAI learned. It stays until put away."""
+    text = st.session_state.get("taught")
+    if not text:
+        return
+    with card(name="taught"):
+        lead, ok = st.columns([6, 1], vertical_alignment="center")
+        lead.markdown(f'<div class="lead">{icon("verified_user")}<span>{html.escape(text)} Root work from this '
+                      "sign-in is now recorded on the machine's Admins tab, not raised.</span></div>",
+                      unsafe_allow_html=True)
+        if ok.button("OK", key="taught_ok", width="stretch"):
+            st.session_state.pop("taught", None)
+            st.rerun(scope="fragment")
+
+
+def was_me_controls(inc: dict, kid: str, op: str) -> None:
+    """A root-access incident asks "was this you?". This was me teaches SentrAI the sign-in and closes the alert;
+    Not me: block it is the ordinary Approve & Patch (the address is blocked) under the name that fits here."""
+    inc_id = str(inc.get("id"))
+    if sh.available_actions(inc)["ack"] and st.button("Acknowledge", icon=":material/visibility:", key=f"ack_{kid}",
+                                                      help="Records that you have seen this alert (POST /ack)"):
+        run_action(f"Acknowledged {inc_id}", lambda: client.ack(inc_id, op))
+    with st.form(key=f"decide_{kid}", clear_on_submit=True, border=True):
+        st.markdown(f'<div class="inc-sub">{icon("person")} Was this you, or a colleague, at work on the machine?</div>',
+                    unsafe_allow_html=True)
+        just = st.text_area("Note if it was not you (optional, written to the audit log)", key=f"just_{kid}",
+                            height=80, placeholder="e.g. Nobody was doing maintenance tonight")
+        c1, c2 = st.columns(2)
+        off = protection_off()
+        mine = c1.form_submit_button("This was me", icon=":material/verified_user:", type="primary", width="stretch",
+                                     help=MINE_HELP)
+        block = c2.form_submit_button("Not me: block it", icon=":material/block:", width="stretch", disabled=off,
+                                      help=PROTECTION_OFF_HELP if off else NOT_ME_HELP)
+    if mine:
+        was_me(inc_id, op)
+    elif block:
+        run_action(f"Not me: blocked {inc_id}", ack_then(inc_id, op, "approve", just.strip() or "Not me: block it"))
+
+
 def decision_controls(inc: dict, where: str = "") -> None:
-    """Approve / reject an open incident, or keep / roll back a contained one."""
+    """Approve / reject an open incident, or keep / roll back a contained one. A root-access incident asks
+    "was this you?" instead (was_me_controls)."""
     if locked():
         st.caption(f":material/visibility: {READ_ONLY_MESSAGE}")
         return
@@ -902,16 +992,9 @@ def decision_controls(inc: dict, where: str = "") -> None:
     op = st.session_state.operator
     can = sh.available_actions(inc)
 
-    def ack_then(decision: str, just: str):
-        def _run() -> None:
-            try:
-                client.ack(inc_id, op)
-            except CoreError:
-                pass
-            client.decision(inc_id, op, decision, just)
-        return _run
-
-    if can["decide"]:
+    if can["mine"]:
+        was_me_controls(inc, kid, op)
+    elif can["decide"]:
         if can["ack"] and st.button("Acknowledge", icon=":material/visibility:", key=f"ack_{kid}",
                                     help="Records that you have seen this alert (POST /ack)"):
             run_action(f"Acknowledged {inc_id}", lambda: client.ack(inc_id, op))
@@ -925,12 +1008,12 @@ def decision_controls(inc: dict, where: str = "") -> None:
                                                                "Configuration to apply a hotpatch." if off else None)
             reject = c2.form_submit_button("Reject with Justification", icon=":material/block:", width="stretch")
         if approve:
-            run_action(f"Approved & patched {inc_id}", ack_then("approve", just.strip()))
+            run_action(f"Approved & patched {inc_id}", ack_then(inc_id, op, "approve", just.strip()))
         elif reject:
             if not just.strip():
                 st.error("Rejecting requires a written justification.")
             else:
-                run_action(f"Rejected {inc_id}", ack_then("reject", just.strip()))
+                run_action(f"Rejected {inc_id}", ack_then(inc_id, op, "reject", just.strip()))
     elif can["contain_controls"]:
         with st.form(key=f"contain_{kid}", clear_on_submit=True, border=True):
             just = st.text_area("Justification (written to the audit log)", key=f"cjust_{kid}", height=70,
@@ -958,7 +1041,19 @@ def quick_actions(inc: dict, where: str) -> None:
     can, off, ro = sh.available_actions(inc), locked(), why_locked()
     k = f"{where}_{inc_id}"
     c1, c2 = st.columns(2)
-    if can["decide"]:
+    if can["mine"]:  # root access from a sign-in SentrAI does not know: was this you?
+        if c1.button("This was me", icon=":material/verified_user:", type="primary", key=f"qm_{k}", width="stretch",
+                     disabled=off, help=ro or MINE_HELP):
+            was_me(inc_id, op)
+        no_patch = protection_off()
+        if c2.button("Not me: block it", icon=":material/block:", key=f"qn_{k}", width="stretch",
+                     disabled=off or no_patch, help=ro or (PROTECTION_OFF_HELP if no_patch else NOT_ME_HELP)):
+            def _block() -> None:
+                if can["ack"]:
+                    client.ack(inc_id, op)
+                client.decision(inc_id, op, "approve", "Not me: block it")
+            run_action(f"Not me: blocked {inc_id}", _block)
+    elif can["decide"]:
         no_patch = protection_off()
         if c1.button("Approve", icon=":material/check:", type="primary", key=f"qa_{k}", width="stretch",
                      disabled=off or no_patch,
@@ -1580,8 +1675,13 @@ def bulk_buttons(items: list[dict], where: str, extra: int = 0) -> list:
     op, off, ro = st.session_state.operator, locked(), why_locked()
     split = sh.bulk_split(items)
     decide, contain = split["decide"], split["contain"]
-    cols = iter(st.columns(2 * bool(decide) + 2 * bool(contain) + extra))
+    mine = [i for i in decide if sh.available_actions(i)["mine"]]  # root-access alerts: This was me closes them
+    cols = iter(st.columns(bool(mine) + 2 * bool(decide) + 2 * bool(contain) + extra))
     k = f"{where}_{st.session_state.get('pick_round', 0)}"
+    if mine:
+        if next(cols).button(f"This was me {len(mine)}", icon=":material/verified_user:", key=f"bm_{k}",
+                             width="stretch", disabled=off, help=ro or MINE_HELP):
+            run_bulk("Closed as your own", mine, lambda inc: client.mine(str(inc.get("id")), op))
     if decide:
         no_patch = protection_off()
         note = f"Approved as a group of {len(decide)} from the dashboard"
@@ -1666,8 +1766,7 @@ def group_card(n: int, name: str, members: list[dict], saved: dict[str, list[str
             save_groups({g: m for g, m in saved.items() if g != name}, f"Ungrouped {name}")
         with st.expander(f"{len(members)} incident{'s' if len(members) != 1 else ''}", icon=":material/list:"):
             for inc in members:
-                incident_row(inc, f"grp_{name}", "Approve or reject" if sh.available_actions(inc)["decide"]
-                             else "Keep or roll back")
+                incident_row(inc, f"grp_{name}", sh.decision_verb(inc))
 
 
 GROUP_ICONS = {"attacker": "person", "machine": "dns", "type": "category"}
@@ -1681,6 +1780,7 @@ def page_approvals() -> None:
     incidents, err = fetch("incidents", [])
     if err:
         st.warning(f"Could not load incidents: {err}")
+    taught_notice()
     waiting = sh.pending_approvals(incidents or [])
     if not waiting:
         empty("Nothing waiting for a decision. All quiet at the gate.", "check_circle", good=True)
@@ -1714,7 +1814,7 @@ def page_approvals() -> None:
             st.checkbox(f"Pick all {len(group)}" + (f" from {label}" if label else ""), key=key,
                         on_change=set_picked, args=(ids, key))
         for inc in group:
-            verb = "Approve or reject" if sh.available_actions(inc)["decide"] else "Keep or roll back"
+            verb = sh.decision_verb(inc)
 
             def details(inc=inc) -> None:
                 incident_summary(inc)
@@ -1909,6 +2009,7 @@ def page_incidents() -> None:
     if err:
         st.warning(f"Could not load incidents: {err}")
     incidents = incidents or []
+    taught_notice()
     routing, rerr = safe(client.routing, {})
     contacts = (routing or {}).get("contacts") or []
     person = sh.find_person(routing, (ME or {}).get("email", ""), st.session_state.operator)
@@ -2352,6 +2453,8 @@ def chat_suggestion(mid: Any, n: int, s: dict, inc: dict | None) -> None:
             client.decision(inc_id, op, decision, just)
         elif decision == "ack":
             client.ack(inc_id, op)
+        elif decision == "mine":  # "This was me" on a root-access alert: the sign-in becomes a known administrator's
+            client.mine(inc_id, op)
         elif decision == "rollback":
             client.rollback(inc_id, op, just or "Rolled back by operator after chat")
         else:
@@ -3232,8 +3335,8 @@ def page_machine() -> None:
         st.warning(f"Could not load its incidents: {ierr}")
     incs = incs or []
     tabs = st.tabs(list(MACHINE_TABS), key="machine_tab", on_change=_tab_to_address)
-    for tab, show in zip(tabs, (machine_overview, machine_hardware, machine_incidents, machine_blocks, machine_services,
-                                machine_jobs_tab, machine_agent)):
+    for tab, show in zip(tabs, (machine_overview, machine_hardware, machine_incidents, machine_blocks, machine_admins,
+                                machine_services, machine_jobs_tab, machine_agent)):
         if tab.open:
             with tab:
                 show(m, incs, agent, mine)
@@ -3322,13 +3425,15 @@ def machine_hardware(m: dict, incs: list[dict], agent: dict | None, mine: list[d
 
 
 def machine_incidents(m: dict, incs: list[dict], agent: dict | None, mine: list[dict]) -> None:
+    taught_notice()
     waiting = sh.pending_approvals(incs)
     with card():
-        section("Waiting on you", "approve or reject, keep or roll back", "approval_delegation")
+        section("Waiting on you", "approve or reject, keep or roll back, or say whether a sign-in was you",
+                "approval_delegation")
         if not waiting:
             empty(f"Nothing on {m['host']} waits for a decision.", "check_circle", good=True)
         for inc in waiting:
-            verb = "Approve or reject" if sh.available_actions(inc)["decide"] else "Keep or roll back"
+            verb = sh.decision_verb(inc)
 
             def details(inc=inc) -> None:
                 incident_summary(inc)
@@ -3353,6 +3458,91 @@ def machine_blocks(m: dict, incs: list[dict], agent: dict | None, mine: list[dic
     with card():
         section("Every action on this machine", "each one ends on its own unless a person keeps it", "history")
         table(sh.all_action_rows(incs), f"No actions taken on {host} yet.")
+
+
+def machine_admins(m: dict, incs: list[dict], agent: dict | None, mine: list[dict]) -> None:
+    """Who is signed in on the machine and whether SentrAI knows them, their recent root work, and the known
+    administrators: the accounts, addresses and keys whose root work is recorded, not raised (core admins.py)."""
+    host, op = m["host"], st.session_state.operator
+    data, err = safe(lambda: client.admins(host), {})
+    data = data or {}
+    if err:
+        st.warning(f"Could not load who is signed in: {err}")
+    if data.get("on") is False:
+        st.info("SentrAI is not keeping track of who is signed in (ADMIN_SESSIONS is off on the core), so every "
+                "root command is judged on its own.", icon=":material/info:")
+    asking = [i for i in incs if sh.available_actions(i)["mine"]]
+    if asking:
+        lead, btn = st.columns([4, 1], vertical_alignment="center")
+        lead.markdown(f'<div class="lead">{icon("person")}<span>{html.escape(sh.plural(len(asking), "root-access alert"))} '
+                      "on this machine asks: was this you?</span></div>", unsafe_allow_html=True)
+        btn.button("Answer it", key="to_admin_incidents", width="stretch", on_click=_show_tab, args=("Incidents",))
+    with card():
+        section("Signed in now", "who is on this machine, how they got in, and whether SentrAI knows them as an "
+                "administrator", "person")
+        table(sh.session_rows(data.get("sessions")), f"Nobody SentrAI has seen is signed in on {host} right now.")
+        suspect = [s for s in data.get("suspect") or [] if isinstance(s, dict) and s.get("address")]
+        if suspect:
+            st.caption("Distrusted for now: " + " · ".join(
+                f"{s['address']} ({s.get('why') or 'suspect'}) until {sh.day_time(s.get('until'))}" for s in suspect))
+    with card():
+        section("Recent admin work", "root commands by known administrators, newest first · recorded, never an incident",
+                "terminal")
+        table(sh.admin_activity_rows(data.get("activity")), f"No root work by a known administrator on {host} yet.")
+    with card():
+        section("Known administrators", "whose root work SentrAI records instead of raising · from the settings, "
+                "taught with This was me or here, or learned from a trusted sign-in", "manage_accounts")
+        entries = sh.admin_entries(data, host)
+        for kind, title in (("account", "Accounts"), ("address", "Addresses"), ("key", "SSH keys")):
+            rows = [e for e in entries if e["kind"] == kind]
+            st.markdown(f'<div class="inc-head"><b>{title}</b><span class="inc-sub">{len(rows) or "none yet"}</span></div>',
+                        unsafe_allow_html=True)
+            seen: dict[tuple, int] = {}
+            for e in rows:  # a button keyed by what it forgets, so a list that changed meanwhile never forgets another
+                n = seen[(e["value"], e["host"])] = seen.get((e["value"], e["host"]), -1) + 1
+                admin_entry_row(e, n, op)
+        admin_add_form(host, op)
+
+
+def admin_entry_row(e: dict, n: int, op: str) -> None:
+    """One known administrator fact with its Forget button; a setting (ADMIN_IPS and the like) has none."""
+    c1, c2 = st.columns([5, 1], vertical_alignment="center")
+    head = code(e["headline"]) if e["kind"] == "key" else f"<b>{html.escape(e['headline'])}</b>"
+    c1.markdown(f'{head} <span class="inc-sub">· {html.escape(e["detail"])}</span>', unsafe_allow_html=True)
+    if not e["forget"]:
+        return
+    machine = e["host"] if e["kind"] == "account" and e["host"] != "*" else None
+    if c2.button("Forget", key=f"forget_{e['kind']}_{e['host'] or ''}_{e['value']}_{n}", icon=":material/delete:",
+                 width="stretch", disabled=locked(),
+                 help=why_locked("act", "SentrAI stops trusting it; the next sign-in with it asks again")):
+        run_action(f"Forgot {e['headline']}",
+                   lambda: client.admin_change(op, "forget", e["kind"], e["value"], host=machine))
+
+
+def admin_add_form(host: str, op: str) -> None:
+    """Add a known administrator address (or network), SSH key fingerprint or account by hand."""
+    with st.form(key=f"admin_add_{host}", clear_on_submit=True, border=True):
+        st.markdown(f'<div class="inc-head">{icon("person_add")}<b>Add a known administrator</b></div>', unsafe_allow_html=True)
+        k1, k2, k3 = st.columns([2, 3, 2])
+        kind = k1.selectbox("What", list(sh.ADMIN_KINDS), format_func=sh.ADMIN_KINDS.get, key=f"adm_kind_{host}")
+        value = k2.text_input("Value", key=f"adm_value_{host}", placeholder="203.0.113.5, 203.0.113.0/24, SHA256:… or erick")
+        label = k3.text_input("Label (optional)", key=f"adm_label_{host}", placeholder="e.g. Erick's home")
+        everywhere = st.checkbox(f"An account counts on every machine, not only {host}", key=f"adm_all_{host}")
+        st.caption("A key's fingerprint: ssh-keygen -lf ~/.ssh/id_ed25519.pub prints it.")
+        add = st.form_submit_button("Add", icon=":material/add:", type="primary", disabled=locked(), help=why_locked())
+    if not add:
+        return
+    if not value.strip():
+        st.error("Type the address, key fingerprint or account first. Nothing was changed.")
+        return
+    try:
+        client.admin_change(op, "add", kind, value.strip(), label.strip(),
+                            host=None if kind != "account" or everywhere else host)
+    except CoreError as exc:
+        st.error(f"Not added: {exc.detail or exc}")  # the core's own words, e.g. "'x' is not an address or a network"
+        return
+    st.session_state["flash"] = (f"Added {sh.ADMIN_KINDS[kind].lower()} {value.strip()}", OK_ICON)
+    st.rerun(scope="fragment")
 
 
 def machine_services(m: dict, incs: list[dict], agent: dict | None, mine: list[dict]) -> None:

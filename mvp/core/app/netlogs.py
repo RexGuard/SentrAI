@@ -7,13 +7,17 @@ events from an older collector or a replay:
 - nginx / Apache "combined" access lines, and the lab portal's short "GET /path 200" form;
 - OpenSSH lines as written to auth.log / secure, or as bare journald messages;
 - sign-ins to other services (Windows logons and RDP, SQL Server, MySQL/MariaDB, PostgreSQL,
-  MongoDB) and Suricata network alerts, which only come as a collector `parsed` object.
+  MongoDB) and Suricata network alerts, which only come as a collector `parsed` object;
+- who becomes root and how: sudo and su lines (the command, the account that ran it, its terminal),
+  the sessions systemd-logind opens, and the sessions the collector sees with ``who`` (admins.py
+  ties a root command to the sign-in it came from).
 
 `enrich()` only fills fields that are missing; it never overwrites what the collector sent.
 """
 
 from __future__ import annotations
 
+import ipaddress
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -30,13 +34,17 @@ REQUEST = re.compile(r"^(?P<method>[A-Z]{3,10})\s+(?P<path>\S+)(?:\s+HTTP/\d(?:\
 # Lab portal / replay form: "POST /login 401 user=admin"
 SHORT = re.compile(r"^(?P<method>GET|HEAD|POST|PUT|DELETE|PATCH|OPTIONS)\s+(?P<path>/\S*)\s+(?P<status>\d{3})\b")
 
+# "... port 51234 ssh2: ED25519 SHA256:AbC..." : the key a publickey sign-in used (OpenSSH 6.8 and later).
+KEY = r"(?: port \d+)?(?: ssh2(?:: (?P<key_type>[\w-]+) (?P<key_fingerprint>(?:SHA256|MD5):\S+))?)?"
 SSHD_PID = re.compile(r"\bsshd(?:-session)?\[(?P<pid>\d+)\]")
 SSHD_TAG = re.compile(r"\bsshd(?:-session)?(?:\[\d+\])?:")
 
 # (ssh_event, pattern). First match wins. "user" and "ip" groups where the line has them.
 SSH_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
-    ("accepted", re.compile(r"\bAccepted (?:password|publickey|keyboard-interactive/pam|hostbased) for (?P<user>\S+) from " + IP)),
-    ("failed_password", re.compile(r"\bFailed (?:password|keyboard-interactive/pam|none) for (?:invalid user )?(?P<user>\S*) from " + IP)),
+    ("accepted", re.compile(r"\bAccepted (?P<method>password|publickey|keyboard-interactive/pam|hostbased) for (?P<user>\S+) from "
+                            + IP + KEY)),
+    ("failed_password", re.compile(r"\bFailed (?P<method>password|keyboard-interactive/pam|none) for (?:invalid user )?(?P<user>\S*) from "
+                                   + IP + KEY)),
     ("invalid_user", re.compile(r"\bInvalid user (?P<user>\S*) from " + IP)),
     ("max_attempts", re.compile(r"\bmaximum authentication attempts exceeded for (?:invalid user )?(?P<user>\S+) from " + IP)),
     ("preauth_close", re.compile(r"\b(?:Connection (?:closed|reset) by|Disconnected from|Disconnecting) (?:invalid|authenticating) user (?P<user>\S*) " + IP + r"\b.*\[preauth\]")),
@@ -79,6 +87,9 @@ class SshLine:
     src_ip: str | None
     user: str | None
     pid: str | None
+    method: str | None = None  # password, publickey, keyboard-interactive/pam, hostbased (accepted and failed lines)
+    key_type: str | None = None  # ED25519, RSA, ECDSA ... when sshd logged the key
+    key_fingerprint: str | None = None  # "SHA256:..." of the key the sign-in used
 
 
 def _int(v: Any) -> int | None:
@@ -155,13 +166,204 @@ def parse_sshd(event: dict[str, Any]) -> SshLine | None:
             else:
                 kind = "disconnect"
         if kind is not None:
-            return SshLine(kind, event.get("src_ip"), event.get("user"), pid)
+            return SshLine(kind, event.get("src_ip"), event.get("user"), pid, _str(parsed.get("auth_method")),
+                           _str(parsed.get("key_type")), _str(parsed.get("key_fingerprint")))
     for kind, rx in SSH_PATTERNS:
         m = rx.search(raw)
         if m:
             gd = m.groupdict()
-            return SshLine(kind, gd.get("ip") or event.get("src_ip"), gd.get("user") or event.get("user"), pid)
+            return SshLine(kind, gd.get("ip") or event.get("src_ip"), gd.get("user") or event.get("user"), pid,
+                           gd.get("method"), gd.get("key_type"), gd.get("key_fingerprint"))
     return SshLine(str(event.get("ssh_event") or "other"), event.get("src_ip"), event.get("user"), pid)
+
+
+def _str(v: Any) -> str | None:
+    return str(v) if v not in (None, "") else None
+
+
+# ---------------------------------------------------------------- sudo, su, login sessions
+
+SERVICE_ACCOUNTS = {"www-data", "apache", "apache2", "httpd", "nginx", "nobody", "w3wp", "tomcat", "postgres", "mysql",
+                    "mariadb", "mongodb", "redis", "daemon", "ftp", "git", "jenkins", "node", "php-fpm", "caddy",
+                    "iusr", "network service", "local service"}
+
+# "azureuser : TTY=pts/0 ; PWD=/home/azureuser ; USER=root ; COMMAND=/usr/bin/systemctl restart nginx"
+# A refused one carries its reason first: "www-data : user NOT in sudoers ; TTY=... ; COMMAND=/bin/bash",
+# "alice : 3 incorrect password attempts ; TTY=... ; COMMAND=...". PWD and USER are not always written.
+SUDO_COMMAND = re.compile(
+    r"(?P<user>[^\s:]+) : (?:(?P<message>[^;]*?) ; )?TTY=(?P<tty>[^;]*?) ;(?: PWD=(?P<pwd>[^;]*?) ;)?"
+    r"(?: USER=(?P<target>[^;]*?) ;)?(?: GROUP=[^;]*? ;)?(?: ENV=[^;]*? ;)? COMMAND=(?P<command>.*)$")
+# "pam_unix(sudo:session): session opened for user root(uid=0) by azureuser(uid=1000)" (sudo, su, su-l)
+PAM_SESSION = re.compile(
+    r"pam_unix\((?P<program>sudo|sudo-i|su|su-l):session\): session (?P<what>opened|closed) for user "
+    r"(?P<target>[^\s(]+)(?:\(uid=\d+\))?(?: by (?P<user>[^\s(]*)\(uid=(?P<uid>\d+)\))?")
+# "pam_unix(sudo:auth): authentication failure; logname=azureuser uid=1000 euid=0 tty=/dev/pts/0 ruser=azureuser rhost=  user=azureuser"
+PAM_AUTH_FAILURE = re.compile(
+    r"pam_unix\((?P<program>sudo|sudo-i|su|su-l):auth\): authentication failure;.*?\btty=(?P<tty>\S*)"
+    r".*?\bruser=(?P<ruser>\S*).*?\buser=(?P<target>\S*)")
+SUDO_TAG = re.compile(r"\bsudo(?:\[\d+\])?:\s")
+SU_TAG = re.compile(r"\bsu(?:-l)?(?:\[\d+\])?:\s")
+# "su: (to root) azureuser on pts/0" / "su: FAILED SU (to root) azureuser on pts/0"
+SU_SWITCH = re.compile(r"(?P<failed>FAILED SU )?\(to (?P<target>[^)\s]+)\) (?P<user>\S*) on (?P<tty>\S+)")
+LOGIND_TAG = re.compile(r"\bsystemd-logind(?:\[\d+\])?:\s")
+LOGIND_NEW = re.compile(r"\bNew session (?P<sid>\S+) of user (?P<user>\S+?)\.?$")
+LOGIND_GONE = re.compile(r"\b(?:Removed session (?P<sid>\S+?)\.?|Session (?P<sid2>\S+) logged out\b)")
+# The collector's session source ("who" / "quser"): "session started: azureuser on pts/0 from 203.0.113.9 since 2026-10-28 10:01"
+WHO_LINE = re.compile(r"^session (?P<what>existing|started|ended): (?P<user>\S+) on (?P<tty>\S+)"
+                      r"(?: from (?P<origin>\S+))?(?: since (?P<since>.+))?$")
+SUDO_FAILURES = {"not_in_sudoers", "not_allowed", "wrong_password", "auth_failure", "refused"}
+
+
+@dataclass
+class SudoLine:
+    """One sudo line: a command run as another user, a refusal, or the session PAM opens around it."""
+    event: str  # command, not_in_sudoers, not_allowed, wrong_password, auth_failure, refused, session_opened, session_closed, other
+    user: str | None  # the account that ran sudo
+    target: str | None  # the account it ran as (root, mostly)
+    tty: str | None
+    command: str | None
+    outcome: str  # success, failure, info
+    count: int = 1  # "3 incorrect password attempts"
+
+
+@dataclass
+class SuLine:
+    """One su line: a switch to another account, a failed one, or its PAM session."""
+    event: str  # switched, failed, auth_failure, session_opened, session_closed, other
+    user: str | None
+    target: str | None
+    tty: str | None
+    outcome: str
+
+
+@dataclass
+class LoginSession:
+    """A session as logind or the collector's `who` poll reports it."""
+    event: str  # existing, started, ended
+    user: str | None
+    tty: str | None
+    origin: str | None  # the address or host name the person came from; None on the console
+    sid: str | None  # logind's session number
+    since: str | None
+
+
+def _program(event: dict[str, Any]) -> str:
+    p = _parsed(event)
+    return str(p.get("program") or "").lower()
+
+
+def _message(event: dict[str, Any]) -> str:
+    """The program's message: parsed.message when the collector split the line, else the raw line."""
+    p = _parsed(event)
+    return str(p.get("message") or event.get("raw") or "")
+
+
+def _tty(value: str | None) -> str | None:
+    if not value:
+        return None
+    v = str(value).strip()
+    return v.removeprefix("/dev/") if v not in ("", "unknown", "?") else None
+
+
+def parse_sudo(event: dict[str, Any]) -> SudoLine | None:
+    """The sudo line in an event, or None. Reads the collector's `parsed` object first (kind "sudo"),
+    then the raw syslog line ("host sudo: user : TTY=..."), then a bare journald message."""
+    p = _parsed(event)
+    if p.get("kind") == "sudo":
+        return SudoLine(str(p.get("sudo_event") or "other"), _str(p.get("by")) or _str(event.get("user")),
+                        _str(p.get("target_user")), _tty(_str(p.get("tty"))), _str(p.get("command")),
+                        str(p.get("outcome") or "info"), int(p.get("count") or 1))
+    raw = str(event.get("raw") or "")
+    msg = _message(event)
+    if not (_program(event) == "sudo" or SUDO_TAG.search(raw) or ("pam_unix(sudo" in msg)
+            or (" ; TTY=" in msg and " COMMAND=" in msg)):
+        return None
+    if m := PAM_SESSION.search(msg):
+        if m.group("program") not in ("sudo", "sudo-i"):
+            return None
+        return SudoLine(f"session_{m.group('what')}", m.group("user") or None, m.group("target"), None, None, "info")
+    if m := PAM_AUTH_FAILURE.search(msg):
+        if m.group("program") not in ("sudo", "sudo-i"):
+            return None
+        return SudoLine("auth_failure", m.group("ruser") or None, m.group("target") or None, _tty(m.group("tty")),
+                        None, "failure")
+    if m := SUDO_COMMAND.search(msg):
+        message = (m.group("message") or "").strip()
+        event_name, outcome, count = "command", "success", 1
+        if message:
+            low = message.lower()
+            if "not in sudoers" in low:
+                event_name = "not_in_sudoers"
+            elif "command not allowed" in low:
+                event_name = "not_allowed"
+            elif "incorrect password" in low:
+                event_name = "wrong_password"
+                if n := re.match(r"(\d+) ", message):
+                    count = int(n.group(1))
+            else:
+                event_name = "refused"
+            outcome = "failure"
+        return SudoLine(event_name, m.group("user"), m.group("target") or None, _tty(m.group("tty")),
+                        m.group("command").strip() or None, outcome, count)
+    if _program(event) == "sudo" or SUDO_TAG.search(raw):
+        return SudoLine("other", _str(event.get("user")), None, None, None, "info")
+    return None
+
+
+def parse_su(event: dict[str, Any]) -> SuLine | None:
+    """The su line in an event, or None."""
+    p = _parsed(event)
+    if p.get("kind") == "su":
+        return SuLine(str(p.get("su_event") or "other"), _str(p.get("by")) or _str(event.get("user")),
+                      _str(p.get("target_user")), _tty(_str(p.get("tty"))), str(p.get("outcome") or "info"))
+    raw = str(event.get("raw") or "")
+    msg = _message(event)
+    if not (_program(event) in ("su", "su-l") or SU_TAG.search(raw) or "pam_unix(su" in msg):
+        return None
+    if m := PAM_SESSION.search(msg):
+        if m.group("program") not in ("su", "su-l"):
+            return None
+        return SuLine(f"session_{m.group('what')}", m.group("user") or None, m.group("target"), None, "info")
+    if m := PAM_AUTH_FAILURE.search(msg):
+        if m.group("program") not in ("su", "su-l"):
+            return None
+        return SuLine("auth_failure", m.group("ruser") or None, m.group("target") or None, _tty(m.group("tty")), "failure")
+    if m := SU_SWITCH.search(msg):
+        failed = bool(m.group("failed"))
+        return SuLine("failed" if failed else "switched", m.group("user") or None, m.group("target"), _tty(m.group("tty")),
+                      "failure" if failed else "success")
+    if _program(event) in ("su", "su-l") or SU_TAG.search(raw):
+        return SuLine("other", _str(event.get("user")), None, None, "info")
+    return None
+
+
+def parse_login_session(event: dict[str, Any]) -> LoginSession | None:
+    """A session the collector saw with `who` (parsed.kind "login_session"), or one systemd-logind
+    opened or removed; None for anything else."""
+    p = _parsed(event)
+    if p.get("kind") == "login_session":
+        return LoginSession(str(p.get("session_event") or "existing"), _str(p.get("user")) or _str(event.get("user")),
+                            _tty(_str(p.get("tty"))), _str(p.get("origin")), _str(p.get("session_id")), _str(p.get("since")))
+    raw = str(event.get("raw") or "")
+    msg = _message(event)
+    if m := WHO_LINE.match(msg.strip()):
+        return LoginSession(m.group("what"), m.group("user"), _tty(m.group("tty")), m.group("origin"), None, m.group("since"))
+    if _program(event) == "systemd-logind" or LOGIND_TAG.search(raw):
+        if m := LOGIND_NEW.search(msg):
+            return LoginSession("started", m.group("user"), None, None, m.group("sid"), None)
+        if m := LOGIND_GONE.search(msg):
+            return LoginSession("ended", None, None, None, m.group("sid") or m.group("sid2"), None)
+    return None
+
+
+def is_ip(value: str | None) -> bool:
+    if not value:
+        return False
+    try:
+        ipaddress.ip_address(str(value).strip().strip("[]"))
+        return True
+    except ValueError:
+        return False
 
 
 @dataclass
@@ -218,6 +420,27 @@ def enrich(event: dict[str, Any]) -> dict[str, Any]:
         if not event.get("user") and ssh.user and ssh.event != "probe":
             event["user"] = ssh.user
         event.setdefault("ssh_event", ssh.event)
+        if not event.get("layer") or event.get("layer") == "web":
+            event["layer"] = "os"
+        return event
+    sudo, su = parse_sudo(event), None
+    if sudo is None:
+        su = parse_su(event)
+    who = (sudo or su)
+    if who is not None:
+        # The person is the account that ran sudo or su, not the one it ran as: an older collector
+        # guessed "root" from "USER=root", so that guess gives way to the real account.
+        if who.user and (not event.get("user") or event.get("user") == who.target):
+            event["user"] = who.user
+        if not event.get("layer") or event.get("layer") == "web":
+            event["layer"] = "os"
+        return event
+    session = parse_login_session(event)
+    if session is not None:
+        if not event.get("user") and session.user:
+            event["user"] = session.user
+        if not event.get("src_ip") and is_ip(session.origin):
+            event["src_ip"] = str(session.origin).strip("[]")
         if not event.get("layer") or event.get("layer") == "web":
             event["layer"] = "os"
         return event

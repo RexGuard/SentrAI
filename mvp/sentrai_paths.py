@@ -25,6 +25,7 @@ file at the root); else ``~/.sentrai``. deploy/install.sh uses /var/lib/sentrai,
         people/routing.json         who gets what: contacts, routing rules, escalation   SENTRAI_ROUTING
         people/telegram_links.json  contacts linked to Telegram chats                SENTRAI_TELEGRAM_LINKS
         people/staff_reports.json   what staff reported                              SENTRAI_STAFF_REPORTS
+        people/admins.json          the administrators: accounts, addresses, keys     SENTRAI_ADMINS
         machines/fleet.json         machines that joined the panel (hashed keys)
         machines/jobs.json          scans and backups queued for those machines
         threats/threat_seen.json    ThreatWatch: findings already raised             SENTRAI_THREAT_STATE
@@ -142,6 +143,8 @@ ENTRIES: dict[str, Entry] = {e.key: e for e in (
           "Notifier", "SENTRAI_TELEGRAM_LINKS", old=("part:telegram_links.json",)),
     Entry("core.staff_reports", "core", "people/staff_reports.json", "what staff reported (/report, the report page)",
           "HelpDesk", "SENTRAI_STAFF_REPORTS", old=("part:staff_reports.json",)),
+    Entry("core.admins", "core", "people/admins.json", "the administrators: their accounts, sign-in addresses and "
+          "SSH keys (taught or learned), and who is signed in now", "Warden", "SENTRAI_ADMINS", optional=True),
     Entry("core.fleet", "core", "machines/fleet.json", "machines that joined the panel: hashed keys and join codes",
           "Fleet", old=("part:fleet.json",)),
     Entry("core.jobs", "core", "machines/jobs.json", "scans and backups queued for those machines", "Fleet",

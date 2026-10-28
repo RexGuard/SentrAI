@@ -28,9 +28,11 @@ git clone https://github.com/RexGuard/SentrAI && cd SentrAI/mvp
 sudo ./deploy/install.sh --protect 203.0.113.10 --admin-email you@example.com
 ```
 
-`--protect` does two things: SentrAI will never block that address, and the dashboard opens to
-it. Add it once for every address you manage the server from. Never skip your own address: it is
-what keeps SentrAI from locking you out.
+`--protect` does three things: SentrAI will never block that address, the dashboard opens to it,
+and root work (`sudo`) from it on this server counts as your own, recorded rather than raised as an
+incident (`ADMIN_IPS`, see [Your own administrators](settings.html#your-own-administrators)). Add
+it once for every address you manage the server from. Never skip your own address: it is what keeps
+SentrAI from locking you out.
 
 From a terminal, the installer then asks a few questions. Press **Enter** to keep the answer in
 brackets:
@@ -44,8 +46,9 @@ brackets:
 
 The Owner questions come only on a new machine. The password is asked twice. Press Enter at
 *Owner email* to skip them: the installer then prints a one-time setup code, and you create the
-Owner in the browser instead. When it finishes, it prints the dashboard address and either the
-Owner's email or the setup code.
+Owner in the browser instead. The **Allowed IPs** go into `ADMIN_IPS` too, like `--protect`. When
+it finishes, it prints the dashboard address, either the Owner's email or the setup code, and the
+addresses whose `sudo` counts as your own.
 
 ## Open the dashboard to your computer
 
@@ -60,7 +63,9 @@ then create the Owner with the setup code, or sign in with the Owner email and p
 install, and add an authenticator app. See [Signing in](sign-in.html) for inviting your team.
 
 Only the addresses in **Allowed IPs** can reach the port. When your own IP changes, run the
-installer again with the new one; `--dashboard-allow` replaces the list:
+installer again with the new one; `--dashboard-allow` replaces the list (the new address is added
+to `ADMIN_IPS`; an old one stays there until you remove it from `/etc/sentrai/sentrai.env` and
+restart `sentrai.target`):
 
 ```bash
 sudo ./deploy/install.sh --dashboard-allow 203.0.113.25
@@ -108,7 +113,7 @@ Its suggestions appear under **Collector**, then **Scout proposals**, where you 
 
 | Option | What it does |
 | --- | --- |
-| `--protect IP` | never block this IP, and open the dashboard to it. Repeat for more addresses |
+| `--protect IP` | never block this IP, open the dashboard to it, and know root work from it as yours. Repeat for more addresses |
 | `--dashboard-allow IP` | open the dashboard to this IP or network only. Repeat for more; replaces the list |
 | `--dashboard-local` | keep the dashboard on the server, for an SSH tunnel only |
 | `--admin-email EMAIL` | the dashboard Owner's email, on a first install |

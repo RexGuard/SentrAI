@@ -98,6 +98,29 @@ Without a bot token, alerts go to the notifier's window (Windows) or `.run_logs/
   macOS, or to its own window on Windows.
 - The timers run in real time. Use `--speed 60` (`-Speed 60`) to see escalations within minutes.
 
+## My own commands show up as incidents
+
+Your `sudo` commands on a server are raised as **Root access from an unrecognised sign-in** (on a
+version before this one, as log tampering or privilege escalation): SentrAI does not yet know your
+sign-in as an administrator's. Any one of these fixes it:
+
+1. **Press This was me** on the incident, once per sign-in. SentrAI learns that sign-in's address,
+   SSH key and account, closes the incident and stops asking for it.
+2. **Tell it in the settings**, so it never asks: your addresses in `ADMIN_IPS` (the server installer
+   puts your `--protect` and dashboard addresses there), your SSH key fingerprints in `ADMIN_SSH_KEYS`
+   (`ssh-keygen -lf ~/.ssh/id_ed25519.pub` prints yours) or your accounts in `ADMIN_ACCOUNTS`. See
+   [Your own administrators](settings.html#your-own-administrators).
+3. **Sign in to the dashboard** as Owner or Admin from the computer you work from: for the next 12
+   hours, root work from its address is yours.
+
+If it keeps asking even so, SentrAI is not seeing your sign-ins. The collector on that machine must
+send the sign-in and `sudo` lines, from `/var/log/auth.log` (or `/var/log/secure`) or the system
+journal (`cd lab && .venv/bin/python -m collector.collector --add-system-logs` approves them on
+Linux), and its own poll of who is signed in, which runs by itself on an up-to-date collector
+(`sudo sentrai-update`). The machine's **Admins** tab shows who SentrAI sees signed in right now; an
+empty list while you are signed in means the lines are not arriving. A sign-in made right after
+password guessing from the same address is treated as unknown on purpose; **This was me** clears that too.
+
 ## A machine will not join the panel
 
 The agent installer prints why. The usual causes:

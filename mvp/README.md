@@ -132,6 +132,12 @@ behind an arrow.
 | `PROTECTED_USERS` | empty | core: more accounts never auto-locked; admin and service accounts (root, admin, administrator, www-data, nginx, postgres, ...) are always protected |
 | `PROTECTED_NETS` | private ranges | core: networks Countersign never blocks on its own (an operator still can); `10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,100.64.0.0/10,fc00::/7` by default, `off` for a lab whose attackers sit on a private network |
 | `INFRA_ALLOWLIST` | empty | core: gateways, DNS, monitoring and other infrastructure never blocked (addresses or networks). This machine's DNS servers and default gateway are added automatically (`INFRA_AUTODETECT=0` turns that off) |
+| `ADMIN_SESSIONS` | `on` | core: keep track of who is signed in on each machine and whose root work (`sudo`, `su`, Windows admin events) is whose: a known administrator's is recorded, never an incident; `off` judges every line on its own |
+| `ADMIN_IPS` | empty | core: addresses or networks the administrators sign in from (`deploy/install.sh` puts the `--protect` and dashboard-allowed addresses here); "This was me" on an incident teaches more |
+| `ADMIN_SSH_KEYS` | empty | core: their SSH key fingerprints, `SHA256:...` as `ssh-keygen -lf ~/.ssh/id_ed25519.pub` prints them |
+| `ADMIN_ACCOUNTS` | empty | core: their accounts, `deploy` on every machine or `erick@web-01` on one |
+| `ADMIN_SESSION_HOURS` / `ADMIN_SIGNIN_HOURS` | `12` / `12` | core: hours a sign-in counts as open after its last line; hours a dashboard sign-in as Owner or Admin vouches for its address |
+| `ADMIN_LEARN` | `on` | core: a known key from a new address makes the address known, a new key from a known address makes the key known |
 | `BUSY_SERVER` | `off` | core: `on` groups many addresses doing the same attack to one machine into one wave (one alert, a summary every `WAVE_UPDATE_MIN`, a capped share of the risk index); for game servers and big networks |
 | `WAVE_MIN_ADDRESSES` / `WAVE_WINDOW_MIN` / `WAVE_UPDATE_MIN` / `WAVE_CATEGORIES` | `10` with `BUSY_SERVER=on`, else `0` (off) / `15` / `15` / `port_scan,brute_force` | core: how many addresses within how many minutes make a wave, minutes between its summaries, which kinds can make one |
 | `TRUSTED_IPS` | empty | core: addresses or networks (a players' relay, a CDN, monitoring) whose lines are never analysed; a decoy touch is still reported |
@@ -311,6 +317,7 @@ GitHub Actions (`.github/workflows/tests.yml`) runs the core, lab, dashboard and
 
 - Containment only changes SentrAI's own blocklist unless `SENTRAI_FIREWALL` is on. Your own machine (127.0.0.1) and `PROTECTED_IPS` are never blocked.
 - Admin and service accounts are never auto-locked, and private networks are never auto-blocked (`PROTECTED_NETS`).
+- Root work by a known administrator (a sign-in with a known SSH key, from a known address, or by a known account at the console) is recorded as admin activity, never an incident. Root work from a sign-in SentrAI does not recognise opens one "Root access from an unrecognised sign-in" incident per address, never contained on its own: a person answers **This was me** (SentrAI learns the sign-in and closes it) or **Not me** (the address is blocked). What it learns stays in `core/people/admins.json` on the server (`ADMIN_*` above, `core/README.md`).
 
 ## Known limits
 

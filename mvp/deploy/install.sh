@@ -17,7 +17,8 @@
 #                          --dashboard-allow addresses)
 #   --protect IP           add an IP to PROTECTED_IPS, the list SentrAI never blocks (repeatable).
 #                          Unless --dashboard-allow or --dashboard-local is given, the dashboard is
-#                          opened to these IPs too.
+#                          opened to these IPs too. These and the --dashboard-allow addresses also go
+#                          into ADMIN_IPS: sudo from them is your own work, not an incident.
 #   --dashboard-allow IP   open the dashboard to this IP or network only (repeatable): it listens on
 #                          all addresses, a firewall rule drops everyone else, and it uses HTTPS
 #   --dashboard-local      keep the dashboard on this server only (reach it through an SSH tunnel)
@@ -108,7 +109,7 @@ while [ $# -gt 0 ]; do
         --panel) case "${2:-}" in [0-9]*|off) PANEL="$2"; shift 2 ;; *) PANEL=8443; shift ;; esac ;;
         --panel-url) PANEL_URL="$2"; shift 2 ;;
         --update) UPDATE=1; ASK=0; shift ;;
-        -h|--help) sed -n '2,67p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,68p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "Unknown option: $1 (see --help)" >&2; exit 2 ;;
     esac
 done
@@ -275,6 +276,27 @@ else
     fi
 fi
 DASH_ALLOW="$(get_env SENTRAI_DASHBOARD_ALLOW)"
+# --- whose root work is their own --------------------------------------------
+# The addresses you gave (--protect, --dashboard-allow, or the "Allowed IPs" answer) are where you sign in
+# from, so sudo from them is recorded as your own work rather than raised as an incident. Very wide networks
+# (anything larger than a /16, or a /48 for IPv6) are left out: they would vouch for strangers too.
+is_narrow() { "$PYTHON" -c 'import ipaddress, sys; n = ipaddress.ip_network(sys.argv[1], strict=False); sys.exit(n.prefixlen < (16 if n.version == 4 else 48))' "$1" 2>/dev/null; }
+ADMIN_NEW=()
+for ip in "${PROTECT[@]}" "${ALLOW[@]}"; do
+    if is_local "$ip" || ! is_ip "$ip"; then continue; fi
+    if is_narrow "$ip"; then ADMIN_NEW+=("$ip"); else echo "Not adding $ip to ADMIN_IPS: too wide a network to vouch for." >&2; fi
+done
+if [ "${#ADMIN_NEW[@]}" -gt 0 ]; then
+    ips="$(get_env ADMIN_IPS)"
+    for ip in "${ADMIN_NEW[@]}"; do
+        case ",$ips," in *",$ip,"*) ;; *) ips="${ips:+$ips,}$ip" ;; esac
+    done
+    if ! grep -q '^ADMIN_IPS=' "$ENV_FILE"; then
+        echo "# Where your administrators sign in from: sudo from these addresses is their own work, not an incident." >> "$ENV_FILE"
+    fi
+    set_env ADMIN_IPS "$ips"
+fi
+ADMIN_IPS_NOW="$(get_env ADMIN_IPS)"
 
 CORE_HOST="$(get_env SENTRAI_CORE_HOST)"; CORE_PORT="$(get_env SENTRAI_CORE_PORT)"
 DASH_HOST="$(get_env SENTRAI_DASHBOARD_HOST)"; DASH_PORT="$(get_env SENTRAI_DASHBOARD_PORT)"
@@ -629,6 +651,13 @@ else
 fi
 printf '%s\n' "$SIGN_IN" | sed 's/^/  /'
 echo "  People:     invite them on the dashboard's Team page. Locked out: sudo sentrai-admin --reset"
+if [ -n "$ADMIN_IPS_NOW" ]; then
+    echo "  Your sign-ins: sudo from $ADMIN_IPS_NOW is recorded as your own work (ADMIN_IPS in $ENV_FILE);"
+    echo "              root work from anywhere else asks \"was this you?\"."
+else
+    echo "  Your sign-ins: root work (sudo) asks \"was this you?\" until you answer This was me once,"
+    echo "              or set ADMIN_IPS in $ENV_FILE to the addresses you sign in from."
+fi
 REMOTE_URL="$(get_env SENTRAI_REMOTE_COPY_URL)"
 if [ -n "$REMOTE_URL" ]; then
     echo "  Off-box copy: every audit record and log line goes to $REMOTE_URL as it happens."

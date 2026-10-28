@@ -26,8 +26,8 @@ from email.message import EmailMessage
 from email.utils import make_msgid
 from typing import Callable
 
-from formatting import (BAND_COLORS, BAND_EMOJI, BRAND_BUTTON, BRAND_ON_DARK, BRAND_DARK, TAGLINE, alert_fields,
-                        button_specs, is_notice, LINK_TEXT, notice_lines, risk_meter)
+from formatting import (BAND_COLORS, BAND_EMOJI, BRAND_BUTTON, BRAND_ON_DARK, BRAND_DARK, MINE, TAGLINE, TAKE,
+                        alert_fields, button_specs, is_notice, LINK_TEXT, notice_lines, risk_meter)
 
 log = logging.getLogger("sentrai.notifier.email")
 
@@ -116,9 +116,14 @@ def format_email(notification: dict, incident: dict | None = None, risk: dict | 
     rows.append(("Recommended", str(f["recommended"])))
     if f["witness"]:
         rows.append(("Audit witness", f["witness"]))
-    actions = [label.split(" ", 1)[-1] for label, _ in button_specs(notification, incident)]
-    act = (f"To {' or '.join(actions)}, open the SentrAI dashboard: {dashboard_url}" if actions
-           else f"Details on the SentrAI dashboard: {dashboard_url}")
+    specs = button_specs(notification, incident)
+    actions = [label.split(" ", 1)[-1] for label, _ in specs]
+    if any(data.startswith(f"{MINE}:") for _, data in specs):  # a root-access alert asks a question
+        answers = [a for a, (_, data) in zip(actions, specs) if not data.startswith(f"{TAKE}:")]
+        act = f"Was this you? Answer on the SentrAI dashboard ({' / '.join(answers)}): {dashboard_url}"
+    else:
+        act = (f"To {' or '.join(actions)}, open the SentrAI dashboard: {dashboard_url}" if actions
+               else f"Details on the SentrAI dashboard: {dashboard_url}")
     if f["kind"] in ("autonomous_action", "containment"):
         note = "Temporary, reversible fix with TTL. Choose Rollback or Make Permanent."
     else:

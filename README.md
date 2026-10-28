@@ -95,6 +95,8 @@ Windows machines get a matching `install-agent.ps1` command. Agents update the s
 
 SentrAI never blocks the addresses in `PROTECTED_IPS`. Your own machine (`127.0.0.1`, `::1`) is always in it, and every `--protect` address is added on a server install. **Add the IP you manage from before you turn on any blocking**, or SentrAI could lock you out. Change it on the dashboard's **Configuration** page, or in `/etc/sentrai/sentrai.env` on a server (then `sudo systemctl restart sentrai.target`).
 
+Those same addresses also tell SentrAI who you are. It keeps track of who is signed in on each machine: `sudo` commands from a `--protect` address (the installer writes them to `ADMIN_IPS`) (or any address, SSH key or account it knows as an administrator's) are recorded as your own work on the machine's **Admins** tab, while root work from a sign-in it does not recognise opens a **Root access from an unrecognised sign-in** alert that asks *was this you?* and blocks nothing on its own. Press **This was me** once and SentrAI learns that sign-in; or list your addresses, SSH key fingerprints or accounts in `ADMIN_IPS`, `ADMIN_SSH_KEYS` and `ADMIN_ACCOUNTS`. See [Your own administrators](https://rexguard.github.io/SentrAI/docs/settings.html#your-own-administrators).
+
 ### 5. Point it at your logs
 
 SentrAI only reads the logs you approve. On the dashboard, open **Collector** and press **Scan running programs** to pick log files from the programs on the machine. On a Linux machine with nginx or SSH you can approve those in one step:

@@ -6,11 +6,13 @@ dicts (build them with ``make_event`` so every source emits the same shape, see
 to core ``POST /events`` once per second, and keeps them buffered while core is down.
 
 Default sources: one ``JsonLogSource`` per target-app log, one ``DiscoveredLogSource`` (or
-``JournaldSource``) per approved server log in ``scout/sources.json``, plus a ``HeartbeatSource``
-every 10 seconds so Watchdog can tell the collector is alive.
+``JournaldSource``) per approved server log in ``scout/sources.json``, a ``SessionSource`` that asks
+``who`` (Windows: ``quser``) every 15 seconds who is signed in on this machine (``SENTRAI_SESSIONS=off``
+leaves it out), plus a ``HeartbeatSource`` every 10 seconds so Watchdog can tell the collector is alive.
 
-Server logs (nginx, sshd via syslog or journald, Suricata, MySQL/MariaDB, PostgreSQL, MongoDB) and
-the Windows Event Log (``WindowsEventSource``) are parsed by ``collector/parsers.py``: events carry
+Server logs (nginx; sshd, sudo, su and systemd-logind via syslog or journald; Suricata, MySQL/MariaDB,
+PostgreSQL, MongoDB) and the Windows Event Log (``WindowsEventSource``) are parsed by
+``collector/parsers.py``: events carry
 the log's own timestamp and host name and a ``parsed`` object (see "Parsed fields" in
 ``mvp/CONTRACT.md``). Read positions are saved in ``collector/state.json`` in the data root (or
 ``SENTRAI_COLLECTOR_STATE``) once core has accepted the events, so a restart carries on where it
@@ -31,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import ipaddress
 import json
 import os
 import queue
@@ -546,13 +549,20 @@ class DiscoveredLogSource(FileSource):
 
 
 JOURNALD_SSH = ["SYSLOG_IDENTIFIER=sshd", "SYSLOG_IDENTIFIER=sshd-session", "SYSLOG_IDENTIFIER=sshd-auth"]
+# Who became root and who signed in: sudo and su commands (with their PAM sessions), and the sessions
+# systemd-logind opens and closes. journalctl ORs matches on the same field.
+JOURNALD_ADMIN = ["SYSLOG_IDENTIFIER=sudo", "SYSLOG_IDENTIFIER=su", "SYSLOG_IDENTIFIER=su-l",
+                  "SYSLOG_IDENTIFIER=systemd-logind"]
+JOURNALD_DEFAULT = JOURNALD_SSH + JOURNALD_ADMIN
 
 
 class JournaldSource(Source):
     """Follows ``journalctl -o json`` for systems that keep SSH logins only in the journal (no
-    /var/log/auth.log or /var/log/secure). sources.json entry: ``{"path": "journald:sshd",
-    "format": "journald", "layer": "os"}``; ``"match"`` (a list of journalctl matches) picks other
-    programs. Resumes from the saved journal cursor; with none, starts with the last 200 entries."""
+    /var/log/auth.log or /var/log/secure): sshd, and with it sudo, su and systemd-logind, so the core
+    can tell an administrator's own root work from an intruder's. sources.json entry: ``{"path":
+    "journald:sshd", "format": "journald", "layer": "os"}``; ``"match"`` (a list of journalctl matches)
+    picks other programs. Resumes from the saved journal cursor; with none, starts with the last 200
+    entries."""
 
     def __init__(self, layer: str = "os", match: list[str] | None = None, name: str = "sshd",
                  saved: dict | None = None, from_end: bool = False, command: list[str] | None = None) -> None:
@@ -560,7 +570,7 @@ class JournaldSource(Source):
         self.key = self.name
         self.layer = layer
         self.source = f"journald:{name}"
-        self.match = match or JOURNALD_SSH
+        self.match = match or JOURNALD_DEFAULT
         self.cursor: str | None = (saved or {}).get("cursor")
         self._read_cursor = self.cursor
         self._from_end = from_end
@@ -590,7 +600,8 @@ class JournaldSource(Source):
         except OSError as exc:
             if not self._warned:
                 self._warned = True
-                print(f"[collector] cannot run journalctl ({exc}); SSH logins are not collected", flush=True)
+                print(f"[collector] cannot run journalctl ({exc}); SSH logins, sudo and sign-in sessions from "
+                      f"the journal are not collected", flush=True)
             self._proc = None
             return
         threading.Thread(target=self._pump, args=(self._proc,), daemon=True).start()
@@ -626,6 +637,116 @@ class JournaldSource(Source):
     def stop(self) -> None:
         if self._proc and self._proc.poll() is None:
             self._proc.terminate()
+
+
+SESSIONS_EVERY_S = 15.0  # how often `who` / `quser` runs: one short subprocess, nothing else
+SESSIONS_KEEPALIVE_S = 3600.0  # how often a sign-in still open is reported again, so the core keeps it
+
+
+def run_command(cmd: list[str], timeout: float = 10.0) -> tuple[int, str, str]:
+    """Run a short command to completion: (exit code, stdout, stderr). Raises OSError when it is not
+    installed and subprocess.TimeoutExpired when it hangs."""
+    extra: dict[str, Any] = {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0)} if os.name == "nt" else {}
+    done = subprocess.run(cmd, capture_output=True, text=True, encoding="oem" if os.name == "nt" else "utf-8",
+                          errors="replace", stdin=subprocess.DEVNULL, timeout=timeout, **extra)
+    return done.returncode, done.stdout, done.stderr
+
+
+def _address(origin: str | None) -> str | None:
+    """The origin of a session when it is an IP address; None for a host name, a display or the console."""
+    try:
+        return str(ipaddress.ip_address(str(origin).strip("[]"))) if origin else None
+    except ValueError:
+        return None
+
+
+def sessions_on() -> bool:
+    """The sign-in session poll runs unless ``SENTRAI_SESSIONS`` is off."""
+    return os.environ.get("SENTRAI_SESSIONS", "on").strip().lower() not in ("off", "0", "no", "false")
+
+
+class SessionSource(Source):
+    """Who is signed in on this machine: ``who`` (Linux, macOS) or ``quser`` (Windows), run every 15 s.
+
+    The sign-ins present at start are each sent once as ``session existing: ...``; after that every change
+    is one event, ``session started: erick on pts/0 from 203.0.113.5 since 2026-10-28T10:21:00+08:00`` or
+    ``session ended: ...``, with a ``login_session`` parsed object (``mvp/CONTRACT.md``, "Parsed fields").
+    A sign-in that stays open is reported again as "existing" about once an hour, so the core does not
+    forget it. The core ties each sudo or su command to the sign-in on its terminal (``core/app/admins.py``)
+    and tells an administrator's own root work from an intruder's. Where the command is missing (Windows
+    Home has no quser) it says so once and sends nothing. ``since`` carries this computer's UTC offset."""
+
+    def __init__(self, interval: float = SESSIONS_EVERY_S, windows: bool | None = None,
+                 run: Callable[[list[str]], tuple[int, str, str]] | None = None, tz: Any = None,
+                 clock: Callable[[], float] = time.time, keepalive: float = SESSIONS_KEEPALIVE_S) -> None:
+        self.windows = os.name == "nt" if windows is None else windows
+        self.command = ["quser"] if self.windows else ["who"]
+        self.format = "quser" if self.windows else "who"
+        self.name = self.source = "sessions"
+        self.layer = "os"
+        self.interval, self.keepalive = interval, keepalive
+        self._run, self._tz, self._clock = run, tz, clock
+        self._seen: dict[tuple, dict[str, Any]] | None = None  # None until the first successful read
+        self._next = 0.0
+        self._keepalive_at = 0.0
+        self._off = False
+        self._warned = False
+
+    def sessions(self) -> list[dict[str, Any]] | None:
+        """The sessions open right now, or None when the command could not be run this time."""
+        runner = self._run if self._run is not None else run_command
+        try:
+            code, out, err = runner(self.command)
+        except OSError as exc:  # not installed, or this account may not run it: say so once, then stay quiet
+            self._off = True
+            print(f"[collector] cannot run {self.command[0]} ({exc}); who is signed in is not collected", flush=True)
+            return None
+        except subprocess.SubprocessError as exc:  # hung this time: try again at the next poll
+            if not self._warned:
+                self._warned = True
+                print(f"[collector] {self.command[0]} did not answer ({exc}); will try again", flush=True)
+            return None
+        if code != 0 and not (self.windows and "no user exists" in (out + err).lower()):
+            if not self._warned:  # quser says "No User exists for *" (exit 1) when nobody is signed in
+                self._warned = True
+                print(f"[collector] {self.command[0]} failed (exit {code}): {(err or out).strip()[:200]}", flush=True)
+            return None
+        return parsers.parse_quser(out, self._tz) if self.windows else parsers.parse_who(out, self._tz)
+
+    @staticmethod
+    def _key(s: dict[str, Any]) -> tuple:
+        return (s["user"], s["tty"], s.get("since"))
+
+    def event(self, what: str, s: dict[str, Any]) -> dict[str, Any]:
+        origin, since = s.get("origin"), s.get("since")
+        raw = f"session {what}: {s['user']} on {s['tty']}" + (f" from {origin}" if origin else "") \
+            + (f" since {since}" if since else "")
+        parsed = {"format": self.format, "kind": "login_session", "session_event": what, "user": s["user"],
+                  "tty": s["tty"], "origin": origin, "session_id": s.get("session_id"), "since": since}
+        return make_event(self.layer, self.source, raw, src_ip=_address(origin), user=s["user"], host=real_host(),
+                          parsed=parsed)
+
+    def poll(self) -> list[dict[str, Any]]:
+        now = self._clock()
+        if self._off or now < self._next:
+            return []
+        self._next = now + self.interval
+        current = self.sessions()
+        if current is None:
+            return []
+        seen = {self._key(s): s for s in current}
+        if self._seen is None:
+            events = [self.event("existing", s) for s in current]
+            self._keepalive_at = now + self.keepalive
+        else:
+            events = [self.event("ended", s) for key, s in self._seen.items() if key not in seen]
+            started = [key for key in seen if key not in self._seen]
+            events += [self.event("started", seen[key]) for key in started]
+            if now >= self._keepalive_at:
+                events += [self.event("existing", s) for key, s in seen.items() if key not in started]
+                self._keepalive_at = now + self.keepalive
+        self._seen = seen
+        return events
 
 
 # Windows channel -> the event IDs read from it (parsers.WINDOWS_EVENTS says what each one means).
@@ -736,7 +857,7 @@ def default_sources(logs_dir: Path, heartbeat_interval: float = 10.0, store: Off
         return store.get(path_key(logs_dir / name)) if store else None
 
     return [*(JsonLogSource(logs_dir / name, saved(name)) for name in SOURCE_MAP), *discovered_sources(store),
-            HeartbeatSource(heartbeat_interval)]
+            *([SessionSource()] if sessions_on() else []), HeartbeatSource(heartbeat_interval)]
 
 
 POLL_S = float(os.environ.get("SENTRAI_COLLECTOR_POLL_S", "0.05"))  # how often logs are checked for new lines
@@ -921,7 +1042,8 @@ def system_log_entries(root: Path = Path("/"), has_journalctl: bool | None = Non
         entries.append({"path": str(auth), "layer": "os", "format": "syslog", "why": "SSH logins (sshd)"})
     elif has_journalctl if has_journalctl is not None else shutil.which("journalctl"):
         entries.append({"path": "journald:sshd", "layer": "os", "format": "journald",
-                        "why": "SSH logins (sshd) from the systemd journal; this system has no auth.log"})
+                        "why": "SSH logins (sshd), sudo, su and sign-in sessions from the systemd journal; "
+                               "this system has no auth.log"})
     return entries + service_log_entries(root)
 
 

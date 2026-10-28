@@ -178,6 +178,21 @@ SECTIONS = (
         Field("SENTRAI_HEALTH_URL", "A page that must keep working while SentrAI blocks (checked after each action)"),
         Field("PROTECTED_IPS", "IPs or networks never to block (comma-separated)", "127.0.0.1,::1,localhost"),
         Field("PROTECTED_USERS", "More accounts never to lock (admin and service accounts always are)"),
+        # The administrators (core/app/admins.py): whose root work is their own. The installer writes ADMIN_IPS
+        # from the allowed addresses; "This was me" on an incident teaches the rest; the Configuration page has them all.
+        Field("ADMIN_IPS", "Addresses your administrators sign in from, so their root work (sudo) there is theirs, "
+              "not an incident (comma-separated; blank to teach it with This was me)", advanced=True),
+        Field("ADMIN_SSH_KEYS", "Your administrators' SSH key fingerprints, SHA256:... (ssh-keygen -lf "
+              "~/.ssh/id_ed25519.pub prints one; comma-separated)", advanced=True),
+        Field("ADMIN_ACCOUNTS", "Your administrators' accounts: deploy on every machine, or erick@web-01 on one "
+              "(comma-separated)", advanced=True),
+        Field("ADMIN_SESSIONS", "Tell your administrators' own root work from an intruder's (off judges every "
+              "line on its own)", "on", choices=("on", "off"), advanced=True),
+        Field("ADMIN_LEARN", "Learn a new address seen with a known SSH key, and a new key seen from a known "
+              "address", "on", choices=("on", "off"), advanced=True),
+        Field("ADMIN_SESSION_HOURS", "Hours a sign-in counts as open after its last line", "12", float, advanced=True),
+        Field("ADMIN_SIGNIN_HOURS", "Hours a dashboard sign-in as Owner or Admin vouches for its address", "12",
+              float, advanced=True),
         Field("BUSY_SERVER", "Busy server (game server, big network): group many attackers into one wave and alert "
               "with a summary", "off", choices=("off", "on"), advanced=True),
         Field("TRUSTED_IPS", "Known-good IPs or networks never analysed (players' relay, CDN, monitoring)",

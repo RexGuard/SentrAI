@@ -15,7 +15,8 @@ from datetime import datetime
 from typing import Any
 from urllib.parse import unquote, unquote_plus
 
-from .netlogs import SSH_FAILURES, AuthLine, HttpLine, NetworkAlert, parse_auth, parse_http, parse_network_alert, parse_sshd
+from .netlogs import (SERVICE_ACCOUNTS, SSH_FAILURES, AuthLine, HttpLine, NetworkAlert, SudoLine, SuLine, parse_auth,
+                      parse_http, parse_login_session, parse_network_alert, parse_sshd, parse_su, parse_sudo)
 
 
 @dataclass
@@ -299,6 +300,7 @@ class RulesEngine:
         self._http_4xx: dict[str, deque[tuple[float, str]]] = defaultdict(deque)
         self._companions: dict[str, deque[tuple[float, str]]] = defaultdict(deque)
         self._svc_failed: dict[str, deque[tuple[float, str]]] = defaultdict(deque)  # Windows, RDP, databases
+        self._sudo_failed: dict[str, deque[tuple[float, str]]] = defaultdict(deque)  # wrong sudo/su passwords per account@host
         # Every counted guess from one IP, any source; capped so a day-long flood cannot grow without limit.
         self._slow: dict[str, deque[tuple[float, str]]] = defaultdict(lambda: deque(maxlen=1000))
         self._lock = threading.Lock()
@@ -309,7 +311,7 @@ class RulesEngine:
         for store, window in ((self._failed, self.window_s), (self._ssh_failed, self.ssh_window_s),
                               (self._ssh_probes, self.ssh_window_s), (self._http_4xx, self.scan_window_s),
                               (self._companions, self.window_s), (self._slow, self.slow_window_s),
-                              (self._svc_failed, self.ssh_window_s)):
+                              (self._svc_failed, self.ssh_window_s), (self._sudo_failed, self.ssh_window_s)):
             for key in [k for k, dq in store.items() if not dq or ts - dq[-1][0] > window]:
                 del store[key]
                 if store is self._ssh_failed:
@@ -318,7 +320,7 @@ class RulesEngine:
     def reset(self) -> None:
         with self._lock:
             for d in (self._failed, self._ssh_failed, self._ssh_attempts, self._ssh_probes, self._http_4xx,
-                      self._companions, self._slow, self._svc_failed):
+                      self._companions, self._slow, self._svc_failed, self._sudo_failed):
                 d.clear()
 
     def check(self, event: dict[str, Any], now: float) -> RuleHit | None:
@@ -344,6 +346,18 @@ class RulesEngine:
         ssh = parse_sshd(event)
         if ssh is not None:
             return self._sshd(event, ssh, now)
+        # Root work on the host itself. These lines are settled here, never by an AI or keyword
+        # guess: an administrator's "sudo cat /etc/shadow" is their job, and who they are is a
+        # question for admins.py, not for the classifier.
+        sudo = parse_sudo(event)
+        if sudo is not None:
+            return self._sudo(event, sudo, raw, now)
+        su = parse_su(event)
+        if su is not None:
+            return self._su(event, su, now)
+        if (session := parse_login_session(event)) is not None:
+            who = f"{session.user or '?'} on {session.tty or '?'}" + (f" from {session.origin}" if session.origin else "")
+            return RuleHit("benign", f"login session {session.event}: {who}")
         auth = parse_auth(event)
         if auth is not None:
             return self._service_auth(event, auth, now)
@@ -596,6 +610,65 @@ class RulesEngine:
         if what == "account_created":
             return RuleHit("benign", f"Windows account '{user}' created by '{p.get('by') or '?'}'")
         return None
+
+    # ------------------------------------------------------------------ sudo and su
+    def _sudo_guesses(self, event: dict[str, Any], who: str, now: float, weight: int = 1) -> RuleHit | None:
+        """Wrong sudo or su passwords by one account on one host: three lines (a sudo line already
+        stands for up to three tries) within the SSH window is password guessing against root."""
+        key = f"{who}@{event.get('host') or 'unknown'}"
+        ts = _event_ts(event, now)
+        eid = str(event.get("event_id"))
+        with self._lock:
+            dq = self._sudo_failed[key]
+            for _ in range(max(1, weight)):
+                ids = _window_add(dq, ts, eid, self.ssh_window_s)
+        if len(ids) >= max(3, self.ssh_count):
+            return RuleHit("privilege_escalation", f"{len(ids)} wrong passwords for root (sudo/su) by '{who}' within "
+                                                   f"{int(self.ssh_window_s)} s: guessing the root password",
+                           related_event_ids=list(dict.fromkeys(ids)))
+        return None
+
+    def _sudo(self, event: dict[str, Any], sudo: SudoLine, raw: str, now: float) -> RuleHit:
+        who = sudo.user or str(event.get("user") or "?")
+        service = who.lower() in SERVICE_ACCOUNTS
+        command = sudo.command or ""
+        shell = bool(re.search(r"(^|/)(ba|z|da|k|tc|c)?sh\b|\bpython[\d.]*\s+-c\b|\bperl\s+-e\b", command))
+        if sudo.event == "command":
+            if service:
+                return RuleHit("privilege_escalation", f"service account '{who}' ran a command as "
+                                                       f"{sudo.target or 'root'} with sudo: {command[:120]} (a web "
+                                                       f"shell or exploited service is getting root)")
+            if why := log_wipe(command) or log_wipe(raw):
+                return RuleHit("log_tampering", f"Log tampering: {why} ({raw.strip()[:200]})")
+            return RuleHit("benign", f"sudo by {who}" + (f" as {sudo.target}" if sudo.target else "") + f": {command[:120]}")
+        if sudo.event in ("not_in_sudoers", "not_allowed"):
+            if service or shell:
+                what = "a service account" if service else f"'{who}'"
+                return RuleHit("privilege_escalation", f"{what} tried sudo without the right ({sudo.event.replace('_', ' ')}): "
+                                                       f"{command[:120]}")
+            return RuleHit("benign", f"sudo refused for {who} ({sudo.event.replace('_', ' ')}): {command[:120]}")
+        if sudo.event in ("wrong_password", "auth_failure"):
+            if service:
+                return RuleHit("privilege_escalation", f"service account '{who}' is trying sudo passwords")
+            hit = self._sudo_guesses(event, who, now, weight=sudo.count if sudo.event == "wrong_password" else 1)
+            return hit or RuleHit("benign", f"wrong sudo password by {who} ({sudo.count} tries); below the guessing threshold")
+        if sudo.event == "refused":
+            return RuleHit("benign", f"sudo refused for {who}: {command[:120]}")
+        return RuleHit("benign", f"sudo: {sudo.event.replace('_', ' ')}" + (f" for {sudo.target}" if sudo.target else ""))
+
+    def _su(self, event: dict[str, Any], su: SuLine, now: float) -> RuleHit:
+        who = su.user or str(event.get("user") or "?")
+        service = who.lower() in SERVICE_ACCOUNTS
+        if su.event == "switched":
+            if service:
+                return RuleHit("privilege_escalation", f"service account '{who}' switched to {su.target or 'root'} with su")
+            return RuleHit("benign", f"su by {who} to {su.target or '?'}")
+        if su.event in ("failed", "auth_failure"):
+            if service:
+                return RuleHit("privilege_escalation", f"service account '{who}' is trying the {su.target or 'root'} password")
+            hit = self._sudo_guesses(event, who, now)
+            return hit or RuleHit("benign", f"failed su by {who} to {su.target or '?'}; below the guessing threshold")
+        return RuleHit("benign", f"su: {su.event.replace('_', ' ')}" + (f" for {su.target}" if su.target else ""))
 
     # ------------------------------------------------------------------ sshd
     def _sshd(self, event: dict[str, Any], ssh: Any, now: float) -> RuleHit:

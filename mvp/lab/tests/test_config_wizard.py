@@ -85,7 +85,7 @@ def test_new_machine_runs_wizard_only_when_interactive(config_file, monkeypatch)
 BEFORE_AI = [f for s in cfg.SECTIONS[:[s.key for s in cfg.SECTIONS].index("ai")] for f in s.fields]
 # With a preset (not Advanced), the preset's fields are not asked.
 ASKED_BEFORE_AI = [f for f in BEFORE_AI if f.env not in cfg.PRESET_FIELDS and f.env not in cfg.EMAIL_FIELDS
-                  and not f.advanced]  # advanced settings are never asked
+                   and not f.advanced]  # advanced fields are set on the Configuration page, never asked
 PLAIN_BEFORE_AI = [""] * sum(not f.secret for f in ASKED_BEFORE_AI)
 SECRET_BEFORE_AI = [""] * sum(f.secret for f in ASKED_BEFORE_AI)
 

@@ -161,6 +161,7 @@ On Windows use `.\.venv\Scripts\python.exe` in place of `.venv/bin/python`.
 | Open one machine's own page | **Machines**, click the machine. Its address (`?machine=<name>`) can be shared or bookmarked |
 | See one machine's CPU, memory, disks, network and temperatures | on its page, the **Hardware** tab (the list shows CPU, memory and fullest disk too) |
 | See one machine's incidents, blocks or services | on its page, the **Incidents**, **Blocks** or **Services** tab |
+| See who is signed in on a machine, what your administrators ran as root, and teach SentrAI who they are | on its page, the **Admins** tab |
 | Scan a machine for threats, or back it up | on its page, press **Scan for threats** or **Back up now** |
 | Remove a machine from the panel | on its page, **Agent** tab: tick **Yes, stop accepting its key**, press **Revoke key** |
 | Remove the agent from a Linux machine | `sudo systemctl disable --now sentrai-agent && sudo rm /etc/systemd/system/sentrai-agent.service` |
@@ -179,6 +180,18 @@ SENTRAI_BACKUP_PATHS=/srv/app/data
 
 The agent picks a job up within about 15 seconds. Serious scan findings open an incident on that
 machine, and backups stay on the machine.
+
+**Admins** shows who is signed in on the machine right now (the account, how and from where, and
+whether SentrAI trusts that sign-in and why), the root work your known administrators did lately,
+and the administrators it knows: accounts, addresses and SSH keys, each with how it came to know
+them (a setting, taught, or learned) and a **Forget** button, except for the ones from the
+settings. A small form adds an address, key or account with a label. Root work from a sign-in
+SentrAI does not know opens a **Root access from an unrecognised sign-in** incident, which never
+blocks anything by itself and has two answers on the incident and in its Telegram alert:
+**This was me** teaches SentrAI that sign-in and closes the alert, **Not me: block it** blocks the
+address. The panel's installer puts your `--protect` and dashboard addresses in `ADMIN_IPS`, so your own work
+from your computer counts as yours on every machine from the start. See
+[Your own administrators](settings.html#your-own-administrators).
 
 **Hardware** comes from the agent every 30 seconds: CPU, memory, each disk, network traffic, uptime,
 and temperatures where the machine has sensors it can read (most Linux machines; usually none on

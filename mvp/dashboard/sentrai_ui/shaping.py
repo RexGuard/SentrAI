@@ -88,6 +88,7 @@ CATEGORY_LABELS = {
     "malware": "Malware found",
     "staff_report": "Staff report",
     "prompt_injection": "Prompt injection",
+    "unauthorised_admin": "Root access from an unrecognised sign-in",
 }
 
 # Plain words, sentence case: emoji render differently on every OS and tables can't show icons.
@@ -290,8 +291,12 @@ def incident_contribution(inc: dict) -> float:
     return round(float(inc.get("points") or 0) + float(inc.get("inaction_penalty") or 0), 1)
 
 
+ADMIN_CATEGORY = "unauthorised_admin"  # root work from a sign-in SentrAI does not know: "This was me" or "Not me"
+
+
 def available_actions(inc: dict) -> dict[str, bool]:
-    """Which operator buttons are meaningful for this incident."""
+    """Which operator buttons are meaningful for this incident. "mine" is "This was me": a root-access incident
+    still open, which the person answers instead of approving (Approve is "Not me: block it" there)."""
     status = str(inc.get("status") or "")
     actions = inc.get("actions") or []
     has_active = any(a.get("status") == "active" for a in actions if isinstance(a, dict))
@@ -299,11 +304,20 @@ def available_actions(inc: dict) -> dict[str, bool]:
         "decide": status in ACTIVE_STATUSES,
         "ack": status == "open" and not inc.get("acked"),
         "contain_controls": status == "contained" or has_active,
+        "mine": status in ACTIVE_STATUSES and str(inc.get("category") or "") == ADMIN_CATEGORY,
     }
 
 
+def decision_verb(inc: dict) -> str:
+    """What an incident row asks of a person: was this you, approve or reject, or keep or roll back."""
+    can = available_actions(inc)
+    if can["mine"]:
+        return "Was this you?"
+    return "Approve or reject" if can["decide"] else "Keep or roll back"
+
+
 CHAT_DECISION_NEEDS = {"approve": "decide", "reject": "decide", "ack": "ack",
-                       "rollback": "contain_controls", "make_permanent": "contain_controls"}
+                       "rollback": "contain_controls", "make_permanent": "contain_controls", "mine": "mine"}
 
 
 def suggestion_state(inc: dict | None, decision: str) -> tuple[bool, str]:
@@ -465,7 +479,9 @@ def agent_label(name: Any) -> Any:
 
 
 # Audit record types keep their stored names; these read better in the feed.
-RECORD_TYPE_LABELS = {"needle_review": "countersign review"}
+RECORD_TYPE_LABELS = {"needle_review": "countersign review", "admin_action": "admin work",
+                      "admin_confirmed": "this was me", "admin_distrusted": "not me",
+                      "admin_changed": "administrators changed", "admin_signed_in": "dashboard sign-in"}
 
 
 # Fallback mapping from audit record type to the agent that normally owns it.
@@ -523,8 +539,36 @@ def agent_for(record: dict) -> str:
     return TYPE_TO_AGENT.get(rtype, "Scribe")
 
 
+def admin_record_summary(rtype: str, data: dict) -> str:
+    """The administrators' records (core admins.py) in plain words: whose root work, what was taught or forgotten."""
+    who, host = data.get("user") or "?", data.get("host") or "?"
+    if rtype == "admin_action":
+        text = f"{who} on {host}: {data.get('what') or data.get('raw') or 'root work'}"
+        would = data.get("would_be")
+        return text + (f" (would have been: {category_label(would)})" if would and would != "benign" else "")
+    op = data.get("operator") or "someone"
+    if rtype == "admin_confirmed":
+        learned = [str(x) for x in data.get("learned") or []]
+        return f"{op} said this was them" + (f"; now known: {', '.join(learned)}" if learned else "")
+    if rtype == "admin_distrusted":
+        gone = [str(x) for x in data.get("forgotten") or []]
+        return f"{op} said this was not them" + (f"; forgotten: {', '.join(gone)}" if gone else "")
+    if rtype == "admin_changed":
+        verb = "forgot" if data.get("action") == "forget" else "added"
+        label = f" ({data['label']})" if data.get("label") else ""
+        where = f" on {data['host']}" if data.get("host") else ""
+        return f"{op} {verb} {data.get('kind') or 'an entry'} {data.get('value') or ''}{label}{where}".rstrip()
+    if rtype == "admin_signed_in":
+        return (f"{data.get('email') or 'someone'} signed in as {data.get('role') or '?'} from "
+                f"{data.get('address') or '?'}: an administrator's address until {day_time(data.get('until'))}")
+    return ""
+
+
 def summarize_record(record: dict) -> str:
     data = record.get("data") if isinstance(record.get("data"), dict) else {}
+    rtype = str(record.get("type") or "")
+    if rtype.startswith("admin_") and (text := admin_record_summary(rtype, data)):
+        return text
     for key in ("summary", "message", "text", "detail", "explanation"):
         if data.get(key):
             return str(data[key])
@@ -662,7 +706,8 @@ def panel_machines(found: Iterable[dict], agents: Iterable[dict], risk: dict | N
                      "blocked": int(m.get("blocked") or 0), "last_seen": last,
                      "agent_id": (agent or {}).get("agent_id"), "services_at": m.get("services_at"),
                      "services": [x for x in m.get("services") or [] if isinstance(x, dict)],
-                     "hardware": m.get("hardware") if isinstance(m.get("hardware"), dict) else None})
+                     "hardware": m.get("hardware") if isinstance(m.get("hardware"), dict) else None,
+                     "sessions": int(m["sessions"]) if isinstance(m.get("sessions"), (int, float)) else None})
     for host, agent in live.items():
         if host not in seen:
             rows.append({"name": host, "place": "Agent", "host": host, "online": False, "waiting": True,
@@ -950,8 +995,10 @@ def _machine_stats(m: dict, now: datetime | None) -> str:
         return ""
     found = [f"{m['open']} open" if m.get("open") else "", f"{m['contained']} contained" if m.get("contained") else ""]
     cells = [*(hardware_cells(m.get("hardware")) if m.get("online") else []), ("Incidents", " · ".join(x for x in found if x) or "None", bool(m.get("open"))),
-             ("Blocks", f"{m['blocked']} in force" if m.get("blocked") else "None", False),
-             ("Last seen", seen_ago(m.get("last_seen"), now), False)]
+             ("Blocks", f"{m['blocked']} in force" if m.get("blocked") else "None", False)]
+    if m.get("sessions") is not None:  # a core that keeps track of who is signed in (admins.py)
+        cells.append(("Signed in", plural(m["sessions"], "person", "people") if m["sessions"] else "Nobody", False))
+    cells.append(("Last seen", seen_ago(m.get("last_seen"), now), False))
     hw = {label for label, _, _ in hardware_cells(m.get("hardware"))}
     return '<span class="m-stats">' + "".join(
         f'<span class="m-stat{" hw" if label in hw else ""}"><span class="m-stat-label">{label}</span>'
@@ -1225,9 +1272,11 @@ def attention(inc: dict) -> list[str]:
         why.append("Overdue, nobody answered")
     if int(inc.get("escalation_level") or 0) > 0 and not inc.get("acked"):
         why.append(f"Escalated to {inc.get('owner')}")
-    if inc.get("needs_review"):
-        why.append("AI unsure, needs review")
     can = available_actions(inc)
+    if can["mine"]:
+        why.append("Was this you?")
+    elif inc.get("needs_review"):
+        why.append("AI unsure, needs review")
     if inc.get("status") == "contained" or can["contain_controls"]:
         why.append("Keep or roll back the block")
     elif can["decide"] and not inc.get("acked"):
@@ -2134,6 +2183,159 @@ def bulk_result(verb: str, done: list[str], failed: list[tuple[str, str]]) -> st
     if failed:
         text += ". Not done: " + "; ".join(f"{i} ({why})" for i, why in failed)
     return text
+
+
+# ---------------------------------------------------------------- the administrators (core admins.py)
+
+TRUST_WORDS = {"trusted": "Known administrator", "unknown": "Not known as an administrator", "suspect": "Suspect"}
+VIA_WORDS = {"ssh": "SSH", "windows": "Windows", "console": "console", "who": "terminal", "logind": "terminal"}
+ADMIN_KINDS = {"address": "Address or network", "key": "SSH key fingerprint", "account": "Account"}
+SESSION_COLUMNS = ["User", "How", "From", "Trust", "Since", "Root commands", "Why"]  # the long words last
+ACTIVITY_COLUMNS = ["When", "Who", "How", "What", "Would have been", "Why"]
+
+
+def short_key(fingerprint: Any) -> str:
+    """A key fingerprint cut for a sentence: 'SHA256:Q7w3cZk2u5Yd9bJm1Lx…'."""
+    text = str(fingerprint or "")
+    return text if len(text) <= 20 else text[:19] + "…"
+
+
+def signin_how(via: Any, method: Any = None, key: Any = None, address: Any = None) -> str:
+    """How someone got in, in a few words: SSH key, SSH password, console, remote desktop."""
+    via, method = str(via or ""), str(method or "")
+    if via == "ssh":
+        if key or method == "publickey":
+            return "SSH key"
+        return "SSH password" if method in ("", "password", "keyboard-interactive") else f"SSH ({method})"
+    if via == "windows":
+        return "remote desktop" if method == "remote_desktop" else "Windows sign-in"
+    if via in ("console", "who", "logind"):
+        return "terminal session" if address else "console"
+    return "no sign-in seen"
+
+
+def trust_words(trust: Any) -> str:
+    return TRUST_WORDS.get(str(trust or ""), "Unknown")
+
+
+def actor_facts(actor: dict | None) -> list[tuple[str, str]]:
+    """The person behind an incident, for the card's grid: who, how they got in, from where, since when."""
+    if not isinstance(actor, dict) or not actor:
+        return []
+    key = actor.get("key")
+    how = signin_how(actor.get("via"), None, key, actor.get("address"))
+    if key:
+        how += f" {short_key(key)}"
+    where = str(actor.get("address") or ("the machine itself" if how == "console" else "no address seen"))
+    return [("Who", f"{actor.get('user') or '?'} on {actor.get('host') or '?'}"), ("How", how), ("From", where),
+            ("Since", day_time(actor.get("since")) if actor.get("since") else "-")]
+
+
+def actor_sentence(actor: dict | None) -> str:
+    """Why SentrAI did or did not know this sign-in, as one plain sentence."""
+    if not isinstance(actor, dict) or not actor:
+        return ""
+    head = {"trusted": "SentrAI knew this sign-in", "suspect": "SentrAI distrusts this sign-in"}.get(
+        str(actor.get("trust") or ""), "SentrAI did not know this sign-in as an administrator's")
+    why = str(actor.get("why") or "").strip().rstrip(".")
+    return f"{head}: {why}." if why else f"{head}."
+
+
+def learned_text(inc_id: str, out: dict | None) -> str:
+    """After "This was me": that the alert closed, and what SentrAI learned, in one plain line."""
+    out = out if isinstance(out, dict) else {}
+    learned = [str(x) for x in out.get("learned") or []]
+    text = f"{inc_id} closed: this was you. " + (
+        f"SentrAI now knows {', '.join(learned)} as an administrator's." if learned
+        else "SentrAI already knew this sign-in; there was nothing new to learn.")
+    also = [str(x) for x in out.get("also_closed") or []]
+    return text + (f" Also closed, the same person's: {', '.join(also)}." if also else "")
+
+
+def session_rows(sessions: Iterable[dict] | None) -> pd.DataFrame:
+    """Who is signed in on a machine now: how they got in, from where, and whether SentrAI knows them."""
+    rows = []
+    for s in sessions or []:
+        if not isinstance(s, dict):
+            continue
+        how = signin_how(s.get("via"), s.get("method"), s.get("key"), s.get("address"))
+        if s.get("key"):
+            how += f" {short_key(s['key'])}"
+        since = day_time(s.get("since")) if s.get("since") else "-"
+        if s.get("preexisting"):
+            since += " (before SentrAI started watching)"
+        rows.append({"User": s.get("user") or "-", "How": how, "From": s.get("address") or s.get("tty") or "-",
+                     "Trust": trust_words(s.get("trust")), "Since": since, "Root commands": int(s.get("actions") or 0),
+                     "Why": s.get("why") or "-"})
+    return pd.DataFrame(rows, columns=SESSION_COLUMNS)
+
+
+def admin_activity_rows(activity: Iterable[dict] | None) -> pd.DataFrame:
+    """Root work by known administrators, newest first, and what the rules would have called it from a stranger."""
+    rows = []
+    for a in activity or []:
+        if not isinstance(a, dict):
+            continue
+        how = VIA_WORDS.get(str(a.get("via") or ""), str(a.get("via") or "-"))
+        rows.append({"When": day_time(a.get("at")), "Who": a.get("user") or "-",
+                     "How": how + (f" from {a['address']}" if a.get("address") else ""),
+                     "What": a.get("what") or "-",
+                     "Would have been": category_label(a.get("flagged_as")) if a.get("flagged_as") else "-",
+                     "Why": a.get("reason") or "-"})
+    return pd.DataFrame(rows, columns=ACTIVITY_COLUMNS)
+
+
+def how_known(entry: dict) -> str:
+    """'from the settings (ADMIN_IPS)', 'taught by Erick on 28 Oct 10:21', 'learned from key SHA256:… on 28 Oct 10:21'."""
+    how, by, at = str(entry.get("how") or ""), str(entry.get("by") or ""), entry.get("at")
+    when = f" on {day_time(at)}" if at else ""
+    if how == "setting":
+        return f"from the settings ({by})" if by else "from the settings"
+    if how == "taught":
+        return f"taught by {by}{when}" if by else f"taught{when}"
+    if how == "learned":
+        return f"learned from {by if by and by != 'a trusted sign-in' else 'a trusted sign-in'}{when}"
+    return f"{how or 'known'}{when}"
+
+
+def _last_seen(entry: dict) -> str:
+    return f" · last seen {day_time(entry['last_seen'])}" if entry.get("last_seen") else ""
+
+
+def admin_entries(data: dict | None, host: str | None = None) -> list[dict]:
+    """The known administrators as rows for the Admins tab: kind, value, headline, detail, and whether Forget
+    applies (never to a setting). Accounts for this machine and for every machine (host "*"); addresses and keys
+    count everywhere; a dashboard sign-in that vouches for an address is listed with the addresses."""
+    data = data if isinstance(data, dict) else {}
+    out = []
+    for a in data.get("accounts") or []:
+        if not isinstance(a, dict) or not a.get("account") or (host and a.get("host") not in (None, "*", host)):
+            continue
+        where = "every machine" if a.get("host") in (None, "*") else str(a["host"])
+        out.append({"kind": "account", "value": str(a["account"]), "host": str(a.get("host") or "*"),
+                    "headline": f"{a['account']} on {where}", "detail": how_known(a) + _last_seen(a),
+                    "forget": a.get("how") != "setting"})
+    for x in data.get("addresses") or []:
+        if not isinstance(x, dict) or not x.get("address"):
+            continue
+        out.append({"kind": "address", "value": str(x["address"]), "host": None,
+                    "headline": str(x["address"]) + (f" · {x['label']}" if x.get("label") else ""),
+                    "detail": how_known(x) + _last_seen(x), "forget": x.get("how") != "setting"})
+    for s in data.get("sign_ins") or []:
+        if not isinstance(s, dict) or not s.get("address"):
+            continue
+        out.append({"kind": "address", "value": str(s["address"]), "host": None, "headline": str(s["address"]),
+                    "detail": f"vouched for by the dashboard sign-in of {s.get('email') or 'an administrator'} "
+                              f"({s.get('role') or 'Owner'}) until {day_time(s.get('until'))}", "forget": True})
+    for k in data.get("keys") or []:
+        if not isinstance(k, dict) or not k.get("fingerprint"):
+            continue
+        users = ", ".join(str(u) for u in k.get("users") or [] if u)
+        parts = [str(k["type"]) if k.get("type") else "", f"used by {users}" if users else "", how_known(k)]
+        out.append({"kind": "key", "value": str(k["fingerprint"]), "host": None,
+                    "headline": str(k["fingerprint"]) + (f" · {k['label']}" if k.get("label") else ""),
+                    "detail": " · ".join(p for p in parts if p) + _last_seen(k), "forget": k.get("how") != "setting"})
+    return out
 
 
 # ---------------------------------------------------------------- updates

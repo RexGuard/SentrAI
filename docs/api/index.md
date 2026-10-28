@@ -308,7 +308,7 @@ curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8000/openapi.json -o sen
 | [Events and log sources](events.html) | What the collectors, agents and other tools send in, and which log files are read |
 | [Incidents](incidents.html) | What SentrAI found, what staff reported, and what people decide about it |
 | [Reports and summaries](reports.html) | Evidence reports and the one-page client summary |
-| [Risk and protection](status.html) | The risk index, each machine, the protection switch and the block list |
+| [Risk and protection](status.html) | The risk index, each machine, the administrators, the protection switch and the block list |
 | [Alerts and routing](alerts.html) | Alerts waiting to go out, who gets them, and personal Telegram chats |
 | [Central panel and agents](fleet.html) | Machines joining a central panel, and what their agents may call |
 | [Scans, quarantine and backups](scans.html) | Process and threat scans, quarantined files and backups |

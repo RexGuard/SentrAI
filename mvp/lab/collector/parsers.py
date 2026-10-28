@@ -1,5 +1,6 @@
-"""Parsers for real server log lines: nginx access/error logs, syslog (sshd and friends), journald JSON,
-Windows Event Log records, Suricata eve.json alerts, and MySQL/MariaDB, PostgreSQL and MongoDB logs.
+"""Parsers for real server log lines: nginx access/error logs, syslog (sshd, sudo, su, systemd-logind and
+friends), journald JSON, Windows Event Log records, Suricata eve.json alerts, and MySQL/MariaDB,
+PostgreSQL and MongoDB logs; plus the output of ``who`` and ``quser`` (who is signed in right now).
 
 ``parse_line(line, fmt)`` returns a ``Parsed`` (the log's own timestamp, host, source IP and user,
 plus a ``fields`` dict that becomes the Event's ``parsed`` object), or None when the line is not in
@@ -172,12 +173,15 @@ SSHD_PROGRAMS = {"sshd", "sshd-session", "sshd-auth"}  # OpenSSH 9.8+ splits ssh
 IP = r"(?P<ip>[0-9a-fA-F:.]+(?:%\w+)?)"
 PORT = r"port (?P<port>\d+)"
 USER = r"(?P<user>\S*)"  # may be empty: "Invalid user  from ..."
+# "... port 51234 ssh2: ED25519 SHA256:..." : the key a publickey sign-in used (OpenSSH 6.8 and later; a
+# certificate reads "ED25519-CERT SHA256:... ID ..."). Older servers wrote nothing after "ssh2".
+KEY = r"(?: ssh2(?:: (?P<key_type>[\w-]+) (?P<key_fingerprint>(?:SHA256|MD5):\S+))?)?"
 
 # Order matters: first match wins. Each entry: (ssh_event, regex, outcome).
 # outcome: "success", "failure" (an authentication attempt that failed), or "info".
 SSHD_PATTERNS: list[tuple[str, re.Pattern[str], str]] = [(ev, re.compile(rx), out) for ev, rx, out in [
-    ("accepted", rf"^Accepted (?P<method>[\w-]+) for {USER} from {IP}(?: {PORT})?", "success"),
-    ("failed_auth", rf"^Failed (?P<method>[\w-]+) for (?P<invalid>invalid user )?{USER} from {IP}(?: {PORT})?",
+    ("accepted", rf"^Accepted (?P<method>[\w/-]+) for {USER} from {IP}(?: {PORT})?{KEY}", "success"),
+    ("failed_auth", rf"^Failed (?P<method>[\w/-]+) for (?P<invalid>invalid user )?{USER} from {IP}(?: {PORT})?{KEY}",
      "failure"),
     ("invalid_user", rf"^Invalid user {USER} from {IP}(?: {PORT})?", "failure"),
     ("max_auth_exceeded",
@@ -219,6 +223,7 @@ SSHD_PATTERNS: list[tuple[str, re.Pattern[str], str]] = [(ev, re.compile(rx), ou
 def parse_sshd_message(msg: str) -> dict[str, Any]:
     """sshd message text -> parsed fields. Unrecognised messages get ssh_event "other"."""
     f: dict[str, Any] = {"kind": "ssh", "ssh_event": "other", "outcome": "info", "auth_method": None,
+                         "key_type": None, "key_fingerprint": None,
                          "invalid_user": False, "preauth": "[preauth]" in msg, "port": None,
                          "_ip": None, "_user": None}
     for event, rx, outcome in SSHD_PATTERNS:
@@ -231,6 +236,8 @@ def parse_sshd_message(msg: str) -> dict[str, Any]:
                  port=int(g["port"]) if g.get("port") else None)
         if "method" in g:
             f["auth_method"] = g["method"]
+        if g.get("key_fingerprint"):
+            f.update(key_type=g.get("key_type"), key_fingerprint=g["key_fingerprint"])
         if event == "invalid_user" or g.get("invalid") or g.get("phase") == "invalid":
             f["invalid_user"] = True
         if "count" in g:
@@ -245,6 +252,103 @@ def parse_sshd_message(msg: str) -> dict[str, Any]:
     return f
 
 
+# ---------------------------------------------------------------- sudo, su, systemd-logind
+
+# Who became root, and how. The Event's ``user`` is always the account that ran sudo or su, never the
+# account it ran as ("USER=root"): the core ties the command to that person's sign-in.
+SU_PROGRAMS = {"su", "su-l"}
+# "erick : TTY=pts/0 ; PWD=/home/erick ; USER=root ; COMMAND=/usr/bin/systemctl stop sentrai-core"
+# A refused one carries its reason first: "erick : user NOT in sudoers ; TTY=pts/0 ; ... ; COMMAND=/bin/bash",
+# "erick : 3 incorrect password attempts ; TTY=...". PWD, USER, GROUP and ENV are not always written, and
+# sudo pads the message with spaces.
+SUDO_COMMAND = re.compile(
+    r"^\s*(?P<user>[^\s:]+) : (?:(?P<message>[^;]*?) ; )?TTY=(?P<tty>[^;]*?) ;(?: PWD=(?P<pwd>[^;]*?) ;)?"
+    r"(?: USER=(?P<target>[^;]*?) ;)?(?: GROUP=[^;]*? ;)?(?: ENV=[^;]*? ;)? COMMAND=(?P<command>.*)$")
+SUDO_REFUSALS = (("not in sudoers", "not_in_sudoers"), ("not allowed", "not_allowed"),
+                 ("incorrect password", "wrong_password"))
+# "pam_unix(sudo:session): session opened for user root(uid=0) by erick(uid=1000)" (sudo, sudo-i, su, su-l);
+# older PAM wrote "session opened for user root by erick(uid=1000)" or "... by (uid=1000)".
+PAM_SESSION = re.compile(
+    r"pam_unix\((?P<service>sudo|sudo-i|su|su-l):session\): session (?P<what>opened|closed) for user "
+    r"(?P<target>[^\s(]+)(?:\(uid=\d+\))?(?: by (?P<by>[^\s(]*)\(uid=\d+\))?")
+# "pam_unix(sudo:auth): authentication failure; logname=erick uid=1000 euid=0 tty=/dev/pts/0 ruser=erick rhost=  user=erick"
+PAM_AUTH_FAILURE = re.compile(
+    r"pam_unix\((?P<service>sudo|sudo-i|su|su-l):auth\): authentication failure;(?:.*?\blogname=(?P<logname>\S*))?"
+    r".*?\btty=(?P<tty>\S*).*?\bruser=(?P<ruser>\S*).*?\buser=(?P<target>\S*)")
+# "(to root) erick on pts/0" / "FAILED SU (to root) erick on pts/0"
+SU_SWITCH = re.compile(r"^\s*(?P<failed>FAILED SU )?\(to (?P<target>[^)\s]+)\) (?P<user>\S*) on (?P<tty>\S+)")
+# "New session 5 of user erick." / "Removed session 5." / "Session 5 logged out. Waiting for processes to exit."
+LOGIND_NEW = re.compile(r"^New session (?P<sid>\S+) of user (?P<user>\S+?)\.?$")
+LOGIND_GONE = re.compile(r"^(?:Removed session (?P<sid>\S+?)\.?$|Session (?P<sid2>\S+) logged out\b)")
+
+
+def _tty(value: str | None) -> str | None:
+    """'/dev/pts/0' -> 'pts/0'; the words that mean no terminal ('unknown', '?', 'none') -> None."""
+    v = (value or "").strip()
+    if v.startswith("/dev/"):
+        v = v[5:]
+    return v if v not in ("", "unknown", "?", "none") else None
+
+
+def parse_sudo_message(msg: str) -> dict[str, Any]:
+    """sudo's message text -> parsed fields (kind "sudo"). ``_user`` is the account that ran sudo."""
+    f: dict[str, Any] = {"kind": "sudo", "sudo_event": "other", "by": None, "target_user": None, "tty": None,
+                         "command": None, "outcome": "info", "count": None}
+    if m := PAM_SESSION.search(msg):
+        if m["service"] in ("sudo", "sudo-i"):
+            f.update(sudo_event=f"session_{m['what']}", by=m["by"] or None, target_user=m["target"])
+    elif m := PAM_AUTH_FAILURE.search(msg):
+        if m["service"] in ("sudo", "sudo-i"):
+            f.update(sudo_event="auth_failure", by=m["ruser"] or m["logname"] or None,
+                     target_user=m["target"] or None, tty=_tty(m["tty"]), outcome="failure")
+    elif m := SUDO_COMMAND.match(msg):
+        reason = (m["message"] or "").strip()
+        event, outcome, count = "command", "success", None
+        if reason:
+            low = reason.lower()
+            event = next((name for words, name in SUDO_REFUSALS if words in low), "refused")
+            outcome = "failure"
+            if event == "wrong_password":
+                n = re.match(r"(\d+) ", reason)
+                count = int(n.group(1)) if n else 1
+        f.update(sudo_event=event, by=m["user"], target_user=m["target"] or None, tty=_tty(m["tty"]),
+                 command=m["command"].strip() or None, outcome=outcome, count=count)
+    f["_user"] = f["by"]
+    return f
+
+
+def parse_su_message(msg: str) -> dict[str, Any]:
+    """su's message text -> parsed fields (kind "su"). ``_user`` is the account that ran su."""
+    f: dict[str, Any] = {"kind": "su", "su_event": "other", "by": None, "target_user": None, "tty": None,
+                         "outcome": "info"}
+    if m := PAM_SESSION.search(msg):
+        if m["service"] in SU_PROGRAMS:
+            f.update(su_event=f"session_{m['what']}", by=m["by"] or None, target_user=m["target"])
+    elif m := PAM_AUTH_FAILURE.search(msg):
+        if m["service"] in SU_PROGRAMS:
+            f.update(su_event="auth_failure", by=m["ruser"] or m["logname"] or None,
+                     target_user=m["target"] or None, tty=_tty(m["tty"]), outcome="failure")
+    elif m := SU_SWITCH.match(msg):
+        failed = bool(m["failed"])
+        f.update(su_event="failed" if failed else "switched", by=m["user"] or None, target_user=m["target"],
+                 tty=_tty(m["tty"]), outcome="failure" if failed else "success")
+    f["_user"] = f["by"]
+    return f
+
+
+def parse_logind_message(msg: str) -> dict[str, Any]:
+    """systemd-logind's message -> parsed fields: kind "login_session" when a session was opened or
+    closed (its id is logind's), kind "log" for its other notes (seats, power keys, lids)."""
+    text = msg.strip()
+    if m := LOGIND_NEW.match(text):
+        return {"kind": "login_session", "session_event": "started", "user": m["user"], "tty": None,
+                "origin": None, "session_id": m["sid"], "since": None, "_user": m["user"]}
+    if m := LOGIND_GONE.match(text):
+        return {"kind": "login_session", "session_event": "ended", "user": None, "tty": None, "origin": None,
+                "session_id": m["sid"] or m["sid2"], "since": None, "_user": None}
+    return {"kind": "log", "_user": None}
+
+
 def _program_fields(prog: str, pid: str | None, msg: str) -> tuple[dict[str, Any], str | None, str | None]:
     f: dict[str, Any] = {"program": prog, "pid": int(pid) if pid else None, "message": msg}
     ip = user = None
@@ -252,6 +356,18 @@ def _program_fields(prog: str, pid: str | None, msg: str) -> tuple[dict[str, Any
         ssh = parse_sshd_message(msg)
         ip, user = ssh.pop("_ip"), ssh.pop("_user")
         f.update(ssh)
+    elif prog == "sudo":
+        sudo = parse_sudo_message(msg)
+        user = sudo.pop("_user")
+        f.update(sudo)
+    elif prog in SU_PROGRAMS:
+        su = parse_su_message(msg)
+        user = su.pop("_user")
+        f.update(su)
+    elif prog == "systemd-logind":
+        session = parse_logind_message(msg)
+        user = session.pop("_user")
+        f.update(session)
     else:
         f["kind"] = "log"
     return f, ip, user or None
@@ -786,6 +902,84 @@ def parse_mongodb(line: str, tz: tzinfo | None = None, now: datetime | None = No
     else:
         return _dropped({**f, "kind": "log"}, ts)
     return Parsed(f, ts=ts, src_ip=remote, user=str(user) if user else None)
+
+
+# ---------------------------------------------------------------- who is signed in: who / quser
+
+# "erick    pts/0        2026-10-28 10:21 (203.0.113.5)" (GNU who), "erick  ttys000  Oct 28 10:21 (203.0.113.5)"
+# (macOS, BSD). The brackets say where the person came from: an address, a host name, or a display such as
+# ":0"; a console sign-in has none.
+WHO_LINE = re.compile(
+    r"^(?P<user>\S+)\s+(?P<tty>\S+)\s+(?P<when>\d{4}-\d{2}-\d{2} \d{2}:\d{2}(?::\d{2})?"
+    r"|[A-Z][a-z]{2} +\d{1,2} \d{2}:\d{2}(?::\d{2})?)(?:\s+\((?P<origin>[^)]*)\))?")
+# quser: " USERNAME  SESSIONNAME  ID  STATE  IDLE TIME  LOGON TIME"; ">" marks the session running quser,
+# and a disconnected session has no session name.
+QUSER_LINE = re.compile(
+    r"^\s*>?\s*(?P<user>\S+)\s+(?:(?P<session>\S+)\s+)?(?P<id>\d+)\s+(?P<state>\S+)\s+(?P<idle>\S+)\s+(?P<logon>.+?)\s*$")
+QUSER_TIMES = ("%m/%d/%Y %I:%M %p", "%d/%m/%Y %H:%M", "%m/%d/%Y %H:%M", "%d.%m.%Y %H:%M", "%Y/%m/%d %H:%M",
+               "%Y-%m-%d %H:%M", "%d/%m/%Y %I:%M %p", "%Y-%m-%d %I:%M %p")
+
+
+def _with_zone(dt: datetime, tz: tzinfo | None) -> str:
+    """A naive local time -> ISO 8601 with this computer's offset at that moment (or ``tz``'s)."""
+    return _iso(dt.replace(tzinfo=tz) if tz is not None else dt.astimezone())
+
+
+def _who_time(text: str, tz: tzinfo | None, now: datetime | None) -> str | None:
+    if m := re.match(r"^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})(?::(\d{2}))?$", text):
+        try:
+            dt = datetime(*(int(x) for x in m.groups()[:5]), int(m.group(6) or 0))
+        except ValueError:
+            return None
+        return _with_zone(dt, tz)
+    m = re.match(r"^([A-Z][a-z]{2}) +(\d{1,2}) (\d{2}):(\d{2})(?::(\d{2}))?$", text)
+    month = MONTHS.get(m.group(1)) if m else None
+    if not month:
+        return None
+    now = now or (datetime.now(tz) if tz is not None else datetime.now().astimezone())
+    try:  # BSD who writes no year: this year, or last year for a December line read in January
+        dt = datetime(now.year, month, int(m.group(2)), int(m.group(3)), int(m.group(4)), int(m.group(5) or 0))
+    except ValueError:
+        return None
+    if dt - now.replace(tzinfo=None) > timedelta(days=2):
+        dt = dt.replace(year=dt.year - 1)
+    return _with_zone(dt, tz)
+
+
+def parse_who(text: str, tz: tzinfo | None = None, now: datetime | None = None) -> list[dict[str, Any]]:
+    """The output of ``who`` -> the sessions open now: ``user``, ``tty``, ``origin`` (an address, a host
+    name, a display, or None at the console), ``session_id`` (None) and ``since`` (ISO 8601 with the
+    offset of this computer's zone, where ``who`` prints its times)."""
+    out = []
+    for line in text.splitlines():
+        m = WHO_LINE.match(line.strip())
+        if not m:
+            continue
+        origin = (m["origin"] or "").strip() or None
+        out.append({"user": m["user"], "tty": m["tty"], "origin": origin, "session_id": None,
+                    "since": _who_time(m["when"], tz, now)})
+    return out
+
+
+def parse_quser(text: str, tz: tzinfo | None = None, now: datetime | None = None) -> list[dict[str, Any]]:
+    """The output of Windows ``quser`` -> the sessions open now. The session name (console, rdp-tcp#3) is
+    the ``tty``, a disconnected session (no name) is ``session-<id>``, the ID column is ``session_id``,
+    and ``origin`` is always None: quser does not say where a Remote Desktop user came from."""
+    out = []
+    for line in text.splitlines():
+        m = QUSER_LINE.match(line)
+        if not m:
+            continue
+        since = None
+        for fmt in QUSER_TIMES:
+            try:
+                since = _with_zone(datetime.strptime(m["logon"].strip(), fmt), tz)
+                break
+            except ValueError:
+                continue
+        out.append({"user": m["user"], "tty": m["session"] or f"session-{m['id']}", "origin": None,
+                    "session_id": m["id"], "since": since})
+    return out
 
 
 # ---------------------------------------------------------------- dispatch

@@ -14,6 +14,7 @@ Warden (orchestrator, class Saguaro) lives in saguaro.py and calls these in turn
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -38,6 +39,8 @@ PLAYBOOKS: dict[str, list[tuple[str, str]]] = {
     "prompt_injection": [("waf_rule", "prompt-injection-signature"), ("block_ip", "@src_ip")],
     "malware": [],  # files are quarantined from the threat scan, one by one, by an operator
     "staff_report": [],  # a person reviews what staff reported; nothing is blocked on a report alone
+    # Root work from a sign-in SentrAI does not recognise (admins.py). Never automatic: "Not me" applies it.
+    "unauthorised_admin": [("block_ip", "@src_ip"), ("lock_user", "@user")],
 }
 
 ACTION_TEXT = {
@@ -66,6 +69,10 @@ EXPLAIN = {
                "or program, quarantine it from the threat scan if it is not yours, and look for how it got there.",
     "staff_report": "{user} reported something suspicious ({reason}). A person needs to read the report under "
                     "Staff reports, decide whether it is a security problem, and close it with a note.",
+    "unauthorised_admin": "Administrator (root) work on {host} by '{user}' from a sign-in SentrAI does not know as "
+                          "an administrator's: {reason} If this was you or a colleague, press This was me and SentrAI "
+                          "will know this sign-in from now on. If nobody you know was signed in, press Not me: the "
+                          "address is blocked and the machine should be treated as possibly taken over.",
 }
 
 # What a person should do next, in everyday words (plan item 2). Shown in reports and the client summary.
@@ -94,12 +101,16 @@ NEXT_STEPS = {
                          "No other action is needed: it was caught before any AI saw it."],
     "malware": ["Ask your technical staff to look at the file and quarantine it if it is not yours.",
                 "Find out how it got there, and change the passwords used on this machine."],
+    "unauthorised_admin": ["If this was you or a colleague, press This was me: SentrAI learns the sign-in and stops asking.",
+                           "If nobody you know was signed in, press Not me: the address is blocked. Treat the machine "
+                           "as possibly taken over and call your technical staff.",
+                           "Do not switch the machine off; it keeps the evidence."],
 }
 
 
 def next_steps(incident: dict[str, Any]) -> list[str]:
     steps = list(NEXT_STEPS.get(incident.get("category", ""), ["Ask your technical staff to take a look."]))
-    if incident.get("needs_review"):
+    if incident.get("needs_review") and incident.get("category") != "unauthorised_admin":
         steps.insert(0, "SentrAI is not sure this is an attack, so it did nothing on its own: please take a look.")
     return steps
 
@@ -262,12 +273,15 @@ class Needle(Agent):
     def __init__(self, min_confidence: float, allowlist: set[str], protected_ips: set[str],
                  protected_users: set[str] | None = None, protected_nets: set[str] | None = None,
                  min_severity: str = "high", min_points: float = 0.0, auto_actions: set[str] | None = None,
-                 max_auto_per_hour: int | None = None) -> None:
+                 max_auto_per_hour: int | None = None, admin_address: Callable[[str], str | None] | None = None) -> None:
         self.min_confidence = min_confidence
         self.allowlist = allowlist
         self.protected_ips = protected_ips
         self.protected_users = protected_users or set()
         self.protected_nets = protected_nets or set()
+        # How an address is known as an administrator's (admins.py), or None. Such an address is never blocked
+        # on SentrAI's own: a person decides, as for a private network.
+        self.admin_address = admin_address
         self.min_severity = min_severity
         self.min_points = min_points
         # Business limits: action types allowed without a person (None = every allowlisted type) and
@@ -296,6 +310,8 @@ class Needle(Agent):
                    else "protected asset" if p.type == "block_ip" and protect.matches(p.target, self.protected_ips)
                    else "private network: a person decides" if autonomous and p.type == "block_ip"
                    and protect.matches(p.target, self.protected_nets)
+                   else "known administrator address: a person decides" if autonomous and p.type == "block_ip"
+                   and self.admin_address is not None and self.admin_address(p.target)
                    else "protected account" if p.type == "lock_user" and protect.user_matches(p.target, self.protected_users)
                    else "major action: a person must approve it" if autonomous and self.auto_actions is not None
                    and p.type not in self.auto_actions
@@ -412,7 +428,10 @@ class HelpDesk(Agent):
             f"-> {incident['points']} points (base {incident['base_points']} x confidence x asset criticality "
             f"{incident.get('asset_criticality', 1.0)}), plus inaction penalty {incident['inaction_penalty']}.",
         ]
-        if incident.get("needs_review"):
+        if incident.get("category") == "unauthorised_admin":
+            lines.append("SentrAI does not know the sign-in behind it as an administrator's, so it waits for a person "
+                         "to say whether it was them (This was me / Not me); it is never contained on its own.")
+        elif incident.get("needs_review"):
             lines.append("The classifier was uncertain, so it is marked 'needs review' and will never be auto-contained.")
         if incident["acked"]:
             lines.append(f"Acknowledged by {incident['acked_by']} at {incident['acked_at']}.")

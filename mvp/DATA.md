@@ -21,7 +21,7 @@ that machine, with its full path.
 ```text
 <root>/             INDEX.md, config.json, accounts.json, approval-groups.json
   core/             sentrai.db, anchor.key, archive/, protection.json, summary.json, extensions.json, remote-copy.token
-    people/         routing.json, telegram_links.json, staff_reports.json
+    people/         routing.json, admins.json, telegram_links.json, staff_reports.json
     machines/       fleet.json, jobs.json
     threats/        threat_seen.json, quarantine/
     backups/        backup archives
@@ -56,6 +56,7 @@ or part the file belongs to. **Set with** is the variable that puts it somewhere
 | `core/extensions.json` | Extensions | extensions added or removed on the dashboard (Extensions page) | |
 | `core/remote-copy.token` | Scribe | the witness's append token (`install.sh --remote-copy`) | `SENTRAI_REMOTE_COPY_TOKEN_FILE` |
 | `core/people/routing.json` | Warden | who gets what: contacts, routing rules, escalation | `SENTRAI_ROUTING` |
+| `core/people/admins.json` | Warden | the administrators: accounts, sign-in addresses and SSH keys (taught or learned), who is signed in now | `SENTRAI_ADMINS` |
 | `core/people/telegram_links.json` | Notifier | contacts linked to their Telegram chats | `SENTRAI_TELEGRAM_LINKS` |
 | `core/people/staff_reports.json` | HelpDesk | what staff reported (`/report`, the report page) | `SENTRAI_STAFF_REPORTS` |
 | `core/machines/fleet.json` | Fleet | machines that joined the panel: hashed keys and join codes | |

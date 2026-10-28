@@ -1,7 +1,7 @@
 ---
 title: Settings
 nav: docs
-description: Change SentrAI's security preset, protected IPs, alerts, AI key, firewall blocking, action limits and backups.
+description: Change SentrAI's security preset, protected IPs, your own administrators, alerts, AI key, firewall blocking, action limits and backups.
 ---
 
 # Settings
@@ -51,6 +51,61 @@ else.
 | `PROTECTED_USERS` | extra accounts never locked | none; `root`, `admin`, `administrator` and service accounts are always protected |
 | `PROTECTED_NETS` | networks only a person may block | the private ranges (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` and more) |
 | `INFRA_ALLOWLIST` | gateways, DNS, monitoring | your DNS servers and default gateway are added for you |
+
+## Your own administrators
+
+SentrAI reads every log line the same way whoever typed it, so your own `sudo` commands on a
+server used to look exactly like an intruder covering their tracks. Now it keeps track of **who is
+signed in on each machine** and whether it **knows that person as an administrator**. Root work (a
+`sudo` or `su` command, an administrator action on Windows) by someone it knows is recorded under
+the machine's **Admins** tab and raises nothing. The same work by someone it does not know becomes
+one incident per address, **Root access from an unrecognised sign-in**, which never blocks anything
+on its own: it asks you.
+
+A sign-in is known as an administrator's in one of three ways:
+
+1. **Its SSH key** is one of your administrators' keys (`ADMIN_SSH_KEYS`, or learned).
+2. **Its address** is one of your administrators' addresses: `ADMIN_IPS` (the server installer puts
+   your `--protect` and dashboard addresses there), learned, or vouched for by your own dashboard sign-in. When an
+   Owner or Admin signs in with the authenticator, root work from that computer's address counts as
+   theirs for the next 12 hours.
+3. **It is at the machine's own keyboard**, by one of your administrators' accounts (`ADMIN_ACCOUNTS`).
+
+A sign-in made right after password guessing from the same address is not trusted for the next
+12 hours (`ADMIN_SESSION_HOURS`), unless its address or key is one you set or taught, or until you
+press **This was me**.
+
+**This was me.** When the incident was you or a colleague, press **This was me** on the dashboard or
+in Telegram. SentrAI learns that sign-in (its address, its SSH key and its account on that machine),
+closes the incident, undoes any block it had put on you, and does not ask again for that sign-in.
+When nobody you know was signed in, press **Not me: block it**: the address is blocked, and the
+machine should be treated as possibly taken over. Once a sign-in is known, SentrAI also learns the
+rest on its own: a known key seen from a new address makes the address known, and a new key seen
+from a known address makes the key known (`ADMIN_LEARN`).
+
+What it learns, and what you teach it, is kept in `people/admins.json` next to the core's own
+database on the server (`/var/lib/sentrai/core/people/` on a server install): addresses, key
+fingerprints and account names, never a password or a key itself. It is never sent anywhere, and
+the **Admins** tab can forget any of it. Entries from the settings below cannot be forgotten there:
+change the setting instead.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `ADMIN_SESSIONS` | `on` | keeps track of who is signed in and whose root work is whose. `off` goes back to judging every line on its own |
+| `ADMIN_IPS` | none | addresses or networks your administrators sign in from, comma-separated, such as `203.0.113.5,198.51.100.0/24`. On a server the installer fills it with your `--protect` addresses and the ones allowed to open the dashboard |
+| `ADMIN_SSH_KEYS` | none | your administrators' SSH key fingerprints, comma-separated. `ssh-keygen -lf ~/.ssh/id_ed25519.pub` prints yours, as `SHA256:...` |
+| `ADMIN_ACCOUNTS` | none | your administrators' accounts: `deploy` on every machine, or `erick@web-01` on one machine only |
+| `ADMIN_SESSION_HOURS` | `12` | how long a sign-in counts as open after its last line |
+| `ADMIN_SIGNIN_HOURS` | `12` | how long a dashboard sign-in as Owner or Admin vouches for its address |
+| `ADMIN_LEARN` | `on` | learn the other half of a known sign-in: a new address seen with a known key, a new key seen from a known address |
+
+None of them is needed to start: **This was me** teaches the same things as they come up. They sit
+under **Configuration** with the other responder settings; on a server, `ADMIN_IPS` is in
+`/etc/sentrai/sentrai.env`, where the installer wrote it, and a value there wins over the dashboard
+(restart `sentrai.target` after a change). For any of this to work, the collector on each machine
+must send its sign-in and `sudo` lines: `/var/log/auth.log` or the system journal, which
+`--add-system-logs` approves (see [Log sources](log-sources.html)), plus its own poll of who is
+signed in, which runs by itself.
 
 ## Alerts
 
