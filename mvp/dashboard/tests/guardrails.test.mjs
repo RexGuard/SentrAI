@@ -1,4 +1,4 @@
-/* Automation guardrails (sentrai_ui/limits_map.mjs) and the pipeline overview's hover tips (flow_map.mjs):
+/* Automation guardrails (sentrai_ui/limits_map.mjs) and the pipeline overview's hover tips (flow_canvas.mjs):
    the parts above their DOM, run in Node with nothing but its built-in test runner.
 
      cd mvp/dashboard && node --test tests/guardrails.test.mjs
@@ -8,7 +8,7 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 
-import * as flow from "../sentrai_ui/flow_map.mjs";
+import * as flow from "../sentrai_ui/flow_canvas.mjs";
 import * as g from "../sentrai_ui/limits_map.mjs";
 
 const actions = [["block_ip", "block an address"], ["rate_limit", "slow an address down"], ["lock_user", "lock an account"]];
@@ -71,22 +71,20 @@ describe("guardrails: the policy in words", () => {
   });
 });
 
-describe("overview map: hover tips", () => {
-  const width = 5 * flow.COL_W + flow.BOX_W;
+describe("overview canvas: hover tips", () => {
+  const room = { w: 5 * flow.COL_W + flow.BOX_W, h: 520 };
+  const tip = { w: 240, h: 60 };
+  const box = (x, y) => ({ x, y, w: flow.BOX_W, h: flow.BOX_H });
 
-  test("a tip sits under a box in the top rows and over a box lower down", () => {
-    const top = flow.tipAt({ x: 0, y: 0 }, width);
+  test("a tip sits under a block in the top rows and over a block lower down", () => {
+    const top = flow.tipAt(box(0, 0), room, tip);
     assert.ok(top.below && top.y === flow.BOX_H + 6);
-    const low = flow.tipAt({ x: flow.COL_W, y: 2 * flow.ROW_H }, width);
-    assert.ok(!low.below && low.y === 2 * flow.ROW_H - 6);
+    const low = flow.tipAt(box(flow.COL_W, 2 * flow.ROW_H), room, tip);
+    assert.ok(!low.below && low.y === 2 * flow.ROW_H - 6 - tip.h);
   });
 
-  test("a tip never leaves the stage sideways", () => {
-    assert.equal(flow.tipAt({ x: 0, y: 0 }, width).x, 0);
-    assert.equal(flow.tipAt({ x: 5 * flow.COL_W, y: 0 }, width).x, width - flow.TIP_W);
-  });
-
-  test("the six columns fit the room a 1440 px screen leaves next to the sidebar, so nothing shrinks", () => {
-    assert.ok(width <= 1040, `stage ${width}px`);
+  test("a tip never leaves the view sideways", () => {
+    assert.equal(flow.tipAt(box(0, 0), room, tip).x, 4);
+    assert.equal(flow.tipAt(box(5 * flow.COL_W, 0), room, tip).x, room.w - tip.w - 4);
   });
 });

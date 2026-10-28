@@ -1,5 +1,5 @@
-/* The "How it works" maps' models (sentrai_ui/flow_map.mjs and limits_map.mjs): the functions above their DOM
-   parts, run in Node with nothing but its built-in test runner.
+/* The pipeline overview canvas's grid and Automation guardrails' model (sentrai_ui/flow_canvas.mjs and
+   limits_map.mjs): the functions above their DOM parts, run in Node with nothing but its built-in test runner.
 
      cd mvp/dashboard && node --test tests/maps.test.mjs
 
@@ -8,23 +8,27 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 
-import * as flow from "../sentrai_ui/flow_map.mjs";
+import * as flow from "../sentrai_ui/flow_canvas.mjs";
 import * as limits from "../sentrai_ui/limits_map.mjs";
 
-describe("flow map", () => {
-  test("boxes sit on the grid and the stage holds them all", () => {
-    const { at, width, height } = flow.place([{ id: "a", col: 0, row: 1 }, { id: "b", col: 2, row: 0 }, { id: "c", col: 1, row: 2 }]);
-    assert.deepEqual(at.a, { x: 0, y: flow.ROW_H });
-    assert.deepEqual(at.b, { x: 2 * flow.COL_W, y: 0 });
-    assert.equal(width, 2 * flow.COL_W + flow.BOX_W);
-    assert.equal(height, 2 * flow.ROW_H + flow.BOX_H);
+describe("overview canvas: the grid the steps start on", () => {
+  test("a step's column and row become pixels on the canvas", () => {
+    assert.deepEqual(flow.gridPos({ col: 0, row: 1 }), { x: 0, y: flow.ROW_H });
+    assert.deepEqual(flow.gridPos({ col: 2, row: 0.5 }), { x: 2 * flow.COL_W, y: flow.ROW_H / 2 });
   });
 
-  test("a wire runs from the right side of one box to the left side of the next, or straight down a column", () => {
-    const across = flow.wire({ x: 0, y: 0 }, { x: flow.COL_W, y: 0 });
+  test("a wire runs from the right side of one box into the left side of the next, or down a column", () => {
+    const box = (x, y) => ({ x, y, w: flow.BOX_W, h: flow.BOX_H });
+    const across = flow.wirePath(box(0, 0), box(flow.COL_W, 0));
     assert.match(across.d, new RegExp(`^M ${flow.BOX_W} ${flow.BOX_H / 2} C `));
-    const down = flow.wire({ x: 0, y: 0 }, { x: 0, y: flow.ROW_H });
-    assert.equal(down.d, `M ${flow.BOX_W / 2} ${flow.BOX_H} L ${flow.BOX_W / 2} ${flow.ROW_H}`);
+    assert.equal(across.dx, 1);
+    const down = flow.wirePath(box(0, 0), box(0, flow.ROW_H));
+    assert.match(down.d, new RegExp(`^M ${flow.BOX_W / 2} ${flow.BOX_H} C `));
+    assert.deepEqual(down.end, { x: flow.BOX_W / 2, y: flow.ROW_H });
+  });
+
+  test("the six step columns fit the room a 1440 px screen leaves next to the sidebar before anyone zooms", () => {
+    assert.ok(5 * flow.COL_W + flow.BOX_W <= 1040);
   });
 });
 
