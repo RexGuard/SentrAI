@@ -2555,6 +2555,8 @@ def page_flow() -> None:
         return
     panel = panel_mode(risk)
     data = canvas_data(risk)
+    if st.session_state.get("fc_add_machine"):  # over the canvas, which fills the rest of the window
+        join_under_canvas(panel)
     with card(name="flow-canvas"):  # a steady key, so a refresh never redraws the canvas from scratch
         if FLOW_CANVAS is None:
             st.caption("This Streamlit is too old to draw the canvas: run `pip install -r requirements.txt` in "
@@ -2567,8 +2569,6 @@ def page_flow() -> None:
                              on_save_settings_change=lambda: None, on_toggle_change=lambda: None,
                              on_add_machine_change=lambda: None)
         canvas_events(events, data, panel)
-    if st.session_state.get("fc_add_machine"):
-        join_under_canvas(panel)
 
 
 def canvas_events(events, data: dict, panel: bool) -> None:
@@ -2676,8 +2676,9 @@ def toggle_extension_block(event: dict, data: dict) -> None:
 
 
 def open_join_form(event: dict, data: dict) -> None:
-    """"New machine" in the canvas's + Add menu: the join form opens under the canvas, in this same run."""
+    """"New machine" in the canvas's + Add menu: the join form opens over the canvas."""
     st.session_state["fc_add_machine"] = True
+    rerun_here()
 
 
 def close_join_form() -> None:
@@ -2686,7 +2687,7 @@ def close_join_form() -> None:
 
 
 def join_under_canvas(panel: bool) -> None:
-    """The Machines page's join form, under the canvas. It closes itself once the new machine has joined, and
+    """The Machines page's join form, over the canvas. It closes itself once the new machine has joined, and
     the machine turns up on the canvas when its agent calls in."""
     joined = sh.newly_joined(fetch("fleet", [])[0] if panel else [], st.session_state.get("join_before"))
     if st.session_state.get("join_made") and joined:

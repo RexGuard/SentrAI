@@ -319,3 +319,12 @@ div[data-testid="stButtonGroup"] button[aria-checked="true"] * { color: var(--on
 /* app.py's secret_input(): API keys, tokens and codes are plain text boxes drawn as dots, so the browser does not
    offer to save them as a website password (it only does that for type="password"). */
 div[class*="st-key-secret-"] input { -webkit-text-security: disc; text-security: disc; }
+
+/* ------------------------------------------------------------ Pipeline overview: the canvas is the page */
+/* The page holding the canvas card drops the 1440 px limit and most margins, and the card its shading, so the
+   canvas (flow_canvas.css) runs from the menu to the window's edges. */
+.block-container:has(.st-key-card-flow-canvas) { max-width: none; padding-top: .9rem; padding-bottom: .5rem;
+                                                 padding-inline: clamp(.6rem, 1.2vw, 1.25rem); }
+.block-container:has(.st-key-card-flow-canvas) .page-note { display: none; }
+.block-container:has(.st-key-card-flow-canvas) .page-head { margin-bottom: .5rem; padding-bottom: .5rem; }
+div.st-key-card-flow-canvas { background: none !important; box-shadow: none !important; padding: 0 !important; }

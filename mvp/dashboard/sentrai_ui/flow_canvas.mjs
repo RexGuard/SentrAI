@@ -3,7 +3,7 @@
    (or the buttons) to zoom, drag a block anywhere, click one for its live numbers and its settings, draw a
    wire from the handle on a block's right edge to another block, take a block off the canvas or add one back
    from "+ Add" (a hidden step, a machine, an extension, a note, or a new machine: that opens the join form
-   under the canvas). Where things sit is saved as you go (overview-canvas.json next to the settings file);
+   above the canvas). Where things sit is saved as you go (overview-canvas.json next to the settings file);
    the live numbers keep updating under all of it without touching what you are doing.
 
    Python (shaping.flow_canvas_data) sends every block that can be on the canvas with what it is doing right
@@ -23,6 +23,8 @@ export const NOTE_W = 200;
 export const GAP = 16;
 export const ZOOM = { min: 0.3, max: 2 };
 export const MAX_NOTE = 2000;
+export const MIN_H = 420; // the canvas never gets shorter than this, even in a small window
+export const BOTTOM_GAP = 12; // room left under the canvas at the bottom of the window
 
 const str = (v) => (v === undefined || v === null ? "" : String(v));
 export const clone = (x) => JSON.parse(JSON.stringify(x));
@@ -279,6 +281,12 @@ export function arrowHead(w) {
   return `M${r(e.x)},${r(e.y)} L${r(bx - 4.5 * w.dy)},${r(by + 4.5 * w.dx)} L${r(bx + 4.5 * w.dy)},${r(by - 4.5 * w.dx)} Z`;
 }
 
+/** How tall the canvas is: from where it starts on the page down to the bottom of the window, so it fills the
+    page under the header (the menu stays where it is). `top` is the canvas's distance from the top of the page. */
+export function fillHeight(top, windowH, min = MIN_H) {
+  return Math.max(min, Math.round(windowH - Math.max(0, top) - BOTTOM_GAP));
+}
+
 /** Where the hover tip goes (viewport coordinates): under the block when there is room, else over it, kept inside. */
 export function tipAt(box, room, tip) {
   const x = Math.max(4, Math.min(room.w - tip.w - 4, box.x + box.w / 2 - tip.w / 2));
@@ -407,6 +415,7 @@ class Canvas {
       zoomIn: tool("zoom-in", "Zoom in", "add", { iconOnly: true }),
       fit: tool("fit", "Fit everything in view", "fit_screen", { iconOnly: true }),
       full: tool("full", "Full screen", "arrows_outward", { iconOnly: true }),
+      help: tool("help", "How to use the canvas", "help", { iconOnly: true }),
     };
     this.zoomLabel = h("span", { class: "fc-zoom", "aria-hidden": "true" }, "100%");
     this.statusEl = h("span", { class: "fc-status", role: "status" });
@@ -415,7 +424,7 @@ class Canvas {
       h("div", { class: "fc-group edit fc-addwrap" }, this.btn.add, this.menu),
       h("div", { class: "fc-group edit" }, this.btn.undo, this.btn.redo),
       h("div", { class: "fc-group" }, this.btn.tidy, this.btn.zoomOut, this.zoomLabel, this.btn.zoomIn, this.btn.fit, this.btn.full),
-      h("div", { class: "fc-spacer" }), this.statusEl);
+      h("div", { class: "fc-spacer" }), this.statusEl, h("div", { class: "fc-group" }, this.btn.help));
     bar.addEventListener("click", (e) => {
       const b = e.target.closest("button[data-act]");
       if (b && !b.disabled) this.act(b.dataset.act);
@@ -437,12 +446,11 @@ class Canvas {
     this.legend = h("div", { class: "fc-legend" },
       ...["ok", "busy", "alert", "off"].map((k) => h("span", { class: `fc-key ${k}` }, h("i", {}), STATE_WORDS[k])),
       h("span", { class: "fc-key live" }, h("b", {}), "moving: an attack on that path now"),
-      h("span", { class: "fc-key user" }, h("b", {}), "dashed: drawn by hand"),
-      h("span", { class: "fc-hint" }, "Drag the background to move around, Ctrl + scroll to zoom, drag a block to move it. "
-        + "Click a block for its numbers and settings; drag the handle on its right edge to another block to connect them."));
+      h("span", { class: "fc-key user" }, h("b", {}), "dashed: drawn by hand"));
     this.panel = h("section", { class: "fc-panel", "aria-label": "Details" });
     this.live = h("div", { class: "fc-sr", "aria-live": "polite" });
-    this.body = h("div", { class: "fc-body" }, h("div", { class: "fc-canvas" }, this.viewport, this.legend), this.panel);
+    // The canvas is the page: the panel and the legend float over it, like a drawing app's.
+    this.body = h("div", { class: "fc-body" }, h("div", { class: "fc-canvas" }, this.viewport, this.legend, this.panel));
     this.root = h("div", { class: "fc" }, bar, this.notice, this.body, this.live);
     this.host.appendChild(this.root);
 
@@ -464,6 +472,8 @@ class Canvas {
     this.root.addEventListener("focusout", (e) => {
       if (!this.menu.hidden && !(e.relatedTarget && this.root.contains(e.relatedTarget))) this.closeMenu();
     });
+    window.addEventListener("resize", () => this.fillPage());
+    requestAnimationFrame(() => this.fillPage());
     if (typeof ResizeObserver !== "undefined") {
       this.resizer = new ResizeObserver(() => {
         this.drawWires();
@@ -686,6 +696,12 @@ class Canvas {
     if (what === "undo") return this.undoLast();
     if (what === "redo") return this.redoLast();
     if (what === "add") return this.menu.hidden ? this.openMenu() : this.closeMenu();
+    if (what === "help") {
+      this.showHelp = !(this.showHelp && !this.sel);
+      this.sel = null;
+      this.panelFor = null;
+      return this.render();
+    }
     if (this.readOnly) return undefined;
     if (what === "tidy") {
       this.change((st) => {
@@ -706,7 +722,7 @@ class Canvas {
     const parts = [];
     for (const g of groups) {
       const items = g.items.map((x) => item(x.id, x.title, x.icon, x.note));
-      if (g.kind === "machine" && this.data.panel) items.push(item("machine:+", "New machine", "key", "make a join code: the form opens under the canvas"));
+      if (g.kind === "machine" && this.data.panel) items.push(item("machine:+", "New machine", "key", "make a join code: the form opens above the canvas"));
       if (!items.length) continue;
       parts.push(h("div", { class: "fc-menu-title" }, g.title), ...items);
     }
@@ -728,7 +744,7 @@ class Canvas {
     if (this.readOnly) return;
     if (what === "machine:+") {
       if (this.setTrigger) this.setTrigger("add_machine", { id: `machine-${Date.now().toString(36)}` });
-      this.say("The join form opens under the canvas.");
+      this.say("The join form opens above the canvas.");
       return;
     }
     const near = this.centre();
@@ -757,6 +773,18 @@ class Canvas {
   centre() {
     const rect = this.viewport.getBoundingClientRect();
     return { x: (rect.width / 2 - this.view.x) / this.view.k, y: (rect.height / 2 - this.view.y) / this.view.k };
+  }
+
+  /** Stretch the canvas from where it starts down to the bottom of the window. Measured from the top of the page
+      (not of the view), so scrolling does not change it. */
+  fillPage() {
+    const scroller = document.querySelector('[data-testid="stMain"]') || document.scrollingElement;
+    const top = this.body.getBoundingClientRect().top + (scroller ? scroller.scrollTop : 0);
+    const height = fillHeight(top, window.innerHeight);
+    if (this.body.style.getPropertyValue("--fc-h") !== `${height}px`) {
+      this.body.style.setProperty("--fc-h", `${height}px`);
+      requestAnimationFrame(() => this.drawWires());
+    }
   }
 
   toggleFull() {
@@ -922,7 +950,8 @@ class Canvas {
       live numbers in it change under a refresh. */
   renderPanel() {
     const sel = this.sel;
-    const want = sel ? JSON.stringify([sel, this.readOnly, !!this.pendingOf("settings"), !!this.pendingOf("toggle"), this.message, this.confirmOff]) : "none";
+    const want = sel ? JSON.stringify([sel, this.readOnly, !!this.pendingOf("settings"), !!this.pendingOf("toggle"), this.message, this.confirmOff])
+      : this.showHelp ? `help-${visibleIds(this.data, this.st).length}` : "none";
     if (sel && sel.kind === "block" && !this.st.shown.includes(sel.id)) this.sel = null;
     if (this.panelFor === want && sel && sel.kind === "block") {
       this.refreshLive(sel.id);
@@ -935,9 +964,19 @@ class Canvas {
     else if (this.sel && this.sel.kind === "wire") body = this.wirePanel(this.sel);
     if (!body) {
       this.sel = null;
-      body = this.homePanel();
+      body = this.showHelp ? this.homePanel() : null;
     }
-    this.panel.replaceChildren(...kids(body));
+    if (this.sel) this.showHelp = false;
+    const open = !!body;
+    this.root.classList.toggle("panel-open", open);
+    this.btn.help.setAttribute("aria-pressed", this.showHelp ? "true" : "false");
+    const close = h("button", { type: "button", class: "fc-btn icon small fc-close", "aria-label": "Close the panel", title: "Close (Esc)",
+      onclick: () => {
+        this.showHelp = false;
+        this.select(null);
+        this.render();
+      } }, icon("close"));
+    this.panel.replaceChildren(...(open ? [close, ...kids(body)] : []));
     if (this.readOnly) for (const el of this.panel.querySelectorAll("input, select, textarea, button.danger, button.edit")) el.disabled = true;
     const back = had && this.panel.querySelector(`#${had}`);
     if (back && !back.disabled) back.focus({ preventScroll: true });
@@ -953,6 +992,10 @@ class Canvas {
         h("li", {}, h("b", {}, "+ Add"), " puts a step, machine, extension or note on the canvas; a new machine opens the join form."),
         h("li", {}, "Drag the handle on a block's right edge onto another block to connect them. Click a wire to remove it."),
         h("li", {}, "Keyboard: Tab to a block, Enter opens it, arrows move it, Delete takes it off, Ctrl+Z undoes."))];
+    tips.push(h("p", { class: "fc-ptitle sub" }, "Moving around"),
+      h("ul", { class: "fc-tips" },
+        h("li", {}, "Drag the background to move around; Ctrl + scroll (or the buttons) zooms."),
+        h("li", {}, "Fit puts everything in view; Full screen hides the menu too.")));
     return [h("p", { class: "fc-ptitle" }, "Pipeline overview"),
       h("p", { class: "fc-help" }, `${n} ${n === 1 ? "block" : "blocks"} on the canvas: what SentrAI does from the first log line to the record of it, `
         + "the machines it watches and the extensions it uses, each with what it is doing right now."), ...tips];
@@ -1479,7 +1522,11 @@ class Canvas {
       } else if (this.drag) {
         this.up({ pointerId: -1 }, true);
         this.ghost.replaceChildren();
-      } else if (this.sel && !typing) this.select(null);
+      } else if ((this.sel || this.showHelp) && !typing) {
+        this.showHelp = false;
+        this.select(null);
+        this.render();
+      }
     } else if ((e.key === "Delete" || e.key === "Backspace") && !typing && this.sel && this.sel.kind === "wire") {
       e.preventDefault();
       this.removeSelectedWire();

@@ -78,12 +78,12 @@
 .fc-panel .fc-note-row:not(.bad) .mi { color: var(--ok); }
 
 /* ------------------------------------------------------------ canvas */
-/* The details panel sits under the canvas; beside it when there is room for both, and always in full screen. */
-.fc-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: .75rem; align-items: start; }
-@container (min-width: 1100px) { .fc-body { grid-template-columns: minmax(0, 1fr) 20rem; } }
-.fc-canvas { min-width: 0; }
-.fc-viewport { position: relative; overflow: hidden; height: 520px; border: 1px solid var(--line-soft); border-radius: 10px;
-               background-color: var(--surface); cursor: grab; touch-action: pan-y;
+/* The canvas is the page: it runs from under the toolbar to the bottom of the window (--fc-h, set by fillPage()
+   in flow_canvas.mjs), the panel and the legend float over it like a drawing app's. */
+.fc-body { position: relative; }
+.fc-canvas { position: relative; min-width: 0; height: var(--fc-h, 640px); }
+.fc-viewport { position: absolute; inset: 0; overflow: hidden; border: 1px solid var(--line-soft); border-radius: 12px;
+               background-color: var(--surface); cursor: grab; touch-action: none;
                background-image: radial-gradient(circle, var(--line) 1px, transparent 1.3px); background-size: 24px 24px; }
 .fc-viewport:focus { outline: none; }
 .fc.panning .fc-viewport, .fc.dragging, .fc.dragging .fc-node { cursor: grabbing; }
@@ -92,13 +92,10 @@
 .fc-wires { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
 .fc-nodes { position: absolute; left: 0; top: 0; }
 
-/* Full screen: the whole canvas, the panel beside it. */
+/* Full screen: the canvas over everything, the menu too. */
 .fc.fs { position: fixed; inset: 0; z-index: 1000; box-sizing: border-box; padding: .75rem 1rem 1rem; background: var(--bg); overflow: hidden; }
-.fc.fs .fc-body { flex: 1 1 auto; min-height: 0; grid-template-columns: minmax(0, 1fr) 20rem; grid-template-rows: minmax(0, 1fr); }
-.fc.fs .fc-canvas { display: flex; flex-direction: column; min-height: 0; height: 100%; }
-.fc.fs .fc-viewport { flex: 1 1 auto; height: auto; min-height: 0; }
-.fc.fs .fc-panel { max-height: 100%; overflow-y: auto; }
-.fc.fs .fc-legend { margin-bottom: 0; }
+.fc.fs .fc-body { flex: 1 1 auto; min-height: 0; }
+.fc.fs .fc-canvas { height: 100%; }
 
 /* Wires: a pipeline wire is quiet, a live one moves, one drawn by hand is dashed in the accent colour. */
 .w .line { fill: none; stroke: var(--ink-faint); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; transition: opacity .15s ease-out; }
@@ -183,7 +180,10 @@
           box-shadow: 0 6px 20px rgb(0 0 0 / .22); pointer-events: none; }
 
 /* ------------------------------------------------------------ legend */
-.fc-legend { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem 1rem; margin-top: .5rem; font-size: .8rem; color: var(--ink-soft); }
+.fc-legend { position: absolute; left: .6rem; bottom: .6rem; z-index: 4; max-width: calc(100% - 1.2rem); box-sizing: border-box;
+              display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .9rem; padding: .35rem .7rem; border-radius: 999px;
+              background: color-mix(in srgb, var(--surface) 88%, transparent); border: 1px solid var(--line-soft);
+              font-size: .78rem; color: var(--ink-soft); pointer-events: none; }
 .fc-key { display: inline-flex; align-items: center; gap: .35rem; }
 .fc-key i { width: .55rem; height: .55rem; border-radius: 50%; background: var(--ink-faint); }
 .fc-key.ok i { background: var(--ok); }
@@ -191,11 +191,16 @@
 .fc-key.alert i { background: var(--alert); }
 .fc-key b { width: 1.6rem; height: 0; border-top: 2px dashed var(--busy); }
 .fc-key.user b { border-top: 2px dashed var(--brand); }
-.fc-hint { flex-basis: 100%; color: var(--ink-muted); }
 
 /* ------------------------------------------------------------ details panel */
-.fc-panel { box-sizing: border-box; border: 1px solid var(--line-soft); border-radius: 10px; background: var(--surface); padding: .8rem .9rem .9rem; }
-@container (min-width: 1100px) { .fc-panel { max-height: 640px; overflow-y: auto; } }
+/* A drawer over the right of the canvas while something is open; Esc, the x or a click on the background closes it. */
+.fc-panel { position: absolute; z-index: 6; top: .6rem; right: .6rem; bottom: .6rem; width: min(22rem, calc(100% - 1.2rem));
+            box-sizing: border-box; overflow-y: auto; overscroll-behavior: contain; border: 1px solid var(--line); border-radius: 12px;
+            background: var(--surface); padding: .8rem .9rem .9rem; box-shadow: 0 10px 30px rgb(0 0 0 / .28); }
+.fc:not(.panel-open) .fc-panel { display: none; }
+.fc.panel-open .fc-legend { max-width: calc(100% - 24rem); }
+.fc-close { position: sticky; top: 0; float: right; margin: -.3rem -.4rem .2rem .4rem; z-index: 1; }
+.fc-btn[aria-pressed="true"] { background: var(--surface-2); border-color: var(--ink-faint); }
 .fc-ptitle { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; margin: 0 0 .55rem; font-weight: 600; font-size: .95rem; color: var(--ink); overflow-wrap: anywhere; }
 .fc-ptitle.sub { margin-top: 1rem; font-size: .88rem; }
 .fc-ptitle .mi { color: var(--ink-soft); }
@@ -250,15 +255,15 @@
 /* ------------------------------------------------------------ narrow */
 @container (max-width: 760px) {
   .fc-group + .fc-group { padding-left: 0; border-left: 0; }
-  .fc-viewport { height: 420px; }
+  /* narrow: the panel is a sheet over the bottom half, the legend makes room */
+  .fc-panel { top: auto; left: .4rem; right: .4rem; bottom: .4rem; width: auto; max-height: 60%; }
+  .fc.panel-open .fc-legend { display: none; }
 }
 @media (max-width: 640px) {
   .fc-btn { min-height: 44px; }
   .fc-btn.icon { width: 44px; }
   .fc-check { min-height: 44px; align-items: center; }
   .fc.fs { padding: .5rem; }
-  .fc.fs .fc-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
-  .fc.fs .fc-panel { max-height: 40vh; }
 }
 @media (prefers-reduced-motion: reduce) {
   .fc-btn, .fc-node, .w .line, .fc-port { transition: none; }
