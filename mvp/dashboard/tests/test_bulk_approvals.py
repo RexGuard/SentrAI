@@ -142,3 +142,31 @@ def test_group_picked_then_decide_the_group_and_ungroup(fake_core, tmp_path, mon
     assert next(b for b in at.button if b.key == "br_grp_Pen test_0").label == f"Reject all {len(ids)}"
     next(b for b in at.button if b.key == "ungroup_Pen test").click().run()
     assert approval_groups() == {}
+
+
+def test_fingerprint_ignores_heartbeats_but_not_real_changes():
+    a = {"id": "A", "status": "open", "last_seen": "10:00:00", "history": [1, 2]}
+    assert sh.fingerprint(a) == sh.fingerprint({**a, "last_seen": "10:00:02", "history": [1, 2, 3]})
+    assert sh.fingerprint(a) != sh.fingerprint({**a, "status": "contained"})
+    assert sh.changed_reads({"incidents": "x"}, {"incidents": "y", "risk": "z"}) == ["incidents"]
+
+
+def test_while_picking_the_list_holds_still_and_picks_survive(fake_core, tmp_path, monkeypatch):
+    ids = _open_two(fake_core)
+    at = _approvals(fake_core, tmp_path, monkeypatch)
+    at.run()
+    at.checkbox(key=f"pick_{ids[0]}").check().run()
+    assert at.session_state["picked"] == {ids[0]}
+    requests.post(f"{fake_core}/dev/trigger/port_scan", params={"src_ip": "192.0.2.50"}, timeout=3)
+    at.run()  # a redraw while picking: same list, same tick
+    assert not at.exception, at.exception
+    rows = {c.key for c in at.checkbox if c.key and c.key.startswith("pick_") and not c.key.startswith("pickall")}
+    assert rows == {f"pick_{i}" for i in ids}
+    assert at.checkbox(key=f"pick_{ids[0]}").value is True
+    next(b for b in at.button if b.key == "bulk_clear").click().run()
+    assert all("fragment" in str(e.value) for e in at.exception), at.exception  # AppTest can't rerun a fragment
+    at.run()
+    assert at.session_state["picked"] == set()
+    # Clear forgets the snapshot too, so the new incident shows up now.
+    rows = {c.key for c in at.checkbox if c.key and c.key.startswith("pick_") and not c.key.startswith("pickall")}
+    assert len(rows) == len(ids) + 1
