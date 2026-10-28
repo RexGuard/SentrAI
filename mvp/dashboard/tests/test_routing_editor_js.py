@@ -13,7 +13,8 @@ import pytest
 DASHBOARD = Path(__file__).resolve().parents[1]
 # Relative to DASHBOARD, with forward slashes on every OS: newer Node reads the --test argument as a glob.
 TEST_FILE = "tests/routing_editor.test.mjs"
-MAPS_FILE = "tests/maps.test.mjs"  # the pipeline overview map and Automation guardrails (flow_map.mjs, limits_map.mjs)
+MAPS_FILE = "tests/maps.test.mjs"  # the pipeline overview's grid and Automation guardrails (flow_canvas.mjs, limits_map.mjs)
+CANVAS_FILE = "tests/canvas.test.mjs"  # the pipeline overview canvas: layout, wires, adding and taking off, the panel
 GUARDRAILS_FILE = "tests/guardrails.test.mjs"  # the guardrails page's tags, percent and policy summary, the map's tips
 MIN_NODE = 20
 TIMEOUT = 120  # seconds
@@ -42,7 +43,7 @@ def _text(data: bytes | str | None) -> str:
     return data or ""
 
 
-@pytest.mark.parametrize("test_file", [TEST_FILE, MAPS_FILE, GUARDRAILS_FILE])
+@pytest.mark.parametrize("test_file", [TEST_FILE, MAPS_FILE, GUARDRAILS_FILE, CANVAS_FILE])
 def test_routing_editor_model_passes_its_node_tests(test_file):
     TEST_FILE = test_file  # noqa: N806  (the messages below name the file that ran)
     node = _node()

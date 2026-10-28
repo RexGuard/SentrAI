@@ -589,7 +589,7 @@ def test_an_owner_can_see_the_page_as_anyone(fake_core, tmp_path, monkeypatch):
     _routing_editor(at)  # the whole map stays, to change
 
 
-def test_how_it_works_draws_every_step_and_each_opens_a_page(fake_core, tmp_path, monkeypatch):
+def test_the_overview_canvas_draws_every_step_and_each_opens_a_page(fake_core, tmp_path, monkeypatch):
     from streamlit.testing.v1 import AppTest
 
     monkeypatch.setenv("SENTRAI_CONFIG", str(tmp_path / "config.json"))
@@ -599,16 +599,17 @@ def test_how_it_works_draws_every_step_and_each_opens_a_page(fake_core, tmp_path
     at.session_state["page"] = "flow"
     at.run()
     assert not at.exception, at.exception
-    found = [json.loads(el.proto.json) for el in at.get("bidi_component") if el.proto.component_name.endswith("flow_map")]
+    found = [json.loads(el.proto.json) for el in at.get("bidi_component") if el.proto.component_name.endswith("flow_canvas")]
     assert len(found) == 1
     data = found[0]
+    steps = [b for b in data["blocks"] if b["kind"] == "step"]
     pages = {"approvals", "incidents", "collector", "classifier", "responder", "review", "audit", "extensions",
              "guardrails"}
-    assert {n["id"] for n in data["nodes"]} == {"logs", "sort", "score", "ask", "auto", "block", "edge", "owner",
-                                                "alerts", "record"}
-    assert {n["page"] for n in data["nodes"]} <= pages
-    ids = {n["id"] for n in data["nodes"]}
-    assert all(e["from"] in ids and e["to"] in ids for e in data["edges"])
+    assert {b["id"] for b in steps} == {"step:logs", "step:sort", "step:score", "step:ask", "step:auto", "step:block",
+                                        "step:edge", "step:owner", "step:alerts", "step:record"}
+    assert {b["page"] for b in steps} <= pages
+    ids = {b["id"] for b in data["blocks"]}
+    assert all(w["from"] in ids and w["to"] in ids for w in data["wires"])
 
 
 def _guardrails_page(fake_core, tmp_path, monkeypatch, role: str = ""):
