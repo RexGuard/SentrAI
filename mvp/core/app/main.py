@@ -486,6 +486,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def get_incidents(host: Optional[str] = Query(None)) -> list[dict[str, Any]]:
         return core.list_incidents(host=host)
 
+    @app.get("/waves")
+    def get_waves() -> list[dict[str, Any]]:
+        """Many addresses doing the same kind of attack to one machine, grouped (waves.py), newest first."""
+        return core.list_waves()
+
     @app.get("/incidents/{iid}")
     def get_incident(iid: str) -> dict[str, Any]:
         try:

@@ -1306,13 +1306,77 @@ def board_counts(incidents: Iterable[dict], me: str = "") -> dict[str, int]:
 BOARD_COLUMNS = ["Incident", "What", "Host", "Severity", "Status", "Owner", "Backup", "Open for", "Needs"]
 
 
-def board_rows(incidents: Iterable[dict], include_closed: bool = False) -> pd.DataFrame:
-    """One row per incident: who has it, how long it has been open, and what it still needs."""
-    rows = []
+def split_waves(incidents: Iterable[dict]) -> tuple[list[dict], dict[str, list[dict]]]:
+    """(incidents in no wave, {wave id: its incidents}), each in the order given."""
+    singles: list[dict] = []
+    waves: dict[str, list[dict]] = {}
     for inc in incidents or []:
+        if inc.get("wave"):
+            waves.setdefault(str(inc["wave"]), []).append(inc)
+        else:
+            singles.append(inc)
+    return singles, waves
+
+
+WAVE_DOING = {"port_scan": "scanning", "brute_force": "guessing passwords on"}
+
+
+def wave_line(members: list[dict]) -> str:
+    """'40 addresses scanning game-01 need a person', for the incidents of one wave."""
+    first = members[0] if members else {}
+    doing = WAVE_DOING.get(str(first.get("category")), f"{category_label(first.get('category')).lower()} on")
+    n = len({m.get("src_ip") or m.get("id") for m in members})
+    return f"{n} address{'es' if n != 1 else ''} {doing} {first.get('host') or 'a machine'} need a person"
+
+
+WAVE_COLUMNS = ["Wave", "What", "Machine", "Addresses", "Top networks", "Started", "Last seen", "Now"]
+
+
+def wave_rows(waves: Iterable[dict]) -> pd.DataFrame:
+    rows = [{
+        "Wave": w.get("id", "?"),
+        "What": category_label(w.get("category")),
+        "Machine": w.get("host") or "-",
+        "Addresses": int(w.get("addresses") or 0),
+        "Top networks": ", ".join(f"{n.get('network')} ({n.get('addresses')})" for n in (w.get("networks") or [])[:3])
+        or "spread out",
+        "Started": str(w.get("started_at") or "")[11:16] or "-",
+        "Last seen": str(w.get("last_seen_at") or "")[11:16] or "-",
+        "Now": "Going" if w.get("active") else "Quiet",
+    } for w in waves or []]
+    return pd.DataFrame(rows, columns=WAVE_COLUMNS)
+
+
+def _wave_board_row(wid: str, members: list[dict]) -> dict:
+    """A wave's incidents as one board row: the worst severity, the oldest age, how many need a person."""
+    worst = min(members, key=lambda i: SEVERITY_RANK.get(str(i.get("severity")), 9))
+    open_ = [i for i in members if i.get("status") in OPEN_STATUSES]
+    needing = [i for i in open_ if attention(i)]
+    owners = sorted({str(i.get("owner") or "Nobody") for i in members})
+    return {
+        "Incident": f"{wid} ({len(members)})",
+        "What": category_label(worst.get("category")),
+        "Host": worst.get("host") or "-",
+        "Severity": str(worst.get("severity") or "-").capitalize(),
+        "Status": f"{len(open_)} open" if open_ else "Closed",
+        "Owner": owners[0] if len(owners) == 1 else f"{len(owners)} people",
+        "Backup": worst.get("backup") or "-",
+        "Open for": span_label(max(_age_hours(i) for i in open_) * 3600) if open_ else "-",
+        "Needs": f"{len(needing)} need a person: approve together on Approvals" if needing else "In hand",
+        "_rank": (not open_, not needing, SEVERITY_RANK.get(str(worst.get("severity")), 9)),
+    }
+
+
+def board_rows(incidents: Iterable[dict], include_closed: bool = False, group_waves: bool = False) -> pd.DataFrame:
+    """One row per incident: who has it, how long it has been open, and what it still needs.
+    With group_waves, a wave's incidents are one row."""
+    rows = []
+    incidents = [i for i in incidents or [] if include_closed or i.get("status") in OPEN_STATUSES]
+    if group_waves:
+        incidents, waves = split_waves(incidents)
+        rows += [_wave_board_row(wid, members) for wid, members in waves.items()]
+    for inc in incidents:
         closed = inc.get("status") not in OPEN_STATUSES
-        if closed and not include_closed:
-            continue
         needs = attention(inc)
         rows.append({
             "Incident": inc.get("id", "?"),
@@ -1749,6 +1813,30 @@ def pending_approvals(incidents: Iterable[dict]) -> list[dict]:
     """Incidents waiting on a person: open ones to approve or reject, contained ones to keep or roll back."""
     waiting = [i for i in incidents or [] if (a := available_actions(i))["decide"] or a["contain_controls"]]
     return sorted(waiting, key=lambda i: (not available_actions(i)["decide"], -incident_contribution(i)))
+
+
+# Fields that change on every read without anything a person would see change: heartbeats, clocks, and the
+# risk history the core appends to every second. fingerprint() leaves them out, so the page only redraws
+# when something real moved.
+VOLATILE_KEYS = frozenset({"timestamp", "last_seen", "services_at", "history", "demo_hours_elapsed", "now",
+                           "uptime", "uptime_s", "checked_at", "generated_at"})
+
+
+def fingerprint(payload: Any) -> str:
+    """A short hash of a core reply, without its volatile fields."""
+    def strip(x: Any) -> Any:
+        if isinstance(x, dict):
+            return {k: strip(v) for k, v in x.items() if k not in VOLATILE_KEYS}
+        if isinstance(x, list):
+            return [strip(v) for v in x]
+        return x
+    text = json.dumps(strip(payload), sort_keys=True, default=str)
+    return hashlib.sha1(text.encode("utf-8")).hexdigest()[:16]
+
+
+def changed_reads(seen: dict[str, str], now: dict[str, str]) -> list[str]:
+    """Which watched reads differ from what the page last drew. A read seen for the first time is no change."""
+    return [w for w, fp in now.items() if w in seen and seen[w] != fp]
 
 
 APPROVAL_GROUPS = {"Attacker": "attacker", "Machine": "machine", "Type": "type"}

@@ -169,6 +169,33 @@ These settings set the limits:
 About 10 minutes after each action, SentrAI checks that it worked and that it did not break the
 page above. A failed undo is tried again a few times, then handed to a person.
 
+## Busy servers
+
+A public game server or a big network is scanned and password-guessed by hundreds of addresses a
+day. On a normal setting each one is its own alert, and together they push the risk index to 100.
+`BUSY_SERVER=on` groups them:
+
+- When 10 or more addresses do the same kind of attack (a scan, password guessing) to one machine
+  within 15 minutes, they become one **wave**. You get one alert when it starts, then one summary
+  every 15 minutes ("40 new, 5 blocked automatically, 35 waiting for a person") instead of one
+  alert per address.
+- A wave counts on the risk index about as much as its worst address, at most twice that, so the
+  index still jumps for anything new or serious, but not for the 300th scanner.
+- Every address keeps its own incident, so each can still be blocked, approved and undone. On
+  **Approvals**, group by type to approve a whole wave at once.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `BUSY_SERVER` | `off` | `on` turns waves on with the values below |
+| `WAVE_MIN_ADDRESSES` | `10` with `BUSY_SERVER=on`, else `0` (off) | how many addresses make a wave |
+| `WAVE_WINDOW_MIN` | `15` | ...within how many minutes; a wave ends after this long with no new address |
+| `WAVE_UPDATE_MIN` | `15` | minutes between a wave's summaries |
+| `WAVE_CATEGORIES` | `port_scan,brute_force` | which kinds of attack can make a wave |
+| `TRUSTED_IPS` | none | addresses or networks whose lines are never looked at: your players' relay, a CDN, monitoring. Unlike `PROTECTED_IPS` (never blocked, still watched), nothing from these opens an incident |
+
+Only put an address in `TRUSTED_IPS` if you control it or trust whoever does: an attacker behind it
+would not be seen. A touched decoy is still always reported.
+
 ## Backups
 
 SentrAI backs up its own settings and records every 24 hours from the start. To back up your own

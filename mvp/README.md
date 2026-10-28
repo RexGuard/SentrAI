@@ -138,6 +138,9 @@ behind an arrow.
 | `ADMIN_ACCOUNTS` | empty | core: their accounts, `deploy` on every machine or `erick@web-01` on one |
 | `ADMIN_SESSION_HOURS` / `ADMIN_SIGNIN_HOURS` | `12` / `12` | core: hours a sign-in counts as open after its last line; hours a dashboard sign-in as Owner or Admin vouches for its address |
 | `ADMIN_LEARN` | `on` | core: a known key from a new address makes the address known, a new key from a known address makes the key known |
+| `BUSY_SERVER` | `off` | core: `on` groups many addresses doing the same attack to one machine into one wave (one alert, a summary every `WAVE_UPDATE_MIN`, a capped share of the risk index); for game servers and big networks |
+| `WAVE_MIN_ADDRESSES` / `WAVE_WINDOW_MIN` / `WAVE_UPDATE_MIN` / `WAVE_CATEGORIES` | `10` with `BUSY_SERVER=on`, else `0` (off) / `15` / `15` / `port_scan,brute_force` | core: how many addresses within how many minutes make a wave, minutes between its summaries, which kinds can make one |
+| `TRUSTED_IPS` | empty | core: addresses or networks (a players' relay, a CDN, monitoring) whose lines are never analysed; a decoy touch is still reported |
 | `CONTAIN_MIN_SEVERITY` / `CONTAIN_MIN_POINTS` | `high` / `20` | core: an incident is only contained without a person when its own severity and points reach these, whatever the overall risk index |
 | `SENTRAI_FIREWALL` | `off` | core: also block IPs in the host firewall (`auto`, `nftables`, `iptables`, `netsh`); `off` keeps blocks on SentrAI's own blocklist only |
 | `SENTRAI_FIREWALL_ENFORCE` | `0` | core: `0` is a dry run that only logs the firewall command; `1` really runs it (needs admin/root) |

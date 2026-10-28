@@ -193,6 +193,10 @@ SECTIONS = (
         Field("ADMIN_SESSION_HOURS", "Hours a sign-in counts as open after its last line", "12", float, advanced=True),
         Field("ADMIN_SIGNIN_HOURS", "Hours a dashboard sign-in as Owner or Admin vouches for its address", "12",
               float, advanced=True),
+        Field("BUSY_SERVER", "Busy server (game server, big network): group many attackers into one wave and alert "
+              "with a summary", "off", choices=("off", "on"), advanced=True),
+        Field("TRUSTED_IPS", "Known-good IPs or networks never analysed (players' relay, CDN, monitoring)",
+              advanced=True),
         Field("ON_DUTY", "On-duty responder shown in alerts (name, ID, shift)", "On-duty responder"),
     )),
     Section("notifications", "4. Notifications", "Email alerts. Telegram and Slack alerts are extensions, "

@@ -100,6 +100,13 @@ class CoreClient:
             data = data.get("incidents", [])
         return list(data or [])
 
+    def waves(self) -> list[dict]:
+        """Many addresses doing the same attack to one machine, grouped (core waves.py). Older cores: none."""
+        try:
+            return list(self.get_json("/waves") or [])
+        except CoreError:
+            return []
+
     def audit(self, limit: int = 0) -> Any:
         return self.get_json(f"/audit?limit={limit}" if limit else "/audit")
 
