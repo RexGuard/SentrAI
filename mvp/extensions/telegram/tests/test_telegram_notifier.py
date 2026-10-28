@@ -1,6 +1,9 @@
 """Telegram extension, notifier side: who gets each message, fallbacks, delivery receipts per person, and
 when the bot runs at all."""
 
+import json
+import os
+import signal
 from types import SimpleNamespace
 
 import pytest
@@ -128,6 +131,7 @@ class FakeBotAPI:
         import threading
 
         self.sent: list[dict] = []
+        self.updates: list[dict] = []  # what the next getUpdates hands the bot (a button press, say)
         api = self
 
         class Handler(http.server.BaseHTTPRequestHandler):
@@ -148,7 +152,7 @@ class FakeBotAPI:
                     result = {"id": 42, "is_bot": True, "first_name": "SentrAI", "username": "sentrai_test_bot"}
                 elif method == "getUpdates":
                     _time.sleep(0.05)
-                    result = []
+                    result = [api.updates.pop(0)] if api.updates else []
                 elif method == "sendMessage":
                     api.sent.append(body)
                     result = {"message_id": len(api.sent), "date": 1761550000,
@@ -182,6 +186,7 @@ class StoryCore:
     def __init__(self, rows, steps):
         self.rows, self.steps = rows, list(steps)
         self.alerts, self.marked, self.calls = [], [], 0
+        self.acked, self.mined = [], []
 
     def extensions(self):
         return [dict(r) for r in self.rows]
@@ -207,11 +212,17 @@ class StoryCore:
     def delivered(self, nid, channel, message_id, to=None):
         self.marked.append((nid, channel))
 
+    def ack(self, iid, operator, channel):
+        self.acked.append((iid, operator, channel))
+        return {"id": iid, "status": "open", "category": "unauthorised_admin"}
+
+    def mine(self, iid, operator, channel):
+        self.mined.append((iid, operator, channel))
+        return {"id": iid, "status": "resolved", "resolved_by": operator,
+                "learned": ["address 203.0.113.5", "account erick on web-01"], "also_closed": ["RSK-2"]}
+
 
 def test_removing_telegram_stops_the_bot_and_the_console_takes_over(monkeypatch, tmp_path):
-    import os
-    import signal
-
     pytest.importorskip("telegram")
     from telegram.ext import Application, ApplicationBuilder
 
@@ -257,3 +268,53 @@ def test_removing_telegram_stops_the_bot_and_the_console_takes_over(monkeypatch,
     assert [m["chat_id"] for m in api.sent] == ["-1001"] and "<b>ntf-1</b>" in api.sent[0]["text"]
     if os.name == "posix":  # the bot's stop signal handlers went with its event loop: Ctrl+C works again
         assert seen_in_console["sigint"] is signal.default_int_handler
+
+
+@pytest.mark.skipif(os.name != "posix", reason="sends itself a real Ctrl+C (SIGINT)")
+def test_pressing_this_was_me_teaches_the_core_and_confirms_in_the_chat(monkeypatch, tmp_path):
+    pytest.importorskip("telegram")
+    from telegram.ext import Application, ApplicationBuilder
+
+    from notifier import Channels, run
+
+    monkeypatch.setenv("NO_PROXY", "127.0.0.1,localhost")
+    monkeypatch.setenv("no_proxy", "127.0.0.1,localhost")
+    monkeypatch.setenv("NOTIFIER_WITNESS_FILE", str(tmp_path / "witness.txt"))
+    api = FakeBotAPI()
+    monkeypatch.setattr(Application, "builder", staticmethod(lambda: ApplicationBuilder().base_url(api.url)))
+    env = {"TELEGRAM_BOT_TOKEN": "123:abc", "TELEGRAM_CHAT_ID": "-1001"}
+    core = StoryCore([{"name": "telegram", "added": True}], [])
+    ask = {"id": "ntf-1", "incident": "RSK-1", "kind": "was_this_you", "risk_index": 41,
+           "title": "Root access from an unrecognised sign-in", "text": "Was this you?",
+           "buttons": [{"label": "This was me", "action": "mine"}, {"label": "Not me: block it", "action": "approve"},
+                       {"label": "Acknowledge", "action": "ack"}]}
+
+    def press():
+        if not api.sent:  # wait until the alert, with its keyboard, is in the chat
+            core.steps.insert(0, press)
+            return
+        api.updates.append({"update_id": 1, "callback_query": {
+            "id": "cq-1", "chat_instance": "ci-1", "data": "mine:RSK-1",
+            "from": {"id": 7, "is_bot": False, "first_name": "Erick", "username": "erick"},
+            "message": {"message_id": 1, "date": 1761550000, "text": api.sent[0]["text"],
+                        "chat": {"id": -1001, "type": "supergroup", "title": "Team"}}}})
+
+    def ctrl_c():
+        if not core.mined or len(api.sent) < 2:
+            core.steps.insert(0, ctrl_c)
+            return
+        os.kill(os.getpid(), signal.SIGINT)
+
+    core.steps = [lambda: core.alerts.append(ask), press, ctrl_c]
+    try:
+        # While the bot runs, Ctrl+C is the bot's own stop signal: the bot shuts down and run() returns
+        # (the notifier's main() then prints "notifier stopped."), so nothing is raised here.
+        run(core, 0.01, "operator", channels=Channels(core, environ=env, clock=lambda: 0.0))
+    finally:
+        api.close()
+    keyboard = json.loads(api.sent[0]["reply_markup"])["inline_keyboard"]
+    assert [(b["text"], b["callback_data"]) for b in keyboard[0]] == [
+        ("✋ This was me", "mine:RSK-1"), ("🚫 Not me: block it", "approve:RSK-1"), ("🙋 Take it", "take:RSK-1")]
+    assert core.acked == [("RSK-1", "erick", "telegram")] and core.mined == [("RSK-1", "erick", "telegram")]
+    assert "SentrAI now knows: address 203.0.113.5, account erick on web-01. Alert closed." in api.sent[1]["text"]
+    assert "Also closed with it: RSK-2." in api.sent[1]["text"]

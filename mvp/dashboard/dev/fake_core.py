@@ -2,6 +2,7 @@
 
 NOT the real core. In-memory, single process, plays a scripted demo scenario:
   t≈4 s   brute_force incident opens (risk ≈ 40, amber) + notification
+  t≈12 s  root work on web-01 from a sign-in SentrAI does not know ("was this you?": This was me / Not me)
   ...     nobody acks -> inaction penalty climbs (fast demo clock)
   t≈40 s  sql_injection incident opens -> risk crosses 80 -> Countersign approves
           autonomous containment (block IP, lock user) + evidence report
@@ -10,14 +11,17 @@ Env:  FAKE_CORE_PORT (8900, so it never collides with the real core on 8000), FA
       FAKE_TTL_SECONDS (300 real s before containment expires),
       FAKE_AUTOPLAY (1), FAKE_THRESHOLD (80), FAKE_RISK_SCOPE (host: a central panel with two joined machines; fleet)
 Extra dev-only endpoints: POST /dev/trigger/{category}?src_ip=..&user=.., POST /dev/reset,
-      POST /dev/extensions/managed?on=1 (act as if the server's SENTRAI_EXTENSIONS decides)
+      POST /dev/extensions/managed?on=1 (act as if the server's SENTRAI_EXTENSIONS decides),
+      GET /dev/admin-sign-ins (every dashboard sign-in reported to POST /admins/sign-in)
 """
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import json
 import math
 import os
+import re
 import secrets
 import threading
 import sys
@@ -46,8 +50,11 @@ SEVERITY = {
     "port_scan": ("medium", 15), "privilege_escalation": ("critical", 60),
     "data_exfiltration": ("critical", 70), "misconfiguration": ("medium", 20), "log_tampering": ("critical", 55),
     "malware": ("critical", 65), "prompt_injection": ("critical", 60), "staff_report": ("medium", 20),
-    "benign": ("low", 0),
+    "unauthorised_admin": ("critical", 60), "benign": ("low", 0),
 }
+ADMIN = "unauthorised_admin"  # root work from a sign-in SentrAI does not know: the person says This was me or Not me
+WAS_THIS_YOU_BUTTONS = [{"label": "This was me", "action": "mine"}, {"label": "Not me: block it", "action": "approve"},
+                        {"label": "Acknowledge", "action": "ack"}]
 PLAYBOOK = {
     "brute_force": [("block_ip", "src_ip"), ("lock_user", "user"), ("rate_limit", "/login")],
     "sql_injection": [("waf_rule", "/search UNION/OR 1=1"), ("block_ip", "src_ip")],
@@ -60,6 +67,7 @@ PLAYBOOK = {
     "malware": [],
     "staff_report": [],
     "prompt_injection": [("waf_rule", "prompt-injection filter"), ("block_ip", "src_ip")],
+    "unauthorised_admin": [("block_ip", "src_ip"), ("lock_user", "user")],
 }
 RECOMMEND = {
     "brute_force": "Block {src_ip} for 2 h, lock account '{user}' and rate-limit /login",
@@ -73,6 +81,8 @@ RECOMMEND = {
     "malware": "Check the file or program and quarantine it from the threat scan",
     "staff_report": "Read the report under Staff reports and close it with a note",
     "prompt_injection": "Add a WAF rule for prompt-injection text and block {src_ip} for 2 h",
+    "unauthorised_admin": "Not me: block {src_ip} for 2 h and lock account '{user}'. This was me: SentrAI learns the "
+                          "sign-in and stops asking",
 }
 
 app = FastAPI(title="SentrAI FAKE core (dev only)")
@@ -118,6 +128,131 @@ class State:
                                    "scored": 42, "local_blocks": 1, "reported_at": iso(now() - timedelta(minutes=20))}},
         }
         self.staff_reports: list[dict] = []
+        self.admins: dict = fake_admins()  # the administrators (core admins.py): known ones, sign-ins, root work
+        self.sign_in_reports: list[dict] = []  # every POST /admins/sign-in, vouched or not (GET /dev/admin-sign-ins)
+
+
+# ---- the administrators (core admins.py): who is signed in, who is known, "This was me" ----
+ADMIN_KEY = "SHA256:Q7w3cZk2u5Yd9bJm1LxkfA0Hn6Rr8PtEoSvNqGiCz4U"  # an example fingerprint, not anyone's key
+KEY_RX = re.compile(r"^(SHA256|MD5):[A-Za-z0-9+/=:]{8,}$")
+
+
+def short_key(fp: str | None) -> str:
+    return fp if not fp or len(fp) <= 20 else fp[:19] + "…"
+
+
+def fake_admins() -> dict:
+    """What the real core keeps in people/admins.json: a known administrator at work on web-01 (taught key and
+    address, a learned account), a setting from ADMIN_IPS / ADMIN_ACCOUNTS, and one dashboard sign-in vouching."""
+    t = now()
+    return {
+        "on": True, "next": 1,
+        "accounts": [{"account": "erick", "host": "web-01", "how": "learned", "by": "a trusted sign-in",
+                      "at": iso(t - timedelta(hours=3)), "last_seen": iso(t - timedelta(minutes=12))},
+                     {"account": "deploy", "host": "*", "how": "setting", "by": "ADMIN_ACCOUNTS", "at": None}],
+        "addresses": [{"address": "203.0.113.5", "how": "taught", "by": "erick", "at": iso(t - timedelta(days=2)),
+                       "label": "Erick's home", "last_seen": iso(t - timedelta(minutes=12))},
+                      {"address": "198.51.100.20", "how": "learned", "by": f"key {short_key(ADMIN_KEY)}",
+                       "at": iso(t - timedelta(days=1)), "label": "", "last_seen": iso(t - timedelta(hours=20))},
+                      {"address": "192.0.2.0/24", "how": "setting", "by": "ADMIN_IPS", "at": None, "label": "",
+                       "last_seen": None}],
+        "keys": [{"fingerprint": ADMIN_KEY, "type": "ED25519", "users": ["erick"], "how": "taught", "by": "erick",
+                  "at": iso(t - timedelta(days=2)), "last_seen": iso(t - timedelta(minutes=12))}],
+        "sign_ins": [{"address": "203.0.113.8", "email": "erick@example.com", "role": "Owner",
+                      "at": iso(t - timedelta(hours=1)), "until": iso(t + timedelta(hours=11))}],
+        "sessions": [{"session": "s1", "host": "web-01", "user": "erick", "via": "ssh", "address": "203.0.113.5",
+                      "tty": "pts/0", "key": ADMIN_KEY, "key_type": "ED25519", "method": "publickey", "trust": "trusted",
+                      "why": f"known SSH key {short_key(ADMIN_KEY)} (taught by erick)", "since": iso(t - timedelta(minutes=40)),
+                      "last_seen": iso(t - timedelta(minutes=12)), "ended": None, "preexisting": False, "actions": 2,
+                      "incident": None}],
+        "activity": [{"at": iso(t - timedelta(minutes=12)), "host": "web-01", "user": "erick", "via": "ssh",
+                      "address": "203.0.113.5", "session": "s1", "what": "sudo: /usr/bin/systemctl stop sentrai-core",
+                      "flagged_as": "log_tampering",
+                      "reason": "Log tampering: stopping the SentrAI core silences the record"},
+                     {"at": iso(t - timedelta(minutes=35)), "host": "web-01", "user": "erick", "via": "ssh",
+                      "address": "203.0.113.5", "session": "s1", "what": "sudo: /usr/bin/apt update",
+                      "flagged_as": None, "reason": None}],
+        "suspect": [],
+        "settings": {"session_hours": 12.0, "signin_hours": 12.0, "learn": True},
+    }
+
+
+def admin_session(host: str, user: str, ip: str | None, trust: str, why: str) -> dict:
+    """A sign-in seen on a machine, as the core's Session.public()."""
+    A = S.admins
+    A["next"] += 1
+    s = {"session": f"s{A['next']}", "host": host, "user": user, "via": "ssh", "address": ip, "tty": f"pts/{A['next']}",
+         "key": None, "key_type": None, "method": "password", "trust": trust, "why": why, "since": iso(now()),
+         "last_seen": iso(now()), "ended": None, "preexisting": False, "actions": 0, "incident": None}
+    A["sessions"].append(s)
+    return s
+
+
+def admins_view(host: str | None = None) -> dict:
+    """GET /admins: with host, that machine's sessions, root work and accounts (addresses and keys are for all)."""
+    A, t = S.admins, now()
+    out = {k: v for k, v in A.items() if k != "next"}
+    out["sessions"] = [s for s in A["sessions"] if not s["ended"] and host in (None, s["host"])]
+    out["activity"] = [a for a in A["activity"] if host in (None, a["host"])]
+    out["accounts"] = [a for a in A["accounts"] if host is None or a["host"] in ("*", host)]
+    out["sign_ins"] = [s for s in A["sign_ins"] if datetime.fromisoformat(s["until"]) > t]
+    out["suspect"] = [s for s in A["suspect"] if datetime.fromisoformat(s["until"]) > t]
+    return out
+
+
+def teach(inc: dict, op: str) -> list[str]:
+    """"This was me": the incident's sign-in facts become known administrator facts, in words."""
+    A, actor, learned, t = S.admins, inc.get("actor") or {}, [], iso(now())
+    ip, key, user, host = actor.get("address") or inc.get("src_ip"), actor.get("key"), actor.get("user"), inc["host"]
+    if ip and not any(x["address"] == ip and x["how"] in ("setting", "taught") for x in A["addresses"]):
+        A["addresses"] = [x for x in A["addresses"] if x["address"] != ip]
+        A["addresses"].append({"address": ip, "how": "taught", "by": op, "at": t, "label": "", "last_seen": t})
+    if ip:
+        learned.append(f"address {ip}")
+        A["suspect"] = [s for s in A["suspect"] if s["address"] != ip]
+    if key:
+        if not any(k["fingerprint"] == key and k["how"] in ("setting", "taught") for k in A["keys"]):
+            A["keys"] = [k for k in A["keys"] if k["fingerprint"] != key]
+            A["keys"].append({"fingerprint": key, "type": actor.get("key_type"), "users": [user] if user else [],
+                              "how": "taught", "by": op, "at": t, "last_seen": t})
+        learned.append(f"SSH key {short_key(key)}")
+    if user:
+        if not any(a["account"] == user and a["host"] in ("*", host) and a["how"] in ("setting", "taught") for a in A["accounts"]):
+            A["accounts"] = [a for a in A["accounts"] if not (a["account"] == user and a["host"] == host)]
+            A["accounts"].append({"account": user, "host": host, "how": "taught", "by": op, "at": t, "last_seen": t})
+        learned.append(f"account {user} on {host}")
+    for s in A["sessions"]:
+        if s["session"] == actor.get("session"):
+            s.update(trust="trusted", why=f"{op} said this was them")
+    return learned
+
+
+def distrust(inc: dict, op: str) -> None:
+    """"Not me": the sign-in is an intruder's, and its address is suspect for a while."""
+    A, actor = S.admins, inc.get("actor") or {}
+    ip = actor.get("address") or inc.get("src_ip")
+    for s in A["sessions"]:
+        if s["session"] == actor.get("session"):
+            s.update(trust="suspect", why=f"{op} said this was not them")
+    if ip:
+        A["suspect"] = [s for s in A["suspect"] if s["address"] != ip]
+        A["suspect"].append({"address": ip, "why": f"{op} said a sign-in from it was not them",
+                             "until": iso(now() + timedelta(hours=12))})
+        A["sign_ins"] = [s for s in A["sign_ins"] if s["address"] != ip]
+    audit("admin_distrusted", "Warden", incident=inc["id"], operator=op, address=ip, forgotten=[], actor=actor)
+
+
+def close_as_mine(inc: dict, op: str, note: str) -> None:
+    for act in inc["actions"]:
+        if act["status"] == "active":
+            act["status"] = "rolled_back"
+            audit("action_rolled_back", "Garrison-Linux", incident=inc["id"], action_id=act["action_id"], operator=op,
+                  reason="the sign-in was the administrator's own")
+    inc.update(status="resolved", resolved_by=op, resolution=note, acked=True, acked_by=inc.get("acked_by") or op,
+               closed_at=iso(now()))
+    inc.setdefault("decisions", []).append({"operator": op, "decision": "mine", "justification": note, "at": iso(now())})
+    inc.setdefault("timeline", []).append({"ts": iso(now()), "kind": "admin_confirmed",
+                                           "text": f"{op} said this was them: {note}"})
 
 
 S = State()
@@ -141,6 +276,7 @@ def notify(inc: dict, kind: str, text: str) -> None:
         "id": f"ntf-{S.seq_ntf:04d}", "incident_id": inc["id"], "kind": kind, "severity": inc["severity"],
         "risk_index": risk_index(), "text": text, "recommended_action": inc["recommended_action"],
         "created_at": iso(now()), "delivered": False, "channel": None, "message_id": None,
+        **({"buttons": list(WAS_THIS_YOU_BUTTONS)} if inc["category"] == ADMIN else {}),
     })
     audit("notification_queued", "Scribe", incident=inc["id"], kind=kind)
 
@@ -180,9 +316,29 @@ def open_incident(category: str, src_ip: str, user: str, conf: float, crit: floa
         "escalation_level": 0, "escalations": [], "resolved_by": None, "resolution": None, "timeline": [],
     }
     S.incidents[iid] = inc
+    if category == ADMIN:  # root work from a sign-in SentrAI does not know: who did it, and why it did not know them
+        why = (f"sign-in with password from {src_ip} (no key SentrAI knows): neither the address nor the key is known "
+               "as an administrator's")
+        s = admin_session("web-01", user, src_ip, "unknown", why)
+        s.update(actions=1, incident=iid)
+        inc.update(layer="os", needs_review=True, title="Root access from an unrecognised sign-in",
+                   actor={"host": "web-01", "user": user, "via": "ssh", "address": src_ip, "key": None,
+                          "session": s["session"], "trust": "unknown", "why": why, "since": s["since"]},
+                   explanation=(f"Administrator (root) work on web-01 by '{user}' from a sign-in SentrAI does not know as "
+                                "an administrator's. If this was you or a colleague, press This was me and SentrAI will know this sign-in from "
+                                "now on. If nobody you know was signed in, press Not me: the address is blocked and the "
+                                "machine should be treated as possibly taken over."),
+                   next_steps=["If this was you or a colleague, press This was me: SentrAI learns the sign-in and stops asking.",
+                               "If nobody you know was signed in, press Not me: the address is blocked. Treat the machine "
+                               "as possibly taken over and call your technical staff.",
+                               "Do not switch the machine off; it keeps the evidence."])
     audit("classification", "Jev" if by == "jev" else "Warden", incident=iid, category=category, confidence=conf)
-    audit("incident_opened", "Warden", incident=iid, category=category, risk_index=risk_index())
-    notify(inc, "incident_opened", f"{category.replace('_', ' ').capitalize()} on web-01 from {src_ip}")
+    audit("incident_opened", "Warden", incident=iid, category=category, risk_index=risk_index(), actor=inc.get("actor"))
+    if category == ADMIN:
+        notify(inc, "was_this_you", f"Root access on web-01 by {user} from {src_ip}, a sign-in SentrAI does not know. "
+                                    "Was this you?")
+    else:
+        notify(inc, "incident_opened", f"{category.replace('_', ' ').capitalize()} on web-01 from {src_ip}")
     return inc
 
 
@@ -247,6 +403,9 @@ def tick() -> None:
             if AUTOPLAY and elapsed > 4 and "bf" not in S.script_done:
                 S.script_done.add("bf")
                 open_incident("brute_force", "203.0.113.45", "admin", 0.94, 1.0, "jev")
+            if AUTOPLAY and elapsed > 12 and "adm" not in S.script_done:
+                S.script_done.add("adm")
+                open_incident(ADMIN, "203.0.113.9", "erick", 1.0, 1.0, "rules")
             if AUTOPLAY and elapsed > 40 and "sqli" not in S.script_done:
                 S.script_done.add("sqli")
                 open_incident("sql_injection", "203.0.113.45", "admin", 1.0, 1.5, "rules")
@@ -265,7 +424,8 @@ def tick() -> None:
                     if act["status"] == "active" and datetime.fromisoformat(act["expires_at"]) < now():
                         act["status"] = "expired"
                         audit("action_expired", "Watchdog", incident=inc["id"], target=act["target"])
-            active = [i for i in S.incidents.values() if i["status"] in ("open", "acknowledged")]
+            # "Was this you?" and other alerts a person must judge are never contained on their own.
+            active = [i for i in S.incidents.values() if i["status"] in ("open", "acknowledged") and not i.get("needs_review")]
             if risk_index() >= THRESHOLD and active and not S.protection["monitor_only"]:
                 S.history.append({"t": iso(now()), "risk_index": risk_index()})  # show the peak
                 audit("threshold_crossed", "Warden", risk_index=risk_index(), summary=f"Risk {risk_index()} ≥ {THRESHOLD}")
@@ -331,6 +491,7 @@ def machines():
                         "open_incidents": sum(i["status"] in ("open", "acknowledged") for i in incs),
                         "contained_incidents": sum(i["status"] == "contained" for i in incs),
                         "blocked": len(blocklist()["ips"]) if h == "web-01" else 0,
+                        "sessions": sum(1 for s in S.admins["sessions"] if s["host"] == h and not s["ended"]),
                         "last_seen": iso(now()), "silent": False, "services_at": iso(now()),
                         "services": FAKE_SERVICES.get(h, []) if h != "web-01" else [
                             {**x, "open_incidents": sum(1 for i in incs if i["status"] in ("open", "acknowledged"))
@@ -474,6 +635,8 @@ def decision(iid: str, body: dict = Body(...)):
             raise HTTPException(409, "Protection is off (monitor-only mode), so an approved hotpatch is not applied.")
         audit("decision", "Operator", operator=op, incident=iid, decision=dec, justification=just)
         if dec == "approve":
+            if inc["category"] == ADMIN:  # "Not me: block it"
+                distrust(inc, op)
             apply_containment(inc, "operator", op)
         elif dec == "reject":
             inc["status"] = "rejected"
@@ -491,6 +654,105 @@ def _close_actions(iid: str, body: dict, new_status: str, rtype: str):
         inc["status"] = "resolved"
         audit(rtype, "Operator", operator=body.get("operator"), incident=iid, justification=body.get("justification"))
         return inc
+
+
+@app.post("/incidents/{iid}/mine")
+def mine(iid: str, body: dict = Body(...)):
+    """"This was me": the sign-in behind the incident was the administrator's own. Its address, key and account
+    become known, any block on it is undone, and the same person's other open incidents on the machine close too."""
+    with lock:
+        inc = get_inc(iid)
+        if inc["status"] in ("resolved", "rejected"):
+            raise HTTPException(409, f"{iid} is already {inc['status']}")
+        if not S.admins["on"]:
+            raise HTTPException(400, "ADMIN_SESSIONS is off: SentrAI is not keeping track of the administrators")
+        op = body.get("operator") or "operator"
+        learned = teach(inc, op)
+        closed = []
+        for other in S.incidents.values():
+            same = other["host"] == inc["host"] and (other.get("src_ip") == inc.get("src_ip") or other.get("user") == inc.get("user"))
+            if other is not inc and other["status"] not in ("resolved", "rejected") and same \
+                    and other["category"] in (ADMIN, "log_tampering", "privilege_escalation"):
+                close_as_mine(other, op, f"closed with {iid}: {op} said this was them")
+                closed.append(other["id"])
+        close_as_mine(inc, op, f"This was me ({op}): {', '.join(learned) or 'nothing new to learn'}")
+        audit("admin_confirmed", "Warden", incident=iid, operator=op, channel=body.get("channel") or "dashboard",
+              learned=learned, also_closed=closed, actor=inc.get("actor"))
+        return {**inc, "learned": learned, "also_closed": closed}
+
+
+@app.get("/admins")
+def get_admins(host: str | None = None):
+    with lock:
+        return admins_view(host)
+
+
+@app.post("/admins")
+def post_admins(body: dict = Body(...)):
+    """Add or forget a known administrator address, key fingerprint or account; 400 with plain words for a bad value."""
+    with lock:
+        action = str(body.get("action") or "").strip().lower()
+        kind, value = str(body.get("kind") or "").strip().lower(), str(body.get("value") or "").strip()
+        op, label, host = body.get("operator") or "operator", str(body.get("label") or ""), body.get("host")
+        A, t = S.admins, iso(now())
+        if action not in ("add", "forget"):
+            raise HTTPException(400, "action must be add or forget")
+        if kind == "address":
+            try:
+                ipaddress.ip_network(value.strip("[]"), strict=False)
+            except ValueError:
+                raise HTTPException(400, f"{value!r} is not an address or a network")
+            A["addresses"] = [x for x in A["addresses"] if x["address"] != value or x["how"] == "setting"]
+            A["sign_ins"] = [x for x in A["sign_ins"] if x["address"] != value]
+            if action == "add":
+                A["addresses"].append({"address": value, "how": "taught", "by": op, "at": t, "label": label, "last_seen": None})
+        elif kind == "key":
+            if not KEY_RX.match(value):
+                raise HTTPException(400, "a key fingerprint looks like SHA256:... (ssh-keygen -lf id_ed25519.pub shows it)")
+            A["keys"] = [k for k in A["keys"] if k["fingerprint"] != value or k["how"] == "setting"]
+            if action == "add":
+                A["keys"].append({"fingerprint": value, "type": None, "users": [], "how": "taught", "by": op, "at": t,
+                                  "label": label, "last_seen": None})
+        elif kind == "account":
+            user, _, at_host = value.partition("@")
+            at_host = (host or at_host or "*").strip().lower()
+            if not user or re.search(r"\s", user):
+                raise HTTPException(400, "an account is a user name, or user@machine")
+            A["accounts"] = [a for a in A["accounts"] if (a["account"], a["host"]) != (user.lower(), at_host) or a["how"] == "setting"]
+            if action == "add":
+                A["accounts"].append({"account": user.lower(), "host": at_host, "how": "taught", "by": op, "at": t, "label": label})
+        else:
+            raise HTTPException(400, "kind must be address, key or account")
+        audit("admin_changed", "Warden", operator=op, action=action, kind=kind,
+              value=short_key(value) if kind == "key" else value, label=label, host=host)
+        return admins_view()
+
+
+@app.post("/admins/sign-in")
+def post_admin_sign_in(body: dict = Body(...)):
+    """A dashboard sign-in (password and authenticator): an Owner's or Admin's address counts as an administrator's."""
+    with lock:
+        email, role, address = str(body.get("email") or ""), str(body.get("role") or ""), body.get("address")
+        try:
+            ip = str(ipaddress.ip_address(str(address or "").strip()))
+        except ValueError:
+            ip = None
+        vouched = bool(ip) and role.strip().lower() in ("owner", "admin") and S.admins["on"]
+        S.sign_in_reports.append({"email": email, "role": role, "address": address, "vouched": vouched, "at": iso(now())})
+        if not vouched:
+            return {"ok": True, "vouched": False, "address": ip, "until": None}
+        until = iso(now() + timedelta(hours=12))
+        S.admins["sign_ins"] = [s for s in S.admins["sign_ins"] if s["address"] != ip]
+        S.admins["sign_ins"].append({"address": ip, "email": email, "role": role, "at": iso(now()), "until": until})
+        audit("admin_signed_in", "Warden", email=email, role=role, address=ip, until=until)
+        return {"ok": True, "vouched": True, "address": ip, "until": until}
+
+
+@app.get("/dev/admin-sign-ins")
+def dev_admin_sign_ins():
+    """Test helper: every sign-in the dashboard reported, vouched for or not."""
+    with lock:
+        return list(S.sign_in_reports)
 
 
 @app.post("/incidents/{iid}/rollback")

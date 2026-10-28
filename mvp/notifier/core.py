@@ -99,6 +99,13 @@ class Core:
         return self._req("POST", f"/incidents/{incident_id}/permanent",
                          {"operator": operator, "justification": justification})
 
+    def mine(self, incident_id: str, operator: str, channel: str) -> Any:
+        """"This was me": the sign-in behind a root-access incident was the operator's own. The core learns
+        it and closes the incident; the answer is the incident plus "learned" (what it now knows, in words)
+        and "also_closed" (the same person's other incidents). CoreError 409 once the incident is closed,
+        400 while ADMIN_SESSIONS is off, with the core's reason in `detail`."""
+        return self._req("POST", f"/incidents/{incident_id}/mine", {"operator": operator, "channel": channel})
+
     def staff_report(self, text: str, reporter: str, sender: str, channel: str = "telegram") -> dict:
         """Sends a staff report. Returns the core's answer, or {"error": why} when the core refused it
         (too short, too many reports): that reason is meant for the reporter."""

@@ -17,10 +17,12 @@ CATEGORY_LABELS = {
     "malware": "Malware found",
     "staff_report": "Staff report",
     "prompt_injection": "Prompt injection",
+    "unauthorised_admin": "Root access from an unrecognised sign-in",
 }
 
 KIND_HEADERS = {
     "incident_opened": ("⚠️", "New incident"),
+    "was_this_you": ("🔑", "Was this you?"),
     "reminder": ("⏰", "Reminder: still unacknowledged"),
     "sla_breach": ("⏰", "SLA breached"),
     "escalation": ("📣", "Escalation"),
@@ -43,12 +45,21 @@ KIND_HEADERS = {
 NOTICE_KINDS = ("audit_anchor", "backup_failed", "backup_restored", "summary", "hardware")
 LINK_TEXT = {"summary": "Open the one-page summary (PDF)"}
 
-# Callback data: "<verb>:<incident_id>" (Telegram limits callback_data to 64 bytes).
+# Callback data: "<verb>:<incident_id>" (Telegram limits callback_data to 64 bytes). The verbs are the
+# actions of the buttons the core puts on a notification, plus take, which is the notifier's own.
 APPROVE = "approve"
 REJECT = "reject"
 ROLLBACK = "rollback"
 PERMANENT = "permanent"
+MINE = "mine"  # "This was me": the sign-in behind a root-access incident was the person's own
 TAKE = "take"  # the person who presses it becomes the incident's owner
+VERBS = (APPROVE, REJECT, ROLLBACK, PERMANENT, MINE, TAKE)
+# The core's Acknowledge button. In Telegram an acknowledgement is personal (every press acknowledges, and the
+# alert reached a person), so it is shown as Take it: acknowledge and own the incident.
+ACK = "ack"
+ADMIN_CATEGORY = "unauthorised_admin"  # root access from an unrecognised sign-in: the core asks "was this you?"
+BUTTON_EMOJI = {APPROVE: "✅", REJECT: "⛔", ROLLBACK: "↩️", PERMANENT: "📌", MINE: "✋", TAKE: "🙋"}
+TAKE_LABEL = "Take it"
 
 
 def band_for(index: Any) -> str:
@@ -207,24 +218,54 @@ def format_telegram(notification: dict, incident: dict | None = None, risk: dict
     return "\n".join(lines)
 
 
+def sent_buttons(notification: dict) -> list[tuple[str, str]]:
+    """[(label, verb)] from the notification's own `buttons` list ([{"label", "action"}] from the core), in
+    the core's order and with its words. A button whose action this notifier cannot carry out is left out,
+    and a verb is kept once."""
+    out: dict[str, str] = {}
+    for b in notification.get("buttons") or []:
+        if not isinstance(b, dict):
+            continue
+        verb = str(b.get("action") or "").strip().lower()
+        if verb in VERBS or verb == ACK:
+            out.setdefault(verb, str(b.get("label") or "").strip() or verb.capitalize())
+    return [(label, verb) for verb, label in out.items()]
+
+
+def _emoji(label: str, verb: str) -> str:
+    """The verb's emoji, except that "Not me: block it" (the approve verb on a root-access alert) says no."""
+    return "🚫" if verb == APPROVE and label.lower().startswith("not me") else BUTTON_EMOJI[verb]
+
+
 def button_specs(notification: dict, incident: dict | None = None) -> list[tuple[str, str]]:
-    """[(label, callback_data)] for the inline keyboard."""
+    """[(label, callback_data)] for the inline keyboard: the buttons the core put on the notification, with the
+    core's labels (This was me / Not me: block it on a root-access alert, Approve & Patch / Reject with
+    Justification otherwise); its Acknowledge is Take it (see ACK). A contained incident offers Rollback and
+    Make Permanent, a closed one nothing. Without a list (an older core, or a notification that names none)
+    the usual set for the incident's state is shown."""
     iid = str(incident_id_of(notification) or (incident or {}).get("id") or "")
     if not iid:
         return []
     status = str((incident or {}).get("status") or "")
     kind = notification_kind(notification)
+    sent = sent_buttons(notification)
     if status == "contained" or kind in ("autonomous_action", "containment"):
-        return [("↩️ Rollback", f"{ROLLBACK}:{iid}"), ("📌 Make Permanent", f"{PERMANENT}:{iid}")]
-    if status in ("resolved", "rejected"):
+        buttons = [b for b in sent if b[1] in (ROLLBACK, PERMANENT)] or [("Rollback", ROLLBACK), ("Make Permanent", PERMANENT)]
+    elif status in ("resolved", "rejected"):
         return []
-    return [("✅ Approve & Patch", f"{APPROVE}:{iid}"), ("⛔ Reject with Justification", f"{REJECT}:{iid}"),
-            ("🙋 Take it", f"{TAKE}:{iid}")]
+    elif sent:
+        seen: dict[str, str] = {}  # the core's Acknowledge becomes Take it; a verb is shown once
+        for label, verb in sent:
+            seen.setdefault(TAKE if verb == ACK else verb, TAKE_LABEL if verb == ACK else label)
+        buttons = [(label, verb) for verb, label in seen.items()]
+    else:
+        buttons = [("Approve & Patch", APPROVE), ("Reject with Justification", REJECT), (TAKE_LABEL, TAKE)]
+    return [(f"{_emoji(label, verb)} {label}", f"{verb}:{iid}") for label, verb in buttons]
 
 
 def parse_callback(data: str) -> tuple[str, str] | None:
     verb, sep, iid = (data or "").partition(":")
-    if not sep or not iid or verb not in (APPROVE, REJECT, ROLLBACK, PERMANENT, TAKE):
+    if not sep or not iid or verb not in VERBS:
         return None
     return verb, iid
 

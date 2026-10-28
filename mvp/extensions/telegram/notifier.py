@@ -1,5 +1,6 @@
-"""Telegram extension, notifier part: the bot. Alerts arrive with Approve, Reject and Take buttons, in
-the team group and in each person's own chat once they link it.
+"""Telegram extension, notifier part: the bot. Alerts arrive with the buttons the core put on them (Approve,
+Reject and Take it; This was me and Not me: block it when SentrAI asks about root access from a sign-in it
+does not recognise), in the team group and in each person's own chat once they link it.
 
 Settings (extension.json): TELEGRAM_BOT_TOKEN from @BotFather (never hardcode it), TELEGRAM_CHAT_ID, the
 group chat for alerts that are not for one person and for people who have not linked their own chat yet
@@ -22,14 +23,15 @@ from datetime import datetime
 from typing import Any, Callable
 
 from core import CoreError
-from formatting import APPROVE, REJECT, ROLLBACK, TAKE, button_specs, format_telegram, parse_callback
+from formatting import (ADMIN_CATEGORY, APPROVE, MINE, PERMANENT, REJECT, ROLLBACK, TAKE, button_specs,
+                        format_telegram, parse_callback)
 
 from .direct import Target, deliver, group_mode, plan
 
 log = logging.getLogger("sentrai.ext.telegram")
 
-__all__ = ["Target", "deliver", "group_mode", "main_channel", "plan", "report_allowed", "run_telegram",
-           "staff_report_reply", "telegram_links"]
+__all__ = ["Target", "button_reply", "deliver", "error_reply", "group_mode", "main_channel", "mine_reply", "plan",
+           "report_allowed", "run_telegram", "staff_report_reply", "telegram_links"]
 
 
 def telegram_links(core: Any) -> list[dict]:
@@ -69,6 +71,53 @@ def staff_report_reply(core: Any, text: str, reporter: str, chat_id: str) -> str
     return (f"✅ Thank you. Report {res.get('id')} reached the security team.{urgent}\n"
             f"It sounds like: {res.get('kind_label') or 'something to check'}.\n\n"
             + (f"What to do now:\n{steps}" if steps else ""))
+
+
+def error_reply(iid: str, exc: CoreError) -> str:
+    """What the chat is told when the core refused a button press: the core's own reason when it gave one
+    ("RSK-2026-012 is already resolved", "ADMIN_SESSIONS is off: ..."), otherwise what went wrong."""
+    return f"❌ {iid}: {exc.detail or exc}"
+
+
+def mine_reply(iid: str, op: str, stamp: str, res: dict) -> str:
+    """The confirmation after "This was me": what SentrAI now knows, and what else it closed."""
+    learned = [str(x) for x in (res.get("learned") or []) if x]
+    also = [str(x) for x in (res.get("also_closed") or []) if x]
+    lines = [f"✋ {iid}: {op} said this was them at {stamp}.",
+             f"SentrAI now knows: {', '.join(learned)}. Alert closed." if learned
+             else "SentrAI already knew this sign-in. Alert closed."]
+    if also:
+        lines.append(f"Also closed with it: {', '.join(also)}.")
+    return "\n".join(lines)
+
+
+def button_reply(core: Any, verb: str, iid: str, op: str, stamp: str, category: str | None = None) -> str:
+    """Carries out a button press through the core and words the reply (every verb but Reject, which asks
+    for a justification first). `category` is the incident's: on a root-access incident the approve verb is
+    "Not me: block it". Raises CoreError when the core refused."""
+    if verb == TAKE:
+        core.assign(iid, op, op, "Taken via Telegram")
+        return f"🙋 {iid} taken by {op} at {stamp}. It is yours until it is resolved."
+    if verb == MINE:
+        res = core.mine(iid, op, "telegram")
+        return mine_reply(iid, op, stamp, res if isinstance(res, dict) else {})
+    if verb == APPROVE:
+        if category == ADMIN_CATEGORY:
+            res = core.decision(iid, op, "approve", "Not me: block it (via Telegram)")
+            actions = [a for a in ((res or {}).get("actions") or []) if isinstance(a, dict)
+                       and a.get("status", "active") in ("active", "permanent")]
+            done = ", ".join(f"{a.get('type') or ''} {a.get('target') or ''}".strip() for a in actions)
+            return (f"🚫 {iid}: {op} said this was not them at {stamp}. That sign-in is no longer trusted"
+                    + (f"; applied: {done}." if done else "."))
+        core.decision(iid, op, "approve", "Approved via Telegram")
+        return f"✅ {iid} approved & patch applied by {op} at {stamp}"
+    if verb == ROLLBACK:
+        core.rollback(iid, op, "Rolled back via Telegram")
+        return f"↩️ {iid} rolled back by {op} at {stamp}"
+    if verb == PERMANENT:
+        core.permanent(iid, op, "Made permanent via Telegram")
+        return f"📌 {iid} made permanent by {op} at {stamp}"
+    raise ValueError(f"unknown button verb {verb!r}")
 
 
 def main_channel(ctx: Any) -> Callable[[], None] | None:
@@ -196,38 +245,29 @@ def run_telegram(ctx: Any, token: str, chat_id: str, group_copy: str = "fallback
         verb, iid = parsed
         op = operator_of(update)
         here = chat_of(update)
+        category = None  # the incident's, from the acknowledgement: it says what the approve button means
         try:
-            await asyncio.to_thread(core.ack, iid, op, "telegram")
+            acked = await asyncio.to_thread(core.ack, iid, op, "telegram")
+            category = str(acked.get("category") or "") if isinstance(acked, dict) else None
         except CoreError as exc:
             log.warning("ack failed for %s: %s", iid, exc)
         stamp = datetime.now().strftime("%H:%M:%S")
+        if verb == REJECT:
+            await query.answer("Reply with your justification")
+            prompt = await context.bot.send_message(
+                chat_id=here,
+                text=f"⛔ Rejecting <b>{iid}</b>. Reply to this message with your justification "
+                     "(it is written to the hash-chained audit log).",
+                parse_mode=ParseMode.HTML, reply_markup=ForceReply(selective=True))
+            target = (iid, here, query.message.message_id)
+            context.bot_data.setdefault("reject_prompts", {})[(here, prompt.message_id)] = target
+            context.user_data["awaiting_reject"] = target
+            return
         try:
-            if verb == TAKE:
-                await asyncio.to_thread(core.assign, iid, op, op, "Taken via Telegram")
-                result = f"🙋 {iid} taken by {op} at {stamp}. It is yours until it is resolved."
-            elif verb == APPROVE:
-                await asyncio.to_thread(core.decision, iid, op, "approve", "Approved via Telegram")
-                result = f"✅ {iid} approved & patch applied by {op} at {stamp}"
-            elif verb == REJECT:
-                await query.answer("Reply with your justification")
-                prompt = await context.bot.send_message(
-                    chat_id=here,
-                    text=f"⛔ Rejecting <b>{iid}</b>. Reply to this message with your justification "
-                         "(it is written to the hash-chained audit log).",
-                    parse_mode=ParseMode.HTML, reply_markup=ForceReply(selective=True))
-                target = (iid, here, query.message.message_id)
-                context.bot_data.setdefault("reject_prompts", {})[(here, prompt.message_id)] = target
-                context.user_data["awaiting_reject"] = target
-                return
-            elif verb == ROLLBACK:
-                await asyncio.to_thread(core.rollback, iid, op, "Rolled back via Telegram")
-                result = f"↩️ {iid} rolled back by {op} at {stamp}"
-            else:  # PERMANENT
-                await asyncio.to_thread(core.permanent, iid, op, "Made permanent via Telegram")
-                result = f"📌 {iid} made permanent by {op} at {stamp}"
+            result = await asyncio.to_thread(button_reply, core, verb, iid, op, stamp, category)
         except CoreError as exc:
             await query.answer("Core rejected the action", show_alert=True)
-            await context.bot.send_message(chat_id=here, text=f"❌ {iid}: {exc}")
+            await context.bot.send_message(chat_id=here, text=error_reply(iid, exc))
             return
         await query.answer("Recorded")
         await query.edit_message_reply_markup(reply_markup=None)
@@ -257,7 +297,7 @@ def run_telegram(ctx: Any, token: str, chat_id: str, group_copy: str = "fallback
         try:
             await asyncio.to_thread(core.decision, iid, op, "reject", justification)
         except CoreError as exc:
-            await update.message.reply_text(f"❌ {iid}: {exc}")
+            await update.message.reply_text(error_reply(iid, exc))
             return
         try:
             await context.bot.edit_message_reply_markup(chat_id=alert_chat, message_id=alert_msg_id, reply_markup=None)
@@ -285,7 +325,8 @@ def run_telegram(ctx: Any, token: str, chat_id: str, group_copy: str = "fallback
         await asyncio.to_thread(refresh_links)
         await update.message.reply_text(
             f"✅ Linked. SentrAI alerts for {res.get('name')} now come to this chat, with the buttons to "
-            "approve, reject or take them. Send /unlink to stop.")
+            "approve, reject or take them, and to answer This was me when SentrAI asks about a sign-in. "
+            "Send /unlink to stop.")
 
     async def on_link(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         code = " ".join(context.args or []).strip()

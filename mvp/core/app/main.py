@@ -77,6 +77,26 @@ class ResolveIn(BaseModel):
     note: str
 
 
+class MineIn(BaseModel):
+    operator: str
+    channel: Optional[str] = "dashboard"
+
+
+class AdminChangeIn(BaseModel):
+    operator: str
+    action: str  # add | forget
+    kind: str  # address | key | account
+    value: str
+    label: str = ""
+    host: Optional[str] = None  # for an account: the one machine it is an administrator on
+
+
+class AdminSignInIn(BaseModel):
+    email: str
+    role: str
+    address: Optional[str] = None
+
+
 class DeliveredIn(BaseModel):
     channel: str
     message_id: Optional[Union[str, int]] = None
@@ -347,6 +367,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     await t
         if core.remote is not None:
             core.remote.stop()
+        with core.lock:
+            core.admins.flush(force=True)  # who is signed in, for the next start
         core.audit.close()
 
     # Operator chat: read-only tools plus suggestion buttons; answers from the core's own
@@ -507,6 +529,33 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/incidents/{iid}/resolve")
     def post_resolve(iid: str, body: ResolveIn) -> dict[str, Any]:
         return _verb(core.resolve, iid, body.operator, body.note)
+
+    @app.post("/incidents/{iid}/mine")
+    def post_mine(iid: str, body: MineIn) -> dict[str, Any]:
+        """"This was me": the root work behind this incident was the administrator's own. SentrAI learns the
+        sign-in (address, SSH key, account), undoes any block on it and closes the incident."""
+        return _verb(core.mine, iid, body.operator, body.channel or "dashboard")
+
+    @app.get("/admins")
+    def get_admins(host: Optional[str] = None) -> dict[str, Any]:
+        """The administrators SentrAI knows (addresses, SSH keys, accounts: from the settings, taught or learned),
+        who is signed in on each machine right now, and their recent root work."""
+        return core.admins_public(host)
+
+    @app.post("/admins")
+    def post_admins(body: AdminChangeIn) -> dict[str, Any]:
+        """Add or forget a known administrator address, SSH key fingerprint or account by hand."""
+        try:
+            return core.admins_change(body.operator, body.action.strip().lower(), body.kind.strip().lower(),
+                                      body.value, body.label, body.host)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @app.post("/admins/sign-in")
+    def post_admin_sign_in(body: AdminSignInIn) -> dict[str, Any]:
+        """The dashboard reports an Owner or Admin sign-in with the authenticator: its address counts as an
+        administrator's for ADMIN_SIGNIN_HOURS."""
+        return core.admin_signed_in(body.email, body.role, body.address)
 
     @app.get("/routing")
     def get_routing() -> dict[str, Any]:

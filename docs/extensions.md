@@ -13,7 +13,7 @@ can be added or removed while SentrAI runs. Five come with SentrAI:
 | --- | --- | --- |
 | Cloudflare | Blocks an attacker at Cloudflare's edge, before it reaches your site | `CLOUDFLARE_API_TOKEN` |
 | TypeSafe | An AI classifier, asked when the rules are unsure | `TYPESAFE_API_KEY` |
-| Telegram | Alerts with Approve, Reject and Take buttons in Telegram | `TELEGRAM_BOT_TOKEN` |
+| Telegram | Alerts with Approve, Reject and Take buttons in Telegram (This was me and Not me: block it when SentrAI asks about a sign-in) | `TELEGRAM_BOT_TOKEN` |
 | Slack | Posts a copy of every alert in a channel | `SLACK_WEBHOOK_URL` |
 | AbuseIPDB | Shows how often others have reported the attacking address | `ABUSEIPDB_API_KEY` |
 
@@ -118,7 +118,11 @@ Without the extension, events are classified by the rules and the keyword fallba
 ## Telegram
 
 Alerts arrive in a Telegram group with Approve, Reject and Take buttons, and in each person's own
-chat once they link it. Make a bot with **@BotFather**, then paste its token and the group's chat id
+chat once they link it. A **Root access from an unrecognised sign-in** alert shows **This was me**,
+**Not me: block it** and **Take it** instead. **This was me** teaches SentrAI that sign-in (its
+address, SSH key and account become a known administrator's), closes the alert and undoes any
+block; the bot replies with what SentrAI now knows. **Not me: block it** blocks the address (see
+[Your own administrators](settings.html#your-own-administrators)). Make a bot with **@BotFather**, then paste its token and the group's chat id
 into the Telegram extension's settings. [Settings](settings.html#telegram) has the steps. While
 Telegram is removed, alerts go to email and the console, and the link codes on the Incidents page
 are hidden.

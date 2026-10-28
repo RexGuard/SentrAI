@@ -19,7 +19,7 @@ a server that keeps watch around the clock.
 | Watch several machines from one dashboard | [One panel, many machines](panel.html) | about 10 minutes per machine |
 | See which logs SentrAI reads (Windows, Suricata, databases) | [Log sources](log-sources.html) | |
 | Sign in, invite your team, or reset a sign-in | [Signing in](sign-in.html) | |
-| Change thresholds, alerts or protected IPs | [Settings](settings.html) | |
+| Change thresholds, alerts or protected IPs, or tell SentrAI who your administrators are | [Settings](settings.html) | |
 | Fix a port clash, a missing package or a blocked dashboard | [Troubleshooting](troubleshooting.html) | |
 | Call SentrAI from your own scripts and tools | [API reference](api/index.html) | |
 

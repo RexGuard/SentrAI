@@ -78,6 +78,15 @@ Any other field is kept with the event. Two of them have a meaning:
   as before. With the off-box copy turned on, sealed events also go to the witness (see
   [What SentrAI sends out](outgoing.html)).
 
+The core keeps each event with what it made of it (its `category`, `reason` and `incident`), and
+that is what the evidence report and the dashboard show. A line that was a person's work on a
+machine (a `sudo` or `su` command, a sign-in, a Windows administrator event) also gets an `actor`:
+the sign-in behind it, as [the incident record](incidents.html#the-incident-record) describes it.
+When a known administrator's own command would have been raised on its own, the event stays
+`benign` with `admin_action` true and `flagged_as` the category the rules read, `log_tampering` for
+instance, and is written to the audit trail as `admin_action` (see
+[`GET /admins`](status.html#get-admins)).
+
 **Returns**
 
 ```json

@@ -49,8 +49,10 @@ import sentrai_paths
 log = logging.getLogger("sentrai.routing")
 
 MATCH_KEYS = ("category", "severity", "host", "layer")
-# Kept by the attacker's touch on files or data: the IT manager hears about them as well.
-INSIDE_JOBS = ("malware", "data_exfiltration", "log_tampering", "privilege_escalation")
+# Kept by the attacker's touch on files or data: the IT manager hears about them as well. Root from a
+# sign-in SentrAI does not recognise (admins.py) belongs here too: it is either an intruder inside or an
+# administrator it has not met, and the IT manager knows which.
+INSIDE_JOBS = ("malware", "data_exfiltration", "log_tampering", "privilege_escalation", "unauthorised_admin")
 
 
 @dataclass

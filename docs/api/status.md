@@ -1,7 +1,7 @@
 ---
 title: Risk and protection
 nav: api
-description: Read the risk index for all machines or one, switch SentrAI's protection on and off, and read the list of blocked addresses and accounts.
+description: Read the risk index for all machines or one, see who is signed in and which administrators SentrAI knows, switch its protection on and off, and read the list of blocked addresses and accounts.
 ---
 
 # Risk and protection
@@ -9,7 +9,8 @@ description: Read the risk index for all machines or one, switch SentrAI's prote
 These endpoints answer "how bad is it right now, and is SentrAI allowed to act?". The dashboard's
 overview reads the risk index, each machine and the protection switch from here; the lab website,
 a proxy or an agent on another machine reads the block list to refuse blocked addresses and
-accounts.
+accounts. They also answer who is signed in on each machine and which sign-ins SentrAI knows as its
+administrators', so an administrator's own root work is never mistaken for an intruder's.
 
 Every endpoint here needs the API token (see [Signing in](index.html#signing-in)) unless it says otherwise.
 
@@ -126,6 +127,7 @@ first (ties by name). The dashboard's machine list and a central panel's overvie
     "blocked": 2,
     "last_seen": "2026-10-27T02:45:11+00:00",
     "silent": false,
+    "sessions": 1,
     "services": [
       {"name": "nginx", "port": 443, "proto": "tcp", "process": "nginx", "open_incidents": 1}
     ],
@@ -143,9 +145,159 @@ first (ties by name). The dashboard's machine list and a central panel's overvie
 | `blocked` | how many addresses its [block list](#get-blocklist) holds |
 | `last_seen` | when its last event or heartbeat arrived since the core started, `null` when only an incident names it |
 | `silent` | `true` when its collector sent no heartbeat for `WATCHDOG_SILENCE_S` seconds (30 by default) |
+| `sessions` | how many people are signed in on it right now, as [`GET /admins`](#get-admins) lists them; 0 when its collector sends no sign-in lines |
 | `services` | what runs on it, as its agent reported through [`POST /fleet/services`](fleet.html#post-fleetservices), each with the number of open incidents about it. A service that only an incident names is listed with `null` port, protocol and process |
 | `services_at` | when the agent last reported its services, `null` if it never did |
 | `hardware` | its agent's latest hardware reading, as in [`GET /fleet/hardware`](fleet.html#get-fleethardware) `latest`; `null` until one arrives |
+
+## Who is signed in, and the administrators
+
+The rules read every log line the same way whoever typed it, so an administrator's own
+`sudo systemctl stop sentrai-core` reads like an intruder covering their tracks. The core therefore
+keeps track of **who is signed in on each machine**, from the sshd, `su`, `sudo` and sign-in lines
+the collector sends and its poll of who is signed in, and whether it **knows that person as an
+administrator**. A sign-in is trusted when, in this order:
+
+1. its SSH key fingerprint is a known administrator key (`ADMIN_SSH_KEYS`, taught or learned);
+2. its address is a known administrator address: `ADMIN_IPS`, taught with **This was me**, learned, or
+   vouched for by a dashboard sign-in as Owner or Admin ([`POST /admins/sign-in`](#post-adminssign-in));
+3. it is a console sign-in by a known administrator account (`ADMIN_ACCOUNTS` or taught).
+
+Root work inside a trusted sign-in is recorded as admin activity (audit record `admin_action`) and
+raises nothing. Root work from a sign-in the core does not recognise opens one **Root access from an
+unrecognised sign-in** incident per address (see [the incident record](incidents.html#the-incident-record)),
+and a sign-in that follows password guessing from the same address is `suspect` and treated the
+same. With `ADMIN_LEARN` on, a trusted sign-in teaches the other half: a known key from a new address
+makes the address known, a new key from a known address makes the key known, and a `sudo` command in
+a trusted sign-in makes its account a known administrator account on that machine. A command is tied
+to its sign-in by the terminal it ran on, or failing that by the account's latest open sign-in on
+that host; a command with no sign-in behind it is trusted only when its account is a known
+administrator account. Everything taught or learned is kept in `people/admins.json` next to the
+core database (`SENTRAI_ADMINS` moves it), on this server only. A sign-in counts as open for
+`ADMIN_SESSION_HOURS` (12) after its last line. `ADMIN_SESSIONS=off` turns all of this off.
+
+### `GET /admins`
+
+The administrators the core knows, who is signed in right now and their recent root work. The
+dashboard's **Admins** tab on each machine's page reads it.
+
+**Query**: `host` (string, optional): keep only that machine's sessions, activity and accounts
+(accounts known on every machine, `host: "*"`, stay). Addresses, keys and dashboard sign-ins are not
+tied to a machine, so they are always all listed.
+
+**Returns**
+
+```json
+{
+  "on": true,
+  "accounts": [
+    {"account": "erick", "host": "web-01", "how": "taught", "by": "erick", "at": "2026-10-28T10:21:00+08:00", "last_seen": "2026-10-28T10:30:00+08:00"},
+    {"account": "deploy", "host": "*", "how": "setting", "by": "ADMIN_ACCOUNTS", "at": null}
+  ],
+  "addresses": [
+    {"address": "203.0.113.5", "how": "taught", "by": "erick", "at": "2026-10-28T10:21:00+08:00", "label": "home", "last_seen": "2026-10-28T10:30:00+08:00"},
+    {"address": "10.0.0.0/8", "how": "setting", "by": "ADMIN_IPS", "at": null, "label": "", "last_seen": null}
+  ],
+  "keys": [
+    {"fingerprint": "SHA256:Q7w3cZk2u5Yd9bJm1LxkfA0Hn6Rr8PtEoSvNqGiCz4U", "type": "ED25519", "users": ["erick"], "how": "learned", "by": "address 203.0.113.5", "at": "2026-10-28T10:21:00+08:00", "last_seen": "2026-10-28T10:30:00+08:00"}
+  ],
+  "sign_ins": [
+    {"address": "203.0.113.8", "email": "erick@example.com", "role": "Owner", "at": "2026-10-28T09:00:00+08:00", "until": "2026-10-28T21:00:00+08:00"}
+  ],
+  "sessions": [
+    {"session": "s3", "host": "web-01", "user": "erick", "via": "ssh", "address": "203.0.113.5", "tty": "pts/0", "key": "SHA256:Q7w3cZk2u5Yd9bJm1LxkfA0Hn6Rr8PtEoSvNqGiCz4U", "key_type": "ED25519", "method": "publickey", "trust": "trusted", "why": "known administrator address 203.0.113.5 (taught by erick)", "since": "2026-10-28T10:21:00+08:00", "last_seen": "2026-10-28T10:30:00+08:00", "ended": null, "preexisting": false, "actions": 2, "incident": null}
+  ],
+  "activity": [
+    {"at": "2026-10-28T10:30:00+08:00", "host": "web-01", "user": "erick", "via": "ssh", "address": "203.0.113.5", "session": "s3", "what": "sudo: /usr/bin/systemctl stop sentrai-core", "flagged_as": "log_tampering", "reason": "Log tampering: a SentrAI service was stopped (...)"}
+  ],
+  "suspect": [
+    {"address": "198.51.100.7", "why": "password guessing", "until": "2026-10-28T22:30:00+08:00"}
+  ],
+  "settings": {"session_hours": 12.0, "signin_hours": 12.0, "learn": true}
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `on` | whether the core keeps track of the administrators (`ADMIN_SESSIONS`) |
+| `accounts` | known administrator accounts: `host` is a machine's name, or `*` for every machine. `how` is `setting` (from `ADMIN_ACCOUNTS`), `taught` (**This was me**, or added by hand) or `learned` (a `sudo` command in a trusted sign-in); `by` names the person, the setting or what it was learned from; `at` is when, `null` for a setting |
+| `addresses` | known administrator addresses, each an address or a network, with the same `how`, `by` and `at`; `label` is a name given by hand, such as `home`; `last_seen` the last sign-in from it |
+| `keys` | known SSH key fingerprints, with the key's `type` and the `users` seen with it |
+| `sign_ins` | dashboard sign-ins as Owner or Admin that vouch for their `address` until `until` |
+| `sessions` | who is signed in right now, latest activity first: `via` (`ssh`, `console`, `windows`, `logind` or `who`), `address` and `tty`, the SSH `key`, `key_type` and `method`, `trust` (`trusted`, `unknown` or `suspect`) with `why` in plain words, `since` and `last_seen`, `preexisting` (already signed in when SentrAI started watching the machine), `actions` (root commands seen in it) and `incident`, the root-access incident its work opened, or `null` |
+| `activity` | newest first: the root work of known administrators, with `what` was run and, when the rules alone would have raised it, `flagged_as` and `reason`. Up to 300 entries; the audit trail keeps them all as `admin_action` |
+| `suspect` | addresses whose sign-ins are not trusted until `until`: password guessing came from them, or a person said a sign-in from them was not theirs |
+| `settings` | `ADMIN_SESSION_HOURS`, `ADMIN_SIGNIN_HOURS` and `ADMIN_LEARN` as in force |
+
+Entries with `how: setting` come from `ADMIN_IPS`, `ADMIN_SSH_KEYS` and `ADMIN_ACCOUNTS` and cannot be
+forgotten with [`POST /admins`](#post-admins): change the setting instead.
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:8000/admins?host=web-01"
+```
+
+### `POST /admins`
+
+Add or forget a known administrator address, SSH key fingerprint or account by hand, as the Admins
+tab's form and its **Forget** buttons do. What is added counts from the next line on; what is
+forgotten stops counting at once (forgetting an address also drops a dashboard sign-in that vouched
+for it). Written to the audit trail as `admin_changed`, with a key shortened.
+
+**Body**
+
+```json
+{"operator": "erick", "action": "add", "kind": "address", "value": "203.0.113.12", "label": "home"}
+```
+
+| Field | Type | Required | Meaning |
+| --- | --- | --- | --- |
+| `operator` | string | yes | who made the change, recorded as `by` |
+| `action` | string | yes | `add` or `forget` |
+| `kind` | string | yes | `address`, `key` or `account` |
+| `value` | string | yes | an address or a network (`203.0.113.12`, `198.51.100.0/24`); a key fingerprint as `ssh-keygen -lf ~/.ssh/id_ed25519.pub` prints it (`SHA256:...`); an account name, or `user@machine` for one machine only |
+| `label` | string | default `""` | a name for it, such as `home` or `office` |
+| `host` | string or null | default `null` | for an account: the one machine it is an administrator on. Without it, and with no `@` in `value`, every machine |
+
+**Returns** the same object as [`GET /admins`](#get-admins), for every machine.
+
+**Errors**
+
+- 400 `'x' is not an address or a network`, `a key fingerprint looks like SHA256:... (ssh-keygen -lf id_ed25519.pub shows it)`,
+  `an account is a user name, or user@machine`, `action must be add or forget` or
+  `kind must be address, key or account`.
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"operator": "erick", "action": "add", "kind": "key", "value": "SHA256:Q7w3cZk2u5Yd9bJm1LxkfA0Hn6Rr8PtEoSvNqGiCz4U", "label": "laptop"}' \
+  http://127.0.0.1:8000/admins
+```
+
+### `POST /admins/sign-in`
+
+The dashboard calls it right after a successful sign-in (password and authenticator code) with the
+browser's address; you do not normally call it yourself. An Owner's or Admin's sign-in vouches for
+that address for `ADMIN_SIGNIN_HOURS` (12 by default): root work from it on any machine is the
+administrator's own meanwhile. An Auditor's sign-in vouches for nothing. Written to the audit trail
+as `admin_signed_in` when it vouched.
+
+**Body**
+
+```json
+{"email": "erick@example.com", "role": "Owner", "address": "203.0.113.8"}
+```
+
+- `email` (string, required): who signed in.
+- `role` (string, required): `Owner`, `Admin` or `Auditor`; case is ignored.
+- `address` (string or null, default `null`): the browser's address. Nothing is vouched for without one.
+
+**Returns**
+
+```json
+{"ok": true, "vouched": true, "address": "203.0.113.8", "until": "2026-10-28T21:00:00+08:00"}
+```
+
+`vouched` is `false`, with `until` `null`, for an Auditor, without a usable address, or while
+`ADMIN_SESSIONS` is off.
 
 ## Switch protection on and off
 

@@ -60,7 +60,8 @@ The demo portal and attack scripts are not installed as services.
 ```text
 --core-port N / --dashboard-port N     when 8000 or 8501 is taken
 --core-bind ADDR / --dashboard-bind ADDR
---protect IP                           add to PROTECTED_IPS (repeatable); the dashboard opens to it too
+--protect IP                           add to PROTECTED_IPS (repeatable); the dashboard opens to it too, and
+                                       it goes into ADMIN_IPS: sudo from there is your own work, not an incident
 --dashboard-allow IP                   open the dashboard to this IP or network only (repeatable)
 --dashboard-local                      keep the dashboard on the server (SSH tunnel only)
 --admin-email EMAIL                    the dashboard Owner's email (asked on a first install)

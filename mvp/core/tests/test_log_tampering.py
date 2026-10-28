@@ -93,12 +93,18 @@ def _tamper_event(n, raw):
 def test_incident_explains_what_was_wiped(client):
     from app.saguaro import TITLES
     assert TITLES["log_tampering"] == "Log tampering"
+    # A sudo command is root work by a person: with no sign-in SentrAI knows behind it, the question is
+    # "was this you?" (admins.py), and what the line itself says (the journal was vacuumed) stays in the reason.
     client.post("/events", json=_tamper_event(1, SUDO + "/usr/bin/journalctl --vacuum-time=1s"))
-    inc = [i for i in client.get("/incidents").json() if i["category"] == "log_tampering"][0]
+    inc = [i for i in client.get("/incidents").json() if i["category"] == "unauthorised_admin"][0]
     assert "journal vacuumed" in inc["explanation"]
-    assert "cover their tracks" in inc["explanation"]
+    assert "This was me" in inc["explanation"]
     assert "203.0.113.70" in inc["recommended_action"]
     assert inc["status"] == "open"  # waits for a person; nothing applied on its own
+    # A wiping command that is not a person's sudo (a script, a shell history line) is log tampering as before.
+    client.post("/events", json=_tamper_event(2, "bash history: history -c && unset HISTFILE"))
+    inc = [i for i in client.get("/incidents").json() if i["category"] == "log_tampering"][0]
+    assert "cover their tracks" in inc["explanation"]
 
 
 def test_broken_audit_chain_opens_an_incident(client):

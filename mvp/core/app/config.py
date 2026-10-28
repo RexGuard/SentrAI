@@ -143,6 +143,21 @@ class Settings:
     protected_users: set[str] = field(
         default_factory=lambda: protect.split(protect.DEFAULT_USERS) | protect.split(os.getenv("PROTECTED_USERS", ""))
     )
+    # The administrators (admins.py): root work inside a sign-in SentrAI knows is recorded, not raised; root
+    # work from a sign-in it does not know becomes one "was this you?" incident. ADMIN_SESSIONS=off keeps the
+    # older behaviour (every line judged on its own).
+    admin_sessions: bool = field(default_factory=lambda: os.getenv("ADMIN_SESSIONS", "on").strip().lower() not in protect.OFF)
+    # Addresses or networks the administrators sign in from, SSH key fingerprints ("SHA256:...") they use, and
+    # their accounts ("deploy" everywhere, "erick@web-01" on one machine). All optional: "This was me" on an
+    # incident teaches the same things, and a dashboard sign-in with the authenticator vouches for its address.
+    admin_ips: set[str] = field(default_factory=lambda: protect.split(os.getenv("ADMIN_IPS", "")))
+    admin_ssh_keys: set[str] = field(default_factory=lambda: _set("ADMIN_SSH_KEYS", ""))
+    admin_accounts: set[str] = field(default_factory=lambda: _set("ADMIN_ACCOUNTS", ""))
+    # A session counts as open this long after its last line; a dashboard sign-in vouches for its address this long.
+    admin_session_hours: float = field(default_factory=lambda: _f("ADMIN_SESSION_HOURS", 12.0))
+    admin_signin_hours: float = field(default_factory=lambda: _f("ADMIN_SIGNIN_HOURS", 12.0))
+    # Learn the other half of a trusted sign-in (a new address with a known key, a new key from a known address).
+    admin_learn: bool = field(default_factory=lambda: os.getenv("ADMIN_LEARN", "on").strip().lower() not in protect.OFF)
     # Autonomous containment also needs the incident itself to be serious, not only the overall index:
     # its own severity at least CONTAIN_MIN_SEVERITY and its own points at least CONTAIN_MIN_POINTS.
     contain_min_severity: str = field(default_factory=lambda: os.getenv("CONTAIN_MIN_SEVERITY", "high").strip().lower())

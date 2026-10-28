@@ -59,7 +59,11 @@ Every `parsed` has `format` and `kind`:
 | --- | --- | --- |
 | `nginx_access` | `http_request` | `method`, `path` (URL-decoded, no query), `query` (as sent), `protocol`, `status` (int), `bytes` (int), `referrer`, `user_agent`, `request` (the whole request line), `malformed_request` (true for empty/binary/TLS-on-port-80 requests: scanners) |
 | `nginx_error` | `http_error` | `level` (error, crit, ...), `pid`, `message`, `request`, `method`, `path`, `query`, `server`, `vhost` |
-| `syslog`, `journald` | `ssh` (program sshd, sshd-session, sshd-auth) | `program`, `pid`, `message`, `ssh_event`, `outcome` (`success`, `failure`, `info`), `auth_method` (password, publickey, keyboard-interactive), `invalid_user` (bool: the account does not exist), `preauth` (bool), `port` (client port), sometimes `reason`, `count`; journald adds `unit` |
+| `syslog`, `journald` | `ssh` (program sshd, sshd-session, sshd-auth) | `program`, `pid`, `message`, `ssh_event`, `outcome` (`success`, `failure`, `info`), `auth_method` (password, publickey, keyboard-interactive/pam, hostbased), `key_type` (`ED25519`, `RSA`, `ECDSA`, `ED25519-CERT` ...) and `key_fingerprint` (`SHA256:...`) when the line names the key a sign-in used (`Accepted publickey for erick from 203.0.113.5 port 51234 ssh2: ED25519 SHA256:...`, also `Failed publickey ...`; else null), `invalid_user` (bool: the account does not exist), `preauth` (bool), `port` (client port), sometimes `reason`, `count`; journald adds `unit` |
+| `syslog`, `journald` | `sudo` (program sudo) | `program`, `pid`, `message`, `sudo_event` (`command`, `not_in_sudoers`, `not_allowed`, `wrong_password`, `auth_failure`, `refused`, `session_opened`, `session_closed`, `other`), `by` (the account that ran sudo), `target_user` (the account it ran as, `root` mostly), `tty` (`pts/0`; null when sudo wrote `unknown`), `command`, `outcome` (`success`, `failure`, `info`), `count` (wrong password attempts, else null). The Event's `user` is `by`, never the `USER=root` target |
+| `syslog`, `journald` | `su` (program su, su-l) | `program`, `pid`, `message`, `su_event` (`switched`, `failed`, `auth_failure`, `session_opened`, `session_closed`, `other`), `by` (the account that ran su), `target_user`, `tty`, `outcome`. The Event's `user` is `by` |
+| `syslog`, `journald` | `login_session` (program systemd-logind: `New session 5 of user erick.`, `Removed session 5.`, `Session 5 logged out.`) | `program`, `pid`, `message`, `session_event` (`started`, `ended`), `user` (null on `ended`), `tty` (null), `origin` (null), `session_id` (logind's id), `since` (null) |
+| `who`, `quser` | `login_session` (the collector's sign-in poll, source `sessions`, layer `os`) | `session_event` (`existing`, `started`, `ended`), `user`, `tty` (`pts/0`, `tty1`, `:0`; Windows: the session name `console`, `rdp-tcp#3`, or `session-<id>` for a disconnected one), `origin` (an address, a host name, or a display such as `:0`; null at the console and always on Windows), `session_id` (null; Windows: quser's ID column), `since` (ISO 8601 with the collector machine's UTC offset) |
 | `syslog`, `journald` | `log` (any other program) | `program`, `pid`, `message` |
 | `sentrai_demo` | `http_request` / `web_login` / `db_query` / `log` | demo portal: `method`, `path`, `status` / `outcome` / `rows` |
 | `jsonl`, `text` | `log` | nothing else; `src_ip` and `user` are taken from JSON keys or guessed from the text |
@@ -90,6 +94,18 @@ For counting SSH guesses: one failed attempt shows up as `failed_auth` (password
 `invalid_user` (every server, once per connection); PAM lines repeat them, so don't add them on
 top. `src_ip` + `port` identifies one connection.
 
+Who is signed in (the collector's session poll, `collector.SessionSource`): every collector and agent
+runs `who` (Linux, macOS) or `quser` (Windows) every 15 s and sends one Event per change, with
+`source: "sessions"`, `layer: "os"`, `user`, `src_ip` (the origin when it is an address) and the
+`login_session` parsed object above. `raw` is exactly
+`session <existing|started|ended>: <user> on <tty>[ from <origin>][ since <ISO-8601>]`, for example
+`session started: erick on pts/0 from 203.0.113.5 since 2026-10-28T10:21:00+08:00`. The sign-ins
+present when the collector starts are sent once as `existing`, then each change as `started` or
+`ended` (a session is the same user, terminal and start time); every sign-in still open is sent again
+as `existing` about once an hour, so the core keeps it in its session table. Where the command is
+missing, the collector says so once and sends nothing; `SENTRAI_SESSIONS=off` switches the poll off.
+The core (`core/app/admins.py`) ties each sudo/su command to the sign-in on its terminal.
+
 ### Webhook source (any tool → core, `POST /webhook/<name>`)
 Same token as `/events`. The body is a JSON object, a list of objects, or an object holding a list
 under `events`, `alerts`, `records`, `items`, `logs` or `data`. Each object becomes one Event
@@ -110,11 +126,14 @@ missing run of events or one that does not follow its predecessor becomes an `au
 
 ### Categories (exact strings)
 `benign, brute_force, sql_injection, xss, port_scan, privilege_escalation, data_exfiltration, misconfiguration, log_tampering, malware, prompt_injection`
-(`staff_report` is also an incident category, but only a staff report makes it; classifiers never return it.)
+(`staff_report` is also an incident category, but only a staff report makes it; classifiers never return it.
+`unauthorised_admin`, "Root access from an unrecognised sign-in", likewise: only root work from a sign-in the
+core does not know as an administrator's makes it, `core/app/admins.py`. A known administrator's root work is
+recorded as `admin_action`, never an incident.)
 
 ### Severity → base points
 low 5-10, medium 15-25, high 30-45, critical 50-70. Default mapping:
-brute_force=high(30), sql_injection=high(40), xss=medium(20), port_scan=medium(15), privilege_escalation=critical(60), data_exfiltration=critical(70), misconfiguration=medium(20), log_tampering=critical(55), malware=critical(65), prompt_injection=critical(60), staff_report=medium(20, times 1.5 / 1 / 0.5 for high / medium / low urgency), benign=0.
+brute_force=high(30), sql_injection=high(40), xss=medium(20), port_scan=medium(15), privilege_escalation=critical(60), data_exfiltration=critical(70), misconfiguration=medium(20), log_tampering=critical(55), malware=critical(65), prompt_injection=critical(60), staff_report=medium(20, times 1.5 / 1 / 0.5 for high / medium / low urgency), unauthorised_admin=critical(60, times 0.75 when the command itself reads as benign; always needs review, never contained on its own), benign=0.
 
 ### Risk index
 `risk_index = round(100 * (1 - exp(-raw/60)))`, raw = sum of open incident points (base × ai_confidence × asset_criticality) + inaction penalty (+5 per hour unacknowledged, capped +30 per incident) − resolved incidents.
@@ -152,6 +171,7 @@ that signature (HMAC of the path with the token), which fits that one report onl
 | POST | `/incidents/{id}/rollback` | `{"operator", "justification"}` |
 | POST | `/incidents/{id}/permanent` | `{"operator", "justification"}` |
 | POST | `/incidents/{id}/ack` | `{"operator", "channel"}` records acknowledgement |
+| POST | `/incidents/{id}/mine` | `{"operator", "channel"}`: "This was me" on a root-access incident. The sign-in behind it (address, SSH key fingerprint, account on that host) becomes a known administrator's, its blocks are rolled back, the incident is resolved (decision `mine`, timeline `admin_confirmed`) along with the same person's other open incidents on that host → Incident plus `{"learned": ["address 203.0.113.5", ...], "also_closed": [ids]}`. 400 while `ADMIN_SESSIONS` is off, 404 unknown, 409 already closed. Audited as `admin_confirmed`; "Not me" (approve) on such an incident is audited as `admin_distrusted` |
 | GET | `/audit` | hash-chained records `[{"seq","ts","type","data","prev_hash","hash"}]` + `{"chain_valid": bool}` |
 | GET | `/audit/fingerprint` | `{"seq","head","at","line"}`: the current signed fingerprint (`SENTRAI-FP v1 ...`) |
 | GET | `/audit/remote-copy` | `{"enabled", "url", "ok", "audit_seq", "lines_sent", "last_sent_at", "error", ...}`: the off-box copy |
@@ -163,7 +183,10 @@ that signature (HMAC of the path with the token), which fits that one report onl
 | GET | `/blocklist` | `{"ips": [...], "users": [...]}` active (non-expired) containment, polled by target app. `?host=` (token or that machine's key) gives only that machine's blocks in host scope; an agent key always gets its own |
 | GET | `/risk?host=` | one machine's own index, incidents and history (`"risk_scope"`: `fleet` adds every machine into one score, `host` scores each on its own; set with `SENTRAI_RISK_SCOPE`) |
 | GET | `/incidents?host=` | that machine's incidents |
-| GET | `/machines` | `[{"host","risk_index","band","raw_score","open_incidents","contained_incidents","blocked","last_seen","silent"}]`, worst first |
+| GET | `/machines` | `[{"host","risk_index","band","raw_score","open_incidents","contained_incidents","blocked","last_seen","silent","sessions"}]`, worst first; `sessions` is how many people are signed in on it now |
+| GET | `/admins?host=` | the administrators the core knows and who is signed in: `{"on", "accounts": [{"account","host","how","by","at",...}], "addresses": [{"address","how","by","at","label","last_seen"}], "keys": [{"fingerprint","type","users","how","by","at","last_seen"}], "sign_ins", "sessions": [{"session","host","user","via","address","tty","key","key_type","method","trust","why","since","last_seen","ended","preexisting","actions","incident"}], "activity", "suspect", "settings"}` (full shapes in `docs/api/status.md`). `how` is `setting` (`ADMIN_IPS` / `ADMIN_SSH_KEYS` / `ADMIN_ACCOUNTS`), `taught` or `learned`; `host` keeps one machine's sessions, activity and accounts. Kept in `people/admins.json` next to the database (`SENTRAI_ADMINS`) |
+| POST | `/admins` | `{"operator", "action": "add" \| "forget", "kind": "address" \| "key" \| "account", "value", "label": optional, "host": optional}` → the same object as `GET /admins`; 400 with a plain-words `detail` for a bad value. Audited as `admin_changed` |
+| POST | `/admins/sign-in` | `{"email", "role", "address"}`: the dashboard reports a sign-in with the authenticator; Owner and Admin vouch for the address for `ADMIN_SIGNIN_HOURS` → `{"ok", "vouched", "address", "until"}`. Audited as `admin_signed_in` when it vouched |
 | POST | `/fleet/join-codes` | `{"operator", "name": optional}` → `{"code": "ABCD-EFGH-JKLM", "expires_at", "name", "panel_url", "pin"}`: one-time, 24 h; audited as `join_code_created` |
 | POST | `/fleet/enrol` | open (no token): `{"code", "host"}` → `{"agent_id", "host", "key": "sa_..."}`; the key is shown once. 10 wrong codes in 10 min → 429 for everyone; audited as `machine_joined` |
 | GET | `/fleet/agents` | joined machines `[{"agent_id","host","joined_at","invited_by","last_seen","revoked_at","revoked_by"}]` |
@@ -216,6 +239,7 @@ that signature (HMAC of the path with the token), which fits that one report onl
   "base_points": 30, "ai_confidence": 0.94, "points": 42.3,
   "classified_by": "rules" | "jev" | "fallback",
   "src_ip": "...", "user": "...", "host": "...", "layer": "web",
+  "actor": {"host", "user", "via", "address", "key", "session", "trust": "trusted" | "unknown" | "suspect", "why", "since"} | null,
   "opened_at": "...", "status": "open" | "acknowledged" | "contained" | "resolved" | "rejected",
   "acked": false, "acked_by": null, "acked_at": null,
   "inaction_penalty": 15, "sla_breached": false,

@@ -70,8 +70,8 @@ curl -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:8000/helpdesk/why?targe
 
 Each of these answers with the updated [incident record](#the-incident-record) and adds a line to its
 `timeline`. `operator` is the name recorded on the incident and in the audit trail (see
-[Conventions](index.html#conventions)). Decision, rollback and permanent also acknowledge the incident
-if nobody had, with their own name as the channel.
+[Conventions](index.html#conventions)). Decision, This was me, rollback and permanent also acknowledge
+the incident if nobody had, with their own name as the channel.
 
 ### `POST /incidents/{iid}/ack`
 
@@ -133,6 +133,66 @@ send it. Written to the audit trail as `decision`.
 curl -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"operator": "erick", "decision": "reject", "justification": "Our own load test"}' \
   http://127.0.0.1:8000/incidents/RSK-2026-082/decision
+```
+
+### `POST /incidents/{iid}/mine`
+
+"This was me": the root work behind a **Root access from an unrecognised sign-in** incident (category
+`unauthorised_admin`, see [the incident record](#the-incident-record)) was the administrator's own. The
+dashboard's **This was me** button and the Telegram button of the same name send it. SentrAI then:
+
+- learns the sign-in: its address, its SSH key fingerprint and its account on that machine become a
+  known administrator's (`how: taught` in [`GET /admins`](status.html#get-admins)), so the next root
+  command from the same sign-in is recorded as admin activity instead of raised. An address that was
+  suspect after password guessing is trusted again.
+- undoes any block or lock the incident had put in force (`action_rolled_back`, with the reason
+  `the sign-in was the administrator's own`), for instance after **Not me** was pressed by mistake.
+- closes the incident as `resolved`, with the operator as `resolved_by` and `mine` in `decisions`,
+  and closes the same person's other open incidents on that machine with it: the ones from the same
+  sign-in, or from the same address or account when the incident is about the machine itself.
+- writes `admin_confirmed` to the audit trail and the incident's timeline.
+
+It is meant for a root-access incident. The core accepts it on any incident that is not closed and
+learns that incident's address and account, so never answer it for an incident you do not
+recognise. It is refused while `ADMIN_SESSIONS` is off.
+
+**Body**
+
+```json
+{"operator": "erick", "channel": "dashboard"}
+```
+
+- `operator` (string, required): who said so. Recorded on the incident, and as who taught the sign-in.
+- `channel` (string, default `dashboard`): where, kept in the audit record; the notifier sends `telegram`.
+
+**Returns** the incident, now `resolved`, plus what was learned and what else was closed:
+
+```json
+{
+  "id": "RSK-2026-091",
+  "category": "unauthorised_admin",
+  "status": "resolved",
+  "resolved_by": "erick",
+  "resolution": "This was me (erick): address 203.0.113.5, SSH key SHA256:Q7w3cZk2u5Yd…, account erick on web-01",
+  "learned": ["address 203.0.113.5", "SSH key SHA256:Q7w3cZk2u5Yd…", "account erick on web-01"],
+  "also_closed": ["RSK-2026-092"],
+  "...": "..."
+}
+```
+
+`learned` is empty, and the resolution says `nothing new to learn`, when SentrAI knew every part of
+the sign-in already.
+
+**Errors**
+
+- 400 `ADMIN_SESSIONS is off: SentrAI is not keeping track of the administrators`.
+- 404 `incident RSK-2026-999 not found`.
+- 409 `RSK-2026-091 is already resolved` (or `rejected`).
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"operator": "erick", "channel": "telegram"}' \
+  http://127.0.0.1:8000/incidents/RSK-2026-091/mine
 ```
 
 ### `POST /incidents/{iid}/rollback`
@@ -374,13 +434,14 @@ What every incident endpoint answers with, trimmed:
 
 | Field | Meaning |
 | --- | --- |
-| `id`, `category`, `severity` | `RSK-<year>-<n>`; the kind of attack (`brute_force`, `sql_injection`, `xss`, `port_scan`, `privilege_escalation`, `data_exfiltration`, `misconfiguration`, `log_tampering`, `malware`, `prompt_injection`, `staff_report`) and the severity that comes with it |
+| `id`, `category`, `severity` | `RSK-<year>-<n>`; the kind of attack (`brute_force`, `sql_injection`, `xss`, `port_scan`, `privilege_escalation`, `data_exfiltration`, `misconfiguration`, `log_tampering`, `malware`, `prompt_injection`, `staff_report`, `unauthorised_admin`) and the severity that comes with it |
 | `status` | `open`, `acknowledged`, `contained`, `resolved` or `rejected`, see below |
 | `src_ip`, `user`, `host`, `layer`, `service` | where it came from and what it hit; `layer` is `web`, `os`, `db`, `network` or `cloud`, and `service` the program on the machine (`nginx`, `sshd`) or `null` |
+| `actor` | only when the line behind it was a person's work on a machine (a `sudo` or `su` command, a sign-in, a Windows administrator event): the sign-in it came from, as `host`, `user`, `via` (`ssh`, `console`, `windows`, `logind` or `who`; `null` when no sign-in was seen), `address`, `key` (the SSH key's fingerprint, `SHA256:...`, or `null`), `session`, `trust` (`trusted`, `unknown` or `suspect`), `why` in plain words, and `since`. See [`GET /admins`](status.html#get-admins) |
 | `opened_at`, `contained_at`, `closed_at` | when it opened, was contained and was closed; the last two appear once that happens |
 | `base_points`, `ai_confidence`, `asset_criticality`, `points` | `points` is the category's `base_points` times how sure the classifier is (up to 1) times how much the machine matters; the highest values among its events count |
 | `classified_by`, `classification_reason`, `malicious_probability` | `rules`, `jev` (the TypeSafe Jev model) or `fallback` (keywords); why; and how likely an attack it is, from 0 to 1 |
-| `needs_review` | the classifier was unsure (0.4 to 0.6), so SentrAI never contains it on its own. Always true for a staff report |
+| `needs_review` | the classifier was unsure (0.4 to 0.6), so SentrAI never contains it on its own. Always true for a staff report, and for root access from an unrecognised sign-in |
 | `strong_signal`, `signals` | whether a rule found it, and each separate piece of evidence as `classifier:source` (`rules:nginx`). On one weak signal the safety check does not act alone |
 | `analyzed_by`, `explanation`, `recommended_action`, `next_steps` | the part of SentrAI that looked at it (`Gatehouse` for web, `Vault` for databases, `Watchtower` for network and cloud, `Garrison-Linux` or `Garrison-Win` for machines); what happened, the steps it recommends and what a person should do next, in plain words |
 | `acked`, `acked_by`, `acked_at`, `ack_channel` | the first acknowledgement |
@@ -389,13 +450,26 @@ What every incident endpoint answers with, trimmed:
 | `contribution` | what it adds to the risk index ([`GET /risk`](status.html#get-risk)): `points` plus `inaction_penalty` while `open` or `acknowledged`, else 0 |
 | `actions` | its protective actions, see below |
 | `event_ids`, `notifications` | the events behind it (see [Events](events.html)) and the alerts queued about it (see [Alerts and routing](alerts.html)) |
-| `timeline` | every step: `ts`, `demo_hours` since it opened, `kind` (`detected`, `assigned`, `notified`, `action`, `ack`, `decision`, `expired`, `escalated`, `resolved` and more), `text`, and `points`, the change to its score |
-| `decisions` | each person's decision: `operator`, `decision` (`approve`, `reject`, `rollback`, `permanent` or `resolve`), `justification`, `at` |
+| `timeline` | every step: `ts`, `demo_hours` since it opened, `kind` (`detected`, `assigned`, `notified`, `action`, `ack`, `decision`, `expired`, `escalated`, `resolved`, `admin_confirmed`, `admin_distrusted` and more), `text`, and `points`, the change to its score |
+| `decisions` | each person's decision: `operator`, `decision` (`approve`, `reject`, `mine`, `rollback`, `permanent` or `resolve`), `justification`, `at` |
 | `owner`, `owner_id`, `backup`, `backup_id` | who handles it and who takes over when they do not answer; the ids are routing contacts, `null` for a name outside the routing file |
 | `assigned_by`, `assigned_at`, `route`, `notify` | `routing: <rule>`, an operator or `escalation`; when; the routing rule that matched; who else it told |
 | `escalation_level`, `escalations` | each move to the backup after unanswered reminders: `from`, `to`, `at`, `level`, `why` |
 | `resolved_by`, `resolution` | who resolved it and the note; `auto-close` when a port scan or password guessing went quiet for 60 minutes (`AUTO_CLOSE_QUIET_MIN`) |
 | `reputation`, `planned_by` | only sometimes: what AbuseIPDB knows about `src_ip` when a key is set, and `Cyanide` when the AI responder planned the steps |
+
+**Root access from an unrecognised sign-in** (`unauthorised_admin`, critical, 60 base points) is the
+one category about who did something rather than what was done: administrator (root) work on a
+machine, such as a `sudo` command or a Windows administrator event, from a sign-in SentrAI does not
+know as an administrator's (see [`GET /admins`](status.html#get-admins)). The same work from a known
+administrator's sign-in is recorded as admin activity and opens nothing. There is one such incident
+per address, it is always `needs_review`, SentrAI never contains it on its own, and its alert is of
+kind `was_this_you` with three buttons: **This was me** ([`POST /incidents/{iid}/mine`](#post-incidentsiidmine)),
+**Not me: block it** (an `approve` decision: the address is blocked and the account locked where the
+safety check allows it, and whatever was only learned from that sign-in is forgotten, written as
+`admin_distrusted`) and **Acknowledge**. A command the rules would pass on its own scores three
+quarters of the points (45); one they flag on its own, such as wiping a log, scores the full 60. With
+`ADMIN_SESSIONS=off` the category is never used and every line is judged on its own, as before.
 
 | Status | Means |
 | --- | --- |

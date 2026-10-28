@@ -44,6 +44,7 @@ PLAIN_TITLES = {
     "log_tampering": "Attempt to erase the records",
     "malware": "Harmful file or program",
     "prompt_injection": "Attempt to trick the AI",
+    "unauthorised_admin": "Administrator access from an unrecognised sign-in",
 }
 
 # What a containment step does, in everyday words.

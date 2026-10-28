@@ -18,7 +18,7 @@ pick logs on the dashboard under **Collector**.
 | Log | Where it usually is | What SentrAI catches |
 | --- | --- | --- |
 | nginx | `/var/log/nginx/access.log`, `error.log` | web scans, probes for secret files, SQL injection, cross-site scripting, web login guessing |
-| SSH logins | `/var/log/auth.log`, `/var/log/secure`, or the systemd journal | password guessing, a guessed password, port scans |
+| SSH logins | `/var/log/auth.log`, `/var/log/secure`, or the systemd journal | password guessing, a guessed password, port scans; who signed in and what they ran as root (`sudo`, `su`), so your administrators' own work is told from an intruder's |
 | Windows Event Log | read straight from Windows | Windows and Remote Desktop password guessing, someone added to Administrators, a cleared event log, a suspicious new service, malware found by Microsoft Defender, SQL Server password guessing |
 | Suricata | `/var/log/suricata/eve.json` | network alerts: scans, exploits, SQL injection, malware calling home, crypto miners, brute force |
 | MySQL or MariaDB | `/var/log/mysql/error.log`, `/var/log/mysqld.log`, `/var/log/mariadb/mariadb.log` | password guessing; with the query log on, SQL injection and whole-table dumps |

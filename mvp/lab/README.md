@@ -11,7 +11,7 @@ Talks to the core (`http://127.0.0.1:8000`) over the shared contract in `../CONT
 lab/
   requirements.txt        requests, psutil, pytest (+ optional AI packages for Scout)
   collector/collector.py  tails logs/*.jsonl + approved server logs -> POST core /events
-  collector/parsers.py    nginx, syslog (sshd), journald, Windows Event Log, Suricata, MySQL, PostgreSQL, MongoDB parsers
+  collector/parsers.py    nginx, syslog (sshd, sudo, su, logind), journald, Windows Event Log, Suricata, MySQL, PostgreSQL, MongoDB, who/quser parsers
   collector/paths.py      where the JSON-lines logs live (SENTRAI_LAB_LOGS, SENTRAI_LOG_*)
   scout/                  finds log files on a new system and learns from expert trails
   tests/                  pytest suite
@@ -70,8 +70,17 @@ python -m collector.collector
 ```
 
 - nginx and sshd lines become events with the log's own time, the real host name and a `parsed`
-  object (method, path, status, user agent; or ssh_event, user, port). Fields: `mvp/CONTRACT.md`,
-  "Parsed fields".
+  object (method, path, status, user agent; or ssh_event, user, port, and the SSH key a sign-in
+  used). Fields: `mvp/CONTRACT.md`, "Parsed fields".
+- sudo, su and systemd-logind lines in the same logs (or the journal) say who became root, on which
+  terminal, and which sign-ins opened and closed; the event's user is the person who ran the
+  command, never the `root` it ran as. The core uses them to tell an administrator's own root work
+  from an intruder's.
+- Who is signed in right now: every collector and agent asks `who` (Windows: `quser`) every 15 s and
+  sends one event per change (`session started: erick on pts/0 from 203.0.113.5 since ...`, source
+  `sessions`), the sign-ins found at start once as `existing`, and every open sign-in again about
+  once an hour. One short command per 15 s, nothing else; where it is missing it says so once.
+  `SENTRAI_SESSIONS=off` leaves it out.
 - Read positions are saved in `~/.sentrai/collector/state.json` (`SENTRAI_COLLECTOR_STATE`) after core
   accepts each batch, so a restart resumes where it stopped. A rotated file's last lines are read
   from `<name>.1` first. The first time a file is seen, only its last 256 KB are read
@@ -91,5 +100,5 @@ python -m collector.collector
 ```
 
 Covers: collector normalization to a valid contract Event, tailer creation/rotation handling,
-real nginx/sshd/journald, Windows Event Log, Suricata and database log parsing, the line chain and log-integrity checks, the setup wizard and
+real nginx/sshd/journald, sudo/su/logind and sign-in session (`who`, `quser`) parsing, Windows Event Log, Suricata and database log parsing, the line chain and log-integrity checks, the setup wizard and
 Scout. Tests write to a temp dir and hit no network.

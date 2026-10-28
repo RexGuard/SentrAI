@@ -16,8 +16,12 @@ import time
 import uuid
 from collections import deque
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
+import sentrai_paths
+
+from .admins import CATEGORY as ADMIN_CATEGORY, Admins, short_key
 from .agents import (
     Agent,
     AreoleLinux,
@@ -67,6 +71,7 @@ TITLES = {
     "malware": "Malware found",
     "prompt_injection": "Prompt injection",
     "staff_report": "Staff report",
+    "unauthorised_admin": "Root access from an unrecognised sign-in",
 }
 
 BUTTONS_DECIDE = [
@@ -77,6 +82,13 @@ BUTTONS_DECIDE = [
 BUTTONS_AFTER_ACTION = [
     {"label": "Rollback", "action": "rollback"},
     {"label": "Make Permanent", "action": "permanent"},
+    {"label": "Acknowledge", "action": "ack"},
+]
+# Root work from a sign-in SentrAI does not recognise: the person says whether it was them. "This was me"
+# teaches the sign-in (admins.py) and closes the incident; "Not me" is Approve & Patch (block the address).
+BUTTONS_WAS_THIS_YOU = [
+    {"label": "This was me", "action": "mine"},
+    {"label": "Not me: block it", "action": "approve"},
     {"label": "Acknowledge", "action": "ack"},
 ]
 
@@ -253,6 +265,8 @@ class Saguaro(Agent):
             setattr(s, role, self.router.by_role(role, self.role_names[role]))
         self.clock = DemoClock(s.demo_speed)
         self.audit = AuditLog(s.db_path)
+        # The administrators (admins.py): who is signed in on each machine and whether SentrAI knows them.
+        self.admins = Admins(sentrai_paths.path("core.admins", Path(s.db_path).parent), s, self.clock)
         self.rules = RulesEngine(s.brute_force_count, s.brute_force_window_s, s.export_rows_threshold,
                                  ssh_count=s.ssh_brute_force_count, ssh_window_s=s.ssh_brute_force_window_s,
                                  scan_4xx_count=s.web_scan_4xx_count, scan_window_s=s.web_scan_window_s,
@@ -282,7 +296,8 @@ class Saguaro(Agent):
         self.areole_win = AreoleWin(self.classifier, self.responders)
         self.needle = Needle(s.needle_min_confidence, self.responders.allowlist, s.protected_ips, s.protected_users,
                              s.protected_nets, s.contain_min_severity, s.contain_min_points,
-                             auto_actions=s.auto_actions, max_auto_per_hour=s.max_auto_actions_per_hour)
+                             auto_actions=s.auto_actions, max_auto_per_hour=s.max_auto_actions_per_hour,
+                             admin_address=self.admins.known_address)
         self.watchdog = Watchdog(s.watchdog_silence_s)
         self.scribe = Scribe(self.audit, self.clock)
         self.integrity = IntegrityGuard(self.audit, s.integrity_check_s, s.clock_jump_s)
@@ -499,7 +514,11 @@ class Saguaro(Agent):
             agent = self._route(ev)
             cls = agent.analyze(ev, now)  # may call an outside classifier (Jev): done outside the lock
             with self.lock:
-                self._apply_classification(ev, cls, agent, now)
+                verdict = self.admins.observe(ev, cls, now)  # who did it, when the line is a person's work on a host
+                for fact in self.admins.take_learned():  # a known key from a new address, and the like
+                    self.scribe.record(agent.name, "admin_learned", {**fact, "host": ev.get("host"),
+                                                                     "event_id": ev["event_id"]})
+                self._apply_classification(ev, cls, agent, now, verdict)
         if tampering:
             self.ingest(tampering)
         with self.lock:
@@ -513,8 +532,37 @@ class Saguaro(Agent):
         while len(self.events) > limit:
             self.events.pop(next(iter(self.events)))
 
-    def _apply_classification(self, ev: dict[str, Any], cls: Classification, agent: LayerAgent, now: float) -> None:
+    def _apply_classification(self, ev: dict[str, Any], cls: Classification, agent: LayerAgent, now: float,
+                              verdict: Any = None) -> None:
         rec = self.events[ev["event_id"]]
+        if verdict is not None:
+            rec["actor"] = ev["actor"] = verdict.actor
+            if verdict.src_ip and not ev.get("src_ip"):
+                # The sign-in's address: the incident names it, and a block has a target.
+                rec["src_ip"] = ev["src_ip"] = verdict.src_ip
+            if verdict.activity:
+                self.scribe.record(agent.name, "admin_action", {
+                    "event_id": ev["event_id"], **raw_summary(ev.get("raw")), "host": ev.get("host"),
+                    "user": verdict.actor.get("user"), "via": verdict.actor.get("via"),
+                    "address": verdict.actor.get("address"), "key": short_key(verdict.actor.get("key")),
+                    "session": verdict.actor.get("session"), "trusted_because": verdict.actor.get("why"),
+                    "what": verdict.activity, "would_be": cls.category if verdict.suppress else "benign",
+                    "rule": cls.reason if verdict.suppress else None, "learned": verdict.learned})
+            if verdict.suppress:
+                # A known administrator's own command: the rules alone would have raised it. Recorded, not an incident.
+                rec.update(category="benign", confidence=cls.confidence, malicious=0.0, classified_by="rules",
+                           reason=f"{verdict.reason}; on its own the line reads as {cls.category}: {cls.reason}",
+                           analyzed_by=agent.name, incident=None, admin_action=True, flagged_as=cls.category)
+                return
+            if verdict.escalate:
+                # Root from a sign-in SentrAI does not know is the question; a command the rules flag on its own
+                # (wiping logs, a shell) makes it a louder one: full points, the plain command three quarters.
+                detail = f" The line itself: {cls.reason}." if cls.category != "benign" else ""
+                cls = Classification(ADMIN_CATEGORY, 1.0 if cls.category != "benign" else 0.75, 0.5,
+                                     f"{verdict.reason}.{detail}",
+                                     related_event_ids=list(cls.related_event_ids), classified_by="rules")
+        if cls.category == "brute_force" and ev.get("src_ip"):
+            self.admins.mark_suspect(str(ev["src_ip"]), "password guessing", now)  # a later sign-in from it is suspect
         rec.update(
             category=cls.category,
             confidence=cls.confidence,
@@ -583,6 +631,7 @@ class Saguaro(Agent):
             "user": ev.get("user"),
             "host": ev.get("host"),
             "layer": ev.get("layer"),
+            "actor": ev.get("actor"),  # the sign-in behind it, when the line was a person's work on a host (admins.py)
             "opened_at": self.clock.iso(now),
             "status": "open",
             "acked": False,
@@ -639,7 +688,7 @@ class Saguaro(Agent):
         self.scribe.record(self.name, "incident_opened", {
             "incident": iid, **{k: inc[k] for k in (
                 "category", "severity", "base_points", "ai_confidence", "asset_criticality", "points",
-                "classified_by", "needs_review", "src_ip", "user", "host", "layer", "opened_at",
+                "classified_by", "needs_review", "src_ip", "user", "host", "layer", "actor", "opened_at",
                 "recommended_action", "event_ids", "owner", "backup", "route", "notify")},
             "analyst": agent.name,
         })
@@ -655,7 +704,9 @@ class Saguaro(Agent):
         inc["recommended_action"] = agent.recommended_text(proposals, self.settings.ttl_hours)
         inc["explanation"] = agent.explain(inc)
         inc["next_steps"] = next_steps(inc)
-        if inc.get("needs_review"):
+        if inc["category"] == ADMIN_CATEGORY:
+            inc["explanation"] += " SentrAI does nothing on its own here: a person says whether this was them."
+        elif inc.get("needs_review"):
             inc["explanation"] += " The classifier is uncertain: needs human review (never auto-contained)."
 
     def _attach(self, inc: dict[str, Any], ev: dict[str, Any], cls: Classification, needs_review: bool, now: float) -> None:
@@ -748,6 +799,7 @@ class Saguaro(Agent):
             self._record_history(now)
             self._send_fingerprint(now)
             self._send_summary(now)
+            self.admins.flush()
             findings = self.integrity.check()
             if self.remote is not None:
                 refused, notes = self.remote.take()
@@ -881,6 +933,7 @@ class Saguaro(Agent):
                 self._band_changes(now, r)
         if r["risk_index"] < self.settings.threshold:
             self._above_threshold = False
+        self.admins.flush()
         self._save()
 
     # -------------------------------------------------------------- protection
@@ -1007,6 +1060,11 @@ class Saguaro(Agent):
         return (f"⚠️ {inc['id']} · {TITLES.get(inc['category'], inc['category'])} ({where}{who}) "
                 f"· Risk {r['risk_index']}/100")
 
+    @staticmethod
+    def _buttons(inc: dict[str, Any]) -> list[dict[str, str]]:
+        """The buttons an alert about an open incident carries."""
+        return BUTTONS_WAS_THIS_YOU if inc["category"] == ADMIN_CATEGORY else BUTTONS_DECIDE
+
     def _notify_open_incidents(self, now: float, r: dict[str, Any]) -> None:
         for inc in self.incidents.values():
             if inc["_notified_open"] or inc["status"] != "open":
@@ -1015,11 +1073,16 @@ class Saguaro(Agent):
                 inc["_notified_open"] = True
                 kind = "needs_review" if inc["needs_review"] else "incident_opened"
                 extra = "\nClassifier uncertain: needs review, no automatic action will be taken." if inc["needs_review"] else ""
+                if inc["category"] == ADMIN_CATEGORY:
+                    kind = "was_this_you"
+                    extra = ("\nWas this you? 'This was me' teaches SentrAI this sign-in and closes the alert. "
+                             "'Not me' blocks the address." if inc.get("src_ip") else
+                             "\nWas this you? 'This was me' teaches SentrAI this sign-in and closes the alert.")
                 fp = anchor.fingerprint(self.audit, None).short()
                 self._notify(now, kind, inc["id"], self._recipients(inc), self._headline(inc, r),
                              f"{self._headline(inc, r)}\n{inc['explanation']}\nRecommended: {inc['recommended_action']}.{extra}"
                              f"\n{self._owner_line(inc)}\nRecord fingerprint: {fp}",
-                             BUTTONS_DECIDE)
+                             self._buttons(inc))
 
     def _band_changes(self, now: float, r: dict[str, Any]) -> None:
         new, old = r["band"], self._last_band
@@ -1076,7 +1139,7 @@ class Saguaro(Agent):
                              f"overdue by {overdue} (Policy SLA: {s.sla_hours:g} hrs). "
                              f"Inaction penalty so far: +{inc['inaction_penalty']:g}.\nRecommended: {inc['recommended_action']}."
                              f"\n{self._owner_line(inc)}",
-                             BUTTONS_DECIDE)
+                             self._buttons(inc))
 
     def _resolve_reminders(self, inc: dict[str, Any], now: float, r: dict[str, Any]) -> None:
         every = self.router.follow_up.resolve_within_hours
@@ -1141,7 +1204,7 @@ class Saguaro(Agent):
                      f"Escalated to you: {inc['id']} unanswered",
                      f"{self._headline(inc, r)} has had no answer for {fmt_demo_hours(hours)}: {why}. "
                      f"You are the backup contact, so it is yours now.\nRecommended: {inc['recommended_action']}."
-                     f"\n{self._owner_line(inc)}", BUTTONS_DECIDE)
+                     f"\n{self._owner_line(inc)}", self._buttons(inc))
         return True
 
     def pending_notifications(self) -> list[dict[str, Any]]:
@@ -1584,7 +1647,7 @@ class Saguaro(Agent):
                              f"{operator} assigned {self._headline(inc, self._last_risk)} to you"
                              + (f": {note}" if note else ".") + f"\nRecommended: {inc['recommended_action']}."
                              f"\n{self._owner_line(inc)}",
-                             BUTTONS_DECIDE if inc["status"] != "contained" else BUTTONS_AFTER_ACTION)
+                             self._buttons(inc) if inc["status"] != "contained" else BUTTONS_AFTER_ACTION)
             self._save()
             return self.incident_public(inc)
 
@@ -1611,6 +1674,92 @@ class Saguaro(Agent):
             self._timeline(inc, now, "resolved", f"Resolved by {operator}: {note}.{left}", -inc["points"])
             self._evaluate(now)
             return self.incident_public(inc)
+
+    # ------------------------------------------------------ the administrators
+    def mine(self, iid: str, operator: str, channel: str = "dashboard") -> dict[str, Any]:
+        """"This was me": the person says the sign-in behind this incident was their own. SentrAI learns its
+        address, key and account, rolls back any block it had put on them, and closes the incident along
+        with the same person's other open incidents on that machine."""
+        with self.lock:
+            inc = self._get(iid)
+            now = self.clock.now()
+            if inc["status"] in CLOSED_STATUSES:
+                raise ConflictError(f"{iid} is already {inc['status']}")
+            if not self.admins.on:
+                raise BadRequestError("ADMIN_SESSIONS is off: SentrAI is not keeping track of the administrators")
+            events = [self.events[e] for e in inc["event_ids"] if e in self.events]
+            learned = self.admins.teach(inc, events, operator, now)
+            closed: list[str] = []
+            for other in list(self.incidents.values()):
+                if other is inc or other["status"] in CLOSED_STATUSES:
+                    continue
+                other_events = [self.events[e] for e in other["event_ids"] if e in self.events]
+                if self.admins.same_actor(inc, events, other, other_events):
+                    self._close_as_mine(other, operator, now, f"closed with {iid}: {operator} said this was them")
+                    closed.append(other["id"])
+            what = ", ".join(learned) if learned else "nothing new to learn"
+            self._close_as_mine(inc, operator, now, f"This was me ({operator}): {what}")
+            self.scribe.record(self.name, "admin_confirmed", {
+                "incident": iid, "operator": operator, "channel": channel, "learned": learned,
+                "also_closed": closed, "actor": inc.get("actor")})
+            self._evaluate(now)
+            return {**self.incident_public(inc), "learned": learned, "also_closed": closed}
+
+    def _close_as_mine(self, inc: dict[str, Any], operator: str, now: float, note: str) -> None:
+        self._set_acked(inc, operator, "mine", now)
+        for a in self._active_actions(inc, now):
+            self._end_action(a, "rolled_back")
+            self.scribe.record(self.name, "action_rolled_back", {
+                "incident": inc["id"], "action_id": a["action_id"], "operator": operator,
+                "reason": "the sign-in was the administrator's own"})
+        inc["status"] = "resolved"
+        inc.update(resolved_by=operator, resolution=note, closed_at=self.clock.iso(now), _closed_ts=now)
+        inc["decisions"].append({"operator": operator, "decision": "mine", "justification": note, "at": inc["closed_at"]})
+        self._timeline(inc, now, "admin_confirmed", f"{operator} said this was them: {note}", -inc["points"])
+
+    def _not_me(self, inc: dict[str, Any], operator: str, now: float) -> None:
+        """"Not me" on a root-access incident: what SentrAI had learned from that sign-in is forgotten, and
+        its address is distrusted, before the block goes on."""
+        events = [self.events[e] for e in inc["event_ids"] if e in self.events]
+        forgotten = self.admins.distrust(inc, events, operator, now)
+        self.scribe.record(self.name, "admin_distrusted", {
+            "incident": inc["id"], "operator": operator, "address": inc.get("src_ip"), "forgotten": forgotten,
+            "actor": inc.get("actor")})
+        self._timeline(inc, now, "admin_distrusted", f"{operator} said this was not them"
+                       + (f"; forgotten: {', '.join(forgotten)}" if forgotten else ""))
+
+    def admins_public(self, host: str | None = None) -> dict[str, Any]:
+        """The known administrators, who is signed in now and their recent work; for one machine with host."""
+        with self.lock:
+            data = self.admins.public(self.clock.now())
+            if host:
+                data["sessions"] = [x for x in data["sessions"] if x.get("host") == host]
+                data["activity"] = [x for x in data["activity"] if x.get("host") == host]
+                data["accounts"] = [x for x in data["accounts"] if x.get("host") in ("*", host)]
+            return data
+
+    def admins_change(self, operator: str, action: str, kind: str, value: str, label: str = "",
+                      host: str | None = None) -> dict[str, Any]:
+        """Add or forget a known address, key fingerprint or account by hand (the Admins tab). ValueError when
+        the value is not one."""
+        with self.lock:
+            now = self.clock.now()
+            data = self.admins.change(operator, action, kind, value, label, host, now)
+            self.scribe.record(self.name, "admin_changed", {
+                "operator": operator, "action": action, "kind": kind,
+                "value": short_key(value) if kind == "key" else value, "label": label, "host": host})
+            return data
+
+    def admin_signed_in(self, email: str, role: str, address: str | None) -> dict[str, Any]:
+        """The dashboard says an Owner or Admin signed in with the authenticator from this address: it is an
+        administrator's for ADMIN_SIGNIN_HOURS."""
+        with self.lock:
+            now = self.clock.now()
+            out = self.admins.signed_in(email, role, address, now)
+            if out.get("vouched"):
+                self.scribe.record(self.name, "admin_signed_in", {
+                    "email": email, "role": role, "address": out["address"], "until": out["until"]})
+            return out
 
     def routing_public(self) -> dict[str, Any]:
         with self.lock:
@@ -1672,6 +1821,8 @@ class Saguaro(Agent):
                 if not self._active_actions(inc, now):
                     self._refuse_if_monitor_only("an approved hotpatch")
                 self._set_acked(inc, operator, "decision", now)
+                if inc["category"] == ADMIN_CATEGORY:
+                    self._not_me(inc, operator, now)
                 inc["decisions"].append({"operator": operator, "decision": "approve", "justification": justification,
                                          "at": self.clock.iso(now)})
                 self.scribe.record(self.name, "decision", {"incident": iid, "operator": operator, "decision": "approve",
@@ -1839,6 +1990,7 @@ class Saguaro(Agent):
                     "silent": h in silent,
                     "services": self._services_with_incidents(h, incs),
                     "services_at": (self._host_services.get(h) or {}).get("at"),
+                    "sessions": self.admins.live_count(h, now),  # people signed in right now (admins.py)
                 })
             out.sort(key=lambda m: (-m["risk_index"], m["host"]))
             return out
@@ -1884,6 +2036,7 @@ class Saguaro(Agent):
             self.classifier.reset()
             self.responders.reset()
             self.watchdog.reset()
+            self.admins.forget_sessions()
             self.clock._offset = 0.0
             self.store.forget()
             self._init_state()

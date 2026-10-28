@@ -14,11 +14,13 @@ BACKUP_TIMEOUT = 600.0  # a backup or restore copies whole folders  # PowerShell
 
 
 class CoreError(Exception):
-    """Raised when the core API is unreachable or returns an error."""
+    """Raised when the core API is unreachable or returns an error. `detail` is the core's own words for a
+    refusal (its "detail"), for a page that shows them as they are."""
 
-    def __init__(self, message: str, status: int | None = None) -> None:
+    def __init__(self, message: str, status: int | None = None, detail: str | None = None) -> None:
         super().__init__(message)
         self.status = status
+        self.detail = detail
 
 
 READ_ONLY_POSTS = ("/chat",)  # asking the orchestrator a question changes nothing
@@ -56,7 +58,7 @@ class CoreClient:
                     detail = str(payload["detail"])
             except ValueError:
                 pass
-            raise CoreError(f"{method} {path} -> HTTP {resp.status_code}: {detail}", resp.status_code)
+            raise CoreError(f"{method} {path} -> HTTP {resp.status_code}: {detail}", resp.status_code, detail)
         return resp
 
     def get_json(self, path: str) -> Any:
@@ -188,6 +190,35 @@ class CoreClient:
 
     def resolve(self, incident_id: str, operator: str, note: str) -> Any:
         return self.post_json(f"/incidents/{incident_id}/resolve", {"operator": operator, "note": note})
+
+    # ---- the administrators (core admins.py): who is signed in, who is known, "This was me" ----
+    def mine(self, incident_id: str, operator: str, channel: str = "dashboard") -> dict:
+        """"This was me": the sign-in behind a root-access incident was the administrator's own. The core learns
+        it (address, SSH key, account), undoes any block on it and closes the incident. The answer is the incident
+        plus "learned" (what it now knows, in words) and "also_closed" (the same person's other incidents)."""
+        return self.post_json(f"/incidents/{incident_id}/mine", {"operator": operator, "channel": channel})
+
+    def admins(self, host: str | None = None) -> dict:
+        """The administrators SentrAI knows (accounts, addresses, keys), who is signed in now and their recent
+        root work; with host, one machine's sessions, work and accounts (addresses and keys are for all)."""
+        return dict(self.get_json(f"/admins?host={quote(host, safe='')}" if host else "/admins") or {})
+
+    def admin_change(self, operator: str, action: str, kind: str, value: str, label: str = "",
+                     host: str | None = None) -> dict:
+        """Add or forget a known administrator address (or network), SSH key fingerprint or account by hand.
+        A value the core cannot take raises a CoreError whose message is the core's own plain words."""
+        try:
+            return self.post_json("/admins", {"operator": operator, "action": action, "kind": kind, "value": value,
+                                              "label": label, "host": host})
+        except CoreError as exc:
+            if exc.status == 400 and exc.detail:
+                raise CoreError(exc.detail, 400, exc.detail) from exc
+            raise
+
+    def admin_signed_in(self, email: str, role: str, address: str | None) -> dict:
+        """Tell the core about a dashboard sign-in (password and authenticator) from this address. An Owner's
+        or Admin's vouches for the address for a while: {"ok", "vouched", "address", "until"}."""
+        return self.post_json("/admins/sign-in", {"email": email, "role": role, "address": address or None})
 
     def routing(self) -> dict:
         return self.get_json("/routing")

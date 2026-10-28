@@ -40,6 +40,10 @@ SEVERITY: dict[str, tuple[str, int]] = {
     # A person at the business reported something (staff_reports.py). Never one of the classifier's
     # labels: only a report makes it. Always "needs review"; the report's urgency scales the points.
     "staff_report": ("medium", 20),
+    # Root (administrator) work from a sign-in SentrAI does not know as an administrator's (admins.py): an
+    # intruder with root, or an administrator it has not met yet. Always "needs review", never contained on
+    # its own: the person says "This was me" or "Not me". Not one of the classifier's labels.
+    "unauthorised_admin": ("critical", 60),
 }
 
 BANDS = ["green", "amber", "red", "critical"]

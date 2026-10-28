@@ -47,6 +47,11 @@ dashboard refuses the change before it reaches the core.
 Each sign-in shows when and from where your previous one happened, so a sign-in you did not make
 stands out. After five wrong passwords or codes from one address, that address waits five minutes.
 
+A sign-in as Owner or Admin also tells SentrAI where you are: for the next 12 hours, root work
+(`sudo`) from your computer's address on any machine counts as your own and is recorded, not raised
+as an incident. An Auditor's sign-in does not. See
+[Your own administrators](settings.html#your-own-administrators).
+
 ### Each person's own view
 
 On the **Incidents** page, everyone first sees **Your part**: the incidents they own or back up,

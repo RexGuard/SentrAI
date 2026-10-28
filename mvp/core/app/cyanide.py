@@ -196,7 +196,9 @@ class Cyanide(Saguaro):
         plan: Plan | None = inc.get("_plan")
         if plan:
             inc["explanation"] = plan.assessment
-            if inc.get("needs_review"):
+            if inc.get("category") == "unauthorised_admin":
+                inc["explanation"] += " SentrAI does nothing on its own here: a person says whether this was them."
+            elif inc.get("needs_review"):
                 inc["explanation"] += " The classifier is uncertain: needs human review (never auto-contained)."
             if not plan.allow_autonomous:
                 inc["explanation"] += f" Cyanide holds autonomous action: {plan.hold_reason}"
@@ -222,7 +224,7 @@ class Cyanide(Saguaro):
             "system_profile": self.profile or {"note": "No profile configured; assume a small organisation."},
             "incident": {k: inc.get(k) for k in (
                 "id", "category", "severity", "ai_confidence", "malicious_probability", "needs_review",
-                "asset_criticality", "src_ip", "user", "host", "layer", "classification_reason")},
+                "asset_criticality", "src_ip", "user", "host", "layer", "classification_reason", "actor")},
             "log_lines_untrusted": [
                 {"host": e.get("host"), "src_ip": e.get("src_ip"), "user": e.get("user"),
                  "raw": str(e.get("raw") or "")[:MAX_RAW_CHARS]} for e in events],

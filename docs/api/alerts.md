@@ -398,13 +398,13 @@ What every notification endpoint answers with:
 | --- | --- |
 | `id` | `ntf-<n>`, in the order they were queued |
 | `incident` | the incident it is about, or `null` for an alert about SentrAI as a whole (risk band, protection, fingerprint) |
-| `kind` | `incident_opened`, `needs_review`, `escalation` (the index reached red or critical), `escalated` (handed to a backup), `assigned`, `sla_reminder`, `resolve_reminder`, `autonomous_action`, `operator_action`, `needs_operator`, `action_check`, `action_expired`, `undo_failed`, `protection_on`, `protection_off`, `watchdog`, `audit_anchor` or `summary` |
+| `kind` | `incident_opened`, `needs_review`, `was_this_you` (root access from an unrecognised sign-in: a person says whether it was them, see [the incident record](incidents.html#the-incident-record)), `escalation` (the index reached red or critical), `escalated` (handed to a backup), `assigned`, `sla_reminder`, `resolve_reminder`, `autonomous_action`, `operator_action`, `needs_operator`, `action_check`, `action_expired`, `undo_failed`, `protection_on`, `protection_off`, `watchdog`, `audit_anchor` or `summary` |
 | `title`, `text` | the alert as a person reads it |
 | `recipients` | the names it is for |
 | `deliver_to` | each recipient's contact from the routing file: `id`, `name`, `email`, `telegram` and `telegram_chat`, the private chat that reaches them (empty when none). A name outside the routing file has an empty `id` and no addresses |
 | `owner` | the incident's owner when it was queued, `null` without an incident |
 | `risk_index`, `band` | the headline risk index when it was queued |
-| `buttons` | the answers to offer under the message: `approve`, `reject` and `ack` for a decision; `rollback`, `permanent` and `ack` after an action. The notifier turns them into calls on [Incidents](incidents.html) |
+| `buttons` | the answers to offer under the message: `approve`, `reject` and `ack` for a decision; `rollback`, `permanent` and `ack` after an action. A `was_this_you` alert, and every reminder or escalation about such an incident, carries **This was me** (`mine`), **Not me: block it** (`approve`) and **Acknowledge** (`ack`) instead. The notifier turns them into calls on [Incidents](incidents.html): `mine` is [`POST /incidents/{iid}/mine`](incidents.html#post-incidentsiidmine) |
 | `report_url` | a signed link to the incident's evidence report that opens without the token (see [Signed links](index.html#signed-links)); `null` without an incident. It starts with `SENTRAI_PUBLIC_URL` |
 | `witness` | the signed fingerprint of the audit trail when it was queued, so each alert is a copy of it the server cannot recall (see [`GET /audit/verify`](audit.html#get-auditverify)) |
 | `delivered`, `delivered_at`, `channel`, `message_id` | the first delivery reported, all unset until then |

@@ -347,8 +347,8 @@ def test_journald_source_reads_and_remembers_cursor(tmp_path):
     assert events[0]["host"] == "vps-journal" and events[0]["source"] == "journald:sshd"
     assert events[0]["raw"] == "Invalid user test from 203.0.113.60 port 52000"
     assert src.checkpoint() == {"cursor": "s=abc;i=3"}
-    resumed = JournaldSource(saved=src.checkpoint())
-    assert resumed.command()[-5:-3] == ["--after-cursor", "s=abc;i=3"]
+    cmd = JournaldSource(saved=src.checkpoint()).command()
+    assert cmd[cmd.index("--after-cursor") + 1] == "s=abc;i=3"
     assert "--lines" in JournaldSource(from_end=True).command()
 
 
