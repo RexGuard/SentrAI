@@ -1,0 +1,61 @@
+/* Incident tables (incident_table.mjs). Shadow root: the colour variables from theme.py come in from the
+   page, nothing else does. Hairlines, colour only where it means something, nothing under 12 px. */
+
+:host { display: block; }
+.it { display: flex; flex-direction: column; gap: .5rem; font-family: var(--font); color: var(--ink);
+      font-size: .875rem; line-height: 1.35; font-feature-settings: "tnum" 1; }
+.mi { font-family: "Material Symbols Rounded"; font-weight: normal; font-style: normal; font-size: 1.1em; line-height: 1;
+      letter-spacing: normal; text-transform: none; display: inline-block; white-space: nowrap;
+      font-feature-settings: "liga"; -webkit-font-feature-settings: "liga"; flex: none; }
+.it-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
+
+.it-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .8rem; }
+.it-bar .it-in { flex: 0 1 22rem; }
+.it-count { font-size: .8rem; color: var(--ink-soft); }
+.it-in { font: inherit; font-size: .85rem; min-height: 2.1rem; padding: .3rem .6rem; border-radius: 8px; min-width: 0;
+         border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
+.it-in::placeholder { color: var(--ink-faint); }
+
+/* The table scrolls inside itself past about 14 rows, so whatever sits below it stays close. */
+.it-scroll { overflow: auto; max-height: 34rem; border: 1px solid var(--line); border-radius: 10px; }
+.it-table { width: 100%; border-collapse: collapse; }
+.it-table th { position: sticky; top: 0; z-index: 1; background: var(--surface-2); text-align: left; font-weight: 600;
+               font-size: .8rem; color: var(--ink-soft); padding: .45rem .6rem; border-bottom: 1px solid var(--line);
+               white-space: nowrap; }
+.it-table td { padding: .4rem .6rem; border-bottom: 1px solid var(--line-soft, var(--line)); vertical-align: middle;
+               white-space: nowrap; }
+/* One line per incident: long names are cut with "…" (the whole text is in the tip); only What and Needs wrap. */
+.it-table td.cut { max-width: 8rem; overflow: hidden; text-overflow: ellipsis; }
+.it-table td.wrap { white-space: normal; min-width: 9rem; }
+.it-table tr:last-child td { border-bottom: 0; }
+.it-row.openable { cursor: pointer; }
+.it-row.openable:hover td { background: var(--surface-2); }
+.it-row.selected td { background: var(--brand-soft); }
+.it-row:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
+.it-id { font-family: var(--mono); font-size: .8rem; white-space: nowrap; }
+.it-needs { color: var(--ink-soft); }
+.it-pill { display: inline-flex; align-items: center; gap: .35rem; white-space: nowrap; font-size: .8rem; font-weight: 600; }
+.it-pill::before { content: ""; width: .55rem; height: .55rem; border-radius: 50%; background: var(--c); flex: none; }
+.it-empty td { color: var(--ink-soft); text-align: center; padding: 1rem; }
+
+.it-act { width: 1%; white-space: nowrap; }
+/* On a narrow screen the table scrolls sideways, and the buttons stay in view at the right edge. */
+.it-table td.it-act { position: sticky; right: 0; background: var(--surface); }
+.it-table th.it-act-h { position: sticky; right: 0; z-index: 2; }
+.it-btns { display: flex; gap: .35rem; justify-content: flex-end; }
+.it-btn { font: inherit; font-size: .8rem; font-weight: 500; display: inline-flex; align-items: center; gap: .3rem;
+          min-height: 2rem; padding: .25rem .65rem; border-radius: 8px; border: 1px solid var(--line);
+          background: var(--surface); color: var(--ink); cursor: pointer; white-space: nowrap; }
+.it-btn:hover:not(:disabled) { background: var(--surface-2); border-color: var(--ink-faint); }
+.it-btn.primary { background: var(--brand-fill); border-color: var(--brand-fill); color: var(--on-brand); }
+.it-btn.primary:hover:not(:disabled) { background: var(--brand-fill-hover); border-color: var(--brand-fill-hover); }
+.it-btn.on { border-color: var(--brand); }
+.it-btn.ghost { border-color: transparent; background: transparent; color: var(--ink-soft); }
+.it-btn:disabled { opacity: .45; cursor: not-allowed; }
+.it-btn:focus-visible, .it-in:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+.it-ask td { background: var(--surface-2); }
+.it-ask-in { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.it-ask-in .it-in { flex: 0 1 24rem; }
+.it-foot { display: flex; gap: .5rem; justify-content: center; }
+.it-foot:empty { display: none; }

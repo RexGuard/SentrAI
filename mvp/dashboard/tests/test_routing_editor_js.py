@@ -16,6 +16,7 @@ TEST_FILE = "tests/routing_editor.test.mjs"
 MAPS_FILE = "tests/maps.test.mjs"  # the pipeline overview's grid and Automation guardrails (flow_canvas.mjs, limits_map.mjs)
 CANVAS_FILE = "tests/canvas.test.mjs"  # the pipeline overview canvas: layout, wires, adding and taking off, the panel
 GUARDRAILS_FILE = "tests/guardrails.test.mjs"  # the guardrails page's tags, percent and policy summary, the map's tips
+TABLE_FILE = "tests/incident_table.test.mjs"  # the Incidents page tables: filter and count line
 MIN_NODE = 20
 TIMEOUT = 120  # seconds
 # The count in the summary node prints last: "<info sign> pass 65" from the spec reporter, "# pass 65" from TAP.
@@ -43,7 +44,7 @@ def _text(data: bytes | str | None) -> str:
     return data or ""
 
 
-@pytest.mark.parametrize("test_file", [TEST_FILE, MAPS_FILE, GUARDRAILS_FILE, CANVAS_FILE])
+@pytest.mark.parametrize("test_file", [TEST_FILE, MAPS_FILE, GUARDRAILS_FILE, CANVAS_FILE, TABLE_FILE])
 def test_routing_editor_model_passes_its_node_tests(test_file):
     TEST_FILE = test_file  # noqa: N806  (the messages below name the file that ran)
     node = _node()

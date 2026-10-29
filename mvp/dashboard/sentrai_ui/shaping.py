@@ -2373,3 +2373,62 @@ def update_status(version_file, check_file) -> dict[str, Any]:
         "ref": str(check.get("ref") or ""),
         "checked": str(check.get("checked") or ""),
     }
+
+
+# ------------------------------------------------------------------ incident tables (Incidents page)
+
+MINE_HELP = ("Teach SentrAI this sign-in: its address, SSH key and account become a known administrator's, "
+             "and the alert closes")
+NOT_ME_HELP = "Block the address now, as Approve & Patch does; written to the audit log"
+PROTECTION_OFF_HELP = "Protection is off (monitor only): turn it on in Configuration to apply a hotpatch."
+SEVERITY_COLORS = {"low": BAND_COLORS["green"], "medium": BAND_COLORS["amber"], "high": BAND_COLORS["red"],
+                   "critical": BAND_COLORS["critical"]}
+TABLE_COLUMNS = ["Incident", "Severity", "What", "Host", "Status", "Owner", "Open for", "Needs"]
+
+
+def quick_action_list(inc: dict, read_only: str = "", protection_off: bool = False) -> list[dict]:
+    """The quick buttons an incident's table row offers, the same ones its row on Approvals has. reason is
+    "required" or "optional" when the button asks why first; read_only greys every button out and says why."""
+    can = available_actions(inc)
+
+    def button(a: str, label: str, icon: str, help_: str, primary: bool = False, reason: str | None = None,
+               off: bool = False, confirm: str = "") -> dict:
+        return {"a": a, "label": label, "icon": icon, "primary": primary, "reason": reason,
+                "disabled": bool(read_only) or off, "help": read_only or help_, "confirm": confirm or label}
+
+    no_patch = (PROTECTION_OFF_HELP, True) if protection_off else (None, False)
+    if can["mine"]:
+        return [button("mine", "This was me", "verified_user", MINE_HELP, primary=True),
+                button("not_me", "Not me: block it", "block", no_patch[0] or NOT_ME_HELP, off=no_patch[1])]
+    if can["decide"]:
+        return [button("approve", "Approve", "check", no_patch[0] or "Approve & patch, written to the audit log",
+                       primary=True, off=no_patch[1]),
+                button("reject", "Reject", "block", "Reject, with a reason written to the audit log",
+                       reason="required")]
+    if can["contain_controls"]:
+        return [button("rollback", "Roll back", "undo", "Undo the block now", primary=True),
+                button("permanent", "Make permanent", "push_pin", "The block will no longer expire on its own",
+                       reason="optional", confirm="Keep this block forever")]
+    if can["ack"]:
+        return [button("ack", "Acknowledge", "visibility", "Records that you have seen this alert")]
+    return []
+
+
+def incident_table_data(df: pd.DataFrame, incidents: Iterable[dict], actions_for=None, selected: str = "",
+                        empty: str = "Nothing here.", page_size: int = 25) -> dict:
+    """board_rows' table for the incident table component (incident_table.mjs): one row per incident with
+    its quick buttons in the last column. A wave's row ("W-1 (40)") has no buttons and does not open."""
+    by_id = {str(i.get("id")): i for i in incidents or []}
+    rows = []
+    for rec in df.to_dict("records"):
+        rid = str(rec.get("Incident"))
+        inc = by_id.get(rid)
+        sev = str(rec.get("Severity") or "").lower()
+        rows.append({
+            "id": rid, "open": inc is not None,
+            "cells": [str(rec.get(c, "")) for c in TABLE_COLUMNS],
+            "sev": SEVERITY_COLORS.get(sev, UNKNOWN_COLOR),
+            "actions": (actions_for(inc) if actions_for else []) if inc is not None else [],
+        })
+    return {"columns": ["Incident", "Severity", "What", "Machine", "Status", "Owner", "Open for", "Needs"],
+            "rows": rows, "selected": selected, "empty": empty, "page_size": page_size}

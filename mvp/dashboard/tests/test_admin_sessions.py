@@ -1,5 +1,6 @@
 """The administrators' own root work (core admins.py): "This was me" / "Not me: block it", the Admins tab,
 and the dashboard sign-in that vouches for an Owner's or Admin's address. Example data only."""
+import json
 from pathlib import Path
 
 import pytest
@@ -44,6 +45,33 @@ def _only_fragment_refresh(at) -> None:
     # AppTest cannot rerun just a fragment, so the refresh after an action raises here; in a browser it reruns the
     # page part. Anything else is a real error.
     assert all("fragment" in str(e.value) for e in at.exception), at.exception
+
+
+def _tables(at) -> list:
+    """The incident tables on the page (incident_table.mjs) with the data Python gave them."""
+    return [(el, json.loads(el.proto.json)) for el in at.get("bidi_component")
+            if el.proto.component_name.endswith("incident_table")]
+
+
+def _buttons(at) -> dict:
+    """{label: the quick button as the tables draw it}, across every table row."""
+    return {b["label"]: b for _, d in _tables(at) for r in d["rows"] for b in r["actions"]}
+
+
+def _press(at, inc_id: str, action: str) -> None:
+    """What a quick button in a table does in a browser: set the table's "act" trigger, which reruns the page part."""
+    try:  # Streamlit internals, not a promise: skip rather than fail when they move
+        from streamlit.components.v2.bidi_component.main import _make_trigger_id
+        from streamlit.proto.WidgetStates_pb2 import WidgetState
+        states = at._tree.get_widget_states()
+        run = at._run
+    except (ImportError, AttributeError) as exc:
+        pytest.skip(f"cannot press a table's button in this Streamlit's AppTest: {exc}")
+    el = next(el for el, d in _tables(at) if any(r["id"] == inc_id for r in d["rows"]))
+    event = {"id": inc_id, "a": action, "reason": "", "n": f"{action}-1"}
+    states.widgets.append(WidgetState(id=_make_trigger_id(el.proto.id, "events"),
+                                      json_trigger_value=json.dumps([{"event": "act", "value": event}])))
+    run(states)
 
 
 def _text(at) -> str:
@@ -174,18 +202,18 @@ def test_the_alert_asks_was_this_you_and_this_was_me_closes_it(fresh, tmp_path, 
     at = _app(fresh, tmp_path, monkeypatch)
     at.run()
     assert not at.exception, at.exception
-    labels = [b.label for b in at.button]
-    assert "This was me" in labels and "Not me: block it" in labels and "Approve" not in labels
-    mine = next(b for b in at.button if b.label == "This was me")
-    assert not mine.disabled and "known administrator's" in (mine.help or "")
-    mine.click().run()
+    buttons = _buttons(at)
+    assert "This was me" in buttons and "Not me: block it" in buttons and "Approve" not in buttons
+    mine = buttons["This was me"]
+    assert not mine["disabled"] and "known administrator's" in mine["help"]
+    _press(at, inc["id"], "mine")
     _only_fragment_refresh(at)
     assert requests.get(f"{fresh}/incidents/{inc['id']}", timeout=3).json()["status"] == "resolved"
     import streamlit as st
     st.cache_data.clear()  # the page reads the core at most once a second
     at.run()
     assert not at.exception, at.exception
-    assert "This was me" not in [b.label for b in at.button]  # the alert left the list
+    assert "This was me" not in _buttons(at)  # the alert left the list
     text = _text(at)
     assert f"{inc['id']} closed: this was you" in text and "address 203.0.113.9" in text
 
@@ -194,7 +222,7 @@ def test_not_me_blocks_the_address(fresh, tmp_path, monkeypatch):
     inc = _root_alert(fresh)
     at = _app(fresh, tmp_path, monkeypatch)
     at.run()
-    next(b for b in at.button if b.label == "Not me: block it").click().run()
+    _press(at, inc["id"], "not_me")
     _only_fragment_refresh(at)
     assert requests.get(f"{fresh}/incidents/{inc['id']}", timeout=3).json()["status"] == "contained"
     assert "203.0.113.9" in CoreClient(fresh).blocklist()["ips"]
@@ -206,8 +234,9 @@ def test_an_auditor_sees_the_buttons_greyed_out(fresh, tmp_path, monkeypatch):
     at = _app(fresh, tmp_path, monkeypatch)
     at.run()
     assert not at.exception, at.exception
+    buttons = _buttons(at)
     for label in ("This was me", "Not me: block it"):
-        assert all(b.disabled for b in at.button if b.label == label), label
+        assert buttons[label]["disabled"] and buttons[label]["help"], label
     at = _app(fresh, tmp_path, monkeypatch, page="machines", machine="web-01", tab="admins")
     at.run()
     assert not at.exception, at.exception

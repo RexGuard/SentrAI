@@ -433,6 +433,7 @@ def test_telegram_link_codes_show_only_while_telegram_is_added(fake_core, tmp_pa
         at.session_state["core_url"] = fake_core
         at.session_state["auto_refresh"] = False
         at.session_state["page"] = "incidents"
+        at.session_state["inc_tab"] = "map"
         at.run()
         assert not at.exception, at.exception
         return any(b.key == "tg_code" for b in at.button)
@@ -483,8 +484,9 @@ def test_approvals_rows_roll_back_in_one_click(fake_core, tmp_path, monkeypatch)
 
 # ------------------------------------------- Incidents: "Who gets what" as a map (sentrai_ui/routing_editor.mjs)
 
-def _incidents_page(fake_core, tmp_path, monkeypatch, role: str = "", operator: str = "erick"):
-    """The Incidents page with sign-in off, seen as `role` (SENTRAI_DASHBOARD_ROLE; empty: the default Owner)."""
+def _incidents_page(fake_core, tmp_path, monkeypatch, role: str = "", operator: str = "erick", tab: str = "map"):
+    """The Incidents page with sign-in off, seen as `role` (SENTRAI_DASHBOARD_ROLE; empty: the default Owner),
+    on one of its tabs (todo, all, waves, map: Who gets what)."""
     from streamlit.testing.v1 import AppTest
 
     monkeypatch.setenv("SENTRAI_CONFIG", str(tmp_path / "config.json"))
@@ -497,6 +499,7 @@ def _incidents_page(fake_core, tmp_path, monkeypatch, role: str = "", operator: 
     at.session_state["auto_refresh"] = False
     at.session_state["operator"] = operator
     at.session_state["page"] = "incidents"
+    at.session_state["inc_tab"] = tab
     at.run()
     return at
 
@@ -545,16 +548,9 @@ def test_incidents_page_draws_who_gets_what_as_a_map_to_edit(fake_core, tmp_path
     assert data == sh.routing_editor_data(routing)  # an Owner may change it, and has not saved anything yet
 
 
-def _show_whole_map(at):
-    """An Auditor sees their own part first; the whole team's map waits behind a switch."""
-    assert not [d for _, d in _maps(at) if not d.get("focus")]
-    at.toggle(key="whole_map").set_value(True).run()
-
-
 def test_incidents_page_as_an_auditor_shows_the_map_read_only(fake_core, tmp_path, monkeypatch):
     at = _incidents_page(fake_core, tmp_path, monkeypatch, role="auditor")
     assert not at.exception, at.exception
-    _show_whole_map(at)
     assert not at.exception, at.exception
     _, data = _routing_editor(at)
     routing = requests.get(f"{fake_core}/routing", timeout=3).json()
@@ -562,7 +558,7 @@ def test_incidents_page_as_an_auditor_shows_the_map_read_only(fake_core, tmp_pat
 
 
 def test_an_auditor_who_is_one_of_the_people_sees_their_own_part(fake_core, tmp_path, monkeypatch):
-    at = _incidents_page(fake_core, tmp_path, monkeypatch, role="auditor", operator="Team lead")
+    at = _incidents_page(fake_core, tmp_path, monkeypatch, role="auditor", operator="Team lead", tab="todo")
     assert not at.exception, at.exception
     _, data = _my_map(at)
     assert data["focus"] == "team_lead" and data["read_only"]
@@ -573,20 +569,23 @@ def test_an_auditor_who_is_one_of_the_people_sees_their_own_part(fake_core, tmp_
 
 
 def test_someone_who_is_not_one_of_the_people_is_told_how_to_become_one(fake_core, tmp_path, monkeypatch):
-    at = _incidents_page(fake_core, tmp_path, monkeypatch, role="auditor", operator="Visitor")
+    at = _incidents_page(fake_core, tmp_path, monkeypatch, role="auditor", operator="Visitor", tab="todo")
     assert not at.exception, at.exception
     assert _my_map(at) == (None, None)
     assert any("not one of the people" in i.value for i in at.info)
 
 
 def test_an_owner_can_see_the_page_as_anyone(fake_core, tmp_path, monkeypatch):
-    at = _incidents_page(fake_core, tmp_path, monkeypatch)
+    at = _incidents_page(fake_core, tmp_path, monkeypatch, tab="todo")
     assert _my_map(at) == (None, None)  # "erick" is none of the people yet
     at.selectbox(key="part_as").set_value("IT manager").run()
     assert not at.exception, at.exception
     _, data = _my_map(at)
     assert data["focus"] == "it_manager" and data["read_only"]
-    _routing_editor(at)  # the whole map stays, to change
+    assert not [d for _, d in _maps(at) if not d.get("focus")]  # the whole map is on its own tab
+    at.session_state["inc_tab"] = "map"
+    at.run()
+    _routing_editor(at)  # there, to change
 
 
 def test_the_overview_canvas_draws_every_step_and_each_opens_a_page(fake_core, tmp_path, monkeypatch):
@@ -725,7 +724,6 @@ def test_an_auditors_map_never_saves(fake_core, tmp_path, monkeypatch):
     """Even when an Auditor's browser sends a Save (from the developer tools, say), nothing reaches the core."""
     before = requests.get(f"{fake_core}/routing", timeout=3).json()
     at = _incidents_page(fake_core, tmp_path, monkeypatch, role="auditor")
-    _show_whole_map(at)
     _, data = _routing_editor(at)
     data["routing"]["rules"][0]["name"] = "Changed by an auditor"
     _press_save(at, {"id": "save-1", "routing": data["routing"], "summary": "Should not happen"})
@@ -747,7 +745,7 @@ def test_a_routing_blip_keeps_the_map_on_screen(fake_core, tmp_path, monkeypatch
     monkeypatch.setattr(CoreClient, "routing", routing)  # AppTest runs the app in this process
     at = _incidents_page(fake_core, tmp_path, monkeypatch)
     assert not at.exception, at.exception
-    assert not at.get("bidi_component")  # no copy yet: nothing to draw
+    assert not _maps(at)  # no copy yet: nothing to draw
     assert any("Could not load the routing rules" in c.value for c in at.caption)
     down["now"] = False
     at.run()
