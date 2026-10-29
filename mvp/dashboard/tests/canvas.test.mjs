@@ -202,3 +202,39 @@ describe("canvas: it fills the page", () => {
     assert.equal(c.fillHeight(-50, 800), 800 - c.BOTTOM_GAP);
   });
 });
+
+describe("canvas: extension blocks follow the Extensions page", () => {
+  const ext = (name, on, managed = false) => ({ id: `ext:${name}`, kind: "ext", title: name, switch: { name, title: name, on, managed } });
+  const st0 = (shown, hidden = []) => ({ shown: [...shown], hidden: [...hidden], pos: {}, notes: {}, addedWires: [], removedWires: [] });
+
+  test("one turned on elsewhere is drawn, even if it was taken off before; one turned off elsewhere leaves", () => {
+    const data = { blocks: [ext("slack", true), ext("telegram", false), { id: "step:auto", kind: "step" }] };
+    const st = st0(["step:auto", "ext:telegram"], ["ext:slack"]);
+    assert.equal(c.followExtensions(data, st), true);
+    assert.deepEqual(st.shown, ["step:auto", "ext:slack"]);
+    assert.deepEqual(st.hidden, []);
+    assert.equal(c.followExtensions(data, st), false, "nothing more to do the second time");
+  });
+
+  test("a block whose switch is being flipped waits for the server, and one SENTRAI_EXTENSIONS decides keeps the old rules", () => {
+    const data = { blocks: [ext("slack", false), ext("cloudflare", true, true)] };
+    const st = st0(["ext:slack"], ["ext:cloudflare"]);
+    assert.equal(c.followExtensions(data, st, new Set(["ext:slack"])), false);
+    assert.deepEqual(st.shown, ["ext:slack"]);
+    assert.deepEqual(st.hidden, ["ext:cloudflare"]);
+  });
+
+  test("taking a running extension off the canvas turns it off; one that is off or fixed by the server does not", () => {
+    assert.equal(c.switchesOff(ext("slack", true)), true);
+    assert.equal(c.switchesOff(ext("slack", false)), false);
+    assert.equal(c.switchesOff(ext("cloudflare", true, true)), false);
+    assert.equal(c.switchesOff({ id: "step:auto" }), false);
+  });
+
+  test("+ Add says that adding an extension that is off turns it on", () => {
+    const data = { blocks: [ext("slack", false), ext("cloudflare", false, true)] };
+    const items = c.catalogue(data, st0([])).find((g) => g.kind === "ext").items;
+    assert.equal(items.find((x) => x.id === "ext:slack").note, "off · adding it turns it on");
+    assert.notEqual(items.find((x) => x.id === "ext:cloudflare").note, "off · adding it turns it on");
+  });
+});
