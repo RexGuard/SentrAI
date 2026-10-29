@@ -102,6 +102,10 @@ ROUTING_EDITOR = st.components.v2.component(
 LIMITS_MAP = st.components.v2.component(
     "limits_map", js=(_UI / "limits_map.mjs").read_text(encoding="utf-8"),
     css=(_UI / "limits_map.css").read_text(encoding="utf-8")) if hasattr(st.components, "v2") else None
+# The Incidents page's lists: one table per list, quick buttons at the end of each row.
+INCIDENT_TABLE = st.components.v2.component(
+    "incident_table", js=(_UI / "incident_table.mjs").read_text(encoding="utf-8"),
+    css=(_UI / "incident_table.css").read_text(encoding="utf-8")) if hasattr(st.components, "v2") else None
 FLOW_CANVAS = st.components.v2.component(
     "flow_canvas", js=(_UI / "flow_canvas.mjs").read_text(encoding="utf-8"),
     css=(_UI / "flow_canvas.css").read_text(encoding="utf-8")) if hasattr(st.components, "v2") else None
@@ -912,10 +916,7 @@ def incident_summary(inc: dict) -> None:
     st.write("")
 
 
-MINE_HELP = ("Teach SentrAI this sign-in: its address, SSH key and account become a known administrator's, "
-             "and the alert closes")
-NOT_ME_HELP = "Block the address now, as Approve & Patch does; written to the audit log"
-PROTECTION_OFF_HELP = "Protection is off (monitor only): turn it on in Configuration to apply a hotpatch."
+MINE_HELP, NOT_ME_HELP, PROTECTION_OFF_HELP = sh.MINE_HELP, sh.NOT_ME_HELP, sh.PROTECTION_OFF_HELP
 
 
 def ack_then(inc_id: str, op: str, decision: str, just: str):
@@ -1114,6 +1115,78 @@ def incident_row(inc: dict, where: str, note: str = "", details=None, pick: bool
         if details is not None:
             with st.expander("Details", icon=":material/info:"):
                 details()
+
+
+def quick_act(inc: dict, action: str, reason: str = "") -> None:
+    """A quick button pressed in an incident table (shaping.quick_action_list names the actions): the same calls
+    the buttons on an incident row make."""
+    inc_id, op = str(inc.get("id")), st.session_state.operator
+    can = sh.available_actions(inc)
+
+    def decide(decision: str, why: str):
+        def _run() -> None:
+            if can["ack"]:
+                client.ack(inc_id, op)
+            client.decision(inc_id, op, decision, why)
+        return _run
+    if locked():
+        st.session_state["flash"] = (READ_ONLY_MESSAGE, WARN_ICON)
+    elif action == "mine" and can["mine"]:
+        was_me(inc_id, op)
+    elif action == "not_me" and can["mine"] and not protection_off():
+        run_action(f"Not me: blocked {inc_id}", decide("approve", "Not me: block it"))
+    elif action == "approve" and can["decide"] and not protection_off():
+        run_action(f"Approved & patched {inc_id}", decide("approve", ""))
+    elif action == "reject" and can["decide"] and reason:
+        run_action(f"Rejected {inc_id}", decide("reject", reason))
+    elif action == "rollback" and can["contain_controls"]:
+        run_action(f"Rolled back {inc_id}", lambda: client.rollback(inc_id, op, reason or "Rolled back by operator from dashboard"))
+    elif action == "permanent" and can["contain_controls"]:
+        run_action(f"Made permanent {inc_id}",
+                   lambda: client.permanent(inc_id, op, reason or "Made permanent by operator from dashboard"))
+    elif action == "ack" and can["ack"]:
+        run_action(f"Acknowledged {inc_id}", lambda: client.ack(inc_id, op))
+    else:  # the incident moved on since the table was drawn: say so, and draw it as it is now
+        st.session_state["flash"] = (f"{inc_id} changed since the list was drawn. Nothing was done; have another look.",
+                                     WARN_ICON)
+        fresh()
+        st.rerun(scope="fragment")
+
+
+def incident_table(key: str, df, incidents: list[dict], contacts: list[dict], empty_text: str) -> None:
+    """A list of incidents as one table (sentrai_ui/incident_table.mjs): a row each, its quick buttons at the end.
+    Clicking a row opens that incident's card under the table; only that one card is drawn."""
+    if INCIDENT_TABLE is None:  # Streamlit older than 1.51: the plain table and the picker
+        table(df, empty_text)
+        return
+    pick_key = f"open_{key}"
+    ro, off = why_locked() or "", protection_off()
+    data = sh.incident_table_data(df, incidents, lambda inc: sh.quick_action_list(inc, ro, off),
+                                  selected=st.session_state.get(pick_key, ""), empty=empty_text)
+    out = INCIDENT_TABLE(key=key, data=data, on_act_change=lambda: None, on_open_change=lambda: None)
+    seen = st.session_state.setdefault("table_events", {})
+    by_id = {str(i.get("id")): i for i in incidents}
+    opened = out.get("open")
+    if opened and opened.get("n") != seen.get(f"{key}_open"):
+        seen[f"{key}_open"] = opened.get("n")
+        oid = str(opened.get("id"))
+        st.session_state[pick_key] = "" if st.session_state.get(pick_key) == oid else oid  # a second click closes it
+        st.rerun(scope="fragment")
+    act = out.get("act")
+    if act and act.get("n") != seen.get(f"{key}_act"):
+        seen[f"{key}_act"] = act.get("n")
+        inc = by_id.get(str(act.get("id")))
+        if inc is not None:
+            quick_act(inc, str(act.get("a")), str(act.get("reason") or "").strip())
+    inc = by_id.get(st.session_state.get(pick_key, ""))
+    if inc is not None:
+        with card(name=f"open-{key}"):
+            top, close = st.columns([6, 1], vertical_alignment="center")
+            top.caption("Picked from the table above")
+            if close.button("Close", icon=":material/close:", key=f"close_{key}", width="stretch"):
+                st.session_state[pick_key] = ""
+                st.rerun(scope="fragment")
+            incident_card(inc, contacts, f"{key}_")
 
 
 # ------------------------------------------------------------------ pages
@@ -2024,56 +2097,56 @@ def page_incidents() -> None:
            sh.BAND_COLORS["amber"] if c["escalated"] else None),
           ("Yours", str(c["mine"]), f"owned by {me}"))
 
-    with card():
-        my_part_section(routing, incidents, contacts, person, rerr)
-
-    with card():
-        section("Needs attention", "most urgent first", "notification_important")
-        todo, todo_waves = sh.split_waves(sh.needs_attention(incidents))
-        if not todo and not todo_waves:
-            empty("Nothing needs a person right now. Every open incident is in hand.", "check_circle", good=True)
-        for wid, members in todo_waves.items():  # a busy server's background noise: one line per wave
-            st.markdown(f"**{wid}** · {sh.wave_line(members)}. Approve or reject them together on "
-                        "**Approvals** (group by type).")
-        for inc in todo:
-            note = f"{inc.get('owner') or 'no owner'} · {'; '.join(sh.attention(inc))}"
-            incident_row(inc, "todo", note, lambda inc=inc: incident_card(inc, contacts, "todo_"))
-
     waves, _ = fetch("waves", [])
-    if waves:
+    todo, todo_waves = sh.split_waves(sh.needs_attention(incidents))
+    open_count = sum(1 for i in incidents if i.get("status") in sh.OPEN_STATUSES)
+    # One part at a time, so a long list never pushes the rest out of sight, and only the part shown is drawn.
+    tabs = {"todo": f"Needs a person ({len(todo) + sum(len(m) for m in todo_waves.values())})",
+            "all": f"All incidents ({open_count} open)",
+            **({"waves": f"Waves ({len(waves)})"} if waves else {}),
+            "map": "Who gets what"}
+    if st.session_state.get("inc_tab") not in tabs:
+        st.session_state["inc_tab"] = "todo"
+    tab = st.segmented_control("Part of the Incidents page", list(tabs), format_func=tabs.get, key="inc_tab",
+                               label_visibility="collapsed") or "todo"
+
+    if tab == "todo":
+        with card():
+            my_part_section(routing, incidents, contacts, person, rerr)
+        with card():
+            section("Needs attention", "most urgent first", "notification_important")
+            for wid, members in todo_waves.items():  # a busy server's background noise: one line per wave
+                st.markdown(f"**{wid}** · {sh.wave_line(members)}. Approve or reject them together on "
+                            "**Approvals** (group by type).")
+            if todo or not todo_waves:
+                incident_table("todo_table", sh.board_rows(todo), todo, contacts,
+                               "Nothing needs a person right now. Every open incident is in hand.")
+    elif tab == "all":
+        with card():
+            section("All incidents", "owner, backup and what each one still needs", "assignment_ind")
+            t1, t2, t3 = st.columns(3)
+            closed = t1.toggle("Show resolved and rejected", key="board_closed")
+            mine = t2.toggle(f"Only mine ({me})", key="board_mine")
+            grouped = t3.toggle("One row per wave", value=True, key="board_waves", disabled=not waves,
+                                help="Many addresses doing the same thing to one machine are one row")
+            shown = [i for i in incidents if not mine or str(i.get("owner") or "").lower().lstrip("@") == me.lower().lstrip("@")]
+            incident_table("board_table", sh.board_rows(shown, include_closed=closed, group_waves=grouped), shown,
+                           contacts, "No incidents. All quiet at the gate.")
+    elif tab == "waves":
         with card():
             section("Waves", "many addresses doing the same thing to one machine, handled as one", "groups")
             st.caption("On a busy server, scans and password guessing from many addresses are grouped: one alert "
                        "when a wave starts, then a summary every few minutes. Each address keeps its own "
-                       "incident below.")
+                       "incident under All incidents.")
             table(sh.wave_rows(waves), "")
-
-    with card():
-        section("All incidents", "owner, backup and what each one still needs", "assignment_ind")
-        t1, t2, t3 = st.columns(3)
-        closed = t1.toggle("Show resolved and rejected", key="board_closed")
-        mine = t2.toggle(f"Only mine ({me})", key="board_mine")
-        grouped = t3.toggle("One row per wave", value=True, key="board_waves", disabled=not waves,
-                            help="Many addresses doing the same thing to one machine are one row")
-        shown = [i for i in incidents if not mine or str(i.get("owner") or "").lower().lstrip("@") == me.lower().lstrip("@")]
-        table(sh.board_rows(shown, include_closed=closed, group_waves=grouped), "No incidents. All quiet at the gate.")
-        ids = [str(i.get("id")) for i in shown if closed or i.get("status") in sh.OPEN_STATUSES]
-        if ids:
-            pick = st.selectbox("Open one to assign, resolve or decide", ["-", *ids], key="board_pick")
-            inc = next((i for i in shown if str(i.get("id")) == pick), None)
-            if inc is not None:
-                with card():
-                    incident_card(inc, contacts)
-
-    if can("configure"):  # Owners and Admins change the whole map; everyone else has their own part above
+    elif can("configure"):  # Owners and Admins change the whole map; everyone else has their own part
         with card():
             section("Who gets what", "routing rules: the first match owns the incident", "alt_route")
             whole_team_map(routing, contacts, rerr)
     else:
         with card():
             section("The whole team", "everyone's part, to look at", "alt_route")
-            if st.toggle("Show the whole team's map", key="whole_map"):
-                whole_team_map(routing, contacts, rerr)
+            whole_team_map(routing, contacts, rerr)
 
 
 def whole_team_map(routing: dict, contacts: list[dict], rerr: str | None) -> None:
@@ -2114,7 +2187,7 @@ def my_part_section(routing: dict, incidents: list[dict], contacts: list[dict], 
     if person is None:
         email = f"**{ME['email']}**" if ME else "your sign-in email"
         st.info(f"You are not one of the people in who gets what yet, so no incidents come to you by name. "
-                f"{'Click a person on the map below and put' if can('configure') else 'Ask an Owner or Admin to put'} "
+                f"{'Click a person on the Who gets what tab and put' if can('configure') else 'Ask an Owner or Admin to put'} "
                 f"{email} as their email to make it you.", icon=":material/link_off:")
         return
     cid, name = str(person.get("id")), str(person.get("name"))
@@ -2138,15 +2211,12 @@ def my_part_section(routing: dict, incidents: list[dict], contacts: list[dict], 
     if part["covers"]:
         lines.append("**You back up:** " + ", ".join(str(c.get("name")) for c in part["covers"]))
     st.markdown("  \n".join(lines) if lines else "No rule sends anything to you, and you back nobody up.")
-    for inc in owned:
-        incident_row(inc, "mine", "yours", lambda inc=inc: incident_card(inc, contacts, "mine_"))
-    for inc in backing:
-        incident_row(inc, "mine", f"owned by {inc.get('owner')}, you are the backup",
-                     lambda inc=inc: incident_card(inc, contacts, "mine_"))
+    if owned or backing:
+        incident_table(f"mine_table_{cid}", sh.board_rows(owned + backing), owned + backing, contacts, "")
     if ROUTING_EDITOR is not None and (part["owns"] or part["told"] or part["covers"]):
         with st.expander("Your part of the map", icon=":material/alt_route:", expanded=not owned and not backing):
             lock = ("Your part only. An Owner or Admin changes who gets what on the whole map."
-                    if not can("configure") else "Only your part. Change it on the whole map below.")
+                    if not can("configure") else "Only your part. Change it on the Who gets what tab.")
             ROUTING_EDITOR(key=f"routing_mine_{cid}", on_save_change=lambda: None,
                            data=sh.routing_editor_data(sh.my_routing(routing, cid), read_only=True,
                                                        lock_reason=lock, focus=cid))
