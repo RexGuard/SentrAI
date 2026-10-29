@@ -224,6 +224,32 @@ export function showBlock(data, st, id, near, size = fallbackSize) {
   return "Added to the canvas.";
 }
 
+/** Extension blocks follow what is running: one that is on is drawn, one that is off is not, wherever it was
+    switched (here or on the Extensions page). `busy` holds blocks whose switch is being flipped right now, so
+    they are left alone until the server answers. One the server's SENTRAI_EXTENSIONS decides keeps the old rules:
+    it cannot be switched here, so taking it off the canvas only hides it. Returns whether anything changed. */
+export function followExtensions(data, st, busy = new Set()) {
+  let changed = false;
+  for (const b of data.blocks || []) {
+    if (kindOf(b.id) !== "ext" || !b.switch || b.switch.managed || busy.has(b.id)) continue;
+    const drawn = st.shown.includes(b.id);
+    if (b.switch.on && !drawn) {
+      st.hidden = st.hidden.filter((x) => x !== b.id);
+      st.shown.push(b.id);
+      changed = true;
+    } else if (!b.switch.on && drawn) {
+      st.shown = st.shown.filter((x) => x !== b.id);
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+/** Whether taking this block off the canvas also turns it off (an extension that is on and can be switched). */
+export function switchesOff(block) {
+  return !!(block && kindOf(block.id) === "ext" && block.switch && block.switch.on && !block.switch.managed);
+}
+
 export function addNote(data, st, text, near, size = fallbackSize) {
   let n = 1;
   while (`note:${n}` in st.notes || st.shown.includes(`note:${n}`)) n += 1;
@@ -233,12 +259,14 @@ export function addNote(data, st, text, near, size = fallbackSize) {
   return id;
 }
 
-/** What "+ Add" offers: every block Python knows that is not on the canvas, by kind. */
+/** What "+ Add" offers: every block Python knows that is not on the canvas, by kind. An extension that is off
+    says that adding it turns it on. */
 export function catalogue(data, st) {
   const visible = new Set(visibleIds(data, st));
   return [["step", "Steps"], ["machine", "Machines"], ["ext", "Extensions"]].map(([kind, title]) => ({
     kind, title, items: (data.blocks || []).filter((b) => kindOf(b.id) === kind && !visible.has(b.id))
-      .map((b) => ({ id: b.id, title: b.title, icon: b.icon || "circle", note: b.note || "" })) }));
+      .map((b) => ({ id: b.id, title: b.title, icon: b.icon || "circle",
+        note: kind === "ext" && b.switch && !b.switch.on && !b.switch.managed ? "off · adding it turns it on" : b.note || "" })) }));
 }
 
 /** A wire from block a to block b ({x, y, w, h}): out of a's right side into b's left side when b is to the
@@ -525,6 +553,10 @@ class Canvas {
     this.undo = [];
     this.redo = [];
     this.sel = keep && keep.kind === "block" && this.st.shown.includes(keep.id) ? keep : keep && keep.kind === "wire" ? keep : null;
+    if (followExtensions(this.data, this.st, new Set([...this.pending.values()].filter((p) => p.kind === "toggle").map((p) => p.block)))) {
+      placeMissing(this.data, this.st, (k) => this.size(k));
+      this.scheduleSave();
+    }
     this.render();
     if (!this.fitted) {
       this.fitted = true;
@@ -532,14 +564,17 @@ class Canvas {
     }
   }
 
-  /** A machine that just joined (or an extension that was just installed) shows up on its own. */
+  /** A machine that just joined shows up on its own, and extension blocks follow what is on, wherever it was
+      switched. */
   syncDefaults() {
     const before = this.st.shown.length;
     for (const id of this.data.defaults || []) {
       if (!this.st.shown.includes(id) && !this.st.hidden.includes(id)) this.st.shown.push(id);
     }
+    const busy = new Set([...this.pending.values()].filter((p) => p.kind === "toggle").map((p) => p.block));
+    const moved = followExtensions(this.data, this.st, busy);
     placeMissing(this.data, this.st, (k) => this.size(k));
-    if (this.st.shown.length !== before) this.scheduleSave();
+    if (moved || this.st.shown.length !== before) this.scheduleSave();
   }
 
   settle(res) {
@@ -759,12 +794,15 @@ class Canvas {
       this.focusField("fc-f-note", true);
       return;
     }
+    const b = this.block(what);
+    const turnOn = !!(b && kindOf(what) === "ext" && b.switch && !b.switch.on && !b.switch.managed);
     this.change((st) => {
       const said = showBlock(this.data, st, what, near, (k) => this.size(k));
       if (!said) return false;
       this.sel = { kind: "block", id: what };
-      return said;
+      return turnOn ? `Turning ${b.switch.title || b.title} on…` : said;
     });
+    if (turnOn) this.toggle(b, true);
     this.reveal(what);
     this.nodeEls.get(what)?.focus({ preventScroll: true });
   }
@@ -1029,7 +1067,8 @@ class Canvas {
           } }, icon(on ? "remove" : "add"), h("span", {}, busy ? "Working…" : on ? "Turn off" : "Turn on"))));
       if (asking) {
         out.push(h("div", { class: "fc-confirm" },
-          h("p", { class: "fc-help" }, h("b", {}, `Turn ${name} off?`), ` ${b.switch.off_note || "Its settings are kept, so turning it on again restores it."}`),
+          h("p", { class: "fc-help" }, h("b", {}, `Turn ${name} off?`), ` ${b.switch.off_note || "Its settings are kept, so turning it on again restores it."}`,
+            b.switch.managed ? "" : " It leaves the canvas too; + Add brings it back."),
           h("div", { class: "fc-row" },
             h("button", { type: "button", class: "fc-btn small primary edit", disabled: ro || busy, onclick: () => {
               this.confirmOff = null;
@@ -1053,7 +1092,9 @@ class Canvas {
       row.append(h("button", { type: "button", class: "fc-btn", onclick: () => this.open(b) },
         h("span", {}, `Open ${b.host ? b.title : PAGE_WORDS[b.page] || b.page}`), icon("arrow_forward")));
     }
-    if (!ro) row.append(h("button", { type: "button", class: "fc-btn danger", onclick: () => this.hideSelected() }, icon("visibility_off"), h("span", {}, "Take off the canvas")));
+    if (!ro) row.append(h("button", { type: "button", class: "fc-btn danger", onclick: () => this.hideSelected(), disabled: !!this.confirmOff,
+      title: switchesOff(b) ? `Also turns ${b.switch.title || b.title} off` : null },
+      icon("visibility_off"), h("span", {}, switchesOff(b) ? "Turn off and take off" : "Take off the canvas")));
     out.push(row);
     return out;
   }
@@ -1203,6 +1244,14 @@ class Canvas {
   hideSelected() {
     if (!this.sel || this.sel.kind !== "block" || this.readOnly) return;
     const id = this.sel.id;
+    if (switchesOff(this.block(id))) {
+      // Taking a running extension off the canvas turns it off: the same "Turn it off?" question as its switch.
+      // The block leaves once the server says it is off.
+      this.confirmOff = id;
+      this.panelFor = null;
+      this.render();
+      return;
+    }
     this.change((st) => {
       const said = hideBlock(this.data, st, id);
       if (!said) return false;
