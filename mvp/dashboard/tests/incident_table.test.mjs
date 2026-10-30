@@ -8,7 +8,7 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 
-import { countLine, filterRows, nonce } from "../sentrai_ui/incident_table.mjs";
+import { countLine, filterRows, groupRows, nonce, pickState } from "../sentrai_ui/incident_table.mjs";
 
 const rows = [
   { id: "RSK-2026-001", cells: ["RSK-2026-001", "High", "Password guessing", "web-01", "Open", "On duty", "5 min", "Overdue"] },
@@ -47,4 +47,23 @@ describe("incident table: count line", () => {
 test("every event gets its own n, so one click is acted on once", () => {
   const a = nonce(), b = nonce();
   assert.notEqual(a, b);
+});
+
+describe("incident table: groups and tick boxes (Approvals)", () => {
+  test("without groups, one unnamed group of every row", () => {
+    assert.deepEqual(groupRows(rows, null), [{ label: "", rows }]);
+  });
+  test("rows go under their group in the group's order; an empty group is not drawn", () => {
+    const groups = [{ label: "web-01", ids: ["W-1 (40)", "RSK-2026-001"] }, { label: "game-01", ids: ["RSK-2026-002"] },
+                    { label: "gone", ids: ["RSK-9"] }];
+    const out = groupRows(rows, groups);
+    assert.deepEqual(out.map((g) => [g.label, g.rows.map((r) => r.id)]),
+                     [["web-01", ["W-1 (40)", "RSK-2026-001"]], ["game-01", ["RSK-2026-002"]]]);
+    assert.deepEqual(groupRows(filterRows(rows, "game"), groups).map((g) => g.label), ["game-01"]);
+  });
+  test("a group's tick box is all, some or none", () => {
+    assert.equal(pickState(["a", "b"], new Set(["a", "b", "c"])), "all");
+    assert.equal(pickState(["a", "b"], new Set(["b"])), "some");
+    assert.equal(pickState(["a", "b"], new Set()), "none");
+  });
 });

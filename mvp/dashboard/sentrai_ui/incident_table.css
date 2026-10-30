@@ -25,8 +25,8 @@
 .it-table td { padding: .4rem .6rem; border-bottom: 1px solid var(--line-soft, var(--line)); vertical-align: middle;
                white-space: nowrap; }
 /* One line per incident: long names are cut with "…" (the whole text is in the tip); only What and Needs wrap. */
-.it-table td.cut { max-width: 8rem; overflow: hidden; text-overflow: ellipsis; }
-.it-table td.wrap { white-space: normal; min-width: 9rem; }
+.it-table td.cut { max-width: 7rem; overflow: hidden; text-overflow: ellipsis; }
+.it-table td.wrap { white-space: normal; min-width: 7rem; }
 .it-table tr:last-child td { border-bottom: 0; }
 .it-row.openable { cursor: pointer; }
 .it-row.openable:hover td { background: var(--surface-2); }
@@ -40,7 +40,7 @@
 
 .it-act { width: 1%; white-space: nowrap; }
 /* On a narrow screen the table scrolls sideways, and the buttons stay in view at the right edge. */
-.it-table td.it-act { position: sticky; right: 0; background: var(--surface); }
+.it-table td.it-act { position: sticky; right: 0; background: var(--surface); box-shadow: -1px 0 0 var(--line-soft, var(--line)); }
 .it-table th.it-act-h { position: sticky; right: 0; z-index: 2; }
 .it-btns { display: flex; gap: .35rem; justify-content: flex-end; }
 .it-btn { font: inherit; font-size: .8rem; font-weight: 500; display: inline-flex; align-items: center; gap: .3rem;
@@ -59,3 +59,11 @@
 .it-ask-in .it-in { flex: 0 1 24rem; }
 .it-foot { display: flex; gap: .5rem; justify-content: center; }
 .it-foot:empty { display: none; }
+
+/* Approvals: tick boxes and group header rows. */
+.it-pick { width: 1%; padding-right: 0 !important; }
+.it-check { width: 1rem; height: 1rem; margin: 0; accent-color: var(--brand-fill); cursor: pointer; }
+.it-group td { background: var(--surface-2); }
+.it-fold { font: inherit; display: inline-flex; align-items: center; gap: .45rem; border: 0; padding: .15rem 0;
+           background: none; color: var(--ink); cursor: pointer; }
+.it-fold:focus-visible, .it-check:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }

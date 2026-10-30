@@ -4,9 +4,13 @@
    300 cards with 8 buttons each. Filtering and "Show more" happen here, without a round trip. A button
    that needs a reason (Reject, Make permanent) opens a small line under its row to type it.
 
-   Python gets two kinds of events, each with a fresh n so the same click is never acted on twice:
+   With pick (Approvals), a tick box starts each row, and with groups the rows sit under a header row per group
+   ("198.51.100.7 · 12 waiting") that folds, with a tick box that picks the whole group.
+
+   Python gets three kinds of events, each with a fresh n so the same click is never acted on twice:
      act  {id, a, reason, n}   a quick button was pressed (a is the action, as shaping.quick_action_list names it)
      open {id, n}              a row was clicked: Python draws that incident's card under the table
+     pick {ids, on, n}         tick boxes: these incidents are picked (on) or not any more
    A Streamlit component (st.components.v2): no iframe, nothing from the internet, colours from the console. */
 
 /** The rows whose text holds every word of the filter (case-insensitive). */
@@ -29,6 +33,21 @@ export function countLine(shown, total, filtered) {
 
 // What, Machine, Status, Owner, Open for, Needs: the classes of the cells after the id and the severity.
 const CELL_CLASS = ["wrap", "cut", null, "cut", null, "wrap it-needs"];
+
+/** The groups as they are drawn: each with the rows that pass the filter, in the group's order; a group with
+    none left is not drawn. Without groups, one unnamed group of every row. */
+export function groupRows(rows, groups) {
+  if (!groups || !groups.length) return [{ label: "", rows: rows || [] }];
+  const byId = new Map((rows || []).map((r) => [r.id, r]));
+  return groups.map((g) => ({ label: g.label, rows: (g.ids || []).map((id) => byId.get(id)).filter(Boolean) }))
+    .filter((g) => g.rows.length);
+}
+
+/** A tick box for a set of ids: "all", "some" or "none" of them picked. */
+export function pickState(ids, picked) {
+  const n = ids.filter((id) => picked.has(id)).length;
+  return n === 0 ? "none" : n === ids.length ? "all" : "some";
+}
 
 let seq = 0;
 export const nonce = () => `${Date.now().toString(36)}-${(seq += 1)}`;
@@ -64,6 +83,7 @@ class IncidentTable {
     this.query = "";
     this.asking = null;      // {id, a} while a reason line is open
     this.busy = new Set();   // "id:a" pressed and not answered by a new draw yet
+    this.folded = new Set(); // group labels folded away
     this.filter = h("input", { class: "it-in", type: "search", placeholder: "Filter: id, address, owner, machine…",
                                "aria-label": "Filter the incidents", oninput: () => {
                                  this.query = this.filter.value; this.draw(); } });
@@ -84,7 +104,10 @@ class IncidentTable {
     this.busy.clear();  // a new draw from Python answers every press made before it
     if (!this.limit) this.limit = data.page_size || 25;
     if (this.asking && !(data.rows || []).some((r) => r.id === this.asking.id)) this.asking = null;
-    this.head.replaceChildren(h("tr", {}, ...(data.columns || []).map((c) => h("th", { scope: "col" }, c)),
+    this.picked = new Set(data.picked || []);
+    this.head.replaceChildren(h("tr", {}, data.pick ? h("th", { scope: "col", class: "it-pick" },
+                                  h("span", { class: "it-sr" }, "Pick")) : null,
+                                ...(data.columns || []).map((c) => h("th", { scope: "col" }, c)),
                                 h("th", { scope: "col", class: "it-act-h" }, h("span", { class: "it-sr" }, "Actions"))));
     this.draw();
   }
@@ -92,27 +115,41 @@ class IncidentTable {
   draw() {
     const all = this.data.rows || [];
     const rows = filterRows(all, this.query);
-    const shown = rows.slice(0, this.limit);
+    const groups = groupRows(rows, this.data.groups);
+    const total = groups.reduce((n, g) => n + g.rows.length, 0);
     this.filter.hidden = all.length <= 5;
-    this.count.textContent = all.length ? countLine(shown.length, all.length, rows.length) : "";
-    const cols = (this.data.columns || []).length + 1;
+    const cols = (this.data.columns || []).length + 1 + (this.data.pick ? 1 : 0);
     const out = [];
-    if (!all.length || !rows.length) {
+    if (!all.length || !total) {
       out.push(h("tr", { class: "it-empty" }, h("td", { colspan: cols },
         all.length ? "Nothing matches the filter." : this.data.empty || "Nothing here.")));
     }
-    for (const r of shown) {
-      out.push(this.row(r));
-      if (this.asking && this.asking.id === r.id) out.push(this.reasonRow(r, cols));
+    let left = this.limit;  // Show more counts incident rows, not group headers
+    let shown = 0;
+    for (const g of groups) {
+      if (left <= 0) break;
+      if (g.label) out.push(this.groupRow(g, cols));
+      if (g.label && this.folded.has(g.label)) continue;
+      for (const r of g.rows.slice(0, left)) {
+        out.push(this.row(r));
+        if (this.asking && this.asking.id === r.id) out.push(this.reasonRow(r, cols));
+      }
+      const n = Math.min(left, g.rows.length);
+      left -= n;
+      shown += n;
     }
+    // Folded groups count as shown: their rows are one click away, not behind Show more.
+    const hidden = groups.filter((g) => g.label && this.folded.has(g.label)).reduce((n, g) => n + g.rows.length, 0);
+    shown = Math.min(total, shown + hidden);
+    this.count.textContent = all.length ? countLine(shown, all.length, total) : "";
     this.body.replaceChildren(...out);
-    const more = rows.length - shown.length;
+    const more = total - shown;
     const size = this.data.page_size || 25;
     this.foot.replaceChildren(...(more > 0 ? [
       h("button", { class: "it-btn", type: "button", onclick: () => { this.limit += size; this.draw(); } },
         icon("expand_more"), `Show ${Math.min(size, more)} more`),
       more > size ? h("button", { class: "it-btn ghost", type: "button",
-                                  onclick: () => { this.limit = rows.length; this.draw(); } }, `Show all ${rows.length}`) : null,
+                                  onclick: () => { this.limit = total; this.draw(); } }, `Show all ${total}`) : null,
     ] : []));
   }
 
@@ -122,6 +159,7 @@ class IncidentTable {
     const tr = h("tr", { class: `it-row${r.open ? " openable" : ""}${selected ? " selected" : ""}`,
                          tabindex: r.open ? "0" : null, "aria-selected": r.open ? String(selected) : null,
                          title: r.open ? "Open this incident to assign, resolve or decide" : null },
+      this.data.pick ? h("td", { class: "it-pick" }, this.pickBox([r.id], `Pick ${r.id}`)) : null,
       h("td", { class: "it-id" }, id),
       h("td", {}, h("span", { class: "it-pill", style: `--c:${r.sev}` }, sev)),
       ...rest.map((c, i) => h("td", { class: CELL_CLASS[i] || null, title: CELL_CLASS[i] === "cut" ? c : null }, c)),
@@ -134,6 +172,31 @@ class IncidentTable {
       });
     }
     return tr;
+  }
+
+  /** A group's header row: fold it, see how many wait, and pick all of them with one tick. */
+  groupRow(g, cols) {
+    const folded = this.folded.has(g.label);
+    const fold = h("button", { class: "it-fold", type: "button", "aria-expanded": String(!folded),
+                               onclick: () => { if (folded) this.folded.delete(g.label); else this.folded.add(g.label); this.draw(); } },
+      icon(folded ? "chevron_right" : "expand_more"), h("b", {}, g.label), h("span", { class: "it-count" }, `${g.rows.length} waiting`));
+    const ids = g.rows.map((r) => r.id);
+    return h("tr", { class: "it-group" },
+      this.data.pick ? h("td", { class: "it-pick" }, this.pickBox(ids, `Pick all ${ids.length} from ${g.label}`)) : null,
+      h("td", { colspan: cols - (this.data.pick ? 1 : 0) }, fold));
+  }
+
+  pickBox(ids, label) {
+    const state = pickState(ids, this.picked);
+    const box = h("input", { type: "checkbox", class: "it-check", "aria-label": label, title: label,
+                             checked: state === "all" });
+    box.indeterminate = state === "some";
+    box.addEventListener("change", () => {
+      for (const id of ids) { if (box.checked) this.picked.add(id); else this.picked.delete(id); }
+      this.draw();  // ticks show at once; Python answers with the bar for the picked ones
+      this.setTrigger("pick", { ids, on: box.checked, n: nonce() });
+    });
+    return box;
   }
 
   button(r, b) {

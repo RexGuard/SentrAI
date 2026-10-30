@@ -1093,15 +1093,10 @@ def quick_actions(inc: dict, where: str) -> None:
             run_action(f"Acknowledged {inc_id}", lambda: client.ack(inc_id, op))
 
 
-def incident_row(inc: dict, where: str, note: str = "", details=None, pick: bool = False) -> None:
-    """One short line per incident with its quick buttons; everything else waits behind Details.
-    With pick, a tick box in front adds the incident to the Approvals page's bulk selection."""
+def incident_row(inc: dict, where: str, note: str = "", details=None) -> None:
+    """One short line per incident with its quick buttons; everything else waits behind Details."""
     with card(name=re.sub(r"[^A-Za-z0-9_-]", "_", f"{where}-{inc.get('id')}")):
-        if pick:
-            p, a, b = st.columns([0.3, 3, 2], vertical_alignment="center")
-            pick_box(p, str(inc.get("id")))
-        else:
-            a, b = st.columns([3, 2], vertical_alignment="center")
+        a, b = st.columns([3, 2], vertical_alignment="center")
         sev = str(inc.get("severity") or "unknown").capitalize()
         a.markdown(
             f'<div class="inc-row"><div class="inc-head">'
@@ -1153,17 +1148,21 @@ def quick_act(inc: dict, action: str, reason: str = "") -> None:
         st.rerun(scope="fragment")
 
 
-def incident_table(key: str, df, incidents: list[dict], contacts: list[dict], empty_text: str) -> None:
+def incident_table(key: str, df, incidents: list[dict], contacts: list[dict], empty_text: str, pick: bool = False,
+                   groups: list[tuple[str, list[dict]]] | None = None, details=None) -> None:
     """A list of incidents as one table (sentrai_ui/incident_table.mjs): a row each, its quick buttons at the end.
-    Clicking a row opens that incident's card under the table; only that one card is drawn."""
+    Clicking a row opens that incident's card under the table (details(inc), or the incident card); only that one
+    card is drawn. With pick, tick boxes add to the Approvals page's picked ones; groups put rows under headers."""
     if INCIDENT_TABLE is None:  # Streamlit older than 1.51: the plain table and the picker
         table(df, empty_text)
         return
     pick_key = f"open_{key}"
     ro, off = why_locked() or "", protection_off()
     data = sh.incident_table_data(df, incidents, lambda inc: sh.quick_action_list(inc, ro, off),
-                                  selected=st.session_state.get(pick_key, ""), empty=empty_text)
-    out = INCIDENT_TABLE(key=key, data=data, on_act_change=lambda: None, on_open_change=lambda: None)
+                                  selected=st.session_state.get(pick_key, ""), empty=empty_text,
+                                  picked=picked_ids() if pick else None, groups=groups)
+    out = INCIDENT_TABLE(key=key, data=data, on_act_change=lambda: None, on_open_change=lambda: None,
+                         on_pick_change=lambda: None)
     seen = st.session_state.setdefault("table_events", {})
     by_id = {str(i.get("id")): i for i in incidents}
     opened = out.get("open")
@@ -1171,6 +1170,12 @@ def incident_table(key: str, df, incidents: list[dict], contacts: list[dict], em
         seen[f"{key}_open"] = opened.get("n")
         oid = str(opened.get("id"))
         st.session_state[pick_key] = "" if st.session_state.get(pick_key) == oid else oid  # a second click closes it
+        st.rerun(scope="fragment")
+    ticked = out.get("pick")
+    if pick and ticked and ticked.get("n") != seen.get(f"{key}_pick"):
+        seen[f"{key}_pick"] = ticked.get("n")
+        ids = [str(i) for i in ticked.get("ids") or [] if str(i) in by_id]
+        (picked_ids().update if ticked.get("on") else picked_ids().difference_update)(ids)
         st.rerun(scope="fragment")
     act = out.get("act")
     if act and act.get("n") != seen.get(f"{key}_act"):
@@ -1186,7 +1191,7 @@ def incident_table(key: str, df, incidents: list[dict], contacts: list[dict], em
             if close.button("Close", icon=":material/close:", key=f"close_{key}", width="stretch"):
                 st.session_state[pick_key] = ""
                 st.rerun(scope="fragment")
-            incident_card(inc, contacts, f"{key}_")
+            (details or (lambda inc: incident_card(inc, contacts, f"{key}_")))(inc)
 
 
 # ------------------------------------------------------------------ pages
@@ -1711,17 +1716,6 @@ def picked_ids() -> set[str]:
     return st.session_state.setdefault("picked", set())
 
 
-def set_picked(ids: list[str], key: str) -> None:
-    (picked_ids().update if st.session_state[key] else picked_ids().difference_update)(ids)
-
-
-def pick_box(where, inc_id: str) -> None:
-    key = f"pick_{inc_id}"
-    st.session_state[key] = inc_id in picked_ids()  # the set decides, before the box is drawn
-    where.checkbox("Pick", key=key, label_visibility="collapsed", help="Pick to approve or reject together",
-                   on_change=set_picked, args=([inc_id], key))
-
-
 def clear_picks() -> None:
     picked_ids().clear()
     st.session_state["pick_round"] = st.session_state.get("pick_round", 0) + 1  # empties the reason boxes too
@@ -1837,12 +1831,7 @@ def group_card(n: int, name: str, members: list[dict], saved: dict[str, list[str
         if ungroup.button("Ungroup", icon=":material/link_off:", key=f"ungroup_{name}", width="stretch",
                           disabled=locked(), help=why_locked("act", "Put these back in the list; nothing else changes")):
             save_groups({g: m for g, m in saved.items() if g != name}, f"Ungrouped {name}")
-        with st.expander(f"{len(members)} incident{'s' if len(members) != 1 else ''}", icon=":material/list:"):
-            for inc in members:
-                incident_row(inc, f"grp_{name}", sh.decision_verb(inc))
-
-
-GROUP_ICONS = {"attacker": "person", "machine": "dns", "type": "category"}
+        incident_table(f"grp_table_{n}", sh.board_rows(members), members, [], "", details=approval_details)
 
 
 @st.fragment
@@ -1862,7 +1851,16 @@ def page_approvals() -> None:
                 unsafe_allow_html=True)
     saved = cfg.approval_groups()
     made, rest = sh.saved_groups(waiting, saved)
-    by = sh.APPROVAL_GROUPS.get(st.segmented_control("Group by", list(sh.APPROVAL_GROUPS), key="appr_group") or "")
+    # The ones still in the list, and the groups made by hand, each on its own tab: only the tab shown is drawn.
+    tabs = {"waiting": f"Waiting ({len(rest)})", **({"groups": f"Your groups ({len(made)})"} if made else {})}
+    if st.session_state.get("appr_tab") not in tabs:
+        st.session_state["appr_tab"] = "waiting"
+    tab = st.segmented_control("Part of the Approvals page", list(tabs), format_func=tabs.get, key="appr_tab",
+                               label_visibility="collapsed") or "waiting"
+    if tab == "groups":
+        for n, (name, members) in enumerate(made):
+            group_card(n, name, members, saved)
+        return
     # Read-only roles see the list and the groups, but get no tick boxes: there is nothing they could do with them.
     picking = not locked() and len(rest) > 1
     if picking:
@@ -1871,34 +1869,23 @@ def page_approvals() -> None:
         picked = [i for i in rest if str(i.get("id")) in picked_ids()]
         if picked:
             bulk_bar(picked, waiting, saved)
-    if made:
-        section("Your groups", f"{len(made)} made by hand", "folder_copy")
-        for n, (name, members) in enumerate(made):
-            group_card(n, name, members, saved)
-        if rest:
-            section("Not grouped", f"{len(rest)} waiting", "inbox")
-    for label, group in sh.group_approvals(rest, by):
-        ids = [str(i.get("id")) for i in group]
-        if label:
-            section(html.escape(label), f"{len(group)} waiting", GROUP_ICONS.get(by, ""))
-        if picking and len(group) > 1:
-            key = f"pickall_{by}_{label}"
-            st.session_state[key] = set(ids) <= picked_ids()
-            st.checkbox(f"Pick all {len(group)}" + (f" from {label}" if label else ""), key=key,
-                        on_change=set_picked, args=(ids, key))
-        for inc in group:
-            verb = sh.decision_verb(inc)
+    by = sh.APPROVAL_GROUPS.get(st.segmented_control("Group by", list(sh.APPROVAL_GROUPS), key="appr_group") or "")
+    with card(name="waiting"):
+        incident_table("appr_table", sh.board_rows(rest), rest, [],
+                       "Everything waiting is in one of your groups." if made else "Nothing waiting for a decision.",
+                       pick=picking, groups=sh.group_approvals(rest, by) if by else None, details=approval_details)
 
-            def details(inc=inc) -> None:
-                incident_summary(inc)
-                if inc.get("category") == "staff_report":
-                    st.info("Someone at the business reported this. Read it and close it with a note under Staff reports; "
-                            "closing every report on it closes this incident too.", icon=":material/campaign:")
-                    if st.button("Open Staff reports", key=f"to_staff_{inc.get('id')}", icon=":material/arrow_forward:"):
-                        go("staff")
-                decision_controls(inc)
-                table(sh.action_rows(inc), "No containment actions yet.")
-            incident_row(inc, "appr", verb, details, pick=picking)
+
+def approval_details(inc: dict) -> None:
+    """What opens under the Approvals table: the incident, its decision form and what was done so far."""
+    incident_summary(inc)
+    if inc.get("category") == "staff_report":
+        st.info("Someone at the business reported this. Read it and close it with a note under Staff reports; "
+                "closing every report on it closes this incident too.", icon=":material/campaign:")
+        if st.button("Open Staff reports", key=f"to_staff_{inc.get('id')}", icon=":material/arrow_forward:"):
+            go("staff")
+    decision_controls(inc)
+    table(sh.action_rows(inc), "No containment actions yet.")
 
 
 STAFF_FILTERS = {"Open": "open", "New": "new", "Reviewing": "reviewing", "Resolved": "resolved",

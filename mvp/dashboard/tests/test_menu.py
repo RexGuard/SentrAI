@@ -472,9 +472,18 @@ def test_approvals_rows_roll_back_in_one_click(fake_core, tmp_path, monkeypatch)
     at.session_state["page"] = "approvals"
     at.run()
     assert not at.exception, at.exception
-    quick = [b for b in at.button if b.key == f"qb_appr_{iid}"]
-    assert quick, [b.key for b in at.button]
-    quick[0].click().run()
+    table = next(el for el in at.get("bidi_component") if el.proto.component_name.endswith("incident_table"))
+    row = next(r for r in json.loads(table.proto.json)["rows"] if r["id"] == iid)
+    assert [b["a"] for b in row["actions"]] == ["rollback", "permanent"]
+    try:  # what the row's Roll back does in a browser: the table's "act" trigger (Streamlit internals)
+        from streamlit.components.v2.bidi_component.main import _make_trigger_id
+        from streamlit.proto.WidgetStates_pb2 import WidgetState
+        states = at._tree.get_widget_states()
+    except (ImportError, AttributeError) as exc:
+        pytest.skip(f"cannot press a table's button in this Streamlit's AppTest: {exc}")
+    states.widgets.append(WidgetState(id=_make_trigger_id(table.proto.id, "events"), json_trigger_value=json.dumps(
+        [{"event": "act", "value": {"id": iid, "a": "rollback", "reason": "", "n": "1"}}])))
+    at._run(states)
     # AppTest cannot rerun just a fragment, so run_action's refresh raises here; in a browser it reruns the page part.
     assert all("fragment" in str(e.value) for e in at.exception), at.exception
     inc = requests.get(f"{fake_core}/incidents/{iid}", timeout=3).json()
