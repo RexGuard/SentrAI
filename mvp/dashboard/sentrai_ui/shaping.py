@@ -2415,9 +2415,11 @@ def quick_action_list(inc: dict, read_only: str = "", protection_off: bool = Fal
 
 
 def incident_table_data(df: pd.DataFrame, incidents: Iterable[dict], actions_for=None, selected: str = "",
-                        empty: str = "Nothing here.", page_size: int = 25) -> dict:
+                        empty: str = "Nothing here.", page_size: int = 25, picked: Iterable[str] | None = None,
+                        groups: list[tuple[str, list[dict]]] | None = None) -> dict:
     """board_rows' table for the incident table component (incident_table.mjs): one row per incident with
-    its quick buttons in the last column. A wave's row ("W-1 (40)") has no buttons and does not open."""
+    its quick buttons in the last column. A wave's row ("W-1 (40)") has no buttons and does not open.
+    picked (not None) puts a tick box in front of each row; groups puts the rows under a header row each."""
     by_id = {str(i.get("id")): i for i in incidents or []}
     rows = []
     for rec in df.to_dict("records"):
@@ -2431,4 +2433,7 @@ def incident_table_data(df: pd.DataFrame, incidents: Iterable[dict], actions_for
             "actions": (actions_for(inc) if actions_for else []) if inc is not None else [],
         })
     return {"columns": ["Incident", "Severity", "What", "Machine", "Status", "Owner", "Open for", "Needs"],
-            "rows": rows, "selected": selected, "empty": empty, "page_size": page_size}
+            "rows": rows, "selected": selected, "empty": empty, "page_size": page_size,
+            "pick": picked is not None, "picked": sorted(picked or []),
+            "groups": [{"label": label, "ids": [str(i.get("id")) for i in members]} for label, members in groups or []
+                       if label] or None}

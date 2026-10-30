@@ -54,6 +54,16 @@ def test_table_data_has_a_row_per_incident_and_waves_do_not_open():
     assert len(data["columns"]) == len(by_id["RSK-1"]["cells"]) and data["selected"] == "RSK-1"
 
 
+def test_approvals_tables_carry_the_tick_boxes_and_the_groups():
+    incs = [_inc(id="RSK-1", src_ip="198.51.100.7"), _inc(id="RSK-2", src_ip="198.51.100.8")]
+    plain = sh.incident_table_data(sh.board_rows(incs), incs)
+    assert not plain["pick"] and plain["groups"] is None
+    data = sh.incident_table_data(sh.board_rows(incs), incs, picked={"RSK-2"},
+                                  groups=[("198.51.100.7", incs[:1]), ("198.51.100.8", incs[1:])])
+    assert data["pick"] and data["picked"] == ["RSK-2"]
+    assert data["groups"] == [{"label": "198.51.100.7", "ids": ["RSK-1"]}, {"label": "198.51.100.8", "ids": ["RSK-2"]}]
+
+
 def test_an_empty_list_is_an_empty_table():
     data = sh.incident_table_data(pd.DataFrame(columns=sh.BOARD_COLUMNS), [], empty="All quiet")
     assert data["rows"] == [] and data["empty"] == "All quiet"

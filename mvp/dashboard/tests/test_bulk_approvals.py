@@ -1,4 +1,6 @@
 """Approvals: tick several incidents (or a whole group) and approve, reject, roll back or keep them in one go."""
+import json
+
 import pytest
 import requests
 
@@ -81,6 +83,35 @@ def _open_two(fake_core):
     return [i["id"] for i in incs if i["status"] == "open"]
 
 
+def _table(at, key="appr_table"):
+    """The Approvals table (incident_table.mjs) with the data Python gave it, or None."""
+    found = [(el, json.loads(el.proto.json)) for el in at.get("bidi_component")
+             if el.proto.component_name.endswith("incident_table") and key in el.proto.id]
+    return found[0] if found else (None, None)
+
+
+def _send(at, event: str, value: dict, key="appr_table") -> None:
+    """What the table does in a browser: set its trigger, which reruns the page part."""
+    try:  # Streamlit internals, not a promise: skip rather than fail when they move
+        from streamlit.components.v2.bidi_component.main import _make_trigger_id
+        from streamlit.proto.WidgetStates_pb2 import WidgetState
+        states = at._tree.get_widget_states()
+        run = at._run
+    except (ImportError, AttributeError) as exc:
+        pytest.skip(f"cannot press the table in this Streamlit's AppTest: {exc}")
+    el, _ = _table(at, key)
+    states.widgets.append(WidgetState(id=_make_trigger_id(el.proto.id, "events"),
+                                      json_trigger_value=json.dumps([{"event": event, "value": value}])))
+    run(states)
+
+
+def _pick(at, ids, on=True, n="1") -> None:
+    _send(at, "pick", {"ids": ids, "on": on, "n": n})
+    assert all("fragment" in str(e.value) for e in at.exception), at.exception  # AppTest can't rerun a fragment
+    at.run()
+    assert not at.exception, at.exception
+
+
 def test_pick_all_then_reject_with_one_reason(fake_core, tmp_path, monkeypatch):
     ids = _open_two(fake_core)
     assert len(ids) >= 2
@@ -88,8 +119,10 @@ def test_pick_all_then_reject_with_one_reason(fake_core, tmp_path, monkeypatch):
     at.run()
     assert not at.exception, at.exception
     assert not [b for b in at.button if b.key == "bulk_clear"]  # no bar until something is picked
-    next(c for c in at.checkbox if c.label.startswith("Pick all")).check().run()
-    assert not at.exception, at.exception
+    _, data = _table(at)
+    assert data["pick"] and data["picked"] == [] and {r["id"] for r in data["rows"]} >= set(ids)
+    _pick(at, ids)
+    assert _table(at)[1]["picked"] == sorted(ids)
     at.text_input(key="brj_bulk_0").set_value("Our own scanner").run()
     reject = next(b for b in at.button if b.key == "br_bulk_0")
     assert reject.label == f"Reject all {len(ids)}"
@@ -104,14 +137,15 @@ def test_pick_all_then_reject_with_one_reason(fake_core, tmp_path, monkeypatch):
     assert all(d.get("justification") == "Our own scanner" and d.get("operator") == "erick" for d in decisions[-len(ids):])
 
 
-def test_group_by_attacker_shows_a_heading_per_ip(fake_core, tmp_path, monkeypatch):
+def test_group_by_attacker_shows_a_header_row_per_ip(fake_core, tmp_path, monkeypatch):
     _open_two(fake_core)
     at = _approvals(fake_core, tmp_path, monkeypatch)
     at.run()
+    assert _table(at)[1]["groups"] is None  # not grouping: one plain list
     at.segmented_control(key="appr_group").set_value("Attacker").run()
     assert not at.exception, at.exception
-    text = " ".join(m.value for m in at.markdown)
-    assert "198.51.100.7" in text and "198.51.100.8" in text
+    labels = [g["label"] for g in _table(at)[1]["groups"]]
+    assert "198.51.100.7" in labels and "198.51.100.8" in labels
 
 
 def test_auditor_gets_no_tick_boxes(fake_core, tmp_path, monkeypatch):
@@ -120,7 +154,9 @@ def test_auditor_gets_no_tick_boxes(fake_core, tmp_path, monkeypatch):
     at = _approvals(fake_core, tmp_path, monkeypatch)
     at.run()
     assert not at.exception, at.exception
-    assert not [c for c in at.checkbox if c.label == "Pick" or c.label.startswith("Pick all")]
+    _, data = _table(at)
+    assert not data["pick"]
+    assert all(b["disabled"] for r in data["rows"] for b in r["actions"])
 
 
 def test_group_picked_then_decide_the_group_and_ungroup(fake_core, tmp_path, monkeypatch):
@@ -129,19 +165,30 @@ def test_group_picked_then_decide_the_group_and_ungroup(fake_core, tmp_path, mon
     ids = _open_two(fake_core)
     at = _approvals(fake_core, tmp_path, monkeypatch)
     at.run()
-    next(c for c in at.checkbox if c.label.startswith("Pick all")).check().run()
+    _pick(at, ids)
     at.text_input(key="gname_0").set_value("Pen test").run()
     next(b for b in at.button if b.key == "gsave_0").click().run()
     assert all("fragment" in str(e.value) for e in at.exception), at.exception
     assert approval_groups() == {"Pen test": ids}
     at = _approvals(fake_core, tmp_path, monkeypatch)
+    at.session_state["appr_tab"] = "groups"
     at.run()
     assert not at.exception, at.exception
     assert "Pen test" in " ".join(m.value for m in at.markdown)
-    assert not [c for c in at.checkbox if c.label == "Pick"]  # everything is in the group now
+    _, data = _table(at, "grp_table_0")
+    assert {r["id"] for r in data["rows"]} == set(ids) and not data["pick"]
     assert next(b for b in at.button if b.key == "br_grp_Pen test_0").label == f"Reject all {len(ids)}"
     next(b for b in at.button if b.key == "ungroup_Pen test").click().run()
     assert approval_groups() == {}
+
+
+def test_only_the_waiting_tab_until_a_group_is_made(fake_core, tmp_path, monkeypatch):
+    _open_two(fake_core)
+    at = _approvals(fake_core, tmp_path, monkeypatch)
+    at.session_state["appr_tab"] = "groups"  # no groups yet: that tab is not there, so the list shows
+    at.run()
+    assert not at.exception, at.exception
+    assert at.session_state["appr_tab"] == "waiting" and _table(at)[0] is not None
 
 
 def test_fingerprint_ignores_heartbeats_but_not_real_changes():
@@ -155,18 +202,19 @@ def test_while_picking_the_list_holds_still_and_picks_survive(fake_core, tmp_pat
     ids = _open_two(fake_core)
     at = _approvals(fake_core, tmp_path, monkeypatch)
     at.run()
-    at.checkbox(key=f"pick_{ids[0]}").check().run()
+    _pick(at, [ids[0]])
     assert at.session_state["picked"] == {ids[0]}
     requests.post(f"{fake_core}/dev/trigger/port_scan", params={"src_ip": "192.0.2.50"}, timeout=3)
     at.run()  # a redraw while picking: same list, same tick
     assert not at.exception, at.exception
-    rows = {c.key for c in at.checkbox if c.key and c.key.startswith("pick_") and not c.key.startswith("pickall")}
-    assert rows == {f"pick_{i}" for i in ids}
-    assert at.checkbox(key=f"pick_{ids[0]}").value is True
+    _, data = _table(at)
+    assert {r["id"] for r in data["rows"]} == set(ids) and data["picked"] == [ids[0]]
+    _pick(at, [ids[0]], on=False, n="2")
+    assert at.session_state["picked"] == set()
+    _pick(at, [ids[1]], n="3")
     next(b for b in at.button if b.key == "bulk_clear").click().run()
     assert all("fragment" in str(e.value) for e in at.exception), at.exception  # AppTest can't rerun a fragment
     at.run()
     assert at.session_state["picked"] == set()
     # Clear forgets the snapshot too, so the new incident shows up now.
-    rows = {c.key for c in at.checkbox if c.key and c.key.startswith("pick_") and not c.key.startswith("pickall")}
-    assert len(rows) == len(ids) + 1
+    assert len(_table(at)[1]["rows"]) == len(ids) + 1
