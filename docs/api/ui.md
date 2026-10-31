@@ -56,6 +56,18 @@ A one-time join code, valid 24 hours, with the commands to paste on the new mach
 
 **Returns** `{"code": "...", "expires_at": "...", "https": true, "pin": "...", "commands": {"linux": "...", "windows": "..."}}`.
 
+## Guided setup
+
+Cyanide's setup questions on the Chat page (`mvp/setup_chat.py`). The conversation lives in the core's memory for the signed-in person, never in the chat history; secret answers are shown as dots. Nothing is written until the person confirms the summary, and saving needs the `configure` permission.
+
+### `GET /ui/setup`
+
+**Returns** `done` (this machine was set up before), `assistant`, `active`, and while a conversation is open `state` (`asking`, `review`, `saved`, `cancelled`), `messages` (`role` is `assistant` or `user`), `options` (`value`, `label`) and `secret` (the next answer is hidden).
+
+### `POST /ui/setup/start`, `POST /ui/setup/answer`, `POST /ui/setup/leave`
+
+Start a conversation (replacing any open one), answer it (`{"text": "..."}`: an option's value or typed words; `409` when none is open), or close it. All three return the same shape as `GET`.
+
 ## Audit trail
 
 ### `GET /ui/audit`

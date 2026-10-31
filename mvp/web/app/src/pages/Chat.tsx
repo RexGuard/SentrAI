@@ -3,6 +3,7 @@ import { Lightbulb, Send, Trash2 } from 'lucide-react'
 import { api, ApiError } from '../lib/api'
 import { btn, btnPrimary } from '../lib/ui'
 import { useSession } from '../lib/session'
+import { SetupBanner, SetupConversation, type Setup } from './SetupChat'
 
 type Suggestion = {
   kind?: string; incident?: string; decision?: string; label?: string; reason?: string; file_id?: string; finding_id?: string
@@ -86,6 +87,8 @@ export default function Chat() {
   const [about, setAbout] = useState('')
   const [text, setText] = useState('')
   const [asking, setAsking] = useState(false)
+  const [setup, setSetup] = useState<Setup | null>(null)
+  const [later, setLater] = useState(false)
   const end = useRef<HTMLDivElement>(null)
 
   const load = useCallback(async () => {
@@ -95,6 +98,7 @@ export default function Chat() {
     } catch (e) { setError(e instanceof ApiError ? `Chat is not available on this core: ${e.message}` : 'Could not load chat.') }
   }, [])
   useEffect(() => { void load() }, [load])
+  useEffect(() => { api<Setup>('/ui/setup').then(setSetup).catch(() => setSetup(null)) }, [])
   useEffect(() => { end.current?.scrollIntoView({ block: 'end' }) }, [hist?.messages.length, asking])
 
   const ask = async (message: string) => {
@@ -122,6 +126,9 @@ export default function Chat() {
       </header>
       {error && <p role="alert" className="rounded-md border border-line bg-surface p-3 text-bad">{error}</p>}
       {note && <p role="status" className="rounded-md border border-line bg-surface p-3">{note}</p>}
+      {setup?.active ? <SetupConversation setup={setup} onChange={setSetup} onLeave={() => { setSetup({ ...setup, active: false }); setLater(true) }} /> : (
+      <>
+      {setup && <SetupBanner setup={setup} onChange={setSetup} later={later} onLater={() => setLater(true)} />}
       {hist && (
         <>
           <div className="flex flex-wrap items-end gap-3">
@@ -165,6 +172,9 @@ export default function Chat() {
             <button className={btnPrimary} disabled={asking || !text.trim()}><Send size={14} aria-hidden /> Send</button>
           </form>
         </>
+      )}
+      <div className="flex"><button className={btn} onClick={() => void api<Setup>('/ui/setup/start', { body: {} }).then(setSetup).catch(() => {})}>Setup</button></div>
+      </>
       )}
     </section>
   )
