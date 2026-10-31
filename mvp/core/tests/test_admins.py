@@ -389,7 +389,7 @@ def test_reset_forgets_sessions_but_not_what_was_taught(tmp_path):
     c = make_client(tmp_path)
     post(c, accepted(1), sudo(2))
     c.post(f"/incidents/{incidents(c)[0]['id']}/mine", json={"operator": "erick"})
-    c.post("/demo/reset") if any(r.path == "/demo/reset" for r in c.app.routes) else c.core.reset()
+    c.post("/demo/reset") if any(getattr(r, "path", None) == "/demo/reset" for r in c.app.routes) else c.core.reset()
     data = c.get("/admins").json()
     assert data["sessions"] == [] and any(a["address"] == "203.0.113.5" for a in data["addresses"])
 

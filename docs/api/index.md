@@ -315,6 +315,7 @@ curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8000/openapi.json -o sen
 | [Chat and AI](chat.html) | Cyanide's chat, the guided setup and the AI model settings |
 | [Extensions](integrations.html) | Outside services as extensions: add, remove and test them |
 | [Audit trail](audit.html) | The hash-chained record of everything SentrAI did |
+| [Web sign-in](auth.html) | Sign-in for the web dashboard: password, authenticator code and a session cookie |
 | [What SentrAI sends out](outgoing.html) | The responder webhook, the witness protocol and signed links |
 
 ## Keeping this reference true

@@ -22,5 +22,7 @@
   url: /docs/api/integrations.html
 - title: Audit trail
   url: /docs/api/audit.html
+- title: Web sign-in
+  url: /docs/api/auth.html
 - title: What SentrAI sends out
   url: /docs/api/outgoing.html
