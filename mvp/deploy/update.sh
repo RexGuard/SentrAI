@@ -168,13 +168,13 @@ echo "=== sentrai-update $(date -u +%Y-%m-%dT%H:%M:%SZ) ==="
 
 # --- backup and restore --------------------------------------------------------------------
 UNITS=() RUNNING=()  # enabled services, and those of them running now (only these must run afterwards)
-for u in sentrai-core sentrai-collector sentrai-dashboard sentrai-notifier sentrai-agent; do
+for u in sentrai-core sentrai-collector sentrai-dashboard sentrai-web sentrai-notifier sentrai-agent; do
     if unit_file "$u" && systemctl is-enabled --quiet "$u" 2>/dev/null; then
         UNITS+=("$u")
         systemctl is-active --quiet "$u" && RUNNING+=("$u")
     fi
 done
-stop_all() { systemctl stop sentrai.target sentrai-core sentrai-collector sentrai-dashboard sentrai-notifier sentrai-agent 2>/dev/null || true; }
+stop_all() { systemctl stop sentrai.target sentrai-core sentrai-collector sentrai-dashboard sentrai-web sentrai-notifier sentrai-agent 2>/dev/null || true; }
 start_all() {
     [ "$PANEL" = 1 ] && systemctl start sentrai.target
     [ "$AGENT" = 1 ] && systemctl start sentrai-agent
@@ -245,13 +245,17 @@ healthy() {
     local env=/etc/sentrai/sentrai.env u ok=0
     declare -A before=()
     if [ "$PANEL" = 1 ]; then
-        local core dport dscheme=http pport
+        local core dport cport dscheme=http pport
         core="$(sed -n 's/^SENTRAI_CORE_URL=//p' "$env" | tail -1)"
         wait_probe "the core" "${core:-http://127.0.0.1:8000}/health" 60 || ok=1
         dport="$(sed -n 's/^SENTRAI_DASHBOARD_PORT=//p' "$env" | tail -1)"
         grep -q '^STREAMLIT_SERVER_SSL_CERT_FILE=' "$env" && dscheme=https
+        if [ "$ok" = 0 ] && systemctl is-enabled --quiet sentrai-web 2>/dev/null; then
+            wait_probe "the web dashboard" "$dscheme://127.0.0.1:${dport:-8501}/" 90 || ok=1
+        fi
         if [ "$ok" = 0 ] && systemctl is-enabled --quiet sentrai-dashboard; then
-            wait_probe "the dashboard" "$dscheme://127.0.0.1:${dport:-8501}/_stcore/health" 90 || ok=1
+            cport="$(sed -n 's/^SENTRAI_CLASSIC_PORT=//p' "$env" | tail -1)"
+            wait_probe "the classic dashboard" "$dscheme://127.0.0.1:${cport:-${dport:-8501}}/_stcore/health" 90 || ok=1
         fi
         pport="$(sed -n 's/^SENTRAI_PANEL_PORT=//p' "$env" | tail -1)"
         if [ "$ok" = 0 ] && [ -n "$pport" ]; then wait_probe "the agents' port" "https://127.0.0.1:$pport/health" 30 || ok=1; fi
