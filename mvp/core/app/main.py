@@ -19,6 +19,7 @@ import sentrai_paths
 from .reports import build_report, render_markdown, render_pdf
 from . import summary as client_summary
 from . import auth as auth_cookie
+from . import ui_approvals
 from . import ai, anchor, apidocs, depscan, fleet, hardware, integrations, jobs, webhook
 from .extensions import ExtensionError
 from .chat import OperatorChat, default_chat_provider
@@ -420,7 +421,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return
         if path.startswith("/auth/"):
             return  # the web dashboard's sign-in: each of these checks its own cookie (auth.py)
-        if not sent and auth_cookie.check_cookie_request(request) is not None:
+        if not sent and (account := auth_cookie.check_cookie_request(request)) is not None:
+            request.state.account = account
             return  # a signed-in person in the web dashboard, not a script with the token
         if not (sent and hmac.compare_digest(sent.encode(), core.settings.api_token.encode())):
             raise HTTPException(status_code=401, detail="missing or wrong API token "
@@ -442,6 +444,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return response
 
     auth_cookie.install(app, core.admin_signed_in)
+    ui_approvals.install(app, core)
     app.state.core = core
     app.state.chat = chat
     app.state.discovery = discovery
