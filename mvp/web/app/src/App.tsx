@@ -10,6 +10,7 @@ import Incidents from './pages/Incidents'
 import MachinePage from './pages/Machine'
 import Machines from './pages/Machines'
 import Backups from './pages/Backups'
+import { Classifier, Responder } from './pages/Pipeline'
 import Reports from './pages/Reports'
 import Soon from './pages/Soon'
 import Staff from './pages/Staff'
@@ -30,11 +31,13 @@ function Gate() {
         <Route path="/audit" element={<Audit />} />
         <Route path="/team" element={<Team />} />
         <Route path="/staff" element={<Staff />} />
+        <Route path="/classifier" element={<Classifier />} />
+        <Route path="/responder" element={<Responder />} />
         <Route path="/extensions" element={<Extensions />} />
         <Route path="/reports" element={<Reports />} />
         <Route path="/backups" element={<Backups />} />
         <Route path="/incidents" element={<Incidents />} />
-        {MENU.flatMap((g) => g.items).filter((i) => !['/approvals', '/machines', '/chat', '/audit', '/team', '/incidents', '/staff', '/reports', '/backups', '/extensions'].includes(i.to)).map((i) => <Route key={i.to} path={i.to} element={<Soon />} />)}
+        {MENU.flatMap((g) => g.items).filter((i) => !['/approvals', '/machines', '/chat', '/audit', '/team', '/incidents', '/staff', '/reports', '/backups', '/extensions', '/classifier', '/responder'].includes(i.to)).map((i) => <Route key={i.to} path={i.to} element={<Soon />} />)}
         <Route path="*" element={<Navigate to="/approvals" replace />} />
       </Route>
     </Routes>
