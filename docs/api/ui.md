@@ -95,3 +95,13 @@ For a forgotten password or a lost phone: the old password stops working and a l
 ### `POST /ui/team/withdraw`
 
 Withdraw an invite that has not been used. **Body** `{"email": "..."}` **Returns** `{"message": "..."}`.
+
+## Incidents
+
+### `GET /ui/incidents`
+
+Who owns each incident and what still needs a person.
+
+**Query** `closed` (also list resolved and rejected ones) and `mine` (only incidents owned by the signed-in person), both default `false`.
+
+**Returns** `counts` (`open`, `attention`, `overdue`, `escalated`, `unassigned`, `mine`), `todo` (rows that need a person, most urgent first), `todo_waves` (a wave's incidents as one line each), `all` (rows), `waves`, and `contacts` (who an incident can be assigned to). Each row has `id`, `what`, `host`, `severity`, `status`, `owner`, `backup`, `open_for`, `needs`, `closed`, `attention`, `wave` and `summary`. Assign and resolve use `POST /incidents/{iid}/assign` and `/resolve`.
