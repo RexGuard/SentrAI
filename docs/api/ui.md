@@ -65,3 +65,33 @@ The newest audit records in plain words, whether the chain checks out, and who d
 **Query** `limit` (1 to 500, default 60): how many records.
 
 **Returns** `chain_valid`, `first_invalid_seq`, `count`, `head_hash`, `feed` (newest first: `seq`, `time`, `agent`, `type`, `summary`, `hash`) and `agents` (`agent`, `role`, `can_act`, `records`, `last`).
+
+## Team
+
+These need a signed-in Owner or Admin: the API token alone gets `403`, because there is no person to act as. The rules are the console's: only an Owner can add, change or remove an Owner, and there is always at least one Owner. A refused change returns `400` with the reason.
+
+### `GET /ui/team`
+
+**Returns** `me`, `my_role`, `roles`, `invite_hours`, `people` (`email`, `name`, `role`, `role_label`, `authenticator`, `last_sign_in`, `last_ip`) and `invites` waiting to be used.
+
+### `POST /ui/team/invite`
+
+**Body** `{"email": "...", "role": "admin"}` **Returns** `{"code": "...", "path": "/?invite=...", "message": "..."}`. Send the link yourself: it works once, for 72 hours.
+
+### `POST /ui/team/role`
+
+**Body** `{"email": "...", "role": "auditor"}` **Returns** `{"message": "..."}`.
+
+### `POST /ui/team/reset`
+
+For a forgotten password or a lost phone: the old password stops working and a link sets both again.
+
+**Body** `{"email": "..."}` **Returns** `{"code": "...", "path": "/?invite=...", "message": "..."}`.
+
+### `POST /ui/team/remove`
+
+**Body** `{"email": "..."}` **Returns** `{"message": "..."}`.
+
+### `POST /ui/team/withdraw`
+
+Withdraw an invite that has not been used. **Body** `{"email": "..."}` **Returns** `{"message": "..."}`.

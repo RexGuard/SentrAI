@@ -7,6 +7,7 @@ import Audit from './pages/Audit'
 import Chat from './pages/Chat'
 import Machines from './pages/Machines'
 import Soon from './pages/Soon'
+import Team from './pages/Team'
 
 function Gate() {
   const { me, loading } = useSession()
@@ -20,7 +21,8 @@ function Gate() {
         <Route path="/machines" element={<Machines />} />
         <Route path="/chat" element={<Chat />} />
         <Route path="/audit" element={<Audit />} />
-        {MENU.flatMap((g) => g.items).filter((i) => !['/approvals', '/machines', '/chat', '/audit'].includes(i.to)).map((i) => <Route key={i.to} path={i.to} element={<Soon />} />)}
+        <Route path="/team" element={<Team />} />
+        {MENU.flatMap((g) => g.items).filter((i) => !['/approvals', '/machines', '/chat', '/audit', '/team'].includes(i.to)).map((i) => <Route key={i.to} path={i.to} element={<Soon />} />)}
         <Route path="*" element={<Navigate to="/approvals" replace />} />
       </Route>
     </Routes>
