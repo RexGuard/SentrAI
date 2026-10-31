@@ -69,3 +69,11 @@ def test_auditor_reads_but_cannot_write(web):
     assert web.get("/incidents").status_code == 200
     r = web.post("/protection", json={"on": False, "operator": "x"}, headers=WEB)
     assert r.status_code == 403
+
+
+def test_the_signed_in_person_is_the_operator(web):
+    sign_in(web, "owner@example.com")
+    r = web.post("/chat", json={"operator": "someone-else", "message": "What is happening right now?"}, headers=WEB)
+    assert r.status_code == 200
+    asked = [m for m in web.get("/chat").json()["messages"] if m.get("role") == "operator"]
+    assert asked and asked[-1]["operator"] == "owner@example.com"

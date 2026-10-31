@@ -6,10 +6,10 @@ import { defineConfig, loadEnv } from 'vite'
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const core = env.VITE_CORE_URL || 'http://127.0.0.1:8000'
+  const proxy = { '/api': { target: core, changeOrigin: true, rewrite: (p: string) => p.replace(/^\/api/, '') } }
   return {
     plugins: [react(), tailwindcss()],
-    server: {
-      proxy: { '/api': { target: core, changeOrigin: true, rewrite: (p) => p.replace(/^\/api/, '') } },
-    },
+    server: { port: 5173, proxy },
+    preview: { port: 5173, strictPort: true, proxy }, // run-web.ps1 / run-web.sh serve the built console this way
   }
 })

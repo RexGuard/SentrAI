@@ -10,6 +10,7 @@ A request with a session cookie is treated as that person: reads need a signed-i
 """
 from __future__ import annotations
 
+import json
 import secrets
 import threading
 import time
@@ -251,3 +252,48 @@ def install(app: FastAPI, core_notify=None) -> None:
         response.delete_cookie(SESSION_COOKIE, path="/")
         return {"ok": True}
 
+
+
+class OperatorFromSession:
+    """ASGI middleware: a signed-in person is the operator. A JSON write from the web dashboard that names an
+    "operator" gets the session's email there instead, so the audit trail records who really pressed the button,
+    whatever the page sent. Requests with the API token (scripts, the Streamlit console) are left as they are."""
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
+        if scope.get("type") != "http" or scope.get("method") in ("GET", "HEAD", "OPTIONS"):
+            await self.app(scope, receive, send)
+            return
+        request = Request(scope)
+        sent_token = request.headers.get("authorization") or request.headers.get("x-sentrai-token")
+        account = None if sent_token else session_for(request)
+        if account is None:
+            await self.app(scope, receive, send)
+            return
+        chunks, more = [], True
+        while more:
+            message = await receive()
+            chunks.append(message.get("body", b""))
+            more = message.get("more_body", False)
+        body = b"".join(chunks)
+        try:
+            data = json.loads(body) if body else None
+        except ValueError:
+            data = None
+        if isinstance(data, dict) and "operator" in data:
+            data["operator"] = account["email"]
+            body = json.dumps(data).encode()
+            scope = {**scope, "headers": [(k, v) for k, v in scope["headers"] if k != b"content-length"]
+                     + [(b"content-length", str(len(body)).encode())]}
+        done = False
+
+        async def replay() -> dict:
+            nonlocal done
+            if done:
+                return await receive()
+            done = True
+            return {"type": "http.request", "body": body, "more_body": False}
+
+        await self.app(scope, replay, send)
