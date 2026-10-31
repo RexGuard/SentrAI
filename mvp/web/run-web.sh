@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Starts the new web console next to SentrAI (Streamlit keeps running as before). Start SentrAI first (../run.sh).
+# Starts the new web console next to SentrAI (the classic Streamlit dashboard keeps running as before). Start SentrAI first (../run.sh).
 # Builds the console when its source changed, then serves it on http://127.0.0.1:5173, passing /api to the core.
-# Sign in with the same account as the Streamlit console.   ./run-web.sh [core-url]
+# Sign in with the same account as the classic console.   ./run-web.sh [core-url]
 set -euo pipefail
 CORE="${1:-http://127.0.0.1:${SENTRAI_CORE_PORT:-8000}}"
 cd "$(dirname "$0")/app"

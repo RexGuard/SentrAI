@@ -1,13 +1,13 @@
 # SentrAI web console
 
-The new console (React, Vite, Tailwind, Lucide), next to the Streamlit one. Both talk to the same core and use the
-same accounts, so either can be open at the same time. Streamlit stays the fallback until every page has moved.
+The main console (React, Vite, Tailwind, Lucide). Every page of the Streamlit console has moved here. Both talk to the
+same core and use the same accounts, so either can be open at the same time; Streamlit stays as the demo fallback.
 
 ## Run it
 
 1. Start SentrAI as usual: `..\run.ps1` (Windows) or `../run.sh`.
 2. Start the console: `.\run-web.ps1` (Windows) or `./run-web.sh`. Needs Node.js 20 or newer.
-3. Open <http://127.0.0.1:5173> and sign in with your Streamlit account (email, password, authenticator code).
+3. Open <http://127.0.0.1:5173> and sign in with your account (email, password, authenticator code).
 
 The script installs the packages the first time, builds the console whenever its source changed, and passes
 `/api` to the core (`-Core http://127.0.0.1:8100` or `./run-web.sh http://127.0.0.1:8100` for another port).
@@ -15,12 +15,12 @@ For development, `npm run dev` in `app/` does the same with live reload.
 
 ## What is here
 
-| On the new console | Still on Streamlit |
-| --- | --- |
-| Sign-in, Approvals, Incidents, Who gets what, Staff reports, Report something suspicious, Chat (with the guided setup) | |
-| Overview canvas, Collector (with Scout's proposals and the process, threat and package scans), Classifier, Action taker, Automation guardrails (with the limits map) | |
-| Machines, one machine (all its tabs, incl. signed in, services, packages) | |
-| Review, Reports, Audit trail, Backups, Team, Extensions, Configuration | |
+| Pages on the web console |
+| --- |
+| Sign-in, Approvals, Incidents, Who gets what, Staff reports, Report something suspicious, Chat (with the guided setup) |
+| Overview canvas, Collector (with Scout's proposals and the process, threat and package scans), Classifier, Action taker, Automation guardrails (with the limits map) |
+| Machines, one machine (all its tabs, incl. signed in, services, packages) |
+| Review, Reports, Audit trail, Backups, Team, Extensions, Configuration |
 
 ## How it fits together
 

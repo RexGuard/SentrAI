@@ -7,7 +7,7 @@ A working prototype of SentrAI that runs natively on one Windows laptop or Linux
 | Core | `core/` | FastAPI risk engine, rules + Jev classifier, agents (Warden, Gatehouse, Vault, Garrison, Countersign, Watchdog, Scribe, HelpDesk), TTL hotpatches, hash-chained audit log, evidence reports (Markdown/JSON/PDF) | http://127.0.0.1:8000 |
 | Collector | `lab/collector/` | Tails the logs you approve (nginx, sshd, journald, Windows Event Log, Suricata, MySQL/MariaDB, PostgreSQL, MongoDB, or JSON-lines app logs) and sends normalized events to core | |
 | Scout | `lab/scout/` | Finds the security logs on a new system | |
-| Dashboard | `dashboard/` | Streamlit console with a sidebar menu: Configuration (home), Approvals, Collector, Classifier, Action taker, Review (gauge, threshold, risk accumulated), Reports, Audit trail. Menu bubbles flag new malicious activity per part | http://127.0.0.1:8501 |
+| Dashboard (classic) | `dashboard/` | Streamlit console, kept as the demo fallback; the main console is the web dashboard in `web/` with a sidebar menu: Configuration (home), Approvals, Collector, Classifier, Action taker, Review (gauge, threshold, risk accumulated), Reports, Audit trail. Menu bubbles flag new malicious activity per part | http://127.0.0.1:8501 |
 | Notifier | `notifier/` | Telegram bot with Approve / Reject buttons, or console mode without a token | |
 
 The interface between components is defined in [`CONTRACT.md`](CONTRACT.md).
@@ -42,6 +42,8 @@ tail -f .run_logs/core.log              # to watch a component
 If port 8000 or 8501 is taken, pick others: `./run.sh --core-port 8100 --dashboard-port 8601`
 (`.\run.ps1 -CorePort 8100 -DashboardPort 8601` on Windows, or set `SENTRAI_CORE_PORT` /
 `SENTRAI_DASHBOARD_PORT`).
+
+The web dashboard (main console) starts next to it: `web/run-web.sh` (`web\run-web.ps1`), then open http://127.0.0.1:5173. See `web/README.md`.
 
 ### Point it at real logs
 
@@ -247,7 +249,8 @@ Only the configured chat, and people's linked private chats, can press the butto
 Anyone at the business can report something suspicious (a strange email, a pop-up, a login they
 did not make, a stranger at the computers) without a dashboard account:
 
-- **Web:** the dashboard address plus `/?report`, for example `https://server:8501/?report`. No
+- **Web, signed in:** the web dashboard's *Report something suspicious* page (`/report`), for people with a dashboard account.
+- **Web, no account:** the classic dashboard address plus `/?report`, for example `https://server:8501/?report`. No
   sign-in, and the page shows nothing from SentrAI. Set `SENTRAI_REPORT_CODE` to ask for a shared code.
   Staff must be able to reach the dashboard (on a server, add their network to `--protect`).
 - **Telegram:** `/report I got an email asking for my password`. Only the alert chat by default; set
