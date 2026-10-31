@@ -276,6 +276,17 @@ The process scan finds logs; the threat scan (`app/threatscan.py`, `app/threats.
 
 Audit records: `threat_scan`, `file_quarantined`, `file_restored`.
 
+## Dependency scan (packages with known vulnerabilities)
+
+`app/depscan.py` lists what is installed and asks [OSV](https://osv.dev) (the open database behind pip-audit and npm audit) which versions have known vulnerabilities, and which version fixes them.
+
+- **What it reads.** SentrAI's own Python environment; every virtualenv, npm project (`package-lock.json`) and pinned requirements file (`name==version`) under `"dep_scan": {"paths": [...]}` in the system profile or `SENTRAI_DEP_PATHS`; and Debian or Ubuntu packages from dpkg (`SENTRAI_DEP_OS=off` skips them). Only package names and versions are sent to OSV (`SENTRAI_OSV_URL` points it at a mirror). When OSV cannot be reached the scan says so instead of reporting all clear.
+- **What it reports.** One finding per vulnerable package: its version, the lowest version that fixes every known flaw, the worst severity, the advisory ids (GHSA, CVE, USN...) and what to do. OS flaws the distribution has not fixed yet are counted, not listed.
+- **Updates need a person, and can be undone.** Nothing is updated on its own. A finding is `safe` (one press) only when the fix stays in the same major version and SentrAI can undo it: a package in a virtualenv (pip installs the fixed version; Undo reinstalls the old one) or a direct dependency of an npm project (package.json and package-lock.json are copied first; Undo puts them back and runs `npm ci`; a failed update puts them back at once). Everything else says the step to take: SentrAI's own environment (bump the pin in SentrAI's requirements, or the next `sentrai-update` undoes it), pinned files, npm packages pulled in by another one, OS packages (`apt-get install --only-upgrade ...`; apt cannot reliably go back) and fixes across a major version.
+- **Where.** The dashboard's Collector page checks the panel's own machine (read-only). On a joined machine's **Packages** tab, **Check packages** queues a `dep_scan` job; **Update** and **Undo** queue `dep_update` / `dep_rollback` jobs that carry only the finding or update id. The agent looks the package, place and version up in its own last scan (`agent/deps/`), so the panel cannot make a machine install anything else.
+
+Audit records: `dep_scan`, and `machine_job_queued` / `machine_job_done` with the package and both versions.
+
 ## Backups (putting a system back)
 
 `app/backups.py` copies chosen folders, plus SentrAI's own data, on a schedule, so a defaced site or a wiped game server can be put back.

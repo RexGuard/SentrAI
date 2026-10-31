@@ -635,7 +635,7 @@ def machines() -> list[dict]:
 
 # One machine's page has its own address (?machine=web-01&tab=incidents), like a server's page in a game panel.
 MACHINE_TABS = {"Overview": "", "Hardware": "hardware", "Incidents": "incidents", "Blocks": "blocks", "Admins": "admins",
-                "Services": "services", "Scans and backups": "scans", "Agent": "agent"}  # tab label: its name in the address
+                "Services": "services", "Scans and backups": "scans", "Packages": "packages", "Agent": "agent"}  # tab label: its name in the address
 
 
 def follow_address() -> None:
@@ -2924,6 +2924,7 @@ def page_collector() -> None:
     scout_proposals()
     log_discovery()
     threat_panel()
+    deps_panel()
     with card():
         section("Malicious events collected", "newest first", "warning")
         table(sh.classification_rows(records)[["Time", "Event", "Category", "Layer agent", "Incident", "Raw log line"]],
@@ -3048,6 +3049,63 @@ def threat_row(f: dict) -> None:
     if c2.button("Quarantine", key=f"quar_{f.get('id')}", icon=":material/block:", disabled=locked(), help=why_locked()):
         run_action(f"Quarantined {f.get('path')}",
                    lambda fid=f.get("id"): client.quarantine(fid, st.session_state.operator), rerun=False)
+        st.rerun()
+
+
+def deps_panel() -> None:
+    """Dependency scan of this machine: which installed packages have known vulnerabilities."""
+    with card():
+        section("Check packages for known vulnerabilities", "read-only · names and versions are looked up in OSV · "
+                "joined machines get one-press updates on their Packages tab", "inventory_2")
+        if st.button("Check packages", icon=":material/search:", key="scan_deps",
+                     disabled=locked(), help=why_locked()):
+            with st.spinner("Looking up every package…"):
+                run_action("Package check finished", lambda: client.scan_deps(st.session_state.operator), rerun=False)
+        latest, err = safe(client.latest_deps, None)
+        if err or not latest:
+            st.caption("Package checks are not available on this core.")
+            return
+        if not latest.get("scanned_at"):
+            st.caption("Not checked yet. SentrAI's own environment is always checked; add folders with virtualenvs, "
+                       "npm projects or requirements files under dep_scan.paths (or SENTRAI_DEP_PATHS).")
+            return
+        dep_results(latest)
+
+
+def dep_results(r: dict, host: str | None = None) -> None:
+    """A dependency scan's findings. With ``host``, safe ones get an Update button (a job for that machine)."""
+    if r.get("note"):
+        st.warning(r["note"])
+        return
+    c = r.get("counts") or {}
+    st.caption(f"Checked {sh.plural(int(r.get('packages_checked') or 0), 'package')} in "
+               f"{sh.plural(len(r.get('sources') or []), 'place')}"
+               + (f" {sh.short_time(r.get('scanned_at'))}" if r.get("scanned_at") else "")
+               + f" · {c.get('critical', 0)} critical, {c.get('high', 0)} high, {c.get('medium', 0)} medium, "
+                 f"{c.get('low', 0)} low"
+               + (f" · {c['no_fix_os']} OS packages wait on a fix from the distribution" if c.get("no_fix_os") else ""))
+    if r.get("missing"):
+        st.warning("Folders not found: " + ", ".join(r["missing"]))
+    found = r.get("findings") or []
+    if not found:
+        empty("No known vulnerabilities in the installed packages.", "verified_user", good=True)
+    for f in found[:40]:
+        dep_row(f, host)
+    if len(found) > 40:
+        st.caption(f"… and {len(found) - 40} more.")
+
+
+def dep_row(f: dict, host: str | None) -> None:
+    c1, c2 = st.columns([5, 1])
+    c1.markdown(f"{SEVERITY_ICON.get(str(f.get('severity')), OTHER_SEVERITY)} **{html.escape(sh.dep_line(f))}** · "
+                f"{html.escape(str(f.get('kind', '')))} · {code(f.get('path'))}", unsafe_allow_html=True)
+    c1.caption(str(f.get("how") or ""))
+    if host and f.get("update") == "safe" and c2.button(
+            "Update", key=f"depup_{host}_{f.get('id')}", icon=":material/arrow_upward:", disabled=locked(),
+            help=why_locked(otherwise=f"Asks {host} to install {f.get('fixed')}; you can undo it below")):
+        run_action(f"Asked {host} to update {f.get('name')} to {f.get('fixed')}",
+                   lambda: client.queue_job(host, "dep_update", st.session_state.operator, {"finding": str(f.get("id"))}),
+                   rerun=False)
         st.rerun()
 
 
@@ -3394,7 +3452,7 @@ def page_machine() -> None:
     incs = incs or []
     tabs = st.tabs(list(MACHINE_TABS), key="machine_tab", on_change=_tab_to_address)
     for tab, show in zip(tabs, (machine_overview, machine_hardware, machine_incidents, machine_blocks, machine_admins,
-                                machine_services, machine_jobs_tab, machine_agent)):
+                                machine_services, machine_jobs_tab, machine_packages, machine_agent)):
         if tab.open:
             with tab:
                 show(m, incs, agent, mine)
@@ -3628,6 +3686,42 @@ def machine_jobs_tab(m: dict, incs: list[dict], agent: dict | None, mine: list[d
         if not found_now.empty:
             st.caption("What its latest threat scan found (critical and high ones also open an incident)")
             table(found_now, "")
+
+
+def machine_packages(m: dict, incs: list[dict], agent: dict | None, mine: list[dict]) -> None:
+    host = m["host"]
+    with card():
+        section("Packages with known vulnerabilities", "its agent checks the virtualenvs, npm projects and requirements "
+                "files under SENTRAI_DEP_PATHS there, plus Debian or Ubuntu packages · nothing changes until you "
+                "press Update, and each update can be undone", "inventory_2")
+        if not m.get("agent_id"):
+            empty("Package checks run through SentrAI's agent, and this machine has none.", "info")
+            return
+        if st.button("Check packages", icon=":material/search:", key="job_deps", disabled=locked(),
+                     help=why_locked(otherwise="Its agent looks every package up in OSV")):
+            run_action(f"Asked {host} to check its packages",
+                       lambda: client.queue_job(host, "dep_scan", st.session_state.operator), rerun=False)
+            st.rerun()
+        jobs, jerr = safe(lambda: client.machine_jobs(host), [])
+        if jerr:
+            st.warning(f"Could not load its package checks: {jerr}")
+        latest = sh.latest_dep_scan(jobs or [])
+        if latest is None:
+            st.caption("Not checked yet.")
+        else:
+            dep_results(latest, host)
+        made = sh.undoable_updates(jobs or [])
+        if made:
+            with st.expander(f"Updates made ({len(made)})"):
+                for u in made:
+                    c1, c2 = st.columns([5, 1])
+                    c1.caption(f"{u.get('name')} {u.get('from')} → {u.get('to')} · {u.get('path')} · {u.get('id')}")
+                    if c2.button("Undo", key=f"depundo_{host}_{u.get('id')}", icon=":material/undo:", disabled=locked(),
+                                 help=why_locked(otherwise=f"Puts {u.get('name')} {u.get('from')} back")):
+                        run_action(f"Asked {host} to put {u.get('name')} {u.get('from')} back",
+                                   lambda uid=u.get("id"): client.queue_job(host, "dep_rollback", st.session_state.operator,
+                                                                            {"update": str(uid)}), rerun=False)
+                        st.rerun()
 
 
 def machine_agent(m: dict, incs: list[dict], agent: dict | None, mine: list[dict]) -> None:

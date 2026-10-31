@@ -248,8 +248,9 @@ disk and `temp` the hottest sensor.
 
 ## Send a job to a machine
 
-A job asks a machine to run a threat scan or take a backup of its own folders. The panel only queues
-it; the machine's agent picks it up, runs it and reports the result. A job nobody picks up in 24 hours
+A job asks a machine to run a threat scan, take a backup of its own folders, check its packages for
+known vulnerabilities (`dep_scan`), update one vulnerable package (`dep_update`) or undo such an update
+(`dep_rollback`). The panel only queues it; the machine's agent picks it up, runs it and reports the result. A job nobody picks up in 24 hours
 is dropped, and one that never reports back within 3 hours is marked failed. The last 20 finished jobs
 per machine are kept.
 
@@ -262,8 +263,19 @@ Queues a job. Written to the audit trail (`machine_job_queued`).
 | Field | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `host` | string, required | | a joined machine |
-| `kind` | string, required | | `threat_scan` or `backup` |
+| `kind` | string, required | | `threat_scan`, `backup`, `dep_scan`, `dep_update` or `dep_rollback` |
 | `operator` | string | `operator` | who asked |
+| `params` | object | | `dep_update`: `{"finding": "<id>"}`, a finding of the machine's latest dependency scan whose `update` is `safe`; `dep_rollback`: `{"update": "u-<id>"}`, an update made there. Other jobs take none |
+
+A package update carries only that id. The agent looks the package, its place and the fixed version
+up in its own last scan, so the panel cannot make a machine install anything else, and only `safe`
+findings (a virtualenv package or an npm project's direct dependency, fixed within the same major
+version) are updated. The person who pressed Update is the approval; it is in the audit trail with
+the package and both versions.
+
+```json
+{"host": "office-pc", "kind": "dep_update", "operator": "erick", "params": {"finding": "3f1c9a0b7d2e4f61"}}
+```
 
 ```json
 {"host": "office-pc", "kind": "threat_scan", "operator": "erick"}
@@ -293,8 +305,12 @@ Queues a job. Written to the audit trail (`machine_job_queued`).
 
 | Status | `detail` |
 | --- | --- |
-| `400` | `unknown job 'format_disk'; use one of: threat_scan, backup` |
+| `400` | `unknown job 'format_disk'; use one of: threat_scan, backup, dep_scan, dep_update, dep_rollback` |
+| `400` | `a package update needs 'finding': the id from the machine's own list` |
 | `404` | `no joined machine named 'nope'` |
+| `404` | `3f1c9a0b7d2e4f61 is not in office-pc's latest dependency scan` |
+| `409` | `pillow is not a one-press update: The fix (13.0.0) is a new major version; ...` |
+| `409` | `update u-1a2b3c4d was already undone` |
 | `409` | `a threat scan is already queued on office-pc (j-f7d2dc41)` |
 
 ### `GET /fleet/jobs`
@@ -324,6 +340,7 @@ Cancels a job that is still waiting. One the machine has started cannot be cance
 **Agent.** The next job for this machine, which is marked `running`. Agents ask every minute.
 
 **Returns**: `{"job": {"id": "j-f7d2dc41", "kind": "threat_scan"}}`, or `{"job": null}` when there is none.
+A package update or undo also has its `params`.
 
 **Errors**: `400` `only a machine's agent key picks up jobs`.
 

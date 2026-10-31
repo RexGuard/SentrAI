@@ -461,6 +461,22 @@ def test_job_rows_and_latest_findings():
     assert sh.job_findings([]).empty and sh.job_rows(None).empty
 
 
+def test_dependency_scans_and_updates():
+    change = {"id": "u-1a2b3c4d", "name": "requests", "from": "2.32.3", "to": "2.33.0", "path": "/srv/app/.venv"}
+    jobs = [{"kind": "dep_rollback", "status": "done", "params": {"update": "u-00000001"}},
+            {"kind": "dep_update", "status": "done", "result": change},
+            {"kind": "dep_update", "status": "done", "result": {**change, "id": "u-00000001"}},
+            {"kind": "dep_scan", "status": "done", "result": {"findings": [], "packages_checked": 9}},
+            {"kind": "dep_scan", "status": "done", "result": {"packages_checked": 1}}]
+    assert sh.latest_dep_scan(jobs)["packages_checked"] == 9 and sh.latest_dep_scan([]) is None
+    assert [u["id"] for u in sh.undoable_updates(jobs)] == ["u-1a2b3c4d"]
+    assert list(sh.job_rows(jobs)["Job"])[:2] == ["Package update undo", "Package update"]
+    f = {"name": "requests", "version": "2.32.3", "fixed": "2.33.0", "vuln_count": 5,
+         "vulns": [{"id": "GHSA-a", "aliases": ["CVE-1"]}, {"id": "GHSA-b", "aliases": []}]}
+    assert sh.dep_line(f) == "requests 2.32.3 → 2.33.0 · CVE-1, GHSA-b and 3 more"
+    assert "no fix yet" in sh.dep_line({**f, "fixed": None})
+
+
 def test_incident_target_names_the_live_block_then_the_source():
     inc = {"src_ip": "1.2.3.4", "host": "web", "actions": [
         {"target": "5.6.7.8", "status": "rolled_back"}, {"target": "9.9.9.9", "status": "active"}]}

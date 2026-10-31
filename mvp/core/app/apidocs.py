@@ -46,7 +46,7 @@ GROUPS: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
     ("Central panel and agents", "fleet", "Machines joining a central panel, and what their agents may call.",
      ("fleet",)),
     ("Scans, quarantine and backups", "scans", "Process and threat scans, quarantined files and backups.",
-     ("system", "threats", "quarantine", "backups")),
+     ("system", "threats", "deps", "quarantine", "backups")),
     ("Chat and AI", "chat", "Cyanide's chat, the guided setup and the AI model settings.",
      ("chat", "ai")),
     ("Extensions", "integrations", "Outside services as extensions: add, remove and test them.",

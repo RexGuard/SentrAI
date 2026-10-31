@@ -18,7 +18,7 @@ from .config import Settings, sign
 import sentrai_paths
 from .reports import build_report, render_markdown, render_pdf
 from . import summary as client_summary
-from . import ai, anchor, apidocs, fleet, hardware, integrations, jobs, webhook
+from . import ai, anchor, apidocs, depscan, fleet, hardware, integrations, jobs, webhook
 from .extensions import ExtensionError
 from .chat import OperatorChat, default_chat_provider
 from .discovery import Discovery
@@ -270,6 +270,7 @@ class JobIn(BaseModel):
     host: str = Field(max_length=63)
     kind: str = Field(max_length=32)
     operator: str = Field("operator", max_length=64)
+    params: Optional[dict[str, str]] = Field(None, max_length=4)  # dep_update: {"finding": id}; dep_rollback: {"update": id}
 
 
 class JobResultIn(BaseModel):
@@ -783,6 +784,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # Backups: chosen folders plus SentrAI's own data, on a schedule. Restoring always needs a person;
     # by default it unpacks into a new folder and changes nothing live.
+    # Dependency scan of the panel's own machine: SentrAI's environment and the folders under
+    # dep_scan.paths (or SENTRAI_DEP_PATHS). Read-only; joined machines run theirs as a job.
+    deps_last: dict[str, Any] = {}
+
+    def dep_paths() -> list[str]:
+        paths = list(((getattr(core, "profile", None) or {}).get("dep_scan") or {}).get("paths") or [])
+        return paths or [p for p in os.environ.get("SENTRAI_DEP_PATHS", "").split(os.pathsep) if p.strip()]
+
+    @app.post("/deps/scan")
+    def post_dep_scan(body: Optional[OperatorIn] = None) -> dict[str, Any]:
+        op = (body.operator if body else None) or "operator"
+        out = jobs.clean_deps(depscan.shown(depscan.scan(dep_paths())))
+        out["scanned_at"] = core.clock.now_iso()
+        deps_last.clear()
+        deps_last.update(out)
+        line = jobs.summary({"kind": "dep_scan", "status": "done", "result": out})
+        core.scribe.record(core.name, "dep_scan", {"operator": op, "counts": out["counts"], "summary": f"{op} checked "
+                                                   f"this machine's packages: {line}"})
+        return out
+
+    @app.get("/deps")
+    def get_deps() -> dict[str, Any]:
+        return dict(deps_last) or {"findings": [], "scanned_at": None}
+
     @app.get("/backups")
     def get_backups() -> dict[str, Any]:
         return backups.status()
@@ -1015,17 +1040,46 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def job_view(j: dict[str, Any]) -> dict[str, Any]:
         return {**{k: v for k, v in j.items() if not k.endswith("_ts")}, "summary": jobs.summary(j)}
 
+    def dep_change_target(body: JobIn) -> str | None:
+        """A package update must name a one-press finding of the machine's latest dependency scan, and
+        an undo an update that was made and not undone yet. The agent checks again on its side."""
+        if body.kind not in ("dep_update", "dep_rollback"):
+            return None
+        mine = machine_jobs.list(body.host)
+        key = "finding" if body.kind == "dep_update" else "update"
+        want = str((body.params or {}).get(key) or "")
+        if body.kind == "dep_update":
+            scan = jobs.latest_deps(mine)
+            f = next((f for f in ((scan or {}).get("result") or {}).get("findings") or [] if f.get("id") == want), None)
+            if f is None:
+                raise HTTPException(404, f"{want or 'that finding'} is not in {body.host}'s latest dependency scan")
+            if f.get("update") != "safe":
+                raise HTTPException(409, f"{f.get('name')} is not a one-press update: {f.get('how')}")
+            return f"{f.get('name')} {f.get('version')} → {f.get('fixed')} in {f.get('path')}"
+        done = next((j for j in mine if j["kind"] == "dep_update" and j["status"] == "done"
+                     and (j.get("result") or {}).get("id") == want), None)
+        if done is None:
+            raise HTTPException(404, f"no update {want or '(none)'} was made on {body.host}")
+        if any(j["kind"] == "dep_rollback" and j["status"] == "done" and (j.get("params") or {}).get("update") == want
+               for j in mine):
+            raise HTTPException(409, f"update {want} was already undone")
+        r = done["result"]
+        return f"{r.get('name')} back to {r.get('from')} in {r.get('path')}"
+
     @app.post("/fleet/jobs")
     def post_job(body: JobIn) -> dict[str, Any]:
         if not any(a["host"] == body.host and not a.get("revoked_at") for a in machines.agents()):
             raise HTTPException(status_code=404, detail=f"no joined machine named {body.host!r}")
+        what = dep_change_target(body)
         try:
-            job = machine_jobs.queue(body.host, body.kind, body.operator)
+            job = machine_jobs.queue(body.host, body.kind, body.operator, body.params)
         except jobs.JobError as exc:
             raise job_error(exc)
         core.scribe.record(core.name, "machine_job_queued", {
             "job": job["id"], "host": body.host, "kind": body.kind, "operator": body.operator,
-            "summary": f"{body.operator} asked {body.host} to run a {jobs.KINDS[body.kind].lower()}"})
+            **({"params": job["params"]} if job.get("params") else {}),
+            "summary": f"{body.operator} asked {body.host} to run a {jobs.KINDS[body.kind].lower()}"
+                       + (f": {what}" if what else "")})
         return job_view(job)
 
     @app.get("/fleet/jobs")
@@ -1055,7 +1109,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         kind = next((j["kind"] for j in machine_jobs.list(host) if j["id"] == body.id), None)
         result = None
         if body.ok and body.result is not None:
-            result = jobs.clean_scan(body.result) if kind == "threat_scan" else jobs.clean_backup(body.result)
+            clean = {"threat_scan": jobs.clean_scan, "backup": jobs.clean_backup, "dep_scan": jobs.clean_deps,
+                     "dep_update": jobs.clean_dep_change, "dep_rollback": jobs.clean_dep_change}.get(kind or "")
+            result = clean(body.result) if clean else None
         try:
             job = machine_jobs.finish(host, body.id, body.ok, result, body.error)
         except jobs.JobError as exc:
@@ -1069,6 +1125,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "job": job["id"], "host": host, "kind": kind, "by": job["requested_by"], "new_alerts": new_alerts,
             **({"sha256": job["result"].get("sha256"), "backup": job["result"].get("id")}
                if kind == "backup" and job["result"] else {}),
+            **({k: job["result"].get(k) for k in ("name", "from", "to", "path")}
+               if kind in ("dep_update", "dep_rollback") and job["result"] else {}),
             "summary": f"{jobs.KINDS.get(kind, kind)} on {host}: {line}"})
         if job["status"] != "done" and kind == "backup":
             with core.lock:

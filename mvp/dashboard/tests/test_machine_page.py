@@ -2,6 +2,8 @@
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import time
+
 import pytest
 import requests
 
@@ -109,11 +111,29 @@ def test_an_unknown_machine_says_so(fresh, tmp_path, monkeypatch):
     assert any("No machine called gone-01" in m.value for m in at.markdown)
 
 
-@pytest.mark.parametrize("tab", ["incidents", "blocks", "services", "scans"])
+@pytest.mark.parametrize("tab", ["incidents", "blocks", "services", "scans", "packages"])
 def test_every_tab_renders(fresh, tmp_path, monkeypatch, tab):
     at = _app(fresh, tmp_path, monkeypatch, machine="web-01", tab=tab)
     at.run()
     assert not at.exception, at.exception
+
+
+def test_packages_tab_checks_updates_and_undoes(fresh, tmp_path, monkeypatch):
+    at = _app(fresh, tmp_path, monkeypatch, machine="office-pc", tab="packages")
+    at.run()
+    next(b for b in at.button if b.key == "job_deps").click().run()
+    assert not at.exception, at.exception
+    time.sleep(3.2)  # the fake machine finishes a job after 3 s
+    at.run()
+    next(b for b in at.button if b.key == "depup_office-pc_3f1c9a0b7d2e4f61").click().run()
+    assert not at.exception, at.exception
+    assert not any(b.key == "depup_office-pc_8a2d77c0e1f3b954" for b in at.button)  # an OS package: the command only
+    time.sleep(3.2)
+    at.run()
+    next(b for b in at.button if b.key == "depundo_office-pc_u-1a2b3c4d").click().run()
+    assert not at.exception, at.exception
+    kinds = [(j["kind"], j.get("params")) for j in requests.get(f"{fresh}/fleet/jobs?host=office-pc", timeout=3).json()]
+    assert ("dep_update", {"finding": "3f1c9a0b7d2e4f61"}) in kinds and ("dep_rollback", {"update": "u-1a2b3c4d"}) in kinds
 
 
 def test_revoke_from_the_agent_tab(fresh, tmp_path, monkeypatch):

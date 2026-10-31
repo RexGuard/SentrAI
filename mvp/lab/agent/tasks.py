@@ -1,4 +1,5 @@
-"""Jobs the panel asks this machine to run (the panel's jobs.py): a threat scan or a backup.
+"""Jobs the panel asks this machine to run (the panel's jobs.py): a threat scan, a backup, a
+dependency scan, and the package updates a person pressed on the panel (and their undo).
 
 The agent asks the panel for work on its own outgoing calls, runs it here, and sends back a short
 result. What gets read is decided on this machine, never by the panel:
@@ -6,12 +7,21 @@ result. What gets read is decided on this machine, never by the panel:
   SENTRAI_THREAT_PATHS   folders to scan for web shells, miners, reverse shells (OS path separator)
   SENTRAI_BACKUP_PATHS   folders to back up; SENTRAI_BACKUP_KEEP (default 7), SENTRAI_BACKUP_COPY_TO,
                         SENTRAI_BACKUP_DIR (default: "backups" next to the agent file)
+  SENTRAI_DEP_PATHS      folders with virtualenvs, npm projects or requirements files to check for
+                        vulnerable packages (the agent's own environment and dpkg are always checked;
+                        SENTRAI_DEP_OS=off skips dpkg)
+
+A package update names only a finding id from this machine's own last dependency scan, kept in
+deps/ next to the agent file; the package, place and version come from that file, never from the
+panel. Only "safe" findings (a virtualenv package or an npm project's direct dependency, fixed in
+the same major version) are updated, and each one can be undone.
 
 Backups stay on this machine (restoring one is done here, by a person). The panel only gets the
 backup's id, size and checksum, and the scan's findings with home folders hidden and secrets masked.
 """
 from __future__ import annotations
 
+import json
 import os
 import threading
 import time
@@ -20,7 +30,7 @@ from typing import Any, Callable
 
 import requests
 
-from app import procscan, threatscan  # noqa: E402  (the core's scanner; agent.py puts core/ on the path)
+from app import depscan, procscan, threatscan  # noqa: E402  (the core's scanner; agent.py puts core/ on the path)
 from app.backups import BackupWatch  # noqa: E402
 import sentrai_paths  # noqa: E402  (mvp/, put on the path by app/__init__.py)
 
@@ -99,6 +109,55 @@ def run_backup(data_dir: Path) -> dict[str, Any]:
     return out
 
 
+def _deps_dir(data_dir: Path) -> Path:
+    return sentrai_paths.path("agent.deps", data_dir)
+
+
+def _load(f: Path, default: Any) -> Any:
+    try:
+        return json.loads(f.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return default
+
+
+def _store(f: Path, data: Any) -> None:
+    f.parent.mkdir(parents=True, exist_ok=True)
+    tmp = f.with_name(f".{f.name}.tmp")
+    tmp.write_text(json.dumps(data, indent=1), encoding="utf-8")
+    os.replace(tmp, f)
+
+
+def run_dep_scan(data_dir: Path) -> dict[str, Any]:
+    result = depscan.scan(_paths("SENTRAI_DEP_PATHS"))
+    if not result.get("note"):  # an offline scan keeps the last good list for updates
+        _store(_deps_dir(data_dir) / "last_scan.json", result)
+    return depscan.shown(result)
+
+
+def run_dep_update(data_dir: Path, params: dict[str, Any]) -> dict[str, Any]:
+    d = _deps_dir(data_dir)
+    fid = str(params.get("finding") or "")
+    f = next((f for f in _load(d / "last_scan.json", {}).get("findings") or [] if f.get("id") == fid), None)
+    if f is None:
+        raise depscan.UpdateError(f"{fid or 'that finding'} is not in this machine's last dependency scan; scan again")
+    rec = depscan.apply_update(f, d / "undo")
+    updates = _load(d / "updates.json", [])
+    _store(d / "updates.json", (updates + [rec])[-100:])
+    return {k: v for k, v in rec.items() if k not in ("real_path", "python", "backup")}
+
+
+def run_dep_rollback(data_dir: Path, params: dict[str, Any]) -> dict[str, Any]:
+    d = _deps_dir(data_dir)
+    uid = str(params.get("update") or "")
+    updates = _load(d / "updates.json", [])
+    n = next((i for i, u in enumerate(updates) if u.get("id") == uid), None)
+    if n is None:
+        raise depscan.UpdateError(f"no update {uid or '(none)'} was made on this machine")
+    updates[n] = depscan.rollback(updates[n])
+    _store(d / "updates.json", updates)
+    return {k: v for k, v in updates[n].items() if k not in ("real_path", "python", "backup")}
+
+
 def run_job(job: dict[str, Any], data_dir: Path) -> tuple[bool, dict[str, Any] | None, str | None]:
     """Run one job here. Returns (ok, result, error); never raises."""
     try:
@@ -107,6 +166,14 @@ def run_job(job: dict[str, Any], data_dir: Path) -> tuple[bool, dict[str, Any] |
         if job["kind"] == "backup":
             out = run_backup(data_dir)
             return (True, out, None) if out.get("ok") else (False, None, out.get("error") or out.get("note"))
+        if job["kind"] == "dep_scan":
+            return True, run_dep_scan(data_dir), None
+        if job["kind"] in ("dep_update", "dep_rollback"):
+            run = run_dep_update if job["kind"] == "dep_update" else run_dep_rollback
+            try:
+                return True, run(data_dir, job.get("params") or {}), None
+            except depscan.UpdateError as exc:
+                return False, None, str(exc)[:400]
         return False, None, f"this agent does not know the job {job['kind']!r}; update it"
     except Exception as exc:  # report it to the panel rather than kill the agent
         return False, None, f"{type(exc).__name__}: {exc}"[:400]

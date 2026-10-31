@@ -10,6 +10,7 @@ DEFAULT_TIMEOUT = 2.5
 CHAT_TIMEOUT = 90.0  # the orchestrator may call its AI model several times per answer
 AI_TEST_TIMEOUT = 45.0  # one real request to the AI provider
 SCAN_TIMEOUT = 40.0
+DEP_SCAN_TIMEOUT = 180.0  # every package is looked up in OSV
 BACKUP_TIMEOUT = 600.0  # a backup or restore copies whole folders  # PowerShell/CIM process listing can take a few seconds on Windows
 
 
@@ -151,9 +152,11 @@ class CoreClient:
     def machine_jobs(self, host: str) -> list[dict]:
         return list(self.get_json(f"/fleet/jobs?host={quote(host, safe='')}") or [])
 
-    def queue_job(self, host: str, kind: str, operator: str) -> dict:
-        """Ask one joined machine's agent to run a threat scan or a backup there (core jobs.py)."""
-        return self.post_json("/fleet/jobs", {"host": host, "kind": kind, "operator": operator})
+    def queue_job(self, host: str, kind: str, operator: str, params: dict | None = None) -> dict:
+        """Ask one joined machine's agent to run a job there (core jobs.py): a threat scan, a backup, a
+        dependency scan, or a package update / undo (params: {"finding": id} / {"update": id})."""
+        return self.post_json("/fleet/jobs", {"host": host, "kind": kind, "operator": operator,
+                                              **({"params": params} if params else {})})
 
     def cancel_job(self, job_id: str, operator: str) -> dict:
         return self.post_json(f"/fleet/jobs/{quote(job_id, safe='')}/cancel", {"operator": operator})
@@ -319,6 +322,13 @@ class CoreClient:
 
     def latest_threats(self) -> dict:
         return self.get_json("/threats")
+
+    def scan_deps(self, operator: str) -> dict:
+        """Read-only check of this machine's packages against OSV (core depscan.py)."""
+        return self.post_json("/deps/scan", {"operator": operator}, timeout=DEP_SCAN_TIMEOUT)
+
+    def latest_deps(self) -> dict:
+        return self.get_json("/deps")
 
     def quarantine(self, finding_id: str, operator: str, reason: str = "") -> dict:
         return self.post_json(f"/threats/{finding_id}/quarantine", {"operator": operator, "reason": reason})

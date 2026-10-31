@@ -915,7 +915,8 @@ def agent_rows(agents: Iterable[dict]) -> pd.DataFrame:
                                        "Status"])
 
 
-JOB_LABELS = {"threat_scan": "Threat scan", "backup": "Backup"}
+JOB_LABELS = {"threat_scan": "Threat scan", "backup": "Backup", "dep_scan": "Dependency scan",
+              "dep_update": "Package update", "dep_rollback": "Package update undo"}
 JOB_STATUS = {"queued": "Waiting", "running": "Running", "done": "Done", "failed": "Failed",
               "expired": "Expired", "cancelled": "Cancelled"}
 
@@ -941,6 +942,31 @@ def job_findings(jobs: Iterable[dict]) -> pd.DataFrame:
              "File": f.get("path") + (f" ({f['entry']})" if f.get("entry") else ""), "Line": f.get("line")}
             for f in ((scan or {}).get("result") or {}).get("findings") or [] if isinstance(f, dict)]
     return pd.DataFrame(rows, columns=["Severity", "What", "Kind", "File", "Line"])
+
+
+def latest_dep_scan(jobs: Iterable[dict]) -> dict | None:
+    """The newest finished dependency scan's result in one machine's jobs (newest first)."""
+    j = next((j for j in jobs or [] if isinstance(j, dict) and j.get("kind") == "dep_scan" and j.get("status") == "done"),
+             None)
+    return (j or {}).get("result")
+
+
+def undoable_updates(jobs: Iterable[dict]) -> list[dict]:
+    """Package updates made on one machine that were not undone yet, newest first."""
+    jobs = [j for j in jobs or [] if isinstance(j, dict)]
+    undone = {(j.get("params") or {}).get("update") for j in jobs
+              if j.get("kind") == "dep_rollback" and j.get("status") in ("queued", "running", "done")}
+    return [j["result"] for j in jobs if j.get("kind") == "dep_update" and j.get("status") == "done"
+            and (j.get("result") or {}).get("id") and j["result"]["id"] not in undone]
+
+
+def dep_line(f: dict) -> str:
+    """One vulnerable package in a sentence: name, version, fix and the flaws behind it."""
+    ids = [(v.get("aliases") or [v.get("id")])[0] for v in f.get("vulns") or [] if isinstance(v, dict)]
+    more = int(f.get("vuln_count") or len(ids)) - len(ids[:3])
+    fix = f"→ {f['fixed']}" if f.get("fixed") else "no fix yet"
+    return (f"{f.get('name')} {f.get('version')} {fix} · {', '.join(i for i in ids[:3] if i)}"
+            + (f" and {more} more" if more > 0 else ""))
 
 
 def join_commands(panel_url: str, code: str, name: str | None = None, pin: str | None = None) -> dict[str, str]:
