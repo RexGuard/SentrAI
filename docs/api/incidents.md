@@ -553,3 +553,11 @@ Each entry in `actions`:
 | `status`, `assignee` | `new`, `reviewing`, `resolved` or `not_a_threat`, and who handles it |
 | `incident` | the incident it opened or joined |
 | `notes`, `history` | the notes people added, and every change: `at`, `by`, and `text` or `what` (`status reviewing -> resolved; note added`) |
+
+### `GET /public/report`
+
+What the open staff report page (`/report` on the web dashboard) needs before it shows its form. No token. **Returns** `on` (false when `SENTRAI_REPORT_PAGE=off`), `code_needed` (a shared code from `SENTRAI_REPORT_CODE` is asked for) and `machines` (the machines a report can be about, on a central panel).
+
+### `POST /public/report`
+
+Send a staff report without signing in. **Body** `{"text": "...", "reporter": "...", "contact": "...", "where": "...", "host": "...", "code": "..."}`; only `text` is needed (at least a sentence), and `code` when one is asked for. It is sorted and tracked like any staff report (`POST /staff-reports`, channel `dashboard`). **Returns** only what the reporter may see: `id`, `kind_label`, `urgency` and `advice`. `400` for a wrong code or a too-short text, `404` when the page is off, `429` when one sender has sent too many (5 in 10 minutes).

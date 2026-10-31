@@ -12,6 +12,7 @@ import Machines from './pages/Machines'
 import Backups from './pages/Backups'
 import { Classifier, Collector, Responder } from './pages/Pipeline'
 import Overview from './pages/Overview'
+import Report, { isReportPage } from './pages/Report'
 import Reports from './pages/Reports'
 import Routing from './pages/Routing'
 import Review from './pages/Review'
@@ -55,6 +56,7 @@ function Gate() {
 }
 
 export default function App() {
+  if (isReportPage()) return <Report />  // open to staff: no sign-in, no session
   return (
     <BrowserRouter>
       <SessionProvider><Gate /></SessionProvider>

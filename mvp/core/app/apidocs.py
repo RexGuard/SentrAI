@@ -36,7 +36,7 @@ GROUPS: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
     ("Events and log sources", "events", "What the collectors, agents and other tools send in.",
      ("events", "webhook", "heartbeat", "log-sources")),
     ("Incidents", "incidents", "What SentrAI found, what staff reported, and what people decide about it.",
-     ("incidents", "helpdesk", "staff-reports", "waves")),
+     ("incidents", "helpdesk", "staff-reports", "waves", "public")),
     ("Reports and summaries", "reports", "Evidence reports and the one-page client summary.",
      ("reports", "summary")),
     ("Risk and protection", "status", "The risk index, each machine, the administrators, the protection switch and the block list.",
