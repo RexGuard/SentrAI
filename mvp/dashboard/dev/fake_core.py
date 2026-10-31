@@ -114,6 +114,7 @@ class State:
         self.scan: dict | None = None
         self.log_sources: list[dict] = []
         self.threats: dict | None = None
+        self.deps: dict | None = None  # the panel's own package check
         self.quarantine: list[dict] = []
         self.backups: list[dict] = []
         self.jobs: list[dict] = []  # scans/backups asked of a machine; "done" a few seconds later
@@ -568,10 +569,30 @@ FAKE_JOB_SCAN = {"files_checked": 214, "counts": {"critical": 1, "high": 0, "med
      "label": "Browser crypto-miner pool address"}]}
 
 
+FAKE_DEPS = {"packages_checked": 312, "counts": {"critical": 0, "high": 1, "medium": 1, "low": 0, "no_fix_os": 4},
+             "sources": [{"kind": "python", "ecosystem": "PyPI", "path": "/srv/app/.venv", "packages": 41},
+                         {"kind": "os", "ecosystem": "Ubuntu:24.04:LTS", "path": "dpkg", "packages": 271}],
+             "findings": [
+                 {"id": "3f1c9a0b7d2e4f61", "kind": "python", "ecosystem": "PyPI", "name": "requests",
+                  "version": "2.32.3", "fixed": "2.33.0", "severity": "high", "vuln_count": 1, "update": "safe",
+                  "how": "Update requests 2.32.3 → 2.33.0 (SentrAI can undo it).", "path": "/srv/app/.venv",
+                  "vulns": [{"id": "GHSA-9hjg-9r4m-mvj7", "aliases": ["CVE-2024-47081"], "summary": "netrc leak"}]},
+                 {"id": "8a2d77c0e1f3b954", "kind": "os", "ecosystem": "Ubuntu:24.04:LTS", "name": "openssl",
+                  "version": "3.0.13-0ubuntu3.4", "fixed": "3.0.13-0ubuntu3.5", "severity": "medium", "vuln_count": 2,
+                  "update": "manual", "path": "dpkg",
+                  "how": "Run: sudo apt-get update && sudo apt-get install --only-upgrade libssl3t64 openssl",
+                  "vulns": [{"id": "USN-7264-1", "aliases": ["CVE-2024-12797"], "summary": "openssl flaws"}]}],
+             "took_s": 3.2, "note": None}
+
+
 def _job_summary(j: dict) -> str:
     if j["status"] != "done":
         return "waiting for the machine to pick it up"
     r = j["result"]
+    if j["kind"] == "dep_scan":
+        return f"{r['packages_checked']} packages checked, {len(r['findings'])} vulnerable (1 critical or high)"
+    if j["kind"] in ("dep_update", "dep_rollback"):
+        return f"{r['name']} {r['from']} → {r['to']} in {r['path']} (update {r['id']})"
     if j["kind"] == "threat_scan":
         return f"{r['files_checked']} files checked, {len(r['findings'])} findings" + (
             " (1 critical or high)" if r["findings"] else "")
@@ -584,9 +605,13 @@ def fleet_jobs(host: str | None = None):
         for j in S.jobs:
             if j["status"] == "queued" and (now() - datetime.fromisoformat(j["created_at"])).total_seconds() > 3:
                 clean = j["host"] != "web-01"
+                change = {"id": "u-1a2b3c4d", "finding": "3f1c9a0b7d2e4f61", "kind": "python", "name": "requests",
+                          "from": "2.32.3", "to": "2.33.0", "path": "/srv/app/.venv", "status": "applied"}
                 j.update(status="done", finished_at=iso(now()), result=(
                     {"files_checked": 96, "counts": {}, "findings": []} if clean else FAKE_JOB_SCAN)
-                    if j["kind"] == "threat_scan" else
+                    if j["kind"] == "threat_scan" else {**FAKE_DEPS, "scanned_at": iso(now())} if j["kind"] == "dep_scan"
+                    else change if j["kind"] == "dep_update" else {**change, "status": "rolled_back"}
+                    if j["kind"] == "dep_rollback" else
                     {"id": f"b-{now():%Y%m%d-%H%M%S}", "files": 1342, "bytes": 48 * 1048576})
         return [{**j, "summary": _job_summary(j)} for j in reversed(S.jobs) if host in (None, j["host"])]
 
@@ -594,11 +619,13 @@ def fleet_jobs(host: str | None = None):
 @app.post("/fleet/jobs")
 def fleet_queue_job(body: dict = Body(...)):
     with lock:
-        if body.get("kind") not in ("threat_scan", "backup"):
+        if body.get("kind") not in ("threat_scan", "backup", "dep_scan", "dep_update", "dep_rollback"):
             raise HTTPException(400, "unknown job")
-        if any(j["host"] == body.get("host") and j["kind"] == body["kind"] and j["status"] == "queued" for j in S.jobs):
+        if any(j["host"] == body.get("host") and j["kind"] == body["kind"] and j.get("params") == body.get("params")
+               and j["status"] == "queued" for j in S.jobs):
             raise HTTPException(409, f"a {body['kind'].replace('_', ' ')} is already queued on {body.get('host')}")
         j = {"id": f"j-{len(S.jobs) + 1:04x}", "host": body.get("host"), "kind": body["kind"], "status": "queued",
+             **({"params": body["params"]} if body.get("params") else {}),
              "requested_by": body.get("operator"), "created_at": iso(now()), "finished_at": None, "result": None}
         S.jobs.append(j)
         audit("machine_job_queued", "Warden", host=j["host"], kind=j["kind"], operator=j["requested_by"])
@@ -1209,6 +1236,19 @@ def post_threats(body: dict = Body(None)):
         S.threats["findings"] = [f for f in S.threats["findings"] if f["id"] not in held]
         audit("threat_scan", "Cyanide", by=(body or {}).get("operator"), summary="Checked 1834 files for threats")
         return S.threats
+
+
+@app.post("/deps/scan")
+def post_deps(body: dict = Body(None)):
+    with lock:
+        S.deps = {**copy.deepcopy(FAKE_DEPS), "scanned_at": iso(now())}
+        audit("dep_scan", "Cyanide", by=(body or {}).get("operator"), summary="Checked 312 packages")
+        return S.deps
+
+
+@app.get("/deps")
+def get_deps():
+    return S.deps or {"findings": [], "scanned_at": None}
 
 
 @app.get("/threats")

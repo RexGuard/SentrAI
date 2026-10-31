@@ -173,6 +173,57 @@ The latest threat scan, whoever started it (a person or the schedule), the same 
 
 `every_minutes` is how often the scan runs on its own, or `null` when no folders are set.
 
+## Check packages for known vulnerabilities
+
+The dependency scan lists what is installed on the core's machine: SentrAI's own Python environment,
+every virtualenv, npm project (package-lock.json) and pinned requirements file under the folders in
+`dep_scan.paths` in the system profile (or `SENTRAI_DEP_PATHS`), and Debian or Ubuntu packages
+(`SENTRAI_DEP_OS=off` skips them). It asks [OSV](https://osv.dev), the open vulnerability database,
+about each name and version (`SENTRAI_OSV_URL` sets another server) and reports each vulnerable
+package with the version that fixes it. Only names and versions leave the machine. It changes nothing:
+on this machine each finding says what to do (`how`). Joined machines run the same scan as a
+[`dep_scan` job](fleet.html#post-fleetjobs), where one-press updates with undo are offered.
+
+### `POST /deps/scan`
+
+Runs the scan now and waits for it. Written to the audit trail as `dep_scan`.
+
+**Body**: `{"operator": "erick"}` (optional).
+
+**Returns**
+
+```json
+{
+  "scanned_at": "2026-10-31T05:10:00+00:00",
+  "roots": ["/srv/app"],
+  "missing": [],
+  "sources": [{"kind": "python", "ecosystem": "PyPI", "path": "/srv/app/.venv", "packages": 35}],
+  "packages_checked": 35,
+  "counts": {"critical": 0, "high": 1, "medium": 0, "low": 0, "no_fix_os": 0},
+  "took_s": 2.1,
+  "findings": [{"id": "3f1c9a0b7d2e4f61", "kind": "python", "ecosystem": "PyPI", "name": "requests",
+                "version": "2.32.3", "fixed": "2.33.0", "severity": "high", "vuln_count": 1,
+                "vulns": [{"id": "GHSA-9hjg-9r4m-mvj7", "aliases": ["CVE-2026-0001"], "summary": "..."}],
+                "update": "safe", "how": "Update requests 2.32.3 → 2.33.0 (SentrAI can undo it).",
+                "path": "/srv/app/.venv"}],
+  "note": null
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `kind` | `python` (a virtualenv, or SentrAI's own), `npm`, `pinned` (a requirements file) or `os` |
+| `fixed` | the lowest version that fixes every known vulnerability, or `null` when none does yet |
+| `severity` | the worst rating among them: `critical`, `high`, `medium` (also unrated) or `low` |
+| `update` | `safe`: one press on a joined machine updates it and can undo it; `manual`: `how` says the step; `none`: no fix yet |
+| `counts.no_fix_os` | OS packages with flaws the distribution has not fixed yet (counted, not listed) |
+| `note` | why the scan could not finish, such as OSV being out of reach; then `findings` is empty |
+
+### `GET /deps`
+
+The latest dependency scan of this machine, as [`POST /deps/scan`](#post-depsscan) returned it.
+Before the first one, and after the core restarts: `{"findings": [], "scanned_at": null}`.
+
 ## Quarantine a file
 
 ### `POST /threats/{finding_id}/quarantine`

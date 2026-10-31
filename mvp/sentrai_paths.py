@@ -39,6 +39,7 @@ file at the root); else ``~/.sentrai``. deploy/install.sh uses /var/lib/sentrai,
       notifier/last_witness.txt     the last audit fingerprint delivered            NOTIFIER_WITNESS_FILE
       agent/agent.json              the fleet agent: machine key, blocks in force   SENTRAI_AGENT_FILE
       agent/backups/                backups the panel asked this machine to make    SENTRAI_BACKUP_DIR
+      agent/deps/                   the last dependency scan, updates made and their undo copies
       logs/                         JSON-lines logs the collector tails             SENTRAI_LAB_LOGS
 
 Rules:
@@ -172,6 +173,8 @@ ENTRIES: dict[str, Entry] = {e.key: e for e in (
           "Agent", "SENTRAI_AGENT_FILE", old=("root:agent.json",)),
     Entry("agent.backups", "agent", "backups", "backups the panel asked this machine to make", "Agent",
           "SENTRAI_BACKUP_DIR", kind="dir", old=("root:backups",)),
+    Entry("agent.deps", "agent", "deps", "the last dependency scan, package updates made here and what undoes them",
+          "Agent", kind="dir", optional=True),
 )}
 
 ELSEWHERE = (

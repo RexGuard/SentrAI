@@ -1,4 +1,5 @@
-"""Jobs the panel asks one machine's agent to run: a threat scan or a backup, on that machine.
+"""Jobs the panel asks one machine's agent to run: a threat scan, a backup or a dependency scan,
+on that machine, and the package updates a person pressed (and their undo).
 
 The panel never reaches into a machine. An operator queues a job here (POST /fleet/jobs); the
 machine's agent picks it up on its next call out (GET /fleet/jobs/next), runs it locally and sends
@@ -7,6 +8,10 @@ cannot choose what the agent reads: the agent scans and backs up only the folder
 machine itself (SENTRAI_THREAT_PATHS / SENTRAI_BACKUP_PATHS there). Backups stay on the machine;
 only their id, size and checksum come back.
 
+A package update names only a finding id from that machine's own last dependency scan (and an undo
+only the update's id): the agent looks up the package, place and fixed version itself, so the panel
+cannot make a machine install anything that scan did not find.
+
 Jobs are kept in jobs.json next to the database, newest MAX_KEEP per machine.
 """
 
@@ -14,6 +19,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import secrets
 import threading
 import time
@@ -21,7 +27,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-KINDS = {"threat_scan": "Threat scan", "backup": "Backup"}
+KINDS = {"threat_scan": "Threat scan", "backup": "Backup", "dep_scan": "Dependency scan",
+         "dep_update": "Package update", "dep_rollback": "Package update undo"}
+PARAM = {"dep_update": ("finding", re.compile(r"^[0-9a-f]{16}$")),
+         "dep_rollback": ("update", re.compile(r"^u-[0-9a-f]{8}$"))}  # the one id each of these needs
 QUEUED_TTL_S = 24 * 3600.0      # a job nobody picked up in a day is dropped (machine off or gone)
 RUNNING_TTL_S = 3 * 3600.0      # a job that never reports back in 3 h is marked failed
 MAX_KEEP = 20                   # finished jobs kept per machine
@@ -80,18 +89,19 @@ class Jobs:
             del self._jobs[j["id"]]
 
     # -------------------------------------------------------------- operator
-    def queue(self, host: str, kind: str, by: str) -> dict[str, Any]:
+    def queue(self, host: str, kind: str, by: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         if kind not in KINDS:
             raise JobError(f"unknown job {kind!r}; use one of: {', '.join(KINDS)}")
+        params = check_params(kind, params)
         now = self.clock()
         with self.lock:
             self._expire()
             same = next((j for j in self._jobs.values() if j["host"] == host and j["kind"] == kind
-                         and j["status"] in ("queued", "running")), None)
+                         and (j.get("params") or None) == params and j["status"] in ("queued", "running")), None)
             if same is not None:
                 raise JobError(f"a {KINDS[kind].lower()} is already {same['status']} on {host} ({same['id']})", 409)
             job = {"id": f"j-{secrets.token_hex(4)}", "host": host, "kind": kind, "status": "queued",
-                   "requested_by": by, "created_at": _iso(now), "created_ts": now,
+                   **({"params": params} if params else {}), "requested_by": by, "created_at": _iso(now), "created_ts": now,
                    "started_at": None, "started_ts": None, "finished_at": None, "result": None, "error": None}
             self._jobs[job["id"]] = job
             self._save()
@@ -142,7 +152,7 @@ class Jobs:
             j = waiting[0]
             j.update(status="running", started_at=_iso(now), started_ts=now)
             self._save()
-            return {"id": j["id"], "kind": j["kind"]}
+            return {"id": j["id"], "kind": j["kind"], **({"params": j["params"]} if j.get("params") else {})}
 
     def finish(self, host: str, job_id: str, ok: bool, result: dict[str, Any] | None, error: str | None) -> dict[str, Any]:
         with self.lock:
@@ -156,6 +166,19 @@ class Jobs:
             self._prune(host)
             self._save()
             return dict(j)
+
+
+def check_params(kind: str, params: dict[str, Any] | None) -> dict[str, Any] | None:
+    """A package update or its undo carries exactly one id; every other job carries nothing."""
+    if kind not in PARAM:
+        if params:
+            raise JobError(f"a {KINDS[kind].lower()} takes no parameters")
+        return None
+    key, pattern = PARAM[kind]
+    value = str((params or {}).get(key) or "")
+    if set(params or {}) != {key} or not pattern.match(value):
+        raise JobError(f"a {KINDS[kind].lower()} needs {key!r}: the id from the machine's own list")
+    return {key: value}
 
 
 # ---------------------------------------------------------------- results
@@ -179,6 +202,38 @@ def clean_backup(result: dict[str, Any]) -> dict[str, Any]:
     return {k: result.get(k) for k in keep if result.get(k) is not None}
 
 
+def clean_deps(result: dict[str, Any]) -> dict[str, Any]:
+    """Keep only what the panel shows from a machine's dependency scan."""
+    keep = ("id", "kind", "ecosystem", "name", "version", "fixed", "severity", "vuln_count", "update", "how", "path")
+    findings = []
+    for f in (result.get("findings") or [])[:MAX_FINDINGS]:
+        if not isinstance(f, dict):
+            continue
+        row = {k: str(f[k])[:300] for k in keep if f.get(k) is not None}
+        row["vulns"] = [{k: (str(v[k])[:200] if k != "aliases" else [str(a)[:40] for a in v[k]][:3])
+                         for k in ("id", "aliases", "summary") if v.get(k)}
+                        for v in (f.get("vulns") or [])[:10] if isinstance(v, dict)]
+        findings.append(row)
+    return {"roots": [str(r) for r in result.get("roots") or []][:50],
+            "missing": [str(r) for r in result.get("missing") or []][:50],
+            "sources": [{k: s.get(k) for k in ("kind", "ecosystem", "path", "packages")}
+                        for s in (result.get("sources") or [])[:50] if isinstance(s, dict)],
+            "packages_checked": int(result.get("packages_checked") or 0),
+            "counts": {str(k): int(v) for k, v in (result.get("counts") or {}).items()},
+            "took_s": float(result.get("took_s") or 0), "findings": findings,
+            "note": str(result.get("note") or "")[:300] or None}
+
+
+def clean_dep_change(result: dict[str, Any]) -> dict[str, Any]:
+    keep = ("id", "finding", "kind", "name", "from", "to", "path", "at", "status", "rolled_back_at", "output")
+    return {k: str(result[k])[:400] for k in keep if result.get(k) is not None}
+
+
+def latest_deps(jobs: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """The newest finished dependency scan in a list of one machine's jobs (newest first)."""
+    return next((j for j in jobs if j["kind"] == "dep_scan" and j["status"] == "done"), None)
+
+
 def summary(job: dict[str, Any]) -> str:
     """One line for the Machines page and the audit log."""
     if job["status"] in ("queued", "running"):
@@ -186,6 +241,18 @@ def summary(job: dict[str, Any]) -> str:
     if job["status"] != "done":
         return job.get("error") or job["status"]
     r = job.get("result") or {}
+    if job["kind"] == "dep_scan":
+        if r.get("note"):
+            return r["note"]
+        c = r.get("counts") or {}
+        bad = c.get("critical", 0) + c.get("high", 0)
+        safe = sum(1 for f in r.get("findings") or [] if f.get("update") == "safe")
+        return (f"{r.get('packages_checked', 0)} packages checked, {len(r.get('findings') or [])} vulnerable"
+                + (f" ({bad} critical or high)" if bad else "") + (f", {safe} can be updated here" if safe else ""))
+    if job["kind"] == "dep_update":
+        return f"{r.get('name')} {r.get('from')} → {r.get('to')} in {r.get('path')} (update {r.get('id')})"
+    if job["kind"] == "dep_rollback":
+        return f"{r.get('name')} back to {r.get('from')} in {r.get('path')}"
     if job["kind"] == "threat_scan":
         if r.get("note") and not r.get("files_checked"):
             return r["note"]

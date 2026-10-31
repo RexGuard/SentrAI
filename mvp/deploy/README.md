@@ -366,10 +366,15 @@ What is read is set on each machine, never by the panel. Add these to `/etc/sent
 SENTRAI_THREAT_PATHS=/var/www:/srv/minecraft/plugins
 SENTRAI_BACKUP_PATHS=/srv/app/data
 SENTRAI_BACKUP_KEEP=7                 # optional; backups go to /var/lib/sentrai/agent/backups
+SENTRAI_DEP_PATHS=/srv/app:/srv/web   # virtualenvs, npm projects and requirements files to check
 ```
 
 The agent runs as its own user, so it can only scan and back up folders that user can read.
-API: `POST /fleet/jobs {host, kind: threat_scan|backup}`, `GET /fleet/jobs?host=`,
+The **Packages** tab checks the machine's packages against OSV (the agent needs to reach
+`https://api.osv.dev`); its one-press **Update** and **Undo** work only where that user may write
+(the virtualenv or the npm project). Debian and Ubuntu packages are listed with the `apt-get`
+command to run, since apt cannot reliably undo an upgrade.
+API: `POST /fleet/jobs {host, kind: threat_scan|backup|dep_scan|dep_update|dep_rollback}`, `GET /fleet/jobs?host=`,
 `POST /fleet/jobs/<id>/cancel`.
 
 ## Not covered yet
