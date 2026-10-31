@@ -1,6 +1,6 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { SessionProvider, useSession } from './lib/session'
-import Layout, { MENU } from './pages/Layout'
+import Layout from './pages/Layout'
 import SignIn from './pages/SignIn'
 import Approvals from './pages/Approvals'
 import Audit from './pages/Audit'
@@ -17,7 +17,6 @@ import Report from './pages/Report'
 import Reports from './pages/Reports'
 import Routing from './pages/Routing'
 import Review from './pages/Review'
-import Soon from './pages/Soon'
 import Settings from './pages/Settings'
 import Staff from './pages/Staff'
 import Team from './pages/Team'
@@ -51,7 +50,6 @@ function Gate() {
         <Route path="/reports" element={<Reports />} />
         <Route path="/backups" element={<Backups />} />
         <Route path="/incidents" element={<Incidents />} />
-        {MENU.flatMap((g) => g.items).filter((i) => !['/approvals', '/report', '/machines', '/chat', '/audit', '/team', '/incidents', '/staff', '/reports', '/backups', '/extensions', '/overview', '/collector', '/classifier', '/responder', '/review', '/config', '/guardrails'].includes(i.to)).map((i) => <Route key={i.to} path={i.to} element={<Soon />} />)}
         <Route path="*" element={<Navigate to="/approvals" replace />} />
       </Route>
     </Routes>

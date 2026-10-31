@@ -165,11 +165,15 @@ export default function Chat() {
             {asking && <p className="text-muted" role="status">{assistant} is looking into it…</p>}
             <div ref={end} />
           </div>
-          <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); void ask(text) }}>
+          <form onSubmit={(e) => { e.preventDefault(); void ask(text) }}>
             <label className="sr-only" htmlFor="chat-input">Ask {assistant}</label>
-            <input id="chat-input" value={text} onChange={(e) => setText(e.target.value)} placeholder={`Ask ${assistant}…`} disabled={asking}
-              className="min-w-0 flex-1 rounded-md border border-line bg-surface-2 px-3 py-2 text-ink placeholder:text-muted" />
-            <button className={btnPrimary} disabled={asking || !text.trim()}><Send size={14} aria-hidden /> Send</button>
+            <div className="prompt">
+              <textarea id="chat-input" rows={1} value={text} disabled={asking} placeholder={`Ask ${assistant}…`}
+                onChange={(e) => setText(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void ask(text) } }} />
+              <button className="prompt-send" disabled={asking || !text.trim()} aria-label="Send"><Send size={16} aria-hidden /></button>
+            </div>
+            <p className="mt-1 px-1 text-xs text-muted">Enter to send · Shift+Enter for a new line</p>
           </form>
         </>
       )}

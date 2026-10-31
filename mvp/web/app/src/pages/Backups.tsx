@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import Stat from '../lib/Stat'
 import { CheckCircle2, CircleHelp, DatabaseBackup, ShieldAlert } from 'lucide-react'
 import { api, ApiError } from '../lib/api'
 import { btn, btnPrimary } from '../lib/ui'
@@ -17,16 +18,6 @@ const REASON: Record<string, string> = { schedule: 'on schedule', manual: 'by ha
 const when = (v?: string) => (v ? new Date(v).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '-')
 const mb = (b?: number) => ((b ?? 0) / 1048576).toFixed(1)
 const field = 'mt-1 block rounded-md border border-line bg-surface-2 px-3 py-1.5 text-ink'
-
-function Stat({ label, value, note, hot }: { label: string; value: string; note: string; hot?: boolean }) {
-  return (
-    <div className="rounded-lg border border-line bg-surface p-4">
-      <p className="text-xs uppercase tracking-wide text-muted">{label}</p>
-      <p className={'text-2xl font-semibold ' + (hot ? 'text-warn' : '')}>{value}</p>
-      <p className="text-xs text-muted">{note}</p>
-    </div>
-  )
-}
 
 function Row({ b, done }: { b: Backup; done: (m: string) => void }) {
   const { me, can } = useSession()

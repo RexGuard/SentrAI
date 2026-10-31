@@ -15,8 +15,8 @@ name. There is no open sign-up; people join by invite.
 1. **Get a setup code.** On a new machine, `run.ps1` / `run.sh` prints a one-time **setup code**.
    You can also make one with `python sentrai_config.py admin` (laptop) or `sudo sentrai-admin`
    (server). A setup code works once, for 24 hours.
-2. **Open the dashboard** (`http://127.0.0.1:8501` on a laptop, `https://<server>:8501` on a
-   server). It opens on *Create your Owner account*. Type the setup code, your name, email and a
+2. **Open the dashboard** (the web dashboard at `http://127.0.0.1:5173` after `run-web`; the classic one
+   at `http://127.0.0.1:8501` on a laptop, `https://<server>:8501` on a server). It opens on *Create your Owner account*. Type the setup code, your name, email and a
    password of at least 12 characters.
 3. **Add an authenticator app.** Scan the QR code with any authenticator app (Google
    Authenticator, Microsoft Authenticator, 1Password and the like), then type the 6-digit code.

@@ -1,5 +1,4 @@
 """Staff reports: sorted on arrival, a needs-review incident that is never contained, tracked to closed."""
-import pytest
 
 from app.staff_reports import StaffReports, keyword_triage
 

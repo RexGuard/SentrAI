@@ -8,7 +8,7 @@ description: Fixes for the most common SentrAI install problems.
 
 ## A port is already taken
 
-Another program is using 8000 or 8501. Pick other ports:
+Another program is using 8000, 8501 or (web dashboard) 5173. Pick other ports:
 
 ```bash
 ./run.sh --core-port 8100 --dashboard-port 8601                  # Linux, macOS

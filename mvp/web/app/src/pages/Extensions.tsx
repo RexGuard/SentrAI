@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import Stat from '../lib/Stat'
 import { ExternalLink, Minus, Plug, Plus } from 'lucide-react'
 import { api, ApiError } from '../lib/api'
 import { btn, btnPrimary } from '../lib/ui'
@@ -22,16 +23,6 @@ const GROUPS: [string, string, string][] = [
   ['available', 'Available', 'installed but not added: add one to use it'],
   ['built_in', 'Built in', 'part of SentrAI itself, so always there'],
 ]
-
-function Stat({ label, value, note, hot }: { label: string; value: string; note: string; hot?: boolean }) {
-  return (
-    <div className="rounded-lg border border-line bg-surface p-4">
-      <p className="text-xs uppercase tracking-wide text-muted">{label}</p>
-      <p className={'text-2xl font-semibold ' + (hot ? 'text-warn' : '')}>{value}</p>
-      <p className="text-xs text-muted">{note}</p>
-    </div>
-  )
-}
 
 function Card({ r, managed, done }: { r: Ext; managed: boolean; done: (msg: string) => void }) {
   const { me, can } = useSession()
