@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { Check, ChevronDown, ChevronRight, FolderPlus, Pin, Undo2, UserCheck, X } from 'lucide-react'
 import { api, ApiError } from '../lib/api'
+import { btn, btnPrimary } from '../lib/ui'
 import { useSession } from '../lib/session'
 
 type Row = {
@@ -15,7 +16,6 @@ type Page = {
 type Verb = 'approve' | 'reject' | 'rollback' | 'keep' | 'mine'
 
 const READ_ONLY = 'Your role can read everything but change nothing.'
-const btn = 'inline-flex items-center gap-1 rounded-md border border-line px-2.5 py-1.5 text-sm hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50'
 const sevColor: Record<string, string> = { critical: 'text-crit', high: 'text-bad', medium: 'text-warn', low: 'text-ok' }
 
 function Actions({ rows, page, onRun, onGroup, extra }: {
@@ -36,7 +36,7 @@ function Actions({ rows, page, onRun, onGroup, extra }: {
       <div className="flex flex-wrap gap-2">
         {mine.length > 0 && <button className={btn} disabled={off} title={off ? READ_ONLY : undefined} onClick={() => void onRun('mine', ids(mine), '')}><UserCheck size={14} aria-hidden /> This was me {mine.length}</button>}
         {decide.length > 0 && <>
-          <button className={btn + ' bg-ink text-bg hover:bg-ink/90'} disabled={off || !page.protection_on}
+          <button className={btnPrimary} disabled={off || !page.protection_on}
             title={off ? READ_ONLY : !page.protection_on ? 'Protection is off (monitor only): turn it on in Configuration to apply a hotpatch.' : undefined}
             onClick={() => void onRun('approve', ids(decide), '')}><Check size={14} aria-hidden /> Approve {decide.length}</button>
           <button className={btn} disabled={off} title={off ? READ_ONLY : undefined} onClick={() => setAsking(asking === 'reject' ? null : 'reject')}><X size={14} aria-hidden /> Reject {decide.length}</button>
@@ -55,7 +55,7 @@ function Actions({ rows, page, onRun, onGroup, extra }: {
             <input value={why} onChange={(e) => setWhy(e.target.value)} required={asking === 'reject'} autoFocus
               className="mt-1 block w-80 max-w-full rounded-md border border-line bg-surface-2 px-3 py-1.5 text-ink" />
           </label>
-          <button className={btn + ' bg-ink text-bg'} disabled={asking === 'reject' && !why.trim()}>
+          <button className={btnPrimary} disabled={asking === 'reject' && !why.trim()}>
             {asking === 'reject' ? `Reject all ${decide.length}` : `Keep all ${contain.length} forever`}
           </button>
         </form>

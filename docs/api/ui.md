@@ -39,3 +39,19 @@ Keep incidents together as one card: `{"name": "...", "ids": [...]}` (an existin
 A starting name for a new group: the attacker or machine the incidents share, else `Group N`.
 
 **Body** `{"ids": [...]}` **Returns** `{"name": "..."}`
+
+## Machines
+
+### `GET /ui/machines`
+
+The machine list, worst first. On a central panel (`SENTRAI_RISK_SCOPE=host`) it holds every machine the core scores plus joined agents that have sent nothing yet; otherwise just this computer.
+
+**Returns** `panel`, `machines` (each with `name`, `host`, `place`, `online`, `waiting`, `index`, `band`, `threshold`, `monitor_only`, `open`, `contained`, `blocked`, `last_seen`, `services`, `hardware` with `cpu`, `memory` and `disk` percentages, and `sessions`), `joined` (the agents), `stats`, `panel_info` and `band_words`.
+
+### `POST /ui/machines/join-code`
+
+A one-time join code, valid 24 hours, with the commands to paste on the new machine.
+
+**Body** `{"name": "web-01", "panel_url": "https://..."}` (both optional; the address falls back to `SENTRAI_PANEL_URL`). `400` when no address is known.
+
+**Returns** `{"code": "...", "expires_at": "...", "https": true, "pin": "...", "commands": {"linux": "...", "windows": "..."}}`.
