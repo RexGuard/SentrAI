@@ -148,3 +148,57 @@ export function Responder() {
     </section>
   )
 }
+
+type Collector = { collector?: string; silent?: boolean; last_seen_ts?: number }
+type LogAgent = { name?: string; analyzed?: number; collectors?: Collector[] }
+type Source = { layer?: string; found_by?: string; path?: string }
+type SettingsData = { sections: { key: string; fields: { env: string; prompt: string; value: string }[] }[] }
+const LOG_ENVS = ['SENTRAI_LOG_ACCESS', 'SENTRAI_LOG_AUTH', 'SENTRAI_LOG_DB', 'SENTRAI_LOG_OS']
+
+export function Collector() {
+  const [audit, e1] = usePolled<{ records: Rec[] }>('/audit?limit=2000', { records: [] })
+  const [agents] = usePolled<LogAgent[]>('/agents', [])
+  const [extra] = usePolled<Source[]>('/log-sources', [])
+  const [cfg] = usePolled<SettingsData>('/ui/settings', { sections: [] })
+  const fields = cfg.sections.flatMap((s) => s.fields)
+  const dir = fields.find((f) => f.env === 'SENTRAI_LAB_LOGS')?.value ?? ''
+  const layer = agents.filter((a) => a.analyzed !== undefined)
+  const collectors = agents.find((a) => a.name === 'Watchdog')?.collectors ?? []
+  const malicious = byType(audit.records, 'event_classified').reverse()
+  const silent = byType(audit.records, 'collector_silent')
+  const logs = LOG_ENVS.map((e) => fields.find((f) => f.env === e)).filter((f): f is NonNullable<typeof f> => !!f)
+  return (
+    <section className="space-y-4">
+      <header>
+        <h1 className="text-2xl font-semibold">Collector</h1>
+        <p className="text-sm text-muted">Step 1 of 3 · reads your logs and turns each line into an event</p>
+      </header>
+      {e1 && <p role="alert" className="rounded-md border border-line bg-surface p-3 text-bad">{e1}</p>}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Stat label="Events analysed" value={String(layer.reduce((a, x) => a + Number(x.analyzed ?? 0), 0))} note="by the layer agents" />
+        <Stat label="Malicious events" value={String(malicious.length)} note="attached to incidents" hot={malicious.length > 0} />
+        <Stat label="Collectors" value={String(collectors.length)} note="sending heartbeats" />
+        <Stat label="Silent alerts" value={String(silent.length)} note="a collector stopped reporting" hot={silent.length > 0} />
+      </div>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card title="Log sources" note="from the settings file">
+          {dir && <p className="break-all text-xs text-muted">Folder: {dir}</p>}
+          <Table name="Log sources" empty="No log sources." head={['Log', 'File']}
+            rows={[...logs.map((f) => [f.prompt.replace(' file name', ''), <span key={f.env} className="font-mono text-xs">{f.value}</span>]),
+              ...extra.map((x, i) => [`${x.layer ?? '?'} · ${x.found_by ?? 'Scout'}`, <span key={i} className="break-all font-mono text-xs">{x.path}</span>])]} />
+        </Card>
+        <Card title="Heartbeats" note="Watchdog flags a collector that goes quiet">
+          <Table name="Heartbeats" empty="No heartbeat received yet. Start the collector." head={['Collector', 'State', 'Last seen']}
+            rows={collectors.map((c) => [c.collector ?? '-', c.silent ? 'Silent' : 'Alive', c.last_seen_ts ? new Date(c.last_seen_ts * 1000).toLocaleTimeString() : '-'])} />
+          <h2 className="pt-2 font-semibold">Events per layer agent</h2>
+          <Table name="Events per layer agent" empty="No agent data." head={['Agent', 'Events analysed']} rows={layer.map((a) => [a.name ?? '-', String(a.analyzed ?? 0)])} />
+        </Card>
+      </div>
+      <Card title="Malicious events collected" note="newest first">
+        <Table name="Malicious events" empty="No malicious events yet." head={['Time', 'Event', 'Category', 'Layer agent', 'Incident', 'Raw log line']}
+          rows={malicious.slice(0, 50).map((r) => { const d = r.data ?? {}; return [time(r.ts), <span key="e" className="font-mono text-xs">{String(d.event_id ?? '-')}</span>, label(CATEGORY, d.category as string), String(d.agent ?? '-'), String(d.incident ?? '-'), <span key="r" className="break-all font-mono text-xs">{String(d.raw ?? '')}</span>] })} />
+      </Card>
+      <p className="text-xs text-muted">Scout's proposed log files, the process and threat scans and the package scan are still on the current console.</p>
+    </section>
+  )
+}
