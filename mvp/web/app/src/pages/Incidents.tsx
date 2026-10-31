@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { api, ApiError } from '../lib/api'
 import { btn, btnPrimary } from '../lib/ui'
 import { useSession } from '../lib/session'
@@ -174,7 +175,7 @@ export default function Incidents() {
               </>
             )}
           </div>
-          <p className="text-xs text-muted">"Who gets what" (the routing map) is still on the current console.</p>
+          <p className="text-sm"><Link to="/routing" className="underline">Who gets what</Link> <span className="text-muted">· the routing rules: who owns an incident, who is told and who covers</span></p>
         </>
       )}
     </section>

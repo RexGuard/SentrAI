@@ -119,3 +119,43 @@ Every setting the setup wizard knows, in sections (the extensions' own settings 
 Save changed settings. A blank secret keeps the saved one; a generated field cannot be changed here. Everything is checked before anything is written, and a bad value returns `400` naming the setting.
 
 **Body** `{"values": {"BRUTE_FORCE_COUNT": "8"}}` **Returns** `{"saved": ["BRUTE_FORCE_COUNT"], "message": "Saved. ..."}`.
+
+## Overview canvas
+
+### `GET /ui/overview`
+
+Everything the pipeline canvas draws: the steps with their live numbers, each machine, each extension, the settings each block offers, the wires between them, the saved layout and whether this person may change anything.
+
+**Returns** `blocks`, `wires`, `defaults`, `doc` (the saved layout), `version`, `read_only`, `lock_reason`, `results` and `panel`.
+
+### `POST /ui/overview/layout`
+
+Save where the blocks sit, which are hidden, the notes and the hand-drawn wires, in one file next to the settings that every console shares.
+
+**Body** `{"doc": {...}}` **Returns** `{"message": "Layout saved."}`.
+
+### `POST /ui/overview/settings`
+
+A block's Save: only the settings that block offers, checked as the Configuration and Automation guardrails pages check them, then written to the settings file. A bad value returns `400` with the reason.
+
+**Body** `{"block": "step:responder", "changes": {"MAX_AUTO_ACTIONS_PER_HOUR": "5"}}` **Returns** `{"message": "..."}`.
+
+### `POST /ui/overview/toggle`
+
+The switch on an extension's block: add or remove it, as on the Extensions page.
+
+**Body** `{"name": "telegram", "on": true, "title": "Telegram"}` **Returns** `{"message": "..."}`.
+
+## Who gets what
+
+### `GET /ui/routing`
+
+The routing as the map editor draws it: the people, the rules, the follow-up, the layout, the choices each panel offers, and whether this person may change anything.
+
+**Returns** `source`, `escalate_after` and `editor` (`routing`, `version`, `linked`, `categories`, `severities`, `read_only`, `lock_reason`, and the rest the editor reads).
+
+### `POST /ui/routing`
+
+The editor's Save: the whole routing file is replaced and used from the next alert on. The core checks it and refuses a bad file with `400` and the reason. Needs the `configure` right.
+
+**Body** `{"routing": {...}, "summary": "what changed"}` **Returns** `{"message": "Saved. ..."}`.
