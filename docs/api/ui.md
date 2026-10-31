@@ -62,6 +62,16 @@ The single-machine page's Signed in, Services and Packages tabs in one call.
 
 **Returns** `services` (name, port, proto, process, open_incidents) and `services_at`; `admins` with `on`, `sessions`, `suspect`, `activity` and `entries` (the known administrators: `kind`, `value`, `host`, `headline`, `known`, `note`, `forget`); `packages` with `latest` (the newest finished package check, each finding with a ready-made `line`), `updates` (made and not yet undone) and `busy`; and `admin_kinds`. Adding or forgetting an administrator uses `POST /admins`; checks, updates and undos use `POST /fleet/jobs`.
 
+## Automation guardrails
+
+### `GET /ui/limits`
+
+The limits map's data: `settings` (the eight guardrail settings), `actions` (the kinds of action it can move between "on its own" and "asks a person"), `version`, `read_only`, `lock_reason` and `changed` (`at` and `by` of the last save, empty when never).
+
+### `POST /ui/limits`
+
+The map's Save. **Body** `{"settings": {...}}`. Checked again on the core; `400` with the reason when a number is out of range or an address is not one, `403` for a role that cannot configure. Writes the settings file the Configuration page uses and leaves the "changed by" note.
+
 ## Guided setup
 
 Cyanide's setup questions on the Chat page (`mvp/setup_chat.py`). The conversation lives in the core's memory for the signed-in person, never in the chat history; secret answers are shown as dots. Nothing is written until the person confirms the summary, and saving needs the `configure` permission.

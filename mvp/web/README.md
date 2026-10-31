@@ -18,9 +18,9 @@ For development, `npm run dev` in `app/` does the same with live reload.
 | On the new console | Still on Streamlit |
 | --- | --- |
 | Sign-in, Approvals, Incidents, Who gets what, Staff reports, Chat (with the guided setup) | The public staff report page (`/?report`) |
-| Overview canvas, Collector, Classifier, Action taker, Automation guardrails | Scout's proposed log files, the threat, process and package scans |
+| Overview canvas, Collector (with Scout's proposals and the process, threat and package scans), Classifier, Action taker, Automation guardrails (with the limits map) | |
 | Machines, one machine (all its tabs, incl. signed in, services, packages) | |
-| Review, Reports, Audit trail, Backups, Team, Extensions, Configuration | The visual limits map |
+| Review, Reports, Audit trail, Backups, Team, Extensions, Configuration | |
 
 ## How it fits together
 

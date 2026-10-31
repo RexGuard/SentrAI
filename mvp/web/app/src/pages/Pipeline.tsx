@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { api, ApiError } from '../lib/api'
+import Scans from './Scans'
 
 type Rec = { seq?: number; ts?: string; type?: string; data?: Record<string, unknown> }
 type Action = {
@@ -198,7 +199,7 @@ export function Collector() {
         <Table name="Malicious events" empty="No malicious events yet." head={['Time', 'Event', 'Category', 'Layer agent', 'Incident', 'Raw log line']}
           rows={malicious.slice(0, 50).map((r) => { const d = r.data ?? {}; return [time(r.ts), <span key="e" className="font-mono text-xs">{String(d.event_id ?? '-')}</span>, label(CATEGORY, d.category as string), String(d.agent ?? '-'), String(d.incident ?? '-'), <span key="r" className="break-all font-mono text-xs">{String(d.raw ?? '')}</span>] })} />
       </Card>
-      <p className="text-xs text-muted">Scout's proposed log files, the process and threat scans and the package scan are still on the current console.</p>
+      <Scans />
     </section>
   )
 }
