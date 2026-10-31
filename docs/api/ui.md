@@ -56,6 +56,12 @@ A one-time join code, valid 24 hours, with the commands to paste on the new mach
 
 **Returns** `{"code": "...", "expires_at": "...", "https": true, "pin": "...", "commands": {"linux": "...", "windows": "..."}}`.
 
+### `GET /ui/machines/{host}/details`
+
+The single-machine page's Signed in, Services and Packages tabs in one call.
+
+**Returns** `services` (name, port, proto, process, open_incidents) and `services_at`; `admins` with `on`, `sessions`, `suspect`, `activity` and `entries` (the known administrators: `kind`, `value`, `host`, `headline`, `known`, `note`, `forget`); `packages` with `latest` (the newest finished package check, each finding with a ready-made `line`), `updates` (made and not yet undone) and `busy`; and `admin_kinds`. Adding or forgetting an administrator uses `POST /admins`; checks, updates and undos use `POST /fleet/jobs`.
+
 ## Guided setup
 
 Cyanide's setup questions on the Chat page (`mvp/setup_chat.py`). The conversation lives in the core's memory for the signed-in person, never in the chat history; secret answers are shown as dots. Nothing is written until the person confirms the summary, and saving needs the `configure` permission.

@@ -19,8 +19,8 @@ For development, `npm run dev` in `app/` does the same with live reload.
 | --- | --- |
 | Sign-in, Approvals, Incidents, Who gets what, Staff reports, Chat (with the guided setup) | The public staff report page (`/?report`) |
 | Overview canvas, Collector, Classifier, Action taker, Automation guardrails | Scout's proposed log files, the threat, process and package scans |
-| Machines, one machine (overview, hardware, incidents, blocks, jobs, agent) | A machine's signed-in, services and packages tabs |
-| Review, Reports, Audit trail, Backups, Team, Extensions, Configuration | |
+| Machines, one machine (all its tabs, incl. signed in, services, packages) | |
+| Review, Reports, Audit trail, Backups, Team, Extensions, Configuration | The visual limits map |
 
 ## How it fits together
 

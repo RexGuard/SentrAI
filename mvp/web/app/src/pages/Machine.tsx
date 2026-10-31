@@ -4,6 +4,7 @@ import { ArrowLeft, DatabaseBackup, ShieldCheck } from 'lucide-react'
 import { api, ApiError } from '../lib/api'
 import { btn } from '../lib/ui'
 import { useSession } from '../lib/session'
+import { PackagesTab, ServicesTab, SignedInTab, type Details } from './MachineDetails'
 
 type Machine = {
   name: string; host: string; place: string; online: boolean; waiting: boolean; index: number | null; band: string; threshold: number
@@ -17,7 +18,7 @@ type Job = { id: string; kind: string; status: string; created_at?: string; requ
 type Hw = { latest: { at?: string; cpu?: { percent?: number; cores?: number; load?: number[] }; memory?: { percent?: number; used?: number; total?: number }
   disks?: { mount?: string; percent?: number }[]; uptime_s?: number } | null; limits?: Record<string, number> }
 
-const TABS = ['Overview', 'Hardware', 'Incidents', 'Blocks', 'Jobs', 'Agent'] as const
+const TABS = ['Overview', 'Hardware', 'Incidents', 'Blocks', 'Signed in', 'Services', 'Jobs', 'Packages', 'Agent'] as const
 type Tab = (typeof TABS)[number]
 const bandColor: Record<string, string> = { green: 'var(--green)', amber: 'var(--amber)', red: 'var(--red)', critical: 'var(--critical)' }
 const pct = (v?: number | null) => (v == null ? '-' : `${Math.round(v)}%`)
@@ -46,6 +47,7 @@ export default function MachinePage() {
   const [hw, setHw] = useState<Hw | null>(null)
   const [jobs, setJobs] = useState<Job[]>([])
   const [agents, setAgents] = useState<Agent[]>([])
+  const [details, setDetails] = useState<Details | null>(null)
   const [note, setNote] = useState('')
   const [error, setError] = useState('')
   const q = encodeURIComponent(host)
@@ -54,10 +56,11 @@ export default function MachinePage() {
     try {
       const o = await api<Overview>('/ui/machines')
       setM(o.machines.find((x) => x.host === host) ?? null); setWords(o.band_words)
-      const [i, b, h, j, a] = await Promise.all([
+      const [i, b, h, j, a, d] = await Promise.all([
         api<Inc[]>(`/incidents?host=${q}`), api<{ ips?: string[]; users?: string[] }>(`/blocklist?host=${q}`),
-        api<Hw>(`/fleet/hardware?host=${q}`), api<Job[]>(`/fleet/jobs?host=${q}`), api<Agent[]>('/fleet/agents')])
-      setIncs(i); setBlocks(b); setHw(h); setJobs(j); setAgents(a.filter((x) => x.host === host)); setError('')
+        api<Hw>(`/fleet/hardware?host=${q}`), api<Job[]>(`/fleet/jobs?host=${q}`), api<Agent[]>('/fleet/agents'),
+        api<Details>(`/ui/machines/${q}/details`).catch(() => null)])
+      setIncs(i); setBlocks(b); setHw(h); setJobs(j); setAgents(a.filter((x) => x.host === host)); setDetails(d); setError('')
     } catch (e) { setError(e instanceof ApiError ? e.message : 'Could not load this machine.') }
   }, [host, q])
   useEffect(() => { void load(); const t = setInterval(() => void load(), 10000); return () => clearInterval(t) }, [load])
@@ -125,6 +128,10 @@ export default function MachinePage() {
                 <div><h2 className="font-semibold">Accounts</h2>{blocks.users?.length ? <ul className="font-mono text-sm">{blocks.users.map((x) => <li key={x}>{x}</li>)}</ul> : <p className="text-soft">None locked here.</p>}</div>
               </div>
             )}
+            {tab === 'Signed in' && (details ? <SignedInTab d={details} host={host} canAct={can('act')} why={can('act') ? undefined : 'Your role can read everything but change nothing.'} run={run}
+              asking={incs.filter((i) => i.category === 'unauthorised_admin' && ['open', 'acknowledged'].includes(i.status ?? '')).length} onAnswer={() => setTab('Incidents')} /> : <p className="text-muted" role="status">Loading…</p>)}
+            {tab === 'Services' && (details ? <ServicesTab d={details} hasAgent={!!agent} /> : <p className="text-muted" role="status">Loading…</p>)}
+            {tab === 'Packages' && (details ? <PackagesTab d={details} host={host} hasAgent={!!agent} canAct={can('act')} why={offWhy} run={run} /> : <p className="text-muted" role="status">Loading…</p>)}
             {tab === 'Jobs' && (jobs.length === 0 ? <p className="text-soft">Nothing has been asked of this machine's agent yet.</p> : (
               <ul className="divide-y divide-line-soft">{jobs.map((j) => (
                 <li key={j.id} className="flex flex-wrap items-center gap-3 py-2 text-sm">
@@ -142,7 +149,6 @@ export default function MachinePage() {
               </div>
             ) : <p className="text-soft">This machine has no agent: it is only seen in the logs.</p>)}
           </div>
-          <p className="text-xs text-muted">Who is signed in, Services and Packages for a machine are still on the current console.</p>
         </>
       )}
     </section>
