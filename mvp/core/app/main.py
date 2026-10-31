@@ -19,7 +19,7 @@ import sentrai_paths
 from .reports import build_report, render_markdown, render_pdf
 from . import summary as client_summary
 from . import auth as auth_cookie
-from . import ui_approvals, ui_audit, ui_incidents, ui_machine, ui_machines, ui_overview, ui_routing, ui_settings, ui_team
+from . import ui_approvals, ui_audit, ui_incidents, ui_limits, ui_machine, ui_machines, ui_overview, ui_routing, ui_settings, ui_team
 from . import ai, anchor, apidocs, depscan, fleet, hardware, integrations, jobs, webhook
 from .extensions import ExtensionError
 from .chat import OperatorChat, default_chat_provider
@@ -452,6 +452,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ui_team.install(app)
     ui_overview.install(app, core, machines, machine_health, lambda: core.extensions.reload())
     ui_routing.install(app, core)
+    ui_limits.install(app)
     ui_settings.install(app, lambda: (ai.reload(core, chat), core.extensions.reload()))
     ui_machines.install(app, core, machines, machine_health)
     ui_machine.install(app, core, machine_jobs)
