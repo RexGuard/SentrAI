@@ -5,6 +5,7 @@ import SignIn from './pages/SignIn'
 import Approvals from './pages/Approvals'
 import Audit from './pages/Audit'
 import Chat from './pages/Chat'
+import Guardrails from './pages/Guardrails'
 import Extensions from './pages/Extensions'
 import Incidents from './pages/Incidents'
 import MachinePage from './pages/Machine'
@@ -41,7 +42,7 @@ function Gate() {
         <Route path="/routing" element={<Routing />} />
         <Route path="/overview" element={<Overview />} />
         <Route path="/config" element={<Settings />} />
-        <Route path="/guardrails" element={<Settings only={[]} />} />
+        <Route path="/guardrails" element={<Guardrails />} />
         <Route path="/review" element={<Review />} />
         <Route path="/collector" element={<Collector />} />
         <Route path="/classifier" element={<Classifier />} />

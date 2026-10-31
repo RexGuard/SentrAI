@@ -56,6 +56,42 @@ A one-time join code, valid 24 hours, with the commands to paste on the new mach
 
 **Returns** `{"code": "...", "expires_at": "...", "https": true, "pin": "...", "commands": {"linux": "...", "windows": "..."}}`.
 
+### `GET /ui/machines/{host}/details`
+
+The single-machine page's Signed in, Services and Packages tabs in one call.
+
+**Returns** `services` (name, port, proto, process, open_incidents) and `services_at`; `admins` with `on`, `sessions`, `suspect`, `activity` and `entries` (the known administrators: `kind`, `value`, `host`, `headline`, `known`, `note`, `forget`); `packages` with `latest` (the newest finished package check, each finding with a ready-made `line`), `updates` (made and not yet undone) and `busy`; and `admin_kinds`. Adding or forgetting an administrator uses `POST /admins`; checks, updates and undos use `POST /fleet/jobs`.
+
+## Automation guardrails
+
+### `GET /ui/limits`
+
+The limits map's data: `settings` (the eight guardrail settings), `actions` (the kinds of action it can move between "on its own" and "asks a person"), `version`, `read_only`, `lock_reason` and `changed` (`at` and `by` of the last save, empty when never).
+
+### `POST /ui/limits`
+
+The map's Save. **Body** `{"settings": {...}}`. Checked again on the core; `400` with the reason when a number is out of range or an address is not one, `403` for a role that cannot configure. Writes the settings file the Configuration page uses and leaves the "changed by" note.
+
+## Guided setup
+
+Cyanide's setup questions on the Chat page (`mvp/setup_chat.py`). The conversation lives in the core's memory for the signed-in person, never in the chat history; secret answers are shown as dots. Nothing is written until the person confirms the summary, and saving needs the `configure` permission.
+
+### `GET /ui/setup`
+
+**Returns** `done` (this machine was set up before), `assistant`, `active`, and while a conversation is open `state` (`asking`, `review`, `saved`, `cancelled`), `messages` (`role` is `assistant` or `user`), `options` (`value`, `label`) and `secret` (the next answer is hidden).
+
+### `POST /ui/setup/start`
+
+Start a conversation, replacing any open one. Returns the same shape as `GET /ui/setup`.
+
+### `POST /ui/setup/answer`
+
+Answer the open question. **Body** `{"text": "..."}`: an option's value or typed words. `409` when no conversation is open. Returns the same shape as `GET /ui/setup`; when the answer confirms the summary, the settings are saved first.
+
+### `POST /ui/setup/leave`
+
+Close the conversation. Returns the same shape as `GET /ui/setup`.
+
 ## Report something suspicious
 
 For registered users only, like every other endpoint (a sign-in, or the API token). The report is sorted and tracked like any staff report; the answer holds only what the reporter may see.
