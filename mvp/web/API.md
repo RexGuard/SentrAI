@@ -56,7 +56,19 @@ Each returns ready-to-render JSON for one page. Same functions as today, moved b
 - Theme (Black/White), Lucide icons, menu state, filters, folded groups, "How this step works" dismissals.
 - Overview canvas (`flow_canvas.mjs`), routing editor (`routing_editor.mjs`), incident table (`incident_table.mjs`), limits map: wrapped as React components, fed by section C.
 
-## E. Build order (page by page, screenshots after each)
+## E. Build order (one page per run; each ends with screenshots in both themes + accessibility scan)
 
-1. Shell: sign-in (needs B1-B6), menu, theme, role gating
-2. Approvals, 3. Incidents, 4. Overview canvas, 5. Machines, 6. Guardrails + routing, 7. the rest (Chat, Staff, Reports, Audit, Backups, Team, Extensions, Config)
+Separate folder `mvp/web/` on its own branch. Streamlit is not touched until these pass.
+
+| Run | Page | Endpoints it uses |
+| --- | --- | --- |
+| 1 | Sign-in + layout | B1-B7, `GET /auth/me`, `GET /health`, `GET /risk`, `GET /protection`, `POST /protection` |
+| 2 | Approvals | `GET /ui/approvals`, `POST /ui/approvals/bulk`, `GET/POST /ui/approvals/groups`, `GET /incidents/{iid}/why`, `POST /incidents/{iid}/decision|ack|mine|assign` |
+| 3 | Machines (+ one machine) | `GET /ui/machines`, `GET /ui/machines/{host}`, `/fleet/panel`, `/fleet/agents`, `/fleet/jobs`, `/admins`, `/deps`, `/threats`; `POST /fleet/join-codes`, `/fleet/jobs`, `/fleet/jobs/{id}/cancel`, `/fleet/agents/{id}/revoke`, `/admins`, `/deps/scan`, `/threats/scan`, `/threats/{id}/quarantine`, `/quarantine/{id}/restore` |
+| 4 | Chat | `GET/POST /chat`, `POST /chat/clear`, `POST /chat/setup/interpret`, `GET /incidents` |
+| 5 | Audit | `GET /ui/audit`, `GET /audit/verify`, `GET /audit/fingerprint` |
+| 6 | Settings + Accounts | `GET/POST /protection`, `GET /ai`, `POST /ai/test|reload`, `GET /extensions`, `POST /extensions/{name}/add|remove|test|reload`, `GET /limits`, `GET /ui/guardrails`, `/team*` (B8), `GET/POST /summary/schedule`, `POST /summary/send`, `GET /backups`, `POST /backups*` |
+| 7 | Overview canvas + routing editor | `GET /ui/overview`, `GET/POST /ui/routing`, `GET /routing`, `GET /extensions`, `GET /log-sources` |
+| later | Incidents, Staff reports, Reports | `GET /ui/incidents`, `/incidents/{iid}`, `POST /incidents/{iid}/resolve|rollback|permanent`, `/staff-reports*`, `/reports/{iid}(.md|.pdf)`, `/summary/{period}(.md|.pdf)` |
+
+Cut-off: whatever is not green by the evening stays on Streamlit for the 2-3 Nov demo.
