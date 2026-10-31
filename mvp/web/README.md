@@ -17,10 +17,10 @@ For development, `npm run dev` in `app/` does the same with live reload.
 
 | On the new console | Still on Streamlit |
 | --- | --- |
-| Sign-in, Approvals, Incidents, Who gets what, Staff reports, Chat | The public staff report page (`/?report`) |
-| Overview canvas, Collector (with Scout's proposals and the process, threat and package scans), Classifier, Action taker, Automation guardrails | |
+| Sign-in, Approvals, Incidents, Who gets what, Staff reports, Chat (with the guided setup) | The public staff report page (`/?report`) |
+| Overview canvas, Collector (with Scout's proposals and the process, threat and package scans), Classifier, Action taker, Automation guardrails (with the limits map) | |
 | Machines, one machine (all its tabs, incl. signed in, services, packages) | |
-| Review, Reports, Audit trail, Backups, Team, Extensions, Configuration | The guided "Set up with Cyanide" chat |
+| Review, Reports, Audit trail, Backups, Team, Extensions, Configuration | |
 
 ## How it fits together
 

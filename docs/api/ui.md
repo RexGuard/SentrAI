@@ -72,6 +72,26 @@ The limits map's data: `settings` (the eight guardrail settings), `actions` (the
 
 The map's Save. **Body** `{"settings": {...}}`. Checked again on the core; `400` with the reason when a number is out of range or an address is not one, `403` for a role that cannot configure. Writes the settings file the Configuration page uses and leaves the "changed by" note.
 
+## Guided setup
+
+Cyanide's setup questions on the Chat page (`mvp/setup_chat.py`). The conversation lives in the core's memory for the signed-in person, never in the chat history; secret answers are shown as dots. Nothing is written until the person confirms the summary, and saving needs the `configure` permission.
+
+### `GET /ui/setup`
+
+**Returns** `done` (this machine was set up before), `assistant`, `active`, and while a conversation is open `state` (`asking`, `review`, `saved`, `cancelled`), `messages` (`role` is `assistant` or `user`), `options` (`value`, `label`) and `secret` (the next answer is hidden).
+
+### `POST /ui/setup/start`
+
+Start a conversation, replacing any open one. Returns the same shape as `GET /ui/setup`.
+
+### `POST /ui/setup/answer`
+
+Answer the open question. **Body** `{"text": "..."}`: an option's value or typed words. `409` when no conversation is open. Returns the same shape as `GET /ui/setup`; when the answer confirms the summary, the settings are saved first.
+
+### `POST /ui/setup/leave`
+
+Close the conversation. Returns the same shape as `GET /ui/setup`.
+
 ## Audit trail
 
 ### `GET /ui/audit`
