@@ -52,11 +52,19 @@ addresses whose `sudo` counts as your own.
 
 ## Open the dashboard to your computer
 
-From the allowed computer, open:
+The installer sets up the classic dashboard, reachable from the allowed computer at:
 
 ```text
 https://<your server's address>:8501
 ```
+
+For the web dashboard (the main console), run `./web/run-web.sh` on the server and reach it over SSH:
+
+```bash
+ssh -L 5173:127.0.0.1:5173 you@your-server
+```
+
+then open `http://127.0.0.1:5173`. It uses the same accounts, so sign in as you do on the classic one.
 
 The dashboard uses a certificate the installer made itself, so the browser warns once. Accept it,
 then create the Owner with the setup code, or sign in with the Owner email and password from the

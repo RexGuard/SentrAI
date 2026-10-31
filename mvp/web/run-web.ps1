@@ -1,10 +1,10 @@
 <#
 .SYNOPSIS
-  Starts the new web console next to SentrAI (Streamlit keeps running as before).
+  Starts the new web console next to SentrAI (the classic Streamlit dashboard keeps running as before).
 
 .DESCRIPTION
   Start SentrAI first (..\run.ps1). This builds the console when its source changed, then serves it on
-  http://127.0.0.1:5173, passing /api to the core. Sign in with the same account as the Streamlit console.
+  http://127.0.0.1:5173, passing /api to the core. Sign in with the same account as the classic console.
 
 .EXAMPLE
   .\run-web.ps1                       # core on http://127.0.0.1:8000

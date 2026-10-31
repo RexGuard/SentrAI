@@ -54,15 +54,25 @@ cd lab && .venv/bin/python -m collector.collector --add-system-logs
 Before you turn on firewall blocking, add your own IP address to the protected IPs under
 [Settings](settings.html).
 
+## Open the web dashboard
+
+The web dashboard is the main console. With SentrAI running, start it from the `mvp/web` folder:
+
+```bash
+./run-web.sh        # Linux, macOS (Windows: .\run-web.ps1)
+```
+
+Then open `http://127.0.0.1:5173` and sign in with the same account. It needs [Node.js](https://nodejs.org) 20 or newer. The classic dashboard on port 8501 keeps running next to it and works as a fallback.
+
 ## Options
 
 | Windows | Linux and macOS | What it does |
 | --- | --- | --- |
 | `-Speed 60` | `--speed 60` | makes the timers run faster for a test: 60 turns 1 real minute into 1 hour. The default 1 is real time |
-| `-NoDashboard` | `--no-dashboard` | starts everything but the dashboard |
+| `-NoDashboard` | `--no-dashboard` | starts everything but the classic dashboard |
 | `-NoBrowser` | `--no-browser` | does not open the browser for you |
 | `-CorePort 8100` | `--core-port 8100` | when port 8000 is taken |
-| `-DashboardPort 8601` | `--dashboard-port 8601` | when port 8501 is taken |
+| `-DashboardPort 8601` | `--dashboard-port 8601` | when the classic dashboard's port 8501 is taken |
 
 ## Next
 

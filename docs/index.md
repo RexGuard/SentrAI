@@ -62,9 +62,10 @@ Every command in this guide is run from that `mvp` folder unless it says otherwi
 | --- | --- | --- |
 | Core | scores risk, decides on blocks, keeps the tamper-evident record | `127.0.0.1:8000` |
 | Collector | reads the log files you approve and passes new lines to the core | |
-| Dashboard | the web console where you review, approve and change settings | `127.0.0.1:8501` |
+| Web dashboard | the console where you review, approve and change settings | `127.0.0.1:5173` (started with `run-web`) |
+| Classic dashboard | the earlier Streamlit console, kept as a fallback and for demos | `127.0.0.1:8501` |
 | Notifier | sends alerts to Telegram or email, with Approve and Reject buttons | |
 | Agent | only on extra machines that report to a [central panel](panel.html): sends their logs and applies their blocks | outgoing HTTPS only |
 
-The core only ever listens on your own machine. The dashboard does too, unless you open it to
+The core only ever listens on your own machine. The dashboards do too, unless you open it to
 named IP addresses during a [server install](server.html#open-the-dashboard-to-your-computer).

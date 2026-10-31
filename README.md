@@ -48,7 +48,7 @@ powershell -ExecutionPolicy Bypass -File .\run.ps1
 ./run.sh
 ```
 
-The first run asks a few setup questions; press **Enter** to keep the defaults. The dashboard opens at `http://127.0.0.1:8501` and the console prints your **dashboard sign-in once**, so copy the password straight away. On Linux and macOS each part logs to `mvp/.run_logs/<part>.log`.
+The first run asks a few setup questions; press **Enter** to keep the defaults. The classic dashboard opens at `http://127.0.0.1:8501`; for the web dashboard (the main console) run `web/run-web.sh` (`web\run-web.ps1` on Windows) and open `http://127.0.0.1:5173` and the console prints your **dashboard sign-in once**, so copy the password straight away. On Linux and macOS each part logs to `mvp/.run_logs/<part>.log`.
 
 Stop everything with `.\stop.ps1` (Windows) or `./stop.sh`.
 
