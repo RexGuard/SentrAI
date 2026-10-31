@@ -10,6 +10,7 @@ import hashlib
 import json
 import sqlite3
 import threading
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
@@ -32,6 +33,8 @@ class AuditLog:
         self._lock = threading.RLock()
         self._conn: sqlite3.Connection | None = None
         self.listeners: list[Callable[[], None]] = []  # called after each append (the off-box copy wakes up)
+        self._snap: list[dict[str, Any]] = []  # snapshot(): the records read so far, grown instead of re-read
+        self._seen: dict[str, Any] = {}  # verify_recent(): when the whole chain was last checked, and how far
         self._open()
 
     def _open(self) -> None:
@@ -122,6 +125,38 @@ class AuditLog:
             expected_seq += 1
         return True, None
 
+    def snapshot(self) -> list[dict[str, Any]]:
+        """Every record, like records(), but only the new ones are read each time. For pages that load often.
+        Do not change the list; copy it first."""
+        with self._lock:
+            while True:
+                last = self._snap[-1]["seq"] if self._snap else 0
+                more = self.records_after(last, 5000)
+                if not more:
+                    return self._snap
+                self._snap.extend(more)
+
+    def verify_recent(self, max_age: float = 60.0) -> tuple[bool, int | None]:
+        """verify() for pages that load often: the whole chain is re-hashed at most every ``max_age`` seconds;
+        in between, only the records added since are checked, from where the last check ended. A broken
+        result is never reused, so a page keeps showing it until the chain is checked and found whole."""
+        with self._lock:
+            seen = self._seen
+            if not seen or not seen.get("ok") or time.monotonic() - seen["at"] >= max_age:
+                valid, bad = self.verify()
+                head = self.head()
+                self._seen = {"ok": valid, "bad": bad, "at": time.monotonic(), "seq": head[0], "hash": head[1]}
+                return valid, bad
+            prev, expected = seen["hash"], seen["seq"] + 1
+            for rec in self.records_after(seen["seq"], 100000):
+                if rec["seq"] != expected or rec["prev_hash"] != prev or \
+                        compute_hash(prev, rec["seq"], rec["ts"], rec["type"], rec["data"]) != rec["hash"]:
+                    self._seen = {"ok": False, "bad": rec["seq"], "at": 0.0, "seq": 0, "hash": GENESIS_HASH}
+                    return False, rec["seq"]
+                prev, expected = rec["hash"], expected + 1
+            seen.update(seq=expected - 1, hash=prev)
+            return True, None
+
     def head_hash(self) -> str:
         with self._lock:
             assert self._conn is not None
@@ -139,6 +174,7 @@ class AuditLog:
         """Moves the current DB to data/archive/ (never destroyed) and starts a fresh chain."""
         with self._lock:
             self.close()
+            self._snap, self._seen = [], {}
             archived = None
             try:
                 if self.path.exists():
