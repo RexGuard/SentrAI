@@ -12,7 +12,7 @@ import Machines from './pages/Machines'
 import Backups from './pages/Backups'
 import { Classifier, Collector, Responder } from './pages/Pipeline'
 import Overview from './pages/Overview'
-import Report, { isReportPage } from './pages/Report'
+import Report from './pages/Report'
 import Reports from './pages/Reports'
 import Routing from './pages/Routing'
 import Review from './pages/Review'
@@ -25,6 +25,7 @@ function Gate() {
   const { me, loading } = useSession()
   if (loading) return <p className="p-6 text-muted" role="status">Loading…</p>
   if (!me) return <SignIn />
+  if (new URLSearchParams(location.search).has('report') && location.pathname === '/') return <Navigate to="/report" replace />  // the old /?report address
   return (
     <Routes>
       <Route element={<Layout />}>
@@ -36,6 +37,7 @@ function Gate() {
         <Route path="/audit" element={<Audit />} />
         <Route path="/team" element={<Team />} />
         <Route path="/staff" element={<Staff />} />
+        <Route path="/report" element={<Report />} />
         <Route path="/routing" element={<Routing />} />
         <Route path="/overview" element={<Overview />} />
         <Route path="/config" element={<Settings />} />
@@ -48,7 +50,7 @@ function Gate() {
         <Route path="/reports" element={<Reports />} />
         <Route path="/backups" element={<Backups />} />
         <Route path="/incidents" element={<Incidents />} />
-        {MENU.flatMap((g) => g.items).filter((i) => !['/approvals', '/machines', '/chat', '/audit', '/team', '/incidents', '/staff', '/reports', '/backups', '/extensions', '/overview', '/collector', '/classifier', '/responder', '/review', '/config', '/guardrails'].includes(i.to)).map((i) => <Route key={i.to} path={i.to} element={<Soon />} />)}
+        {MENU.flatMap((g) => g.items).filter((i) => !['/approvals', '/report', '/machines', '/chat', '/audit', '/team', '/incidents', '/staff', '/reports', '/backups', '/extensions', '/overview', '/collector', '/classifier', '/responder', '/review', '/config', '/guardrails'].includes(i.to)).map((i) => <Route key={i.to} path={i.to} element={<Soon />} />)}
         <Route path="*" element={<Navigate to="/approvals" replace />} />
       </Route>
     </Routes>
@@ -56,7 +58,6 @@ function Gate() {
 }
 
 export default function App() {
-  if (isReportPage()) return <Report />  // open to staff: no sign-in, no session
   return (
     <BrowserRouter>
       <SessionProvider><Gate /></SessionProvider>

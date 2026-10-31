@@ -165,7 +165,6 @@ These answer without a token:
 | [`GET /health`](status.html#get-health) | the launchers and your monitoring check that the core is up |
 | [`GET /blocklist`](status.html#get-blocklist) | a website or proxy in front of your service can poll it to refuse blocked addresses and accounts; it lists nothing else. With `?host=` it needs the token or that machine's key |
 | [`POST /fleet/enrol`](fleet.html#post-fleetenrol) | a new machine has no key yet; it proves itself with a one-time join code, and 10 wrong codes in 10 minutes close it to everyone for a while |
-| [`GET /public/report`](incidents.html#get-publicreport), [`POST /public/report`](incidents.html#post-publicreport) | the staff report page: anyone at the business can send a report without signing in |
 | [`GET /docs`](#get-docs) | the page itself holds nothing; it asks for the token before it shows any endpoint |
 
 ## Signed links

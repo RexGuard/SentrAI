@@ -19,7 +19,7 @@ import sentrai_paths
 from .reports import build_report, render_markdown, render_pdf
 from . import summary as client_summary
 from . import auth as auth_cookie
-from . import ui_approvals, ui_audit, ui_incidents, ui_machines, ui_overview, ui_public, ui_routing, ui_settings, ui_team
+from . import ui_approvals, ui_audit, ui_incidents, ui_machines, ui_overview, ui_report, ui_routing, ui_settings, ui_team
 from . import ai, anchor, apidocs, depscan, fleet, hardware, integrations, jobs, webhook
 from .extensions import ExtensionError
 from .chat import OperatorChat, default_chat_provider
@@ -313,9 +313,8 @@ AGENT_ROUTES = frozenset({("POST", "/events"), ("POST", "/heartbeat"), ("GET", "
 # the token before it shows anything (apidocs.py; /openapi.json itself needs the token). A report opens
 # with the signed link from its alert (?sig=). Every other endpoint needs "Authorization: Bearer <token>"
 # or the X-SentrAI-Token header; the token is SENTRAI_API_TOKEN from the setup wizard.
-OPEN_PATHS = frozenset({"/health", "/blocklist", "/docs", "/fleet/enrol", "/public/report"})
-OPEN_ROUTES = frozenset({("GET", "/health"), ("GET", "/blocklist"), ("POST", "/fleet/enrol"),
-                         ("GET", "/public/report"), ("POST", "/public/report")})  # in /openapi.json
+OPEN_PATHS = frozenset({"/health", "/blocklist", "/docs", "/fleet/enrol"})
+OPEN_ROUTES = frozenset({("GET", "/health"), ("GET", "/blocklist"), ("POST", "/fleet/enrol")})  # in /openapi.json
 TOKEN_HEADER = "x-sentrai-token"
 OLD_TOKEN_HEADER = "x-cactai-token"  # sent by scripts written before the CactAI -> SentrAI rename
 
@@ -455,7 +454,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ui_routing.install(app, core)
     ui_settings.install(app, lambda: (ai.reload(core, chat), core.extensions.reload()))
     ui_machines.install(app, core, machines, machine_health)
-    ui_public.install(app, core, staff)
+    ui_report.install(app, core, staff)
     app.state.core = core
     app.state.chat = chat
     app.state.discovery = discovery
