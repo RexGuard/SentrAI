@@ -435,6 +435,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     apidocs.install(app, OPEN_ROUTES, AGENT_ROUTES)
     # The signed report link opens in a browser: no framing, no type sniffing, and the ?sig= stays
     # out of the Referer of anything the page links to.
+    app.add_middleware(auth_cookie.OperatorFromSession)  # a signed-in person is the operator (auth.py)
+
     @app.middleware("http")
     async def security_headers(request: Request, call_next):
         response = await call_next(request)
