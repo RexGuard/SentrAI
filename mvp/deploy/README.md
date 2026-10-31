@@ -35,10 +35,11 @@ packages are reinstalled only when a `requirements.txt` changed.
 | --- | --- | --- |
 | `sentrai-core` | risk engine, agents, API | `127.0.0.1:8000` |
 | `sentrai-collector` | tails the approved log files, sends events to the core | |
-| `sentrai-dashboard` | Streamlit dashboard | `127.0.0.1:8501` |
+| `sentrai-web` | the web dashboard (`web/serve.py`: the built console, with `/api` passed to the core). Needs Node.js 20+ at install time | the dashboard port, `127.0.0.1:8501` |
+| `sentrai-dashboard` | classic Streamlit dashboard, the fallback. On `127.0.0.1:8502` when the web dashboard is installed, otherwise on the dashboard port | `127.0.0.1:8502` |
 | `sentrai-notifier` | Telegram alerts (to the journal when no bot is set) | |
 
-`sentrai.target` groups them: `systemctl restart sentrai.target` restarts all four.
+`sentrai.target` groups them: `systemctl restart sentrai.target` restarts all of them.
 The demo portal and attack scripts are not installed as services.
 
 - Code: `/opt/sentrai/mvp` (owned by root; `--prefix` moves it).
