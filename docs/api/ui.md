@@ -92,6 +92,18 @@ Answer the open question. **Body** `{"text": "..."}`: an option's value or typed
 
 Close the conversation. Returns the same shape as `GET /ui/setup`.
 
+## Report something suspicious
+
+For registered users only, like every other endpoint (a sign-in, or the API token). The report is sorted and tracked like any staff report; the answer holds only what the reporter may see.
+
+### `GET /ui/report`
+
+**Returns** `on` (false when `SENTRAI_REPORT_PAGE=off`), `reporter` (the signed-in person's name) and `machines` (the machines a report can be about, on a central panel).
+
+### `POST /ui/report`
+
+**Body** `{"text": "...", "reporter": "...", "contact": "...", "where": "...", "host": "..."}`; only `text` is needed (at least a sentence). The sender is the signed-in account. **Returns** `id`, `kind_label`, `urgency` and `advice`. `400` for a too-short text, `404` when the page is off, `429` when one sender has sent too many (5 in 10 minutes).
+
 ## Audit trail
 
 ### `GET /ui/audit`
