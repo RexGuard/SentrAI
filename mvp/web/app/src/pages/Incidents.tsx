@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
+import Stat from '../lib/Stat'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { api, ApiError } from '../lib/api'
@@ -19,16 +20,6 @@ type Tab = 'todo' | 'all' | 'waves'
 
 const sevColor: Record<string, string> = { critical: 'text-crit', high: 'text-bad', medium: 'text-warn', low: 'text-ok' }
 const field = 'mt-1 block rounded-md border border-line bg-surface-2 px-2 py-1.5 text-ink'
-
-function Stat({ label, value, note, hot }: { label: string; value: number; note: string; hot?: boolean }) {
-  return (
-    <div className="rounded-lg border border-line bg-surface p-4">
-      <p className="text-xs uppercase tracking-wide text-muted">{label}</p>
-      <p className={'text-2xl font-semibold ' + (hot ? 'text-warn' : '')}>{value}</p>
-      <p className="text-xs text-muted">{note}</p>
-    </div>
-  )
-}
 
 function Details({ r, contacts, done }: { r: Row; contacts: Page['contacts']; done: (note: string) => void }) {
   const { me, can } = useSession()

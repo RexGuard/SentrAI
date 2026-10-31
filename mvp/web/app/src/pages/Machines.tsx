@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import Stat from '../lib/Stat'
 import { Link } from 'react-router-dom'
 import { Copy, Hourglass, KeyRound, Plus, ShieldCheck, ShieldOff, Unplug } from 'lucide-react'
 import { api, ApiError } from '../lib/api'
@@ -26,16 +27,6 @@ function State({ m }: { m: Machine }) {
   if (!m.online) return <span className="inline-flex items-center gap-1 text-crit"><Unplug size={14} aria-hidden /> Offline</span>
   if (m.monitor_only) return <span className="inline-flex items-center gap-1 text-warn"><ShieldOff size={14} aria-hidden /> Protection off</span>
   return <span className="inline-flex items-center gap-1 text-ok"><ShieldCheck size={14} aria-hidden /> Protecting</span>
-}
-
-function Stat({ label, value, note, hot }: { label: string; value: number; note: string; hot?: boolean }) {
-  return (
-    <div className="rounded-lg border border-line bg-surface p-4">
-      <p className="text-xs uppercase tracking-wide text-muted">{label}</p>
-      <p className={'text-2xl font-semibold ' + (hot ? 'text-bad' : '')}>{value}</p>
-      <p className="text-xs text-muted">{note}</p>
-    </div>
-  )
 }
 
 function AddMachine({ page, onMade }: { page: Page; onMade: () => void }) {
@@ -101,8 +92,8 @@ export default function Machines() {
         <>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <Stat label="Machines" value={s.machines} note={page.panel ? 'joined this panel' : 'this computer'} />
-            <Stat label="Online" value={s.online} note={`${s.offline} offline or waiting`} hot={s.offline > 0} />
-            <Stat label="Need a look" value={s.need_a_look} note="open incidents or red and above" hot={s.need_a_look > 0} />
+            <Stat label="Online" value={s.online} note={`${s.offline} offline or waiting`} hot={s.offline > 0} tone="bad" />
+            <Stat label="Need a look" value={s.need_a_look} note="open incidents or red and above" hot={s.need_a_look > 0} tone="bad" />
             <Stat label="Blocks in force" value={s.blocks} note="each on its own machine" />
           </div>
           {!page.panel && <p className="rounded-md border border-line bg-surface p-3 text-soft">This core adds every machine into one score. To run it as a central panel, set SENTRAI_RISK_SCOPE=host (and SENTRAI_FIREWALL=off) on it and restart the core: each machine is then scored and blocked on its own.</p>}
