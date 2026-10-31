@@ -30,3 +30,15 @@
 
 body { background: var(--bg); color: var(--ink); font-family: var(--font-sans); margin: 0; }
 :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+/* The overview canvas (src/canvas) reads the console's own variable names. */
+@font-face { font-family: 'Material Symbols Rounded'; font-style: normal; font-weight: 400; font-display: block; src: url('/fonts/sentrai-icons.woff2') format('woff2'); }
+:root, :root[data-theme='dark'] {
+  --font: 'IBM Plex Sans', system-ui, sans-serif; --mono: 'JetBrains Mono', ui-monospace, monospace; --ink-faint: #858585;
+  --brand: #f5f5f5; --brand-2: #b3b3b3; --brand-fill: #f5f5f5; --on-brand: #0a0a0a; --brand-soft: #262626; --brand-line: #5a5a5a; --brand-fill-hover: #d9d9d9;
+  --glow: rgba(255, 255, 255, 0.04); --unknown: #8c8c8c;
+}
+:root[data-theme='light'] {
+  --ink-faint: #6e6e6e; --brand: #0a0a0a; --brand-2: #404040; --brand-fill: #0a0a0a; --on-brand: #fafafa; --brand-soft: #e8e8e8; --brand-line: #a8a8a8;
+  --brand-fill-hover: #262626; --glow: rgba(0, 0, 0, 0.03); --unknown: #6b6b6b;
+}
