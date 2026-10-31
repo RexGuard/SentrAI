@@ -9,7 +9,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 ROOTS = ["flow_map_data", "flow_canvas_data", "clean_canvas_doc", "check_block_settings", "setting_specs",
-         "panel_machines", "machine", "check_limits", "LIMIT_FIELDS", "limits_map_data"]
+         "panel_machines", "machine", "check_limits", "LIMIT_FIELDS", "limits_map_data",
+         "routing_editor_data", "routing_from_editor"]
 HEAD = '''"""The overview canvas's model: what every block shows, its settings, the wires and the saved layout.
 
 GENERATED from dashboard/sentrai_ui/shaping.py (the Streamlit console's functions, unchanged) by taking the

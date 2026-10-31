@@ -13,6 +13,7 @@ import Backups from './pages/Backups'
 import { Classifier, Collector, Responder } from './pages/Pipeline'
 import Overview from './pages/Overview'
 import Reports from './pages/Reports'
+import Routing from './pages/Routing'
 import Review from './pages/Review'
 import Soon from './pages/Soon'
 import Settings from './pages/Settings'
@@ -34,6 +35,7 @@ function Gate() {
         <Route path="/audit" element={<Audit />} />
         <Route path="/team" element={<Team />} />
         <Route path="/staff" element={<Staff />} />
+        <Route path="/routing" element={<Routing />} />
         <Route path="/overview" element={<Overview />} />
         <Route path="/config" element={<Settings />} />
         <Route path="/guardrails" element={<Settings only={[]} />} />

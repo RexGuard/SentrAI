@@ -53,6 +53,23 @@ def resolve_band(risk: dict) -> str:
     return band if band in BAND_COLORS else band_for(risk.get("risk_index"))
 
 
+CATEGORY_LABELS = {
+    "benign": "Benign",
+    "brute_force": "Brute force",
+    "sql_injection": "SQL injection",
+    "xss": "Cross-site scripting",
+    "port_scan": "Port or web scan",
+    "privilege_escalation": "Privilege escalation",
+    "data_exfiltration": "Data exfiltration",
+    "misconfiguration": "Misconfiguration",
+    "log_tampering": "Log tampering",
+    "malware": "Malware found",
+    "staff_report": "Staff report",
+    "prompt_injection": "Prompt injection",
+    "unauthorised_admin": "Root access from an unrecognised sign-in",
+}
+
+
 def ai_classifier_state(status: Any, extension: dict | None = None) -> tuple[str, str]:
     """The AI classifier's tile: ("On" | "Off" | "Unknown", why). Never claims "On" when the core said nothing.
 
@@ -263,6 +280,81 @@ def records_of(records: list[dict], *types: str) -> list[dict]:
 
 
 OPEN_STATUSES = ("open", "acknowledged", "contained")  # not closed yet: somebody still owns them
+
+
+SEVERITY_CHOICES = ["low", "medium", "high", "critical"]
+
+
+ROLE_CHOICES = ["", "on_duty", "team_lead", "it_manager", "cxo"]
+
+
+ROLE_LABELS = {"": "none", "on_duty": "on duty", "team_lead": "team lead", "it_manager": "IT manager", "cxo": "CXO"}
+
+
+def routing_doc(routing: dict | None) -> dict:
+    """GET /routing turned into the file shape POST /routing takes, to edit and send back."""
+    routing = routing or {}
+    contacts = {str(c.get("id")): {k: str(c.get(k) or "") for k in ("name", "role", "email", "telegram", "backup")}
+                for c in routing.get("contacts") or [] if c.get("id")}
+    rules = [{"name": str(r.get("name") or ""), "match": {k: list(v) for k, v in (r.get("match") or {}).items()},
+              "owner": str(r.get("owner") or ""), "notify": list(r.get("notify") or [])}
+             for r in routing.get("rules") or []]
+    return {"contacts": contacts, "rules": rules, "follow_up": dict(routing.get("follow_up") or {})}
+
+
+def routing_version(routing: dict | None) -> str:
+    """A short fingerprint of everything the editor can change (not Telegram links), so it can tell
+    a save of its own from someone else's."""
+    doc = routing_doc(routing) | {"layout": (routing or {}).get("layout") or {}}
+    return hashlib.sha256(json.dumps(doc, sort_keys=True).encode("utf-8")).hexdigest()[:16]
+
+
+def routing_editor_data(routing: dict | None, read_only: bool = False, lock_reason: str = "",
+                        result: dict | None = None, focus: str = "") -> dict:
+    """What the "Who gets what" editor draws: the routing (people in file order), the choices its panel
+    offers, whether this person may change anything, and how their last save went."""
+    routing = routing or {}
+    doc = routing_doc(routing)
+    return {
+        "routing": {"contacts": [{"id": cid, **c} for cid, c in doc["contacts"].items()], "rules": doc["rules"],
+                    "follow_up": doc["follow_up"], "layout": routing.get("layout") or {}},
+        "version": routing_version(routing),
+        "linked": {str(c.get("id")): True for c in routing.get("contacts") or [] if c.get("telegram_linked")},
+        "categories": [[k, v] for k, v in CATEGORY_LABELS.items()],
+        "severities": SEVERITY_CHOICES,
+        "roles": [[r, ROLE_LABELS[r]] for r in ROLE_CHOICES],
+        "read_only": bool(read_only),
+        "lock_reason": lock_reason,
+        "result": result,
+        "focus": focus,  # a person to mark "you" (a person's own part of the map)
+        "numbers": list(routing.get("numbers") or []),  # each rule's place in the full list, when cut down
+    }
+
+
+def routing_from_editor(routing: Any) -> dict:
+    """The editor's Save turned into the file POST /routing takes: people keyed by id in the order the
+    editor lists them, text trimmed, and where each box sits on the map. The core checks it all again."""
+    routing = routing if isinstance(routing, dict) else {}
+    part = lambda key, kind: routing.get(key) if isinstance(routing.get(key), kind) else kind()  # noqa: E731
+    contacts = {}
+    for c in part("contacts", list):
+        if isinstance(c, dict) and str(c.get("id") or "").strip():
+            contacts[str(c["id"]).strip()] = {k: str(c.get(k) or "").strip()
+                                               for k in ("name", "role", "email", "telegram", "backup")}
+    rules = []
+    for r in part("rules", list):
+        if not isinstance(r, dict):
+            continue
+        match = r.get("match") if isinstance(r.get("match"), dict) else {}
+        values = {str(k): [str(x).strip() for x in (v if isinstance(v, list) else [v]) if str(x or "").strip()]
+                  for k, v in match.items()}
+        rules.append({"name": str(r.get("name") or "").strip(), "match": {k: v for k, v in values.items() if v},
+                      "owner": str(r.get("owner") or ""), "notify": [str(x) for x in r.get("notify") if x]
+                                                               if isinstance(r.get("notify"), list) else []})
+    out = {"contacts": contacts, "rules": rules, "follow_up": dict(part("follow_up", dict))}
+    if isinstance(routing.get("layout"), dict):
+        out["layout"] = routing["layout"]
+    return out
 
 
 # Every kind of action the core takes (core/app/agents.py ACTION_TEXT), in plain words, in a fixed order.
