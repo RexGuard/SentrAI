@@ -2,6 +2,7 @@ import { NavLink, Outlet } from 'react-router-dom'
 import {
   Boxes, ClipboardCheck, DatabaseBackup, FileText, Flag, Gauge, Link2, LogOut, MessageSquare, Moon, Network,
   Puzzle, ScrollText, Server, Settings2, ShieldCheck, Siren, Sun, Users, Workflow, type LucideIcon,
+  MessageSquareWarning,
 } from 'lucide-react'
 import { useSession } from '../lib/session'
 import { useTheme } from '../lib/theme'
@@ -13,6 +14,7 @@ export const MENU: { group: string; items: Item[] }[] = [
     { to: '/approvals', label: 'Approvals', icon: ClipboardCheck },
     { to: '/incidents', label: 'Incidents', icon: Siren },
     { to: '/staff', label: 'Staff reports', icon: Flag },
+    { to: '/report', label: 'Report something', icon: MessageSquareWarning },
     { to: '/chat', label: 'Chat', icon: MessageSquare },
   ] },
   { group: 'Pipeline', items: [
