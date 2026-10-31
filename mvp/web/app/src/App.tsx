@@ -6,6 +6,7 @@ import Approvals from './pages/Approvals'
 import Audit from './pages/Audit'
 import Chat from './pages/Chat'
 import Incidents from './pages/Incidents'
+import MachinePage from './pages/Machine'
 import Machines from './pages/Machines'
 import Backups from './pages/Backups'
 import Reports from './pages/Reports'
@@ -23,6 +24,7 @@ function Gate() {
         <Route index element={<Navigate to="/approvals" replace />} />
         <Route path="/approvals" element={<Approvals />} />
         <Route path="/machines" element={<Machines />} />
+        <Route path="/machines/:host" element={<MachinePage />} />
         <Route path="/chat" element={<Chat />} />
         <Route path="/audit" element={<Audit />} />
         <Route path="/team" element={<Team />} />
