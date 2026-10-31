@@ -145,7 +145,7 @@ export default function Machines() {
             <div className="space-y-3 rounded-lg border border-line bg-surface p-4">
               <h2 className="font-semibold">Joined machines <span className="font-normal text-muted">· each has its own key; revoking one never touches the others</span></h2>
               {page.joined.length === 0 ? <p className="text-soft">No machine has joined yet. Make a join code above.</p> : (
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto" role="region" aria-label="Joined machines" tabIndex={0}>
                   <table className="w-full text-left text-sm">
                     <thead className="border-b border-line text-xs uppercase tracking-wide text-muted">
                       <tr>{['Machine', 'Id', 'Joined', 'Invited by', 'Last seen', 'Status'].map((h) => <th key={h} className="p-2 font-medium">{h}</th>)}</tr>

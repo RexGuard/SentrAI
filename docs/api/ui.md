@@ -55,3 +55,13 @@ A one-time join code, valid 24 hours, with the commands to paste on the new mach
 **Body** `{"name": "web-01", "panel_url": "https://..."}` (both optional; the address falls back to `SENTRAI_PANEL_URL`). `400` when no address is known.
 
 **Returns** `{"code": "...", "expires_at": "...", "https": true, "pin": "...", "commands": {"linux": "...", "windows": "..."}}`.
+
+## Audit trail
+
+### `GET /ui/audit`
+
+The newest audit records in plain words, whether the chain checks out, and who did what.
+
+**Query** `limit` (1 to 500, default 60): how many records.
+
+**Returns** `chain_valid`, `first_invalid_seq`, `count`, `head_hash`, `feed` (newest first: `seq`, `time`, `agent`, `type`, `summary`, `hash`) and `agents` (`agent`, `role`, `can_act`, `records`, `last`).

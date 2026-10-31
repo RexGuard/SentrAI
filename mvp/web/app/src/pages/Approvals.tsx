@@ -71,7 +71,7 @@ function Table({ rows, picking, picked, toggle, page, run, empty }: {
   const [open, setOpen] = useState<string | null>(null)
   if (!rows.length) return <p className="rounded-lg border border-line bg-surface p-4 text-soft">{empty}</p>
   return (
-    <div className="overflow-x-auto rounded-lg border border-line bg-surface">
+    <div className="overflow-x-auto rounded-lg border border-line bg-surface" role="region" aria-label="Approvals" tabIndex={0}>
       <table className="w-full text-left text-sm">
         <thead className="border-b border-line text-xs uppercase tracking-wide text-muted">
           <tr>

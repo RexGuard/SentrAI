@@ -3,6 +3,7 @@ import { SessionProvider, useSession } from './lib/session'
 import Layout, { MENU } from './pages/Layout'
 import SignIn from './pages/SignIn'
 import Approvals from './pages/Approvals'
+import Audit from './pages/Audit'
 import Chat from './pages/Chat'
 import Machines from './pages/Machines'
 import Soon from './pages/Soon'
@@ -18,7 +19,8 @@ function Gate() {
         <Route path="/approvals" element={<Approvals />} />
         <Route path="/machines" element={<Machines />} />
         <Route path="/chat" element={<Chat />} />
-        {MENU.flatMap((g) => g.items).filter((i) => !['/approvals', '/machines', '/chat'].includes(i.to)).map((i) => <Route key={i.to} path={i.to} element={<Soon />} />)}
+        <Route path="/audit" element={<Audit />} />
+        {MENU.flatMap((g) => g.items).filter((i) => !['/approvals', '/machines', '/chat', '/audit'].includes(i.to)).map((i) => <Route key={i.to} path={i.to} element={<Soon />} />)}
         <Route path="*" element={<Navigate to="/approvals" replace />} />
       </Route>
     </Routes>
