@@ -28,7 +28,6 @@ import re
 import socket
 import threading
 import time
-import uuid
 from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path

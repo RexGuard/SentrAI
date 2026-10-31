@@ -15,7 +15,6 @@ type Data = {
 }
 
 const PRESET_ENV = 'SENTRAI_PRESET'
-const GUARDRAILS = ['AUTO_ACTIONS', 'NEEDLE_MIN_CONFIDENCE', 'RISK_THRESHOLD', 'MAX_AUTO_ACTIONS_PER_HOUR', 'HOTPATCH_TTL_HOURS', 'MAX_TTL_HOURS', 'PROTECTED_IPS', 'PROTECTED_USERS']
 const input = 'mt-1 block w-full rounded-md border border-line bg-surface-2 px-3 py-1.5 text-ink'
 
 function Row({ f, value, onChange, disabled }: { f: Field; value: string; onChange: (v: string) => void; disabled: boolean }) {
@@ -38,14 +37,13 @@ function Row({ f, value, onChange, disabled }: { f: Field; value: string; onChan
   )
 }
 
-export default function Settings({ only }: { only?: string[] }) {
+export default function Settings() {
   const { can } = useSession()
   const [data, setData] = useState<Data | null>(null)
   const [error, setError] = useState('')
   const [note, setNote] = useState('')
   const [draft, setDraft] = useState<Record<string, string>>({})
   const [query, setQuery] = useState('')
-  const guard = !!only
   const load = useCallback(async () => {
     try { setData(await api<Data>('/ui/settings')); setError('') } catch (e) { setError(e instanceof ApiError ? e.message : 'Could not load settings.') }
   }, [])
@@ -84,21 +82,19 @@ export default function Settings({ only }: { only?: string[] }) {
   return (
     <section className="space-y-4">
       <header>
-        <h1 className="text-2xl font-semibold">{guard ? 'Automation guardrails' : 'Configuration'}</h1>
-        <p className="text-sm text-muted">{guard ? 'what SentrAI may do on its own, how often, and what it never touches' : `Saved to ${'settings file'} · read by every part when it starts`}</p>
+        <h1 className="text-2xl font-semibold">Configuration</h1>
+        <p className="text-sm text-muted">Saved to the settings file · read by every part when it starts</p>
       </header>
       {error && <p role="alert" className="rounded-md border border-line bg-surface p-3 text-bad">{error}</p>}
       {note && <p role="status" className="rounded-md border border-line bg-surface p-3">{note}</p>}
       {data && (
         <>
-          {!guard && (
-            <div className="relative">
-              <Search size={16} className="pointer-events-none absolute left-3 top-2.5 text-muted" aria-hidden />
-              <label htmlFor="cfg-search" className="sr-only">Search settings</label>
-              <input id="cfg-search" className={input + ' mt-0 pl-9'} placeholder="Search settings: telegram, threshold, password…" value={query} onChange={(e) => setQuery(e.target.value)} />
-            </div>
-          )}
-          {!guard && preset && match('preset', 'security', ...Object.values(data.presets).map((p) => p.label)) && (
+          <div className="relative">
+            <Search size={16} className="pointer-events-none absolute left-3 top-2.5 text-muted" aria-hidden />
+            <label htmlFor="cfg-search" className="sr-only">Search settings</label>
+            <input id="cfg-search" className={input + ' mt-0 pl-9'} placeholder="Search settings: telegram, threshold, password…" value={query} onChange={(e) => setQuery(e.target.value)} />
+          </div>
+          {preset && match('preset', 'security', ...Object.values(data.presets).map((p) => p.label)) && (
             <div className="space-y-3 rounded-lg border border-line bg-surface p-4">
               <h2 className="font-semibold">Security preset <span className="font-normal text-muted">· one choice sets the detection and response values below</span></h2>
               <div role="radiogroup" aria-label="Preset" className="flex flex-wrap gap-2">
@@ -110,13 +106,13 @@ export default function Settings({ only }: { only?: string[] }) {
               <p className="text-sm text-soft">{presetName === data.advanced ? data.advanced_about + ' Pick a preset to go back to its values.' : data.presets[presetName]?.about}</p>
             </div>
           )}
-          {data.sections.filter((s) => (guard ? s.fields.some((f) => GUARDRAILS.includes(f.env)) : s.key !== 'preset')).map((s) => {
-            const fields = s.fields.filter((f) => f.env !== PRESET_ENV && (guard ? GUARDRAILS.includes(f.env) : true))
+          {data.sections.filter((s) => s.key !== 'preset').map((s) => {
+            const fields = s.fields.filter((f) => f.env !== PRESET_ENV)
             const whole = match(s.title, s.about)
             const hits = whole ? fields : fields.filter((f) => match(f.prompt, f.env))
             if (!hits.length) return null
             return (
-              <details key={s.key} className="rounded-lg border border-line bg-surface" open={guard || !!q}>
+              <details key={s.key} className="rounded-lg border border-line bg-surface" open={!!q}>
                 <summary className="cursor-pointer p-4 font-semibold">{s.title} <span className="font-normal text-muted">· {s.about}</span></summary>
                 <div className="grid gap-4 p-4 pt-0 lg:grid-cols-2">{hits.map((f) => <Row key={f.env} f={f} value={val(f)} onChange={(v) => set(f, v)} disabled={off} />)}</div>
               </details>

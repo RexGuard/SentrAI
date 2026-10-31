@@ -7,7 +7,6 @@ shaping.py changes one of them, regenerate this file the same way.
 from __future__ import annotations
 
 import hashlib
-import html
 import ipaddress
 import json
 import math

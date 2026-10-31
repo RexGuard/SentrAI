@@ -1,7 +1,6 @@
 """The administrators (admins.py): root work by a known administrator is recorded, root work from a sign-in
 SentrAI does not recognise asks "was this you?", and "This was me" teaches it."""
 
-import pytest
 from fastapi.testclient import TestClient
 
 from app.admins import TRUSTED, UNKNOWN, SUSPECT
