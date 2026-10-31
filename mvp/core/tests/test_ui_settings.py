@@ -1,4 +1,6 @@
 """The web dashboard's Configuration endpoints."""
+import os
+
 import pytest
 
 import sentrai_config as cfg
@@ -7,6 +9,10 @@ import sentrai_config as cfg
 @pytest.fixture(autouse=True)
 def own_settings(tmp_path, monkeypatch):
     monkeypatch.setattr(cfg, "config_path", lambda: tmp_path / "settings.json")
+    before = dict(os.environ)
+    yield
+    os.environ.clear()  # a save reloads the AI and extensions, which load saved values into the environment
+    os.environ.update(before)
 
 
 def test_lists_sections_without_secrets(client):
