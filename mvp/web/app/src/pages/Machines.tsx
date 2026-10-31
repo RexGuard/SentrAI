@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { Copy, Hourglass, KeyRound, Plus, ShieldCheck, ShieldOff, Unplug } from 'lucide-react'
 import { api, ApiError } from '../lib/api'
 import { btn, btnPrimary } from '../lib/ui'
@@ -115,7 +116,7 @@ export default function Machines() {
               {page.machines.map((m) => (
                 <li key={m.name} className="flex flex-wrap items-center gap-x-6 gap-y-2 py-3">
                   <div className="min-w-40 flex-1">
-                    <p className="font-medium">{m.name}</p>
+                    <p className="font-medium">{m.host ? <Link to={`/machines/${encodeURIComponent(m.host)}`} className="underline-offset-2 hover:underline">{m.name}</Link> : m.name}</p>
                     <p className="text-xs text-muted">{m.place}{!m.waiting && m.online ? ` · threshold ${Math.round(m.threshold)}` : ''}{m.services.length ? ` · ${m.services.join(', ')}` : ''}</p>
                     <div className="mt-1 h-1.5 w-40 rounded bg-surface-3" aria-hidden>
                       <div className="h-full rounded" style={{ width: `${m.online && m.index ? m.index : 0}%`, background: bandColor[m.band] ?? 'var(--ink-muted)' }} />
