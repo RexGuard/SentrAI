@@ -105,3 +105,17 @@ Who owns each incident and what still needs a person.
 **Query** `closed` (also list resolved and rejected ones) and `mine` (only incidents owned by the signed-in person), both default `false`.
 
 **Returns** `counts` (`open`, `attention`, `overdue`, `escalated`, `unassigned`, `mine`), `todo` (rows that need a person, most urgent first), `todo_waves` (a wave's incidents as one line each), `all` (rows), `waves`, and `contacts` (who an incident can be assigned to). Each row has `id`, `what`, `host`, `severity`, `status`, `owner`, `backup`, `open_for`, `needs`, `closed`, `attention`, `wave` and `summary`. Assign and resolve use `POST /incidents/{iid}/assign` and `/resolve`.
+
+## Configuration
+
+### `GET /ui/settings`
+
+Every setting the setup wizard knows, in sections (the extensions' own settings included).
+
+**Returns** `sections` (`key`, `title`, `about`, `extension`, and `fields` with `env`, `prompt`, `kind`, `secret`, `generated`, `choices`, `preset_field`, `value`, `is_set`, `default`), `presets` (each with `label`, `about` and the `values` it sets), `advanced` and `advanced_about`. A secret or generated field (such as the API token) never comes back: only `is_set` tells whether it has a value.
+
+### `POST /ui/settings`
+
+Save changed settings. A blank secret keeps the saved one; a generated field cannot be changed here. Everything is checked before anything is written, and a bad value returns `400` naming the setting.
+
+**Body** `{"values": {"BRUTE_FORCE_COUNT": "8"}}` **Returns** `{"saved": ["BRUTE_FORCE_COUNT"], "message": "Saved. ..."}`.
