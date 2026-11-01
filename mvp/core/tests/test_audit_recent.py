@@ -61,3 +61,12 @@ def test_a_reset_forgets_what_was_cached(tmp_path):
     log.verify_recent()
     log.archive_and_reset()
     assert log.snapshot() == [] and log.verify_recent() == (True, None)
+
+
+def test_the_audit_page_feed_asks_for_the_quick_check(client):
+    client.post("/events", json={"host": "h", "layer": "web", "source": "nginx", "src_ip": "203.0.113.9",
+                                 "raw": "GET /x?id=1' OR '1'='1 HTTP/1.1 200"})
+    strict = client.get("/audit?limit=5").json()
+    quick = client.get("/audit?limit=5&quick=1").json()
+    assert quick["chain_valid"] is True and quick["records"] == strict["records"] and quick["count"] == strict["count"]
+    assert quick["head_hash"] == strict["head_hash"]

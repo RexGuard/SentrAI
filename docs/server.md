@@ -52,19 +52,17 @@ addresses whose `sudo` counts as your own.
 
 ## Open the dashboard to your computer
 
-The installer sets up the classic dashboard, reachable from the allowed computer at:
+The installer builds the web dashboard (it needs [Node.js](https://nodejs.org) 20 or newer on the server)
+and serves it as the `sentrai-web` service, reachable from the allowed computer at:
 
 ```text
 https://<your server's address>:8501
 ```
 
-For the web dashboard (the main console), run `./web/run-web.sh` on the server and reach it over SSH:
-
-```bash
-ssh -L 5173:127.0.0.1:5173 you@your-server
-```
-
-then open `http://127.0.0.1:5173`. It uses the same accounts, so sign in as you do on the classic one.
+The earlier Streamlit dashboard stays installed as a fallback, on the server only (`127.0.0.1:8502`):
+`ssh -L 8502:127.0.0.1:8502 you@your-server`, then open `http://127.0.0.1:8502`. Without Node.js the
+installer says so and keeps the Streamlit dashboard on port 8501 instead; install Node.js and run
+`sudo sentrai-update --force` to switch.
 
 The dashboard uses a certificate the installer made itself, so the browser warns once. Accept it,
 then create the Owner with the setup code, or sign in with the Owner email and password from the
@@ -94,7 +92,7 @@ Then, from your own computer:
 ssh -L 8501:127.0.0.1:8501 you@your-server
 ```
 
-and open `http://127.0.0.1:8501` while that SSH session is open.
+and open `http://127.0.0.1:8501` while that SSH session is open (the web dashboard).
 
 ## Tell SentrAI which logs to watch
 

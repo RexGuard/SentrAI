@@ -1,5 +1,5 @@
 [Unit]
-Description=SentrAI dashboard (Streamlit)
+Description=SentrAI classic dashboard (Streamlit)
 PartOf=sentrai.target
 After=sentrai-core.service
 Wants=sentrai-core.service
@@ -9,7 +9,7 @@ Type=simple
 WorkingDirectory=@PREFIX@/mvp/dashboard
 # "+" runs it as root: when the dashboard is opened to SENTRAI_DASHBOARD_ALLOW, only those addresses get through.
 ExecStartPre=+/bin/sh -c 'if grep -q "^SENTRAI_DASHBOARD_ALLOW=." /etc/sentrai/sentrai.env; then exec /usr/local/sbin/sentrai-dashboard-firewall; fi'
-ExecStart=@PREFIX@/mvp/dashboard/.venv/bin/python -m streamlit run app.py --server.address ${SENTRAI_DASHBOARD_HOST} --server.port ${SENTRAI_DASHBOARD_PORT} --server.headless true --browser.gatherUsageStats false
+ExecStart=@PREFIX@/mvp/dashboard/.venv/bin/python -m streamlit run app.py --server.address ${SENTRAI_CLASSIC_HOST} --server.port ${SENTRAI_CLASSIC_PORT} --server.headless true --browser.gatherUsageStats false
 User=@USER@
 Group=@USER@
 EnvironmentFile=/etc/sentrai/sentrai.env

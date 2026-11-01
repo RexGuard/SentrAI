@@ -24,9 +24,9 @@ done
 migrate_from_cactai server
 reinstall_other_after_cactai panel "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-systemctl disable --now sentrai.target sentrai-core sentrai-collector sentrai-dashboard sentrai-notifier \
+systemctl disable --now sentrai.target sentrai-core sentrai-collector sentrai-dashboard sentrai-web sentrai-notifier \
     sentrai-update-check.timer 2>/dev/null || true
-rm -f /etc/systemd/system/sentrai.target /etc/systemd/system/sentrai-{core,collector,dashboard,notifier}.service \
+rm -f /etc/systemd/system/sentrai.target /etc/systemd/system/sentrai-{core,collector,dashboard,web,notifier}.service \
     /etc/systemd/system/sentrai-update-check.{service,timer}
 systemctl daemon-reload
 rm -f /usr/local/bin/sentrai-scout /usr/local/bin/sentrai-admin

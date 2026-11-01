@@ -604,14 +604,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return _verb(core.ack, iid, body.operator, body.channel or "dashboard")
 
     @app.get("/audit")
-    def get_audit(limit: int = Query(0, ge=0), incident: Optional[str] = None) -> dict[str, Any]:
-        valid, bad = core.audit.verify()
-        records = core.audit.records()
+    def get_audit(limit: int = Query(0, ge=0), incident: Optional[str] = None,
+                  quick: bool = Query(False, description="for a page that asks every second: the whole chain is "
+                                                         "re-hashed at most once a minute, not on every call")) -> dict[str, Any]:
+        if quick:
+            valid, bad = core.audit.verify_recent()
+            records = core.audit.snapshot()
+        else:
+            valid, bad = core.audit.verify()
+            records = core.audit.records()
         total = len(records)
         if incident:
             records = [r for r in records if r["data"].get("incident") == incident]
         if limit:
             records = records[-limit:]
+        records = list(records)
         return {"chain_valid": valid, "first_invalid_seq": bad, "count": total,
                 "head_hash": core.audit.head_hash(), "records": records}
 

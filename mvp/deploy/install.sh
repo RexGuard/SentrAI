@@ -383,6 +383,7 @@ tar -C "$SRC" -cf - \
     --exclude=.run_pids.json --exclude=./lab/logs --exclude=./core/data --exclude=./notifier/data \
     --exclude=./lab/scout/sources.json --exclude=./lab/scout/pending.json \
     --exclude='./lab/scout/trails/[0-9]*' \
+    --exclude=./web/app/node_modules --exclude=./web/app/dist \
     --exclude=./research --exclude=./pitch --exclude=./deck --exclude=./assets \
     . | tar -C "$MVP" -xf - --no-same-owner
 record_version "$MVP" "$SRC"
@@ -571,22 +572,67 @@ if [ "$SEAL" = 1 ]; then
     fi
 fi
 
+# --- web dashboard ----------------------------------------------------------
+# The main console is built once here (Node.js 20 or newer, and the npm registry) and served by
+# web/serve.py (sentrai-web). It takes the dashboard port; the classic Streamlit one moves to 127.0.0.1:8502.
+# Without Node.js the classic dashboard keeps the dashboard port, exactly as before, and the install says so.
+WEB=0
+WEBAPP="$MVP/web/app"
+if [ -f "$WEBAPP/package.json" ]; then
+    NODE_WHY=""
+    if ! command -v node >/dev/null 2>&1; then
+        NODE_WHY="node is not on root's PATH ($PATH)"
+    else
+        NODE_VER="$(node -p 'process.versions.node' 2>/dev/null || true)"  # prereleases like 27.0.0-alpha.0 count by their major
+        NODE_MAJOR="${NODE_VER%%.*}"
+        case "$NODE_MAJOR" in ''|*[!0-9]*) NODE_WHY="could not read the version of $(command -v node)" ;;
+            *) [ "$NODE_MAJOR" -ge 20 ] || NODE_WHY="node $NODE_VER ($(command -v node)) is older than 20" ;; esac
+        if [ -z "$NODE_WHY" ] && ! command -v npm >/dev/null 2>&1; then
+            NODE_WHY="node $NODE_VER is at $(command -v node), but npm is not installed (or not on root's PATH)"
+        fi
+    fi
+    if [ -z "$NODE_WHY" ]; then
+        echo "Building the web dashboard with Node $NODE_VER (this takes a minute) ..."
+        if (cd "$WEBAPP" && npm ci --no-audit --no-fund --loglevel=error && npm run build >/dev/null) \
+            && [ -f "$WEBAPP/dist/index.html" ]; then
+            WEB=1
+        else
+            echo "WARNING: the web dashboard did not build (npm's message is above); the classic dashboard is used." >&2
+        fi
+        rm -rf "$WEBAPP/node_modules"  # only dist/ is needed to serve it
+        chown -R root:root "$WEBAPP" 2>/dev/null || true
+        chmod -R u=rwX,go=rX "$WEBAPP" 2>/dev/null || true
+    else
+        echo "NOTE: the web dashboard was not built, so the classic dashboard is used: $NODE_WHY." >&2
+        echo "      It needs Node.js 20 or newer with npm (a current LTS such as 22 is best). Install it, then run:" >&2
+        echo "      sudo sentrai-update --force" >&2
+    fi
+fi
+if [ "$WEB" = 1 ]; then
+    set_env SENTRAI_CLASSIC_HOST 127.0.0.1
+    [ -n "$(get_env SENTRAI_CLASSIC_PORT)" ] || set_env SENTRAI_CLASSIC_PORT 8502
+    [ "$(get_env SENTRAI_CLASSIC_PORT)" != "$DASH_PORT" ] || set_env SENTRAI_CLASSIC_PORT 8502
+else
+    set_env SENTRAI_CLASSIC_HOST "$DASH_HOST"
+    set_env SENTRAI_CLASSIC_PORT "$DASH_PORT"
+fi
+
 # --- systemd ----------------------------------------------------------------
-UNITS=(sentrai-core sentrai-collector sentrai-dashboard sentrai-notifier)
+UNITS=(sentrai-core sentrai-collector sentrai-dashboard sentrai-web sentrai-notifier)
 for u in "${UNITS[@]}"; do
     sed -e "s|@PREFIX@|$PREFIX|g" -e "s|@USER@|$SVC_USER|g" -e "s|@LOGGROUPS@|${LOG_GROUPS[*]}|g" \
         "$SRC/deploy/$u.service" > "/etc/systemd/system/$u.service"
 done
-if [ "$NOTIFIER" = 0 ]; then
-    sed 's/ sentrai-notifier.service//' "$SRC/deploy/sentrai.target" > /etc/systemd/system/sentrai.target
-else
-    cp "$SRC/deploy/sentrai.target" /etc/systemd/system/sentrai.target
-fi
+cp "$SRC/deploy/sentrai.target" /etc/systemd/system/sentrai.target
+if [ "$NOTIFIER" = 0 ]; then sed -i 's/ sentrai-notifier.service//' /etc/systemd/system/sentrai.target; fi
+if [ "$WEB" = 0 ]; then sed -i 's/ sentrai-web.service//' /etc/systemd/system/sentrai.target; fi
 # sudo sentrai-update, and a daily check that only feeds the dashboard's "Update available" notice.
 install_updater "$SRC"
 cp "$SRC/deploy/sentrai-update-check.service" "$SRC/deploy/sentrai-update-check.timer" /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable sentrai.target "${UNITS[@]:0:3}" >/dev/null
+if [ "$WEB" = 1 ]; then systemctl enable sentrai-web >/dev/null
+else systemctl disable --now sentrai-web >/dev/null 2>&1 || true; fi
 systemctl enable --now sentrai-update-check.timer >/dev/null 2>&1 || true
 if [ "$NOTIFIER" = 1 ]; then systemctl enable sentrai-notifier >/dev/null
 else systemctl disable --now sentrai-notifier >/dev/null 2>&1 || true; fi
@@ -633,6 +679,7 @@ echo
 if [ -n "$DASH_ALLOW" ]; then
     addr="$(hostname -I 2>/dev/null | awk '{print $1}')"
     echo "  Dashboard:  $SCHEME://${addr:-<this server>}:$DASH_PORT   (or this server's public address)"
+    [ "$WEB" = 1 ] && echo "              The classic (Streamlit) dashboard is on this server only, port $(get_env SENTRAI_CLASSIC_PORT): ssh -L ...:127.0.0.1:$(get_env SENTRAI_CLASSIC_PORT)"
     echo "              open to $DASH_ALLOW only; the firewall drops everyone else."
     if [ "$SCHEME" = https ]; then
         echo "              The certificate is self-signed: the browser warns once; continue to the site."
