@@ -35,6 +35,9 @@ class FakeCore(BaseHTTPRequestHandler):
     do_GET = do_POST = _answer
 
 
+HANDSHAKE_IN_ACCEPT = False  # True is the old behaviour: the test below must then fail
+
+
 def start(handler_cls, port=0):
     srv = ThreadingHTTPServer(("127.0.0.1", port), handler_cls)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
@@ -112,4 +115,36 @@ def test_a_down_core_is_a_502_not_a_crash(tmp_path):
         assert get(web, "/api/health")[0] == 502
         assert get(web, "/")[0] == 200
     finally:
+        web.shutdown()
+
+
+def test_a_silent_https_connection_does_not_block_the_others(tmp_path):
+    """Browsers open spare connections and say nothing. Over TLS that once froze the whole server (the handshake ran in accept())."""
+    import shutil
+    import socket
+    import ssl
+    import subprocess
+    if not shutil.which("openssl"):
+        import pytest
+        pytest.skip("openssl is not installed")
+    cert, key = tmp_path / "c.pem", tmp_path / "k.pem"
+    subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=localhost",
+                    "-keyout", str(key), "-out", str(cert)], check=True, capture_output=True)
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<html>ok</html>")
+    web = start(serve.make_handler(dist, "http://127.0.0.1:9", https=True), 0)
+    serve.use_tls(web, str(cert), str(key), handshake_in_accept=HANDSHAKE_IN_ACCEPT)
+    port = web.server_address[1]
+    silent = socket.create_connection(("127.0.0.1", port))  # connects, never sends a hello
+    try:
+        client = ssl.create_default_context()
+        client.check_hostname, client.verify_mode = False, ssl.CERT_NONE
+        raw = socket.create_connection(("127.0.0.1", port), timeout=5)
+        tls = client.wrap_socket(raw, server_hostname="localhost")
+        tls.sendall(b"GET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
+        assert b"200 OK" in tls.recv(4096)
+        tls.close()
+    finally:
+        silent.close()
         web.shutdown()

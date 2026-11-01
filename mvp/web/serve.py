@@ -68,6 +68,7 @@ def make_handler(dist: Path, core: str, https: bool):
     class Handler(BaseHTTPRequestHandler):
         server_version = "sentrai-web"
         protocol_version = "HTTP/1.1"
+        timeout = 65  # an idle or half-open connection (browsers open spare ones) is dropped, never waited on forever
 
         def log_message(self, fmt, *args):  # one line per request, to the journal
             sys.stderr.write("%s %s\n" % (self.address_string(), fmt % args))
@@ -147,6 +148,15 @@ def make_handler(dist: Path, core: str, https: bool):
     return Handler
 
 
+def use_tls(server: ThreadingHTTPServer, cert: str, key: str, handshake_in_accept: bool = False) -> None:
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+    ctx.load_cert_chain(cert, key)
+    # The handshake must happen in the request's own thread (on its first read, under the handler's timeout). With
+    # the default it runs inside accept(), so one connection that never says hello would stop every sign-in.
+    server.socket = ctx.wrap_socket(server.socket, server_side=True, do_handshake_on_connect=handshake_in_accept)
+
+
 def main(argv: list[str] | None = None) -> int:
     here = Path(__file__).resolve().parent
     env = os.environ.get
@@ -161,10 +171,7 @@ def main(argv: list[str] | None = None) -> int:
     server = ThreadingHTTPServer((a.host, a.port), make_handler(Path(a.dist), a.core, bool(cert and key)))
     server.daemon_threads = True
     if cert and key:
-        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
-        ctx.load_cert_chain(cert, key)
-        server.socket = ctx.wrap_socket(server.socket, server_side=True)
+        use_tls(server, cert, key)
     print(f"SentrAI web console on {'https' if cert and key else 'http'}://{a.host}:{a.port} (core {a.core})", flush=True)
     try:
         server.serve_forever()
