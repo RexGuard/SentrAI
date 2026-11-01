@@ -63,9 +63,29 @@ main tbody tr { transition: background-color .12s ease-out; }
 
 /* Manager view: one page, one chat box under a soft glow. */
 .mgr { position: relative; min-height: 100vh; background: var(--bg); color: var(--ink); overflow-x: hidden; }
-.mgr-glow { position: fixed; inset: 0; pointer-events: none;
-  background: radial-gradient(ellipse 38% 42% at 50% 52%, rgba(37, 82, 210, .42), rgba(30, 58, 160, .16) 55%, transparent 80%); }
-:root[data-theme="light"] .mgr-glow { background: radial-gradient(ellipse 38% 42% at 50% 52%, rgba(59, 110, 246, .18), transparent 75%); }
+@property --glow-a { syntax: '<color>'; inherits: true; initial-value: rgba(37, 99, 235, .45); }
+@property --glow-b { syntax: '<color>'; inherits: true; initial-value: rgba(20, 184, 166, .28); }
+.mgr { transition: --glow-a 4s ease, --glow-b 4s ease; }
+.mgr-glow { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
+.mgr-glow::before, .mgr-glow::after { content: ''; position: absolute; width: 70vmax; height: 70vmax; border-radius: 50%; filter: blur(40px); }
+.mgr-glow::before { left: 15%; top: 20%; background: radial-gradient(circle, var(--glow-a), transparent 62%); animation: mgr-drift-a 26s ease-in-out infinite alternate; }
+.mgr-glow::after { right: 5%; bottom: -10%; background: radial-gradient(circle, var(--glow-b), transparent 60%); animation: mgr-drift-b 34s ease-in-out infinite alternate; }
+@keyframes mgr-drift-a { 0% { transform: translate(-10%, -5%) scale(1); } 50% { transform: translate(8%, 6%) scale(1.12); } 100% { transform: translate(-4%, 10%) scale(.95); } }
+@keyframes mgr-drift-b { 0% { transform: translate(6%, 4%) scale(.9); } 50% { transform: translate(-12%, -8%) scale(1.08); } 100% { transform: translate(4%, -12%) scale(1); } }
+:root[data-theme="light"] .mgr-glow { opacity: .4; }
+@media (prefers-reduced-motion: reduce) { .mgr-glow::before, .mgr-glow::after { animation: none; } .mgr { transition: none; } }
+.mgr-side { width: 16rem; flex: none; display: flex; flex-direction: column; height: 100vh; position: sticky; top: 0;
+  background: color-mix(in srgb, var(--surface) 70%, transparent); border-right: 1px solid var(--line); backdrop-filter: blur(10px); }
+@media (max-width: 767px) { .mgr-side { position: fixed; z-index: 30; left: 0; top: 0; box-shadow: 0 0 40px rgba(0,0,0,.5); } }
+.mgr-search { width: 100%; border-radius: .5rem; background: var(--surface-2); border: 1px solid var(--line); padding: .35rem .6rem; font-size: .8125rem; color: var(--ink); }
+.mgr-search-i { padding-left: 1.75rem; }
+.mgr-dock { backdrop-filter: blur(10px); -webkit-mask-image: linear-gradient(transparent, #000 2rem); mask-image: linear-gradient(transparent, #000 2rem); }
+.mgr-convo { display: flex; align-items: flex-start; gap: .25rem; border-radius: .5rem; padding: .4rem .5rem; font-size: .875rem; color: var(--ink-soft); }
+.mgr-convo:hover, .mgr-convo.is-on { background: var(--surface-3); color: var(--ink); }
+.mgr-x { flex: none; opacity: 0; border-radius: .35rem; padding: .2rem; color: var(--ink-muted); }
+.mgr-convo:hover .mgr-x, .mgr-convo:focus-within .mgr-x, .mgr-convo.is-on .mgr-x { opacity: 1; }
+.mgr-x:hover { background: var(--surface-2); color: var(--ink); }
+.mgr-x.is-pin { opacity: 1; color: var(--ink-soft); }
 .mgr-box { display: flex; align-items: center; gap: .5rem; border-radius: 1.75rem; padding: .45rem .5rem .45rem .6rem;
   background: color-mix(in srgb, var(--surface-2) 88%, transparent); border: 1px solid var(--line);
   box-shadow: 0 10px 40px rgba(0, 0, 0, .35); backdrop-filter: blur(8px); }
