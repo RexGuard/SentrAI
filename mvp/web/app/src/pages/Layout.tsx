@@ -1,6 +1,6 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import {
-  BarChart3, Boxes, ClipboardCheck, LayoutDashboard, DatabaseBackup, FileText, Flag, Gauge, Link2, LogOut, Moon, Network,
+  BarChart3, Boxes, ClipboardCheck, LayoutDashboard, DatabaseBackup, FileText, Flag, Gauge, Link2, Lock, LogOut, Moon, Network,
   Puzzle, ScrollText, Server, Settings2, ShieldCheck, Siren, Sun, Users, Workflow, type LucideIcon,
 } from 'lucide-react'
 import { useSession } from '../lib/session'
@@ -31,6 +31,7 @@ export const MENU: { group: string; items: Item[] }[] = [
     { to: '/reports', label: 'Reports', icon: FileText },
     { to: '/audit', label: 'Audit trail', icon: Link2 },
     { to: '/backups', label: 'Backups', icon: DatabaseBackup },
+    { to: '/privacy', label: 'Privacy and data', icon: Lock },
     { to: '/team', label: 'Team', icon: Users, needs: 'people' },
   ] },
   { group: 'Settings', items: [
