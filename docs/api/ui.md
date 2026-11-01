@@ -206,6 +206,21 @@ Drop a pattern's AI draft and go back to the rules-based playbook.
 What made the most incidents and alerts in the last 7 days, and what would quiet each without hiding real attacks. Nothing changes on its own.
 
 **Returns** `days`, `incidents`, `alerts`, `alerts_per_day`, `noisy` (more than 20 alerts a day), `false_alarms` (rejected, or resolved with a note that says it was not real), `learning` (`day`, `of`, `on`: the first week of an install), `settings` (`busy_server`, `trusted`) and `rows` (`kind` = `machine` or `network`, `key`, `what`, `incidents`, `false_alarms`, `addresses`, `per_day`, `suggestion` with `do` = `trust`, `busy`, `review` or `keep`, `text` and `where`, the setting to change on Configuration).
+### `GET /ui/privacy`
+
+The Privacy page: what SentrAI records about people, why, who can see it, how long the organisation keeps it, and how old the oldest record is.
+
+**Returns** `policy` (`organisation`, `contact`, `months` per kind, `updated_at`, `updated_by`), `kinds` (`key`, `what`, `about`, `why`, `months`, `kept`, `who`, `oldest_days`, `over`), `over` (kinds older than their period), `ai_on` and `roles` (each role's permissions). SentrAI flags data past its period; it does not delete it on its own.
+
+### `POST /ui/privacy`
+
+Save the privacy policy. Owner or Admin only; the change goes on the audit record (`privacy_policy_changed`).
+
+**Body** `{"organisation": "...", "contact": "...", "months": {"events": 6, "accounts": null}}` (0 to 120 months, `null` = while it exists). **Returns** the page as `GET /ui/privacy`. `400` for an unknown kind or a period out of range, `403` for an Auditor.
+
+### `GET /ui/privacy/notice.md`
+
+A staff notice in plain words, built from the live policy, for HR to check and share. Markdown, as a download.
 ### `GET /ui/recovery`
 
 The recovery checklist for one incident: five phases (stop it, lock the doors, put things back, tell people, learn from it) with the usual steps for its type, which steps are ticked off, whether personal data may be involved, and the newest backup made before the incident opened (checked ones first).
