@@ -148,3 +148,12 @@ def test_a_silent_https_connection_does_not_block_the_others(tmp_path):
     finally:
         silent.close()
         web.shutdown()
+
+
+def test_the_core_service_may_write_where_the_console_saves():
+    """Sign-in (a used authenticator code), the team and the settings are saved by the core: a read-only
+    /var/lib/sentrai in its unit made every sign-in fail with 'Read-only file system'."""
+    unit = (Path(__file__).resolve().parents[2] / "deploy" / "sentrai-core.service").read_text()
+    paths = [p for line in unit.splitlines() if line.startswith("ReadWritePaths=") for p in line.split("=", 1)[1].split()]
+    assert "/var/lib/sentrai" in paths
+    assert "-/var/lib/sentrai/collector" in unit or "InaccessiblePaths=-/var/lib/sentrai/collector" in unit

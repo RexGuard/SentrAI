@@ -43,7 +43,9 @@ SupplementaryGroups=@LOGGROUPS@
 AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
 CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
-ReadWritePaths=/var/lib/sentrai/core /var/lib/sentrai/scout -/run/xtables.lock
+# The web console's pages save through the core: sign-ins and the team (accounts.json), settings (config.json), the
+# overview layout. They sit in /var/lib/sentrai itself, so the core may write there (not to the collector's folder).
+ReadWritePaths=/var/lib/sentrai /var/lib/sentrai/core /var/lib/sentrai/scout -/run/xtables.lock
 InaccessiblePaths=-/var/lib/sentrai/collector
 
 [Install]
