@@ -42,14 +42,16 @@ function Row({ b, done }: { b: Backup; done: (m: string) => void }) {
   const id = encodeURIComponent(b.id)
   return (
     <li className="space-y-2 py-3">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-        <b className="font-mono text-xs">{b.id}</b>
-        <span>{when(b.created)} · {REASON[String(b.reason)] ?? b.reason} by {b.by} · {b.files ?? 0} files, {mb(b.bytes)} MB</span>
+      <div className="grid items-center gap-x-4 gap-y-1 text-sm sm:grid-cols-[9rem_minmax(0,1fr)_7.5rem_auto]">
+        <b className="truncate font-mono text-xs">{b.id}</b>
+        <span className="min-w-0">{when(b.created)} · {REASON[String(b.reason)] ?? b.reason} by {b.by} · {b.files ?? 0} files, {mb(b.bytes)} MB</span>
         {v.ok ? <span className="inline-flex items-center gap-1 text-ok"><CheckCircle2 size={14} aria-hidden /> intact</span>
           : v.ok === false ? <span className="inline-flex items-center gap-1 text-crit"><ShieldAlert size={14} aria-hidden /> problem</span>
           : <span className="inline-flex items-center gap-1 text-muted"><CircleHelp size={14} aria-hidden /> not checked</span>}
-        <button className={btn + ' ml-auto'} disabled={busy} onClick={() => void run(() => api(`/backups/${id}/verify`, { body: { operator: op } }), `Backup ${b.id} checked`)}>Check</button>
-        <button className={btn} aria-expanded={open} onClick={() => setOpen(!open)}>Restore</button>
+        <div className="flex justify-end gap-2">
+          <button className={btn} disabled={busy} onClick={() => void run(() => api(`/backups/${id}/verify`, { body: { operator: op } }), `Backup ${b.id} checked`)}>Check</button>
+          <button className={btn} aria-expanded={open} onClick={() => setOpen(!open)}>Restore</button>
+        </div>
       </div>
       {v.ok === false && <p className="text-sm text-bad">{(v.problems ?? []).join('; ')}</p>}
       {open && (

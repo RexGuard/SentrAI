@@ -110,13 +110,29 @@ def agent_rows(agents: list[dict]) -> list[dict]:
     return rows
 
 
+def still_removed(removed: dict | None, last_seen: Any) -> bool:
+    """A removed machine stays hidden until it is heard from again after it was removed."""
+    if not removed:
+        return False
+    at, seen = parse_ts(removed.get("at")), parse_ts(last_seen)
+    if at is None or seen is None:
+        return True
+    if seen.tzinfo is None:
+        seen = seen.replace(tzinfo=timezone.utc)
+    if at.tzinfo is None:
+        at = at.replace(tzinfo=timezone.utc)
+    return seen <= at
+
+
 def install(app: FastAPI, core: Any, machines: fleet.Fleet, health: Any) -> None:
     @app.get("/ui/machines")
     def get_machines_page() -> dict[str, Any]:
         risk = core.risk(history=0, host=None)
         panel = risk.get("risk_scope") == "host"
         now = datetime.now(timezone.utc)
-        found = [{**m, "hardware": health.latest(m["host"])} for m in core.machines()] if panel else []
+        gone = machines.removed()
+        found = [{**m, "hardware": health.latest(m["host"])} for m in core.machines()
+                 if not still_removed(gone.get(m["host"]), m.get("last_seen"))] if panel else []
         agents = machines.agents()
         rows = build(found, agents, risk, panel, getattr(core, "name", "this computer"), now)
         online = sum(1 for r in rows if r["online"])

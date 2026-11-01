@@ -235,3 +235,25 @@ def test_revoking_forgets_hardware(panel):
     panel.post("/fleet/hardware", json=reading(), headers=as_agent(out["key"]))
     panel.post(f"/fleet/agents/{out['agent_id']}/revoke", json={"operator": "erick"})
     assert panel.get("/fleet/hardware", params={"host": "web-01"}).json()["latest"] is None
+
+
+def test_delete_machine_from_the_panel(panel):
+    a = join(panel, "web-01")
+    panel.post("/fleet/services", json={"services": [{"name": "nginx", "port": 443}]}, headers=as_agent(a["key"]))
+    names = lambda: [m["name"] for m in panel.get("/ui/machines").json()["machines"]]  # noqa: E731
+    assert "web-01" in names()
+    out = panel.post("/ui/machines/web-01/delete").json()
+    assert out["revoked"] == [a["agent_id"]] and "deleted" in out["message"]
+    assert "web-01" not in names()  # hidden from the list
+    assert panel.get("/fleet/me", headers=as_agent(a["key"])).status_code == 401  # its key no longer works
+    assert any(r.get("type") == "machine_removed" and r["data"]["host"] == "web-01" for r in panel.core.audit.records())
+    join(panel, "web-01")  # joining again brings it back
+    assert "web-01" in names()
+
+
+def test_still_removed_until_heard_from_again():
+    from app.ui_machines import still_removed
+    gone = {"at": "2026-11-01T08:00:00+00:00", "by": "erick"}
+    assert not still_removed(None, "2026-11-01T07:00:00+00:00")
+    assert still_removed(gone, "2026-11-01T07:59:00+00:00") and still_removed(gone, None)
+    assert not still_removed(gone, "2026-11-01T08:05:00+00:00")

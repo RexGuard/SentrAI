@@ -56,6 +56,14 @@ A one-time join code, valid 24 hours, with the commands to paste on the new mach
 
 **Returns** `{"code": "...", "expires_at": "...", "https": true, "pin": "...", "commands": {"linux": "...", "windows": "..."}}`.
 
+### `POST /ui/machines/{host}/delete`
+
+The Machines list's Delete. Owner and Admin only (`403` for an Auditor). Revokes the machine's agent key, cancels its
+queued jobs and hides it from the machine list. Its incidents and audit records are kept. It shows again if it reports
+after being deleted, or when it joins again with a new code. Recorded in the audit log as `machine_removed`.
+
+**Returns** `{"host": "...", "revoked": ["<agent id>"], "removed_at": "...", "jobs_cancelled": 0, "message": "..."}`.
+
 ### `GET /ui/machines/{host}/details`
 
 The single-machine page's Signed in, Services and Packages tabs in one call.

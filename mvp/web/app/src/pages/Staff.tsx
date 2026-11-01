@@ -135,11 +135,11 @@ export default function Staff() {
               const expanded = (openId ?? (reports[0]?.status === 'new' ? reports[0].id : null)) === r.id
               return (
                 <div key={r.id} className="rounded-lg border border-line bg-surface">
-                  <button aria-expanded={expanded} className="flex w-full flex-wrap items-center gap-x-3 p-3 text-left text-sm" onClick={() => setOpenId(expanded ? '' : r.id)}>
-                    <span className="font-mono text-xs">{r.id}</span><span>{r.kind_label || t.kind}</span>
+                  <button aria-expanded={expanded} className="grid w-full items-center gap-x-4 gap-y-1 p-3 text-left text-sm sm:grid-cols-[8rem_minmax(0,1fr)_5rem_minmax(0,10rem)_7rem_minmax(0,10rem)]" onClick={() => setOpenId(expanded ? '' : r.id)}>
+                    <span className="truncate font-mono text-xs">{r.id}</span><span className="truncate">{r.kind_label || t.kind}</span>
                     <span className={'font-medium capitalize ' + (urgColor[t.urgency ?? ''] ?? '')}>{t.urgency}</span>
-                    <span className="text-soft">{r.reporter || 'anonymous'}</span><span className="text-muted">{LABEL[r.status] ?? r.status}</span>
-                    {r.assignee && <span className="text-muted">With {r.assignee}</span>}
+                    <span className="truncate text-soft">{r.reporter || 'anonymous'}</span><span className="text-muted">{LABEL[r.status] ?? r.status}</span>
+                    <span className="truncate text-muted">{r.assignee ? `With ${r.assignee}` : ''}</span>
                   </button>
                   {expanded && <div className="border-t border-line"><Detail r={r} done={(m) => { setNote(m); void load() }} /></div>}
                 </div>

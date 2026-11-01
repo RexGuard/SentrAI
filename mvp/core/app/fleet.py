@@ -143,6 +143,7 @@ class Fleet:
                 raise FleetError(f"a machine named {host!r} has already joined; revoke it on the panel first "
                                  f"or join with another --name", 409)
             del self._data["codes"][_hash(normalise_code(code))]  # one use only
+            (self._data.get("removed") or {}).pop(host, None)  # joining again brings a removed machine back
             agent_id = secrets.token_hex(6)
             key = f"{KEY_PREFIX}{agent_id}.{secrets.token_urlsafe(32)}"
             self._data["agents"][agent_id] = {
@@ -175,6 +176,26 @@ class Fleet:
                 a["revoked_at"], a["revoked_by"] = _iso(self.clock()), by
                 self._save()
             return self.public(a)
+
+    def remove_host(self, host: str, by: str) -> dict[str, Any]:
+        """Take a machine off the panel: revoke its agent's key and hide it from the machine list.
+
+        Its incidents and audit records stay. If it reports again later it shows up again, and it can join
+        again with a new code."""
+        now = self.clock()
+        with self.lock:
+            revoked = []
+            for a in self._data["agents"].values():
+                if a["host"] == host and not a.get("revoked_at"):
+                    a["revoked_at"], a["revoked_by"] = _iso(now), by
+                    revoked.append(a["agent_id"])
+            self._data.setdefault("removed", {})[host] = {"at": _iso(now), "by": by}
+            self._save()
+        return {"host": host, "revoked": revoked, "removed_at": _iso(now)}
+
+    def removed(self) -> dict[str, dict[str, Any]]:
+        """Hosts taken off the panel: {host: {"at": iso, "by": who}}."""
+        return dict(self._data.get("removed") or {})
 
     def offline_report(self, agent: dict[str, Any], report: dict[str, Any]) -> dict[str, Any]:
         """An agent is back after the panel was out of reach: keep a short summary of what it did alone."""
