@@ -6,6 +6,7 @@ import { api, ApiError } from '../lib/api'
 import { btn, btnPrimary } from '../lib/ui'
 import { useSession } from '../lib/session'
 import { useFilters, type Filter } from '../lib/Filters'
+import { ask } from '../lib/notice'
 
 type Machine = {
   name: string; host: string; place: string; online: boolean; waiting: boolean; index: number | null; band: string
@@ -101,11 +102,12 @@ export default function Machines() {
   const { can } = useSession()
   const [note, setNote] = useState('')
   const remove = async (m: Machine) => {
-    const ok = window.confirm(`Delete ${m.name} from the panel?\n\n`
-      + `• Its agent's key is revoked, so it stops reporting and its queued jobs are cancelled. The agent stays installed on that computer until you uninstall it there.\n`
-      + `• Its incidents and audit records are kept: the audit trail can't be edited, and they still show on Incidents and Audit trail.\n`
-      + `• It comes back on this list if it reports again, or if you join it again with a new code.\n\nThis is written to the audit log under your name.`)
-    if (!ok) return
+    const ok = await ask({ title: `Delete ${m.name} from the panel?`, confirm: 'Delete', danger: true, body: [
+      "Its agent's key is revoked, so it stops reporting and its queued jobs are cancelled. The agent stays installed on that computer until you uninstall it there.",
+      "Its incidents and audit records are kept: the audit trail can't be edited, and they still show on Incidents and Audit trail.",
+      'It comes back on this list if it reports again, or if you join it again with a new code.',
+      'This is written to the audit log under your name.'] })
+    if (ok === null) return
     try { setNote((await api<{ message: string }>(`/ui/machines/${encodeURIComponent(m.host)}/delete`, { body: {} })).message); await load() }
     catch (e) { setNote(e instanceof ApiError ? e.message : 'The machine could not be deleted.') }
   }

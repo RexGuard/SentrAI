@@ -4,6 +4,7 @@ import { api, ApiError } from '../lib/api'
 import { btn, btnPrimary } from '../lib/ui'
 import { useSession } from '../lib/session'
 import { useFilters, type Filter } from '../lib/Filters'
+import { ask } from '../lib/notice'
 
 type Row = {
   id: string; what: string; host: string; severity: string; status: string; owner: string; open_for: string; opened?: string
@@ -147,7 +148,7 @@ export default function Approvals() {
   }
   const group = async (ids: string[]) => {
     const suggested = (await api<{ name: string }>('/ui/approvals/group-name', { body: { ids } })).name
-    const name = window.prompt('Group name (an existing name adds to that group)', suggested)
+    const name = await ask({ title: 'Group these requests', confirm: 'Group', input: { label: 'Group name (an existing name adds to that group)', value: suggested, required: true } })
     if (!name?.trim()) return
     const r = await api<{ message: string }>('/ui/approvals/groups', { body: { name: name.trim(), ids } })
     setNote(r.message); setPicked(new Set()); await load()
