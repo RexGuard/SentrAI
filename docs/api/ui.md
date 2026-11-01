@@ -206,6 +206,17 @@ Drop a pattern's AI draft and go back to the rules-based playbook.
 What made the most incidents and alerts in the last 7 days, and what would quiet each without hiding real attacks. Nothing changes on its own.
 
 **Returns** `days`, `incidents`, `alerts`, `alerts_per_day`, `noisy` (more than 20 alerts a day), `false_alarms` (rejected, or resolved with a note that says it was not real), `learning` (`day`, `of`, `on`: the first week of an install), `settings` (`busy_server`, `trusted`) and `rows` (`kind` = `machine` or `network`, `key`, `what`, `incidents`, `false_alarms`, `addresses`, `per_day`, `suggestion` with `do` = `trust`, `busy`, `review` or `keep`, `text` and `where`, the setting to change on Configuration).
+### `GET /ui/recovery`
+
+The recovery checklist for one incident: five phases (stop it, lock the doors, put things back, tell people, learn from it) with the usual steps for its type, which steps are ticked off, whether personal data may be involved, and the newest backup made before the incident opened (checked ones first).
+
+**Query** `incident` (required). **Returns** `incident`, `what`, `machine`, `status`, `phases` (`key`, `title`, `about`, `steps` with `id`, `text` and `done` = `{by, at}` or null), `done`, `total`, `personal_data` and `backup` (`id`, `created`, `checked`, or null). `404` when there is no such incident.
+
+### `POST /ui/recovery/check`
+
+Tick a step off (or untick it). Needs the `act` permission; written to the audit record as `recovery_step`. Nothing is done on a machine.
+
+**Body** `{"incident": "INC-...", "step": "secure-1", "done": true}` **Returns** the plan as `GET /ui/recovery`. `400` for a step not in the plan, `404` for an unknown incident.
 
 ## Configuration
 
