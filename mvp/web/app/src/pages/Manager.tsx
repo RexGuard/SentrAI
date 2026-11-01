@@ -1,154 +1,127 @@
-// Manager view: the one page a manager or owner reads in a minute. Are we safe, what happened, what SentrAI did
-// about it, what still needs a person, and the proof that the record was not changed. Plain words only: every
-// figure comes from the client summary (GET /summary/{daily|weekly}), which already speaks without internal part
-// names, plus the backups and approvals the dashboard shows elsewhere.
-import { useCallback, useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { CheckCircle2, ChevronRight, Download, ShieldAlert, ShieldCheck } from 'lucide-react'
+// Manager view: one page and nothing else. A greeting, one big box to ask Cyanide, a few suggested questions, and
+// the answers in a single column under a soft glow. No sidebar and no other pages: a manager asks in plain words
+// ("are we safe?") and Cyanide answers from the same live data the dashboard uses. Auto mode, the full dashboard
+// and sign out stay in the top corner. Any action Cyanide suggests still needs a click and the usual checks.
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { ArrowUp, BarChart3, ChevronDown, LayoutDashboard, ListChecks, LogOut, Plus, ShieldQuestion } from 'lucide-react'
 import { api, ApiError } from '../lib/api'
-import { btn } from '../lib/ui'
-import Stat from '../lib/Stat'
+import { useSession } from '../lib/session'
+import { useSimple } from '../lib/simple'
+import AutoMode from './AutoMode'
+import { SuggestionCard, type Incident, type Message } from './Chat'
 
-type Attention = { incident: string; what: string; machine: string; severity: string; open_for: string; seen_by_staff: boolean; late: boolean; next_step: string }
-type Summary = {
-  headline: string; period_text: string; title: string
-  numbers: { threats: number; stopped_automatically: number; handled_by_staff: number; closed: number; need_attention: number; late_response: number; alerts_sent: number }
-  risk_now: { index: number | null; band: string }
-  attention: Attention[]
-  kinds: { what: string; count: number }[]
-  machines: { machine: string; threats: number; stopped: number; open: number }[]
-  actions: { done: Record<string, number>; total: number; undone: number; expired: number; permanent: number }
-  proof: { chain_valid: boolean; records: number; short: string }
-  responsible?: string
-}
-type Backups = { backups: { id: string; created?: string; verified?: { ok?: boolean | null } }[]; overdue?: boolean; last_error?: { error?: string } }
+type History = { assistant?: string; model?: string; messages: Message[] }
 
-// The risk band, as a manager would say it.
-const SAFE: Record<string, { word: string; line: string; cls: string }> = {
-  green: { word: 'Safe', line: 'Nothing unusual right now.', cls: 'text-ok' },
-  amber: { word: 'Watchful', line: 'Some suspicious activity. SentrAI is watching it closely.', cls: 'text-warn' },
-  red: { word: 'Under attack', line: 'An attack is in progress. SentrAI is blocking it; your IT contact is told.', cls: 'text-bad' },
-  critical: { word: 'Serious attack', line: 'A serious attack. Your IT contact should act now.', cls: 'text-crit' },
-}
-const ago = (iso?: string) => {
-  if (!iso) return ''
-  const h = (Date.now() - new Date(iso).getTime()) / 3600000
-  return h < 1 ? 'less than an hour ago' : h < 48 ? `${Math.round(h)} hours ago` : `${Math.round(h / 24)} days ago`
-}
-
-function Box({ title, children, to, more }: { title: string; children: React.ReactNode; to?: string; more?: string }) {
-  return (
-    <div className="min-w-0 space-y-2 rounded-lg border border-line bg-surface p-4">
-      <div className="flex items-center justify-between gap-2">
-        <h2 className="font-semibold">{title}</h2>
-        {to && <Link to={to} className="inline-flex items-center gap-0.5 text-sm text-soft hover:text-ink">{more ?? 'More'} <ChevronRight size={14} aria-hidden /></Link>}
-      </div>
-      {children}
-    </div>
-  )
-}
+const STARTERS = [
+  { q: 'Are we safe right now?', icon: ShieldQuestion },
+  { q: 'What needs my attention today?', icon: ListChecks },
+  { q: 'Summarise this week for me in plain words', icon: BarChart3 },
+]
+const greeting = () => { const h = new Date().getHours(); return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening' }
 
 export default function Manager() {
-  const [period, setPeriod] = useState<'daily' | 'weekly'>('weekly')
-  const [sum, setSum] = useState<Summary | null>(null)
-  const [bk, setBk] = useState<Backups | null>(null)
-  const [waiting, setWaiting] = useState<number | null>(null)
-  const [error, setError] = useState('')
+  const inputId = useId()
+  const nav = useNavigate()
+  const { me, signOut } = useSession()
+  const { simple, toggle } = useSimple()
+  const [hist, setHist] = useState<History | null>(null)
+  const [incidents, setIncidents] = useState<Incident[]>([])
+  const [since, setSince] = useState<number | null>(null) // messages before this visit's first question stay hidden
+  const [about, setAbout] = useState('')
+  const [text, setText] = useState('')
+  const [asking, setAsking] = useState(false)
+  const [note, setNote] = useState('')
+  const end = useRef<HTMLDivElement>(null)
+
   const load = useCallback(async () => {
-    try { setSum(await api<Summary>(`/summary/${period}`)); setError('') }
-    catch (e) { setError(e instanceof ApiError ? e.message : 'Could not reach SentrAI.') }
-    api<Backups>('/backups').then(setBk).catch(() => setBk(null))
-    api<{ total: number }>('/ui/approvals').then((a) => setWaiting(a.total)).catch(() => setWaiting(null))
-  }, [period])
-  useEffect(() => { void load(); const t = setInterval(() => void load(), 30000); return () => clearInterval(t) }, [load])
+    try {
+      const [h, i] = await Promise.all([api<History>('/chat'), api<Incident[]>('/incidents')])
+      setHist(Array.isArray(h) ? { messages: h } : h); setIncidents(i)
+    } catch (e) { setNote(e instanceof ApiError ? `Cyanide is not available: ${e.message}` : 'Could not reach SentrAI.') }
+  }, [])
+  useEffect(() => { void load() }, [load])
+  useEffect(() => { end.current?.scrollIntoView({ block: 'end', behavior: 'smooth' }) }, [hist?.messages.length, asking])
 
-  const safe = SAFE[sum?.risk_now.band ?? ''] ?? { word: 'Checking…', line: '', cls: '' }
-  const n = sum?.numbers
-  const label = period === 'daily' ? 'today' : 'this week'
-  const latest = [...(bk?.backups ?? [])].sort((a, b) => (b.created ?? '').localeCompare(a.created ?? ''))[0]
-  const did = Object.entries(sum?.actions.done ?? {}).sort((a, b) => b[1] - a[1])
+  const ask = async (message: string) => {
+    if (!message.trim() || asking) return
+    if (since === null) setSince(hist?.messages.length ?? 0)
+    setAsking(true); setNote(''); setText('')
+    try { await api('/chat', { body: { operator: me?.email ?? 'dashboard', message, incident: about || null } }) }
+    catch (e) { setNote(e instanceof ApiError ? `That did not go through: ${e.message}` : 'That did not go through.') }
+    await load(); setAsking(false)
+  }
+
+  const assistant = hist?.assistant || 'Cyanide'
+  const shown = since === null ? [] : (hist?.messages ?? []).slice(since)
+  const chatting = shown.length > 0 || asking
+  const byId = Object.fromEntries(incidents.map((i) => [i.id, i]))
+  const first = (me?.name || '').split(' ')[0]
+  const openIncidents = incidents.filter((i) => i.status === 'open' || i.status === 'acknowledged').sort((a, b) => b.id.localeCompare(a.id))
+  const full = () => { if (simple) toggle(); nav('/command') }
+
+  const box = (
+    <form onSubmit={(e) => { e.preventDefault(); void ask(text) }} className="w-full">
+      <label className="sr-only" htmlFor={inputId}>Ask {assistant}</label>
+      <div className="mgr-box">
+        <button type="button" className="mgr-icon" title="Start a new conversation" aria-label="New conversation"
+          onClick={() => { setSince(hist?.messages.length ?? 0); setNote('') }}><Plus size={18} aria-hidden /></button>
+        <textarea id={inputId} rows={1} value={text} disabled={asking} placeholder={`Ask ${assistant} anything about your security`}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void ask(text) } }} />
+        <label className="mgr-pick">
+          <span className="sr-only">Talk about</span>
+          <select value={about} onChange={(e) => setAbout(e.target.value)}>
+            <option value="">{assistant} · everything</option>
+            {openIncidents.map((i) => <option key={i.id} value={i.id}>{assistant} · {i.id}</option>)}
+          </select>
+          <ChevronDown size={14} aria-hidden />
+        </label>
+        <button className="mgr-send" disabled={asking || !text.trim()} aria-label="Send"><ArrowUp size={18} aria-hidden /></button>
+      </div>
+    </form>
+  )
+
   return (
-    <section className="space-y-4">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold">Manager view</h1>
-          <p className="text-sm text-muted">your security in plain words{sum ? ` · ${sum.period_text}` : ''}</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <div role="group" aria-label="Period" className="flex overflow-hidden rounded-md border border-line text-sm">
-            {(['daily', 'weekly'] as const).map((p) => (
-              <button key={p} aria-pressed={period === p} onClick={() => setPeriod(p)}
-                className={'px-3 py-1.5 ' + (period === p ? 'bg-surface-3 text-ink' : 'text-soft hover:bg-surface-2')}>{p === 'daily' ? 'Today' : 'This week'}</button>))}
-          </div>
-          <a className={btn + ' no-underline'} href={`/api/summary/${period}.pdf`} download><Download size={14} aria-hidden /> One-page PDF</a>
-        </div>
+    <div className="mgr">
+      <div className="mgr-glow" aria-hidden />
+      <header className="relative z-10 flex flex-wrap items-center justify-end gap-2 p-4 text-sm">
+        <AutoMode />
+        <button onClick={full} className="mgr-top" title="Every page, for IT staff"><LayoutDashboard size={14} aria-hidden /> Full dashboard</button>
+        <button onClick={() => void signOut()} className="mgr-top"><LogOut size={14} aria-hidden /> Sign out</button>
       </header>
-      {error && <p role="alert" className="rounded-md border border-line bg-surface p-3 text-bad">{error}</p>}
 
-      <div className="flex flex-wrap items-center gap-4 rounded-xl border border-line bg-surface p-5">
-        {sum?.risk_now.band === 'green' ? <ShieldCheck size={40} className="text-ok" aria-hidden /> : <ShieldAlert size={40} className={safe.cls} aria-hidden />}
-        <div className="min-w-0 flex-1">
-          <p className="text-sm text-muted">Are we safe right now?</p>
-          <p className={'text-3xl font-semibold ' + safe.cls}>{safe.word}</p>
-          <p className="text-soft">{safe.line}</p>
-        </div>
-        <p className="max-w-xl text-lg">{sum?.headline ?? 'Loading…'}</p>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label={`Threats ${label}`} value={n?.threats ?? '-'} note="attempts SentrAI noticed" />
-        <Stat label="Stopped on its own" value={n?.stopped_automatically ?? '-'} note="blocked without waiting for anyone" />
-        <Stat label="Handled by your staff" value={n?.handled_by_staff ?? '-'} note={`${n?.closed ?? 0} closed ${label}`} />
-        <Stat label="Still needs a person" value={n?.need_attention ?? '-'} note={`problems still open · ${waiting ?? 0} requests wait for an OK`}
-          hot={!!n?.need_attention || !!waiting} />
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Box title="What needs attention" to="/incidents" more="Details">
-          {!sum ? <p className="text-muted" role="status">Loading…</p> : sum.attention.length === 0 ? <p className="text-ok">Nothing needs you. Everything is in hand.</p> : (
-            <ul className="divide-y divide-line-soft">
-              {sum.attention.slice(0, 6).map((a) => (
-                <li key={a.incident} className="py-2 text-sm">
-                  <p><b>{a.what}</b> on {a.machine} <span className="text-muted">· open {a.open_for}{a.late ? ' · late' : ''}{a.seen_by_staff ? ' · staff are on it' : ''}</span></p>
-                  <p className="text-soft">Next: {a.next_step}</p>
-                </li>))}
-            </ul>)}
-        </Box>
-        <Box title="What SentrAI did about it">
-          {!sum ? <p className="text-muted" role="status">Loading…</p> : did.length === 0 ? <p className="text-soft">SentrAI did not need to step in {label}.</p> : (
-            <>
-              <ul className="space-y-1 text-sm">{did.map(([what, count]) => <li key={what} className="flex justify-between gap-2"><span>{what.charAt(0).toUpperCase() + what.slice(1)}</span><b className="tabular-nums">{count}</b></li>)}</ul>
-              <p className="text-xs text-muted">Every step is temporary, ends on its own and can be undone.
-                {sum.actions.undone ? ` ${sum.actions.undone} undone by your staff.` : ''}{sum.actions.permanent ? ` ${sum.actions.permanent} made permanent by your staff.` : ''}</p>
-            </>)}
-        </Box>
-        <Box title={`Kinds of threat ${label}`} to="/analytics" more="Charts">
-          {!sum ? <p className="text-muted" role="status">Loading…</p> : sum.kinds.length === 0 ? <p className="text-soft">None.</p> : (
-            <ul className="space-y-1.5 text-sm">
-              {sum.kinds.map((k) => {
-                const max = Math.max(...sum.kinds.map((x) => x.count))
-                return (
-                  <li key={k.what}>
-                    <div className="flex justify-between gap-2"><span>{k.what}</span><b className="tabular-nums">{k.count}</b></div>
-                    <div className="mt-0.5 h-1.5 rounded bg-surface-2"><div className="h-1.5 rounded bg-ink/70" style={{ width: `${(k.count / max) * 100}%` }} /></div>
-                  </li>)
-              })}
-            </ul>)}
-        </Box>
-        <Box title="Can we trust these numbers?">
-          {!sum ? <p className="text-muted" role="status">Loading…</p> : (
-            <ul className="space-y-2 text-sm">
-              <li className="flex gap-2">{sum.proof.chain_valid ? <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-ok" aria-hidden /> : <ShieldAlert size={16} className="mt-0.5 shrink-0 text-bad" aria-hidden />}
-                <span>{sum.proof.chain_valid ? `The activity record is intact: ${sum.proof.records} entries, none changed or removed.` : 'Warning: the activity record has been changed. Ask your IT contact now.'}
-                  <span className="block text-xs text-muted">Check code {sum.proof.short}</span></span></li>
-              <li className="flex gap-2">{latest && latest.verified?.ok !== false && !bk?.overdue ? <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-ok" aria-hidden /> : <ShieldAlert size={16} className="mt-0.5 shrink-0 text-warn" aria-hidden />}
-                <span>{!bk ? 'Backups are not set up on this server.' : !latest ? 'No backup has been made yet.' : `Last backup ${ago(latest.created)}${latest.verified?.ok ? ', checked and intact' : latest.verified?.ok === false ? ', but its check found a problem' : ''}.`}
-                  {bk?.overdue && <span className="block text-xs text-warn">The next backup is late.</span>}
-                  <Link to="/backups" className="block text-xs text-soft hover:text-ink">See backups</Link></span></li>
-              {sum.responsible && <li className="text-soft">On duty: {sum.responsible}</li>}
-            </ul>)}
-        </Box>
-      </div>
-    </section>
+      {!chatting ? (
+        <main className="relative z-10 mx-auto flex min-h-[calc(100vh-9rem)] w-full max-w-3xl flex-col items-center justify-center gap-6 px-4">
+          <h1 className="text-center text-3xl font-light tracking-tight sm:text-[2.25rem]">{greeting()}{first ? `, ${first}` : ''}. Where should we start?</h1>
+          <div className="w-full max-w-2xl">{box}</div>
+          {note && <p role="alert" className="text-sm text-bad">{note}</p>}
+          <ul className="w-full max-w-2xl space-y-1 px-2">
+            {STARTERS.map(({ q, icon: Icon }) => (
+              <li key={q}><button className="mgr-starter" disabled={asking} onClick={() => void ask(q)}><Icon size={15} aria-hidden /> {q}</button></li>))}
+          </ul>
+        </main>
+      ) : (
+        <main className="relative z-10 mx-auto flex min-h-[calc(100vh-4.5rem)] w-full max-w-3xl flex-col px-4">
+          <div className="flex-1 space-y-6 py-6" role="log" aria-live="polite" aria-label="Conversation">
+            {shown.map((m) => m.role === 'operator' ? (
+              <p key={m.id} className="ml-auto w-fit max-w-[85%] whitespace-pre-wrap rounded-2xl bg-surface-3 px-4 py-2.5">{m.text}</p>
+            ) : (
+              <div key={m.id} className="space-y-2">
+                <p className="text-xs text-muted">{assistant}{m.incident ? ` · about ${m.incident}` : ''}</p>
+                <p className="whitespace-pre-wrap leading-relaxed">{m.text}</p>
+                {(m.suggestions ?? []).map((s, k) => <SuggestionCard key={k} s={s} inc={byId[String(s.incident)]} onDone={(t) => { setNote(t); void load() }} />)}
+              </div>))}
+            {asking && <p className="text-muted" role="status">{assistant} is looking into it…</p>}
+            {note && <p role="status" className="text-sm text-soft">{note}</p>}
+            <div ref={end} />
+          </div>
+          <div className="sticky bottom-0 pb-5 pt-2" style={{ background: 'linear-gradient(transparent, var(--bg) 30%)' }}>
+            {box}
+            <p className="mt-2 text-center text-xs text-muted">{assistant} suggests; nothing happens until you click and the usual checks pass.</p>
+          </div>
+        </main>
+      )}
+    </div>
   )
 }

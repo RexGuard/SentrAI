@@ -35,9 +35,9 @@ function Gate() {
   if (new URLSearchParams(location.search).has('report') && location.pathname === '/') return <Navigate to="/report" replace />  // the old /?report address
   return (
     <Routes>
+      <Route path="/manager" element={<Manager />} />
       <Route element={<Layout />}>
         <Route index element={<Navigate to={simple ? '/manager' : '/command'} replace />} />
-        <Route path="/manager" element={<Manager />} />
         <Route path="/command" element={<Command />} />
         <Route path="/approvals" element={<Approvals />} />
         <Route path="/machines" element={<Machines />} />
