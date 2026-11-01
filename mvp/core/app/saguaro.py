@@ -955,6 +955,17 @@ class Saguaro(Agent):
                     self._timeline(inc, now, "monitor_only", f"Monitor-only: would have contained "
                                                              f"({inc['recommended_action']}), nothing applied")
                 candidates = []
+            if not self.auto_mode:
+                for inc in candidates:
+                    if inc.get("_auto_skipped"):
+                        continue
+                    inc["_auto_skipped"] = True
+                    self.scribe.record(self.name, "containment_skipped", {
+                        "incident": inc["id"], "risk_index": r["risk_index"], "threshold": self.settings.threshold,
+                        "reason": "auto mode off", "would_apply": inc["recommended_action"]})
+                    self._timeline(inc, now, "auto_mode", f"Auto mode is off: waiting for a person to approve "
+                                                          f"{inc['recommended_action']}")
+                candidates = []
             for inc in candidates:
                 self._contain(inc, "autonomous", self.needle.name, now, self._risk_of(inc))
             if candidates:
@@ -973,6 +984,7 @@ class Saguaro(Agent):
             saved = json.loads(self._protection_file.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             pass
+        stored = saved
         env = self.settings.monitor_only
         if env is not None and env.strip() != "":
             self.monitor_only = env.strip().lower() in ("1", "true", "yes", "on")
@@ -980,6 +992,19 @@ class Saguaro(Agent):
         else:
             self.monitor_only = bool(saved.get("monitor_only", False))
         self._protection_meta = {k: saved.get(k) for k in ("changed_at", "changed_by", "reason")}
+        # Auto mode: on, SentrAI contains incidents over the threshold by itself (within the guardrails);
+        # off, every protective action waits for a person to approve it. On unless someone turned it off.
+        self.auto_mode = bool(stored.get("auto_mode", True))
+        self._auto_meta = dict(stored.get("auto_mode_meta") or {})
+
+    def _save_protection(self) -> None:
+        try:
+            self._protection_file.parent.mkdir(parents=True, exist_ok=True)
+            self._protection_file.write_text(json.dumps({"monitor_only": self.monitor_only, **self._protection_meta,
+                                                         "auto_mode": self.auto_mode, "auto_mode_meta": self._auto_meta},
+                                                        indent=2) + "\n", encoding="utf-8")
+        except OSError:
+            pass  # still switched for this run; the audit record is the proof
 
     def protection(self) -> dict[str, Any]:
         with self.lock:
@@ -989,7 +1014,29 @@ class Saguaro(Agent):
                 "monitor_only": self.monitor_only,
                 **self._protection_meta,
                 "active_actions": sorted(a["action_id"] for a in self.actions if self._is_active(a, now)),
+                "auto_mode": self.auto_mode, "auto_mode_meta": dict(self._auto_meta),
             }
+
+    def set_auto_mode(self, on: bool, operator: str, reason: str | None) -> dict[str, Any]:
+        """Auto mode switch. Off: nothing is contained on its own any more; every action waits for a person."""
+        reason = (reason or "").strip()
+        with self.lock:
+            if self.auto_mode == on:
+                return self.protection()
+            now = self.clock.now()
+            self.auto_mode = on
+            self._auto_meta = {"changed_at": self.clock.iso(now), "changed_by": operator, "reason": reason or None}
+            self._save_protection()
+            self.scribe.record(self.name, "auto_mode_changed", {"auto_mode": on, "operator": operator,
+                                                               "reason": reason or None})
+            for inc in self.incidents.values():
+                if inc["status"] in RISK_STATUSES:
+                    inc["_auto_skipped"] = False
+                    self._timeline(inc, now, "auto_mode", f"Auto mode turned {'on' if on else 'off'} by {operator}"
+                                                          + (f": {reason}" if reason else ""))
+            if on:
+                self._evaluate(now)
+        return self.protection()
 
     def set_protection(self, on: bool, operator: str, reason: str | None) -> dict[str, Any]:
         """The operator switch. Off = monitor-only: collect, classify and score, but apply no containment."""
@@ -1003,12 +1050,7 @@ class Saguaro(Agent):
             s = self.settings
             self.monitor_only = not on
             self._protection_meta = {"changed_at": self.clock.iso(now), "changed_by": operator, "reason": reason or None}
-            try:
-                self._protection_file.parent.mkdir(parents=True, exist_ok=True)
-                self._protection_file.write_text(json.dumps({"monitor_only": self.monitor_only, **self._protection_meta},
-                                                            indent=2) + "\n", encoding="utf-8")
-            except OSError:
-                pass  # still switched for this run; the audit record below is the proof
+            self._save_protection()
             still = [a["action_id"] for a in self.actions if self._is_active(a, now)]
             self.scribe.record(self.name, "protection_changed", {
                 "protection": "on" if on else "off", "monitor_only": self.monitor_only, "operator": operator,

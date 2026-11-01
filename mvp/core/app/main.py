@@ -718,6 +718,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except BadRequestError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
+    @app.post("/ui/auto-mode")
+    def post_auto_mode(request: Request, body: dict = Body(...)) -> dict[str, Any]:
+        """The header's Auto mode switch: {"on": bool, "reason": "..."}. Owner and Admin only; audited."""
+        account = getattr(request.state, "account", None)
+        if account and not acc.can(account.get("role"), "configure"):
+            raise HTTPException(403, "Only an Owner or Admin can change Auto mode.")
+        if not isinstance(body.get("on"), bool):
+            raise HTTPException(400, "Say on: true or false.")
+        operator = (account or {}).get("email") or str(body.get("operator") or "dashboard")
+        return core.set_auto_mode(body["on"], operator, str(body.get("reason") or ""))
+
     @app.get("/blocklist")
     def get_blocklist(request: Request, host: Optional[str] = Query(None)) -> dict[str, list[str]]:
         """With ?host= in host scope, only the blocks that machine must put in place (an agent always gets its own)."""
