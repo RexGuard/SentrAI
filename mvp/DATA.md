@@ -55,6 +55,7 @@ or part the file belongs to. **Set with** is the variable that puts it somewhere
 | `core/summary.json` | Scribe | when the client summary goes out (Reports page) | |
 | `core/extensions.json` | Extensions | extensions added or removed on the dashboard (Extensions page) | |
 | `core/remote-copy.token` | Scribe | the witness's append token (`install.sh --remote-copy`) | `SENTRAI_REMOTE_COPY_TOKEN_FILE` |
+| `core/playbooks.json` | Analytics | playbooks an AI model drafted from similar past incidents (Analytics page) | |
 | `core/people/routing.json` | Warden | who gets what: contacts, routing rules, escalation | `SENTRAI_ROUTING` |
 | `core/people/admins.json` | Warden | the administrators: accounts, sign-in addresses and SSH keys (taught or learned), who is signed in now | `SENTRAI_ADMINS` |
 | `core/people/telegram_links.json` | Notifier | contacts linked to their Telegram chats | `SENTRAI_TELEGRAM_LINKS` |

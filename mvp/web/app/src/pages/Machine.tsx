@@ -5,6 +5,7 @@ import { api, ApiError } from '../lib/api'
 import { btn } from '../lib/ui'
 import { useSession } from '../lib/session'
 import { useFilters, type Filter } from '../lib/Filters'
+import { MachineFixes } from '../lib/Fixes'
 import { PackagesTab, ServicesTab, SignedInTab, type Details } from './MachineDetails'
 
 type Machine = {
@@ -138,7 +139,7 @@ export default function MachinePage() {
                 <p className="text-xs text-muted lg:col-span-2">{hw.latest.cpu?.cores ? `${hw.latest.cpu.cores} cores` : ''}{hw.latest.cpu?.load ? ` · load ${hw.latest.cpu.load[0]?.toFixed(2)}` : ''}{hw.latest.uptime_s ? ` · up ${Math.round(hw.latest.uptime_s / 3600)} h` : ''} · its agent reports every 30 s</p>
               </div>
             ) : <p className="text-soft">No hardware reading yet. Its agent sends one every 30 seconds once it is running.</p>)}
-            {tab === 'Incidents' && <MachineIncidents incs={incs} />}
+            {tab === 'Incidents' && <><MachineIncidents incs={incs} /><MachineFixes host={host} /></>}
             {tab === 'Blocks' && (
               <div className="grid gap-4 lg:grid-cols-2">
                 <div><h2 className="font-semibold">Addresses</h2>{blocks.ips?.length ? <ul className="font-mono text-sm">{blocks.ips.map((x) => <li key={x}>{x}</li>)}</ul> : <p className="text-soft">None blocked here.</p>}</div>
