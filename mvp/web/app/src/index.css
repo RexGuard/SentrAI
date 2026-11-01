@@ -60,3 +60,31 @@ main tbody tr { transition: background-color .12s ease-out; }
                background: var(--ink); color: var(--bg); cursor: pointer; }
 .prompt-send:disabled { background: var(--surface-3); color: var(--ink-muted); cursor: not-allowed; }
 @media (prefers-reduced-motion: reduce) { .stat, main tbody tr, .prompt { transition: none; } }
+
+/* Manager view: one page, one chat box under a soft glow. */
+.mgr { position: relative; min-height: 100vh; background: var(--bg); color: var(--ink); overflow-x: hidden; }
+.mgr-glow { position: fixed; inset: 0; pointer-events: none;
+  background: radial-gradient(ellipse 38% 42% at 50% 52%, rgba(37, 82, 210, .42), rgba(30, 58, 160, .16) 55%, transparent 80%); }
+:root[data-theme="light"] .mgr-glow { background: radial-gradient(ellipse 38% 42% at 50% 52%, rgba(59, 110, 246, .18), transparent 75%); }
+.mgr-box { display: flex; align-items: center; gap: .5rem; border-radius: 1.75rem; padding: .45rem .5rem .45rem .6rem;
+  background: color-mix(in srgb, var(--surface-2) 88%, transparent); border: 1px solid var(--line);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, .35); backdrop-filter: blur(8px); }
+.mgr-box:focus-within { border-color: var(--ink-faint); }
+.mgr-box textarea { flex: 1; min-width: 0; resize: none; background: transparent; border: 0; outline: none; color: var(--ink);
+  font: inherit; line-height: 1.5; padding: .45rem 0; max-height: 9rem; }
+.mgr-box textarea::placeholder { color: var(--ink-muted); }
+.mgr-icon { flex: none; width: 2.25rem; height: 2.25rem; border-radius: 50%; display: grid; place-items: center; color: var(--ink-soft); }
+.mgr-icon:hover { background: var(--surface-3); }
+.mgr-pick { position: relative; display: flex; align-items: center; gap: .25rem; color: var(--ink-soft); font-size: .875rem; }
+.mgr-pick select { appearance: none; background: transparent; border: 0; color: inherit; font: inherit; padding: .25rem 1.1rem .25rem .25rem;
+  max-width: 11rem; text-overflow: ellipsis; cursor: pointer; }
+.mgr-pick select option { background: var(--surface); color: var(--ink); }
+.mgr-pick svg { position: absolute; right: 0; pointer-events: none; }
+.mgr-send { flex: none; width: 2.25rem; height: 2.25rem; border-radius: 50%; display: grid; place-items: center; background: var(--ink); color: var(--bg); }
+.mgr-send:disabled { background: var(--surface-3); color: var(--ink-muted); cursor: not-allowed; }
+.mgr-starter { display: flex; align-items: center; gap: .6rem; width: 100%; text-align: left; padding: .45rem .5rem; border-radius: .5rem;
+  color: var(--ink-soft); font-size: .9rem; }
+.mgr-starter:hover { background: color-mix(in srgb, var(--surface-3) 60%, transparent); color: var(--ink); }
+.mgr-top { display: inline-flex; align-items: center; gap: .35rem; border: 1px solid var(--line); border-radius: 999px; padding: .3rem .75rem;
+  color: var(--ink-soft); background: color-mix(in srgb, var(--surface) 70%, transparent); }
+.mgr-top:hover { color: var(--ink); }

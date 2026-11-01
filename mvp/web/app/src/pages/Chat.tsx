@@ -5,15 +5,15 @@ import { btn, btnPrimary } from '../lib/ui'
 import { useSession } from '../lib/session'
 import { SetupBanner, SetupConversation, type Setup } from './SetupChat'
 
-type Suggestion = {
+export type Suggestion = {
   kind?: string; incident?: string; decision?: string; label?: string; reason?: string; file_id?: string; finding_id?: string
 }
-type Message = {
+export type Message = {
   id: string | number; role: string; text: string; ts?: string; operator?: string; incident?: string; source?: string
   looked_at?: string[]; suggestions?: Suggestion[]
 }
 type History = { assistant?: string; model?: string; messages: Message[] }
-type Incident = { id: string; status: string; category?: string; acked?: boolean; actions?: { status?: string }[] }
+export type Incident = { id: string; status: string; category?: string; acked?: boolean; actions?: { status?: string }[] }
 
 const STARTERS = ['What is happening right now?', 'Which incident should I deal with first?', 'Why did you block the last IP address?']
 const FOLLOW_UPS = [...STARTERS, 'Is anything waiting for my approval?', 'What changed in the last hour?', 'Is any machine offline?']
@@ -32,7 +32,7 @@ function canDo(inc: Incident | undefined, decision: string): [boolean, string] {
 
 const time = (ts?: string) => (ts ? new Date(ts).toLocaleTimeString() : '')
 
-function SuggestionCard({ s, inc, onDone }: { s: Suggestion; inc?: Incident; onDone: (note: string) => void }) {
+export function SuggestionCard({ s, inc, onDone }: { s: Suggestion; inc?: Incident; onDone: (note: string) => void }) {
   const { me, can } = useSession()
   const op = me?.email ?? 'dashboard'
   const label = s.label || `${s.decision} ${s.incident}`
