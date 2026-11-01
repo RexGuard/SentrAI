@@ -13,6 +13,7 @@ export type Message = {
   id: string | number; role: string; text: string; ts?: string; operator?: string; incident?: string; source?: string
   looked_at?: string[]; suggestions?: Suggestion[]; blocks?: Block[]; followups?: string[]; question?: string
   feedback?: { vote: 'up' | 'down'; note?: string; by?: string } | null
+  attachments?: { name: string; kind: string; size: number }[]; stopped?: boolean
 }
 type History = { assistant?: string; model?: string; messages: Message[] }
 export type Incident = { id: string; status: string; category?: string; acked?: boolean; actions?: { status?: string }[] }
