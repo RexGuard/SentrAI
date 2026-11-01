@@ -1,5 +1,6 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { SessionProvider, useSession } from './lib/session'
+import { SimpleProvider, useSimple } from './lib/simple'
 import Layout from './pages/Layout'
 import SignIn from './pages/SignIn'
 import Analytics from './pages/Analytics'
@@ -10,6 +11,7 @@ import Command from './pages/Command'
 import Guardrails from './pages/Guardrails'
 import Extensions from './pages/Extensions'
 import Incidents from './pages/Incidents'
+import Manager from './pages/Manager'
 import MachinePage from './pages/Machine'
 import Machines from './pages/Machines'
 import Backups from './pages/Backups'
@@ -25,13 +27,15 @@ import Team from './pages/Team'
 
 function Gate() {
   const { me, loading } = useSession()
+  const { simple } = useSimple()
   if (loading) return <p className="p-6 text-muted" role="status">Loading…</p>
   if (!me) return <SignIn />
   if (new URLSearchParams(location.search).has('report') && location.pathname === '/') return <Navigate to="/report" replace />  // the old /?report address
   return (
     <Routes>
       <Route element={<Layout />}>
-        <Route index element={<Navigate to="/command" replace />} />
+        <Route index element={<Navigate to={simple ? '/manager' : '/command'} replace />} />
+        <Route path="/manager" element={<Manager />} />
         <Route path="/command" element={<Command />} />
         <Route path="/approvals" element={<Approvals />} />
         <Route path="/machines" element={<Machines />} />
@@ -63,7 +67,7 @@ function Gate() {
 export default function App() {
   return (
     <BrowserRouter>
-      <SessionProvider><Gate /></SessionProvider>
+      <SessionProvider><SimpleProvider><Gate /></SimpleProvider></SessionProvider>
     </BrowserRouter>
   )
 }
