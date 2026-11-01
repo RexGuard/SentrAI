@@ -68,6 +68,10 @@ def test_pages_files_and_unknown_paths(tmp_path):
         code, headers, body = get(web, "/")
         assert code == 200 and b"<html>" in body and headers["Cache-Control"] == "no-cache"
         assert get(web, "/machines/srv-01")[0] == 200  # an app address: the page, which draws it
+        for host in ("/machines/web.example.com", "/machines/10.0.0.5"):  # names with dots are pages too
+            code, _, body = get(web, host)
+            assert code == 200 and b"<html>" in body
+        assert get(web, "/favicon.ico")[0] == 404
         code, headers, _ = get(web, "/assets/a.js")
         assert code == 200 and "immutable" in headers["Cache-Control"]
         assert get(web, "/assets/missing.js")[0] == 404
