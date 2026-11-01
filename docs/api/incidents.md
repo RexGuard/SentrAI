@@ -24,6 +24,8 @@ every call.
 
 **Query**: `host` (string, optional): only the incidents on this machine, such as `web-01`; `unknown`
 gives the ones with no host. Without it, every machine's.
+`fields` (string, optional): a comma-separated list of the keys to keep, such as `status,category`; `id` is
+always kept. A page that needs only a few keys then gets a few KB instead of every timeline.
 
 ### `GET /incidents/{iid}`
 

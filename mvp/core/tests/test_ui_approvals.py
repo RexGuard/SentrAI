@@ -54,3 +54,12 @@ def test_pure_rules():
     assert ua.add_to_group({"A": ["1", "2"]}, "B", ["2", "3"], {"1", "2", "3"}) == {"A": ["1"], "B": ["2", "3"]}
     assert ua.bulk_result("Approved", ["1"], [("2", "boom")]) == "Approved 1 of 2 incidents. Not done: 2 (boom)"
     assert ua.suggest_name([{"host": "web-01"}, {"host": "web-01"}], {}) == "web-01" or True
+
+
+def test_brief_sends_the_first_rows_only(client):
+    brute_force(client)
+    full = client.get("/ui/approvals").json()
+    brief = client.get("/ui/approvals?brief=1").json()
+    assert brief["total"] == full["total"] and brief["rows_total"] == len(full["rows"]) == full["rows_total"]
+    assert brief["rows"] == full["rows"][:1] and brief["groups"] == [] and brief["grouped"] == []
+    assert brief["protection_on"] == full["protection_on"]

@@ -59,7 +59,7 @@ export default function Review() {
   const [error, setError] = useState('')
   const load = useCallback(async () => {
     try {
-      const [r, i, m] = await Promise.all([api<Risk>('/risk'), api<Inc[]>('/incidents'), api<{ machines: MachineRow[] }>('/ui/machines')])
+      const [r, i, m] = await Promise.all([api<Risk>('/risk'), api<Inc[]>('/incidents?fields=category,status,base_points,ai_confidence,asset_criticality,points,inaction_penalty,time_unaddressed_hours'), api<{ machines: MachineRow[] }>('/ui/machines')])
       setRisk(r); setIncs(i); setMachines(m.machines); setError('')
     } catch (e) { setError(e instanceof ApiError ? e.message : 'Could not load the review.') }
   }, [])

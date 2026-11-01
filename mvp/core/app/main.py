@@ -524,8 +524,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return [{**m, "hardware": machine_health.latest(m["host"])} for m in core.machines()]
 
     @app.get("/incidents")
-    def get_incidents(host: Optional[str] = Query(None)) -> list[dict[str, Any]]:
-        return core.list_incidents(host=host)
+    def get_incidents(host: Optional[str] = Query(None),
+                      fields: Optional[str] = Query(None, max_length=500)) -> list[dict[str, Any]]:
+        """Every incident. `fields=id,status,...` keeps only those keys: a page that needs a few of them then gets
+        a few KB instead of every timeline (about 2 KB per incident)."""
+        found = core.list_incidents(host=host)
+        if not fields:
+            return found
+        keep = {f.strip() for f in fields.split(",") if f.strip()} | {"id"}
+        return [{k: v for k, v in i.items() if k in keep} for i in found]
 
     @app.get("/waves")
     def get_waves() -> list[dict[str, Any]]:

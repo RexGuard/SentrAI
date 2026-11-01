@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import gzip
 import hashlib
 import re
 import mimetypes
@@ -32,6 +33,24 @@ from typing import Any
 HOP = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailers",
        "transfer-encoding", "upgrade", "host", "content-length", "x-forwarded-for", "x-forwarded-proto"}
 MAX_BODY = 32 * 1024 * 1024
+GZIP_MIN = 1024  # smaller answers are not worth compressing
+GZIP_TYPES = ("text/", "application/javascript", "application/json", "image/svg+xml")
+
+
+def wants_gzip(headers: Any) -> bool:
+    return any(p.split(";")[0].strip() == "gzip" for p in (headers.get("Accept-Encoding") or "").split(","))
+
+
+def compressible(ctype: str, body: bytes) -> bool:
+    return len(body) >= GZIP_MIN and ctype.startswith(GZIP_TYPES)
+
+
+def etag_of(body: bytes) -> str:
+    return '"%s"' % hashlib.sha256(body).hexdigest()[:20]
+
+
+def etag_matches(header: str | None, tag: str) -> bool:
+    return bool(header) and any(t.strip().removeprefix("W/") == tag for t in header.split(","))
 
 
 def script_hashes(index: Path) -> str:
@@ -65,6 +84,14 @@ OPENER = urllib.request.build_opener(NoRedirect)
 def make_handler(dist: Path, core: str, https: bool):
     root = dist.resolve()
     HEADERS = security_headers(root)
+    packed: dict[Path, tuple[float, bytes]] = {}  # build files, compressed once (they only change on a rebuild)
+
+    def gzipped(target: Path, body: bytes) -> bytes:
+        mtime = target.stat().st_mtime
+        hit = packed.get(target)
+        if hit is None or hit[0] != mtime:
+            hit = packed[target] = (mtime, gzip.compress(body, 9))
+        return hit[1]
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "sentrai-web"
@@ -104,7 +131,12 @@ def make_handler(dist: Path, core: str, https: bool):
             if ctype.startswith("text/") or ctype in ("application/javascript", "application/json", "image/svg+xml"):
                 ctype += "; charset=utf-8"
             cache = "public, max-age=31536000, immutable" if "/assets/" in "/" + path else "no-cache"
-            self._send(200, target.read_bytes(), ctype, {"Cache-Control": cache}, head)
+            body = target.read_bytes()
+            extra = {"Cache-Control": cache, "Vary": "Accept-Encoding"}
+            if compressible(ctype, body) and wants_gzip(self.headers):
+                body = gzipped(target, body)
+                extra["Content-Encoding"] = "gzip"
+            self._send(200, body, ctype, extra, head)
 
         def _proxy(self) -> None:
             url = core.rstrip("/") + self.path[len("/api"):]
@@ -127,10 +159,25 @@ def make_handler(dist: Path, core: str, https: bool):
             if (resp.headers.get("Content-Type") or "").startswith("application/x-ndjson"):
                 return self._stream(resp)
             data = resp.read()
-            self.send_response(resp.status if hasattr(resp, "status") else resp.code)
+            status = resp.status if hasattr(resp, "status") else resp.code
+            ctype = resp.headers.get("Content-Type") or ""
+            encoded = bool(resp.headers.get("Content-Encoding"))
+            extra: dict[str, str] = {}
+            if self.command == "GET" and status == 200 and ctype.startswith("application/json") and not encoded:
+                # A page that refreshes every few seconds gets "304, nothing changed" with no body when it can.
+                tag = extra["ETag"] = etag_of(data)
+                if etag_matches(self.headers.get("If-None-Match"), tag):
+                    status, data = 304, b""
+            if data and not encoded and compressible(ctype, data) and wants_gzip(self.headers):
+                data = gzip.compress(data, 5)
+                extra["Content-Encoding"] = "gzip"
+            self.send_response(status)
             for k, v in resp.headers.items():
-                if k.lower() not in HOP and k.lower() != "server" and k.lower() != "date":
+                if k.lower() not in HOP and k.lower() not in ("server", "date", "etag"):
                     self.send_header(k, v)  # incl. every Set-Cookie
+            for k, v in extra.items():
+                self.send_header(k, v)
+            self.send_header("Vary", "Accept-Encoding")
             self.send_header("Content-Length", str(len(data)))
             self.send_header("Cache-Control", "no-store")
             for k, v in HEADERS.items():

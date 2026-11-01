@@ -81,7 +81,7 @@ export default function MachinePage() {
       const o = await api<Overview>('/ui/machines')
       setM(o.machines.find((x) => x.host === host) ?? null); setWords(o.band_words)
       const [i, b, h, j, a, d] = await Promise.all([
-        api<Inc[]>(`/incidents?host=${q}`), api<{ ips?: string[]; users?: string[] }>(`/blocklist?host=${q}`),
+        api<Inc[]>(`/incidents?host=${q}&fields=category,severity,status,opened_at,summary`), api<{ ips?: string[]; users?: string[] }>(`/blocklist?host=${q}`),
         api<Hw>(`/fleet/hardware?host=${q}`), api<Job[]>(`/fleet/jobs?host=${q}`), api<Agent[]>('/fleet/agents'),
         api<Details>(`/ui/machines/${q}/details`).catch(() => null)])
       setIncs(i); setBlocks(b); setHw(h); setJobs(j); setAgents(a.filter((x) => x.host === host)); setDetails(d); setError('')

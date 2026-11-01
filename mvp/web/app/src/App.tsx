@@ -1,40 +1,81 @@
+import { createElement, lazy, Suspense, useEffect, useState, type ComponentType } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { SessionProvider, useSession } from './lib/session'
 import { SimpleProvider, useSimple } from './lib/simple'
 import { Notices } from './lib/notice'
 import Layout from './pages/Layout'
 import SignIn from './pages/SignIn'
-import Analytics from './pages/Analytics'
-import Approvals from './pages/Approvals'
-import Audit from './pages/Audit'
-import Chat from './pages/Chat'
-import Command from './pages/Command'
-import Guardrails from './pages/Guardrails'
-import Extensions from './pages/Extensions'
-import Incidents from './pages/Incidents'
-import Manager from './pages/Manager'
-import MachinePage from './pages/Machine'
-import Machines from './pages/Machines'
-import Backups from './pages/Backups'
-import { Classifier, Collector, Responder } from './pages/Pipeline'
-import Tuning from './pages/Tuning'
-import Privacy from './pages/Privacy'
-import Overview from './pages/Overview'
-import Report from './pages/Report'
-import Reports from './pages/Reports'
-import Routing from './pages/Routing'
-import Review from './pages/Review'
-import Settings from './pages/Settings'
-import Staff from './pages/Staff'
-import Team from './pages/Team'
+
+// Each page is its own small file, fetched when it is first opened (and all of them in the background once the
+// console is up), so the first load only waits for the shell and the page asked for.
+const pages: Array<() => Promise<unknown>> = []
+// A page already downloaded is drawn straight away: going through Suspense again would hold it back (React waits
+// up to 300 ms before swapping a fallback for content).
+function page(load: () => Promise<{ default: ComponentType }>) {
+  let ready: ComponentType | undefined
+  const get = () => load().then((m) => { ready = m.default; return m })
+  pages.push(get)
+  const Lazy = lazy(get)
+  const Page = (props: object) => createElement(ready ?? Lazy, props)
+  return Object.assign(Page, { preload: get })
+}
+const Analytics = page(() => import('./pages/Analytics'))
+const Approvals = page(() => import('./pages/Approvals'))
+const Audit = page(() => import('./pages/Audit'))
+const Chat = page(() => import('./pages/Chat'))
+const Command = page(() => import('./pages/Command'))
+const Guardrails = page(() => import('./pages/Guardrails'))
+const Extensions = page(() => import('./pages/Extensions'))
+const Incidents = page(() => import('./pages/Incidents'))
+const Manager = page(() => import('./pages/Manager'))
+const MachinePage = page(() => import('./pages/Machine'))
+const Machines = page(() => import('./pages/Machines'))
+const Backups = page(() => import('./pages/Backups'))
+const pipeline = () => import('./pages/Pipeline')
+const Classifier = page(() => pipeline().then((m) => ({ default: m.Classifier })))
+const Collector = page(() => pipeline().then((m) => ({ default: m.Collector })))
+const Responder = page(() => pipeline().then((m) => ({ default: m.Responder })))
+const Tuning = page(() => import('./pages/Tuning'))
+const Privacy = page(() => import('./pages/Privacy'))
+const Overview = page(() => import('./pages/Overview'))
+const Report = page(() => import('./pages/Report'))
+const Reports = page(() => import('./pages/Reports'))
+const Routing = page(() => import('./pages/Routing'))
+const Review = page(() => import('./pages/Review'))
+const Settings = page(() => import('./pages/Settings'))
+const Staff = page(() => import('./pages/Staff'))
+const Team = page(() => import('./pages/Team'))
+
+/** Once signed in and the first page has its data, fetch the other pages while the browser is idle, so opening
+ *  one later is instant. Waits a few seconds first so it never queues in front of the page's own calls. */
+function usePrefetch(on: boolean) {
+  useEffect(() => {
+    if (!on) return
+    const go = () => { for (const load of pages) void load().catch(() => {}) }
+    const w = window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number }
+    const t = setTimeout(() => (w.requestIdleCallback ? w.requestIdleCallback(go, { timeout: 5000 }) : go()), 4000)
+    return () => clearTimeout(t)
+  }, [on])
+}
+
+// The page asked for starts downloading now, alongside the sign-in check, not after it.
+const first: Record<string, () => Promise<unknown>> = {
+  '': Command.preload, command: Command.preload, incidents: Incidents.preload, approvals: Approvals.preload,
+  machines: Machines.preload, manager: Manager.preload,
+}
+const firstPage = (first[location.pathname.split('/')[1] ?? '']?.() ?? Promise.resolve()).catch(() => {})
 
 function Gate() {
   const { me, loading } = useSession()
   const { simple } = useSimple()
-  if (loading) return <p className="p-6 text-muted" role="status">Loading…</p>
+  const [pageReady, setPageReady] = useState(false)
+  useEffect(() => { void firstPage.then(() => setPageReady(true)) }, [])
+  usePrefetch(!!me)
+  if (loading || (me && !pageReady)) return <p className="p-6 text-muted" role="status">Loading…</p>
   if (!me) return <SignIn />
   if (new URLSearchParams(location.search).has('report') && location.pathname === '/') return <Navigate to="/report" replace />  // the old /?report address
   return (
+    <Suspense fallback={<p className="p-6 text-muted" role="status">Loading…</p>}>
     <Routes>
       <Route path="/manager" element={<Manager />} />
       <Route element={<Layout />}>
@@ -66,6 +107,7 @@ function Gate() {
         <Route path="*" element={<Navigate to="/command" replace />} />
       </Route>
     </Routes>
+    </Suspense>
   )
 }
 

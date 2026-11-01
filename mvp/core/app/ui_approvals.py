@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from fastapi import Body, FastAPI, HTTPException, Request
+from fastapi import Body, FastAPI, HTTPException, Query, Request
 
 from .config import sentrai_config as cfg
 from .saguaro import BadRequestError, ConflictError
@@ -178,9 +178,14 @@ def install(app: FastAPI, core: Any) -> None:
         return pending(core.list_incidents(host=None))
 
     @app.get("/ui/approvals")
-    def get_approvals(by: str | None = None) -> dict[str, Any]:
+    def get_approvals(by: str | None = None, brief: int = Query(0, ge=0, le=500)) -> dict[str, Any]:
+        """The Approvals page. `brief=N` (the Command center) sends the first N waiting only, without the groups."""
         waiting = waiting_now()
         made, rest = saved_groups(waiting, cfg.approval_groups())
+        if brief:
+            return {"headline": headline(waiting), "total": len(waiting), "rows": [row(i) for i in rest[:brief]],
+                    "rows_total": len(rest), "grouped": [], "groups": [],
+                    "protection_on": not core.protection().get("monitor_only", False)}
         grouped: list[dict] = []
         if by in GROUP_BY:
             buckets: dict[str, list[dict]] = {}
@@ -188,7 +193,7 @@ def install(app: FastAPI, core: Any) -> None:
                 buckets.setdefault(group_name(inc, by), []).append(inc)
             grouped = [{"name": n, "rows": [row(i) for i in m]}
                        for n, m in sorted(buckets.items(), key=lambda kv: -len(kv[1]))]
-        return {"headline": headline(waiting), "total": len(waiting), "rows": [row(i) for i in rest],
+        return {"headline": headline(waiting), "total": len(waiting), "rows": [row(i) for i in rest], "rows_total": len(rest),
                 "grouped": grouped, "groups": [{"name": n, "rows": [row(i) for i in m]} for n, m in made],
                 "protection_on": not core.protection().get("monitor_only", False)}
 
