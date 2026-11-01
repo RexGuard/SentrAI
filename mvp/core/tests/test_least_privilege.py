@@ -25,7 +25,7 @@ def paths(u, key):
     return {p.lstrip("-") for v in u.get(key, []) for p in v.split()}
 
 
-SERVICES = ("core", "collector", "dashboard", "notifier")
+SERVICES = ("core", "collector", "dashboard", "notifier", "web")
 
 
 @pytest.mark.parametrize("name", SERVICES)
@@ -54,8 +54,13 @@ def test_only_the_core_and_collector_read_logs():
 
 
 def test_each_service_sees_only_its_own_state():
-    core, collector, dashboard, notifier = (unit(n) for n in SERVICES)
-    assert paths(core, "ReadWritePaths") == {"/var/lib/sentrai/core", "/var/lib/sentrai/scout", "/run/xtables.lock"}
+    core, collector, dashboard, notifier, web = (unit(n) for n in SERVICES)
+    # The web console saves through the core: sign-ins and the team (accounts.json), settings and the overview
+    # layout sit in /var/lib/sentrai itself. A read-only root there made every sign-in fail on a real server.
+    assert paths(core, "ReadWritePaths") == {"/var/lib/sentrai", "/var/lib/sentrai/core", "/var/lib/sentrai/scout",
+                                             "/run/xtables.lock"}
+    assert "/var/lib/sentrai/collector" in paths(core, "InaccessiblePaths")
+    assert not paths(web, "ReadWritePaths") and "/var/lib/sentrai" in paths(web, "InaccessiblePaths")  # serves files only
     assert paths(collector, "ReadWritePaths") == {"/var/lib/sentrai/collector"}
     assert paths(notifier, "ReadWritePaths") == {"/var/lib/sentrai/notifier"}  # its last delivered fingerprint
     assert "/var/lib/sentrai/core" in paths(collector, "InaccessiblePaths")
