@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import {
   BarChart3, Boxes, Briefcase, Eye, ClipboardCheck, LayoutDashboard, DatabaseBackup, FileText, Flag, Gauge, Link2, Lock, LogOut, Moon, Network,
@@ -111,7 +112,7 @@ export default function Layout() {
           </div>
         </div>
       </aside>
-      <main className={'min-w-0 flex-1 p-6 pb-20' + (dock.open ? ' lg:mr-[26rem]' : '')}><div className="mb-3"><AutoMode /></div><Outlet /></main>
+      <main className={'min-w-0 flex-1 p-6 pb-20' + (dock.open ? ' lg:mr-[26rem]' : '')}><div className="mb-3"><AutoMode /></div><Suspense fallback={<p className="text-muted" role="status">Loading…</p>}><Outlet /></Suspense></main>
       <HelpDock dock={dock} />
     </div>
   )

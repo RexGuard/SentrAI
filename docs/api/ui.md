@@ -16,9 +16,9 @@ When a signed-in person calls a write, they are the operator in the audit trail,
 
 Everything waiting on a person: open incidents to approve or reject, contained ones to keep or roll back.
 
-**Query** `by` (optional): `attacker`, `machine` or `type`, to also get `grouped`.
+**Query** `by` (optional): `attacker`, `machine` or `type`, to also get `grouped`. `brief` (optional, a number): only the first that many rows and no groups, for a summary such as the Command center.
 
-**Returns** `headline`, `total`, `rows` (the ones not in a group), `grouped`, `groups` (the groups people made, each with `name` and `rows`) and `protection_on`. Each row has `id`, `what`, `host`, `severity`, `status`, `owner`, `open_for`, `needs`, `target`, `points`, `attacker`, `summary` and `can` (`decide`, `ack`, `contain_controls`, `mine`).
+**Returns** `headline`, `total`, `rows` (the ones not in a group), `rows_total` (how many rows there are in full), `grouped`, `groups` (the groups people made, each with `name` and `rows`) and `protection_on`. Each row has `id`, `what`, `host`, `severity`, `status`, `owner`, `open_for`, `needs`, `target`, `points`, `attacker`, `summary` and `can` (`decide`, `ack`, `contain_controls`, `mine`).
 
 ### `POST /ui/approvals/bulk`
 
@@ -169,9 +169,9 @@ Withdraw an invite that has not been used. **Body** `{"email": "..."}` **Returns
 
 Who owns each incident and what still needs a person.
 
-**Query** `closed` (also list resolved and rejected ones) and `mine` (only incidents owned by the signed-in person), both default `false`.
+**Query** `closed` (also list resolved and rejected ones) and `mine` (only incidents owned by the signed-in person), both default `false`. `brief` (optional, a number): only `counts`, the first that many `todo` rows and `todo_total`, for a summary such as the Command center.
 
-**Returns** `counts` (`open`, `attention`, `overdue`, `escalated`, `unassigned`, `mine`), `todo` (rows that need a person, most urgent first), `todo_waves` (a wave's incidents as one line each), `all` (rows), `waves`, and `contacts` (who an incident can be assigned to). Each row has `id`, `what`, `host`, `severity`, `status`, `owner`, `backup`, `open_for`, `needs`, `closed`, `attention`, `wave` and `summary`. Assign and resolve use `POST /incidents/{iid}/assign` and `/resolve`.
+**Returns** `counts` (`open`, `attention`, `overdue`, `escalated`, `unassigned`, `mine`), `todo` (rows that need a person, most urgent first), `todo_total` (how many need a person in full), `todo_waves` (a wave's incidents as one line each), `all` (rows), `waves`, and `contacts` (who an incident can be assigned to). Each row has `id`, `what`, `host`, `severity`, `status`, `owner`, `backup`, `open_for`, `needs`, `closed`, `attention`, `wave` and `summary`. Assign and resolve use `POST /incidents/{iid}/assign` and `/resolve`.
 
 ## Analytics
 

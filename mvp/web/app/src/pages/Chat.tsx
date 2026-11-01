@@ -17,6 +17,8 @@ export type Message = {
 }
 type History = { assistant?: string; model?: string; messages: Message[] }
 export type Incident = { id: string; status: string; category?: string; acked?: boolean; actions?: { status?: string }[] }
+/** Only what the suggestion buttons need, not every incident's whole timeline. */
+export const INCIDENT_FIELDS = 'status,category,acked,actions'
 
 const STARTERS = ['What is happening right now?', 'Which incident should I deal with first?', 'Why did you block the last IP address?']
 const FOLLOW_UPS = [...STARTERS, 'Is anything waiting for my approval?', 'What changed in the last hour?', 'Is any machine offline?']
@@ -98,7 +100,7 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
 
   const load = useCallback(async () => {
     try {
-      const [h, i] = await Promise.all([api<History>('/chat'), api<Incident[]>('/incidents')])
+      const [h, i] = await Promise.all([api<History>('/chat'), api<Incident[]>(`/incidents?fields=${INCIDENT_FIELDS}`)])
       setHist(Array.isArray(h) ? { messages: h } : h); setIncidents(i); setError('')
     } catch (e) { setError(e instanceof ApiError ? `Chat is not available on this core: ${e.message}` : 'Could not load chat.') }
   }, [])

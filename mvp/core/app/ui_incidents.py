@@ -106,16 +106,21 @@ def wave_row(w: dict) -> dict[str, Any]:
 
 def install(app: FastAPI, core: Any) -> None:
     @app.get("/ui/incidents")
-    def get_incidents_page(request: Request, closed: bool = Query(False), mine: bool = Query(False)) -> dict[str, Any]:
+    def get_incidents_page(request: Request, closed: bool = Query(False), mine: bool = Query(False),
+                           brief: int = Query(0, ge=0, le=500)) -> dict[str, Any]:
+        """The Incidents page. `brief=N` (the Command center) sends the counts and the first N that need a person
+        only: a few KB instead of every incident on every refresh."""
         incidents = core.list_incidents(host=None)
         account = getattr(request.state, "account", None) or {}
         names = {str(account.get(k) or "").lower().lstrip("@") for k in ("name", "email")} - {""}
         names |= {n.split("@")[0] for n in names if "@" in n}
         todo, todo_waves = split_waves(needs_attention(incidents))
+        if brief:
+            return {"counts": counts(incidents, names), "todo": [row(i) for i in todo[:brief]], "todo_total": len(todo)}
         shown = [i for i in incidents if (closed or i.get("status") in OPEN_STATUSES)
                  and (not mine or str(i.get("owner") or "").lower().lstrip("@") in names)]
         contacts = (core.routing_public() or {}).get("contacts") or []
-        return {"counts": counts(incidents, names), "todo": [row(i) for i in todo],
+        return {"counts": counts(incidents, names), "todo": [row(i) for i in todo], "todo_total": len(todo),
                 "todo_waves": [{"id": w, "line": wave_line(m), "count": len(m)} for w, m in todo_waves.items()],
                 "all": board(shown), "waves": [wave_row(w) for w in core.list_waves()],
                 "contacts": [{"id": c.get("id"), "name": c.get("name")} for c in contacts if isinstance(c, dict)],

@@ -153,3 +153,44 @@ def test_a_silent_https_connection_does_not_block_the_others(tmp_path):
         silent.close()
         web.shutdown()
 
+
+
+class BigCore(BaseHTTPRequestHandler):
+    """A core whose answers are big enough to compress."""
+    body = json.dumps({"rows": [{"id": f"INC-{i}", "what": "brute force"} for i in range(200)]}).encode()
+
+    def log_message(self, *a):
+        pass
+
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(self.body)))
+        self.end_headers()
+        self.wfile.write(self.body)
+
+
+def test_compressed_files_and_answers_and_nothing_changed(tmp_path):
+    import gzip
+    dist = tmp_path / "dist"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "index.html").write_text("<html></html>")
+    js = ("console.log('SentrAI');\n" * 400).encode()
+    (dist / "assets" / "a.js").write_bytes(js)
+    core = start(BigCore)
+    web = start(serve.make_handler(dist, f"http://127.0.0.1:{core.server_address[1]}", https=False))
+    try:
+        code, h, body = get(web, "/assets/a.js", headers={"Accept-Encoding": "gzip, br"})
+        assert code == 200 and h["Content-Encoding"] == "gzip" and gzip.decompress(body) == js and len(body) < len(js) / 10
+        code, h, body = get(web, "/assets/a.js")  # a client that cannot unpack gets it as it is
+        assert code == 200 and "Content-Encoding" not in h and body == js
+
+        code, h, body = get(web, "/api/ui/incidents", headers={"Accept-Encoding": "gzip"})
+        assert code == 200 and h["Content-Encoding"] == "gzip" and gzip.decompress(body) == BigCore.body
+        assert h["Cache-Control"] == "no-store" and h["ETag"]
+        code, h2, body = get(web, "/api/ui/incidents", headers={"If-None-Match": h["ETag"]})
+        assert code == 304 and body == b"" and h2["ETag"] == h["ETag"]
+        code, _, body = get(web, "/api/ui/incidents", headers={"If-None-Match": '"something-else"'})
+        assert code == 200 and body == BigCore.body
+    finally:
+        core.shutdown(); web.shutdown()

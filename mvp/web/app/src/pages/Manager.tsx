@@ -15,7 +15,7 @@ import { useSimple } from '../lib/simple'
 import AutoMode from './AutoMode'
 import { Blocks, CopyButton, Text } from '../lib/Rich'
 import { MemoryPanel, ShareDialog, SharedView, type ShareInfo } from '../lib/CyanideTeam'
-import { SuggestionCard, type Incident, type Message } from './Chat'
+import { INCIDENT_FIELDS, SuggestionCard, type Incident, type Message } from './Chat'
 
 type History = { assistant?: string; model?: string; messages: Message[] }
 
@@ -89,7 +89,7 @@ export default function Manager() {
 
   const load = useCallback(async () => {
     try {
-      const [h, i] = await Promise.all([api<History>('/chat?limit=200'), api<Incident[]>('/incidents')])
+      const [h, i] = await Promise.all([api<History>('/chat?limit=200'), api<Incident[]>(`/incidents?fields=${INCIDENT_FIELDS}`)])
       const next = Array.isArray(h) ? { messages: h } : h
       setHist(next); setIncidents(i)
       return next

@@ -1,10 +1,12 @@
 // The ? button at the bottom right of every page. It opens a panel docked on the right with two tabs:
 // chat with Cyanide, and report something suspicious. The page beside it stays usable.
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { CircleHelp, Maximize2, MessageSquare, MessageSquareWarning, X } from 'lucide-react'
-import Chat from './Chat'
-import Report from './Report'
+
+// Fetched when the dock is first opened, not with every page.
+const Chat = lazy(() => import('./Chat'))
+const Report = lazy(() => import('./Report'))
 
 export type DockTab = 'chat' | 'report'
 const KEY = 'sentrai.dock'
@@ -62,7 +64,7 @@ export default function HelpDock({ dock }: { dock: ReturnType<typeof useDock> })
         <button onClick={dock.close} className="rounded-md p-1.5 text-soft hover:bg-surface-2" aria-label="Close the help panel" title="Close (Esc)"><X size={16} aria-hidden /></button>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {dock.tab === 'chat' ? <Chat compact /> : <Report compact />}
+        <Suspense fallback={<p className="text-muted" role="status">Loading…</p>}>{dock.tab === 'chat' ? <Chat compact /> : <Report compact />}</Suspense>
       </div>
     </aside>
   )

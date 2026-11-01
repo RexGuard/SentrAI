@@ -5,21 +5,34 @@ export class ApiError extends Error {
   constructor(message: string, status: number) { super(message); this.status = status }
 }
 
+// The last answer to each GET and its ETag, in memory only (gone on reload or sign-out). A page that refreshes
+// every few seconds sends If-None-Match, and when nothing changed the server answers 304 with no body.
+const lastGet = new Map<string, { etag: string; body: unknown }>()
+export function forgetCache() { lastGet.clear() }
+
 export async function api<T = unknown>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
   const method = init.method ?? (init.body === undefined ? 'GET' : 'POST')
   const headers: Record<string, string> = {}
   if (init.body !== undefined) headers['Content-Type'] = 'application/json'
   if (method !== 'GET') headers['X-SentrAI-Web'] = '1'
+  const seen = method === 'GET' ? lastGet.get(path) : undefined
+  if (seen) headers['If-None-Match'] = seen.etag
   const res = await fetch('/api' + path, {
-    method, headers, credentials: 'same-origin',
+    method, headers, credentials: 'same-origin', cache: 'no-store',
     body: init.body === undefined ? undefined : JSON.stringify(init.body),
   })
+  if (res.status === 304 && seen) return seen.body as T
   if (!res.ok) {
+    if (method === 'GET') lastGet.delete(path)
     let detail = res.statusText
     try { const j = await res.json(); if (typeof j.detail === 'string') detail = j.detail } catch { /* not JSON */ }
     throw new ApiError(detail, res.status)
   }
-  return (res.headers.get('content-type')?.includes('json') ? res.json() : res.text()) as Promise<T>
+  const body = await (res.headers.get('content-type')?.includes('json') ? res.json() : res.text())
+  const etag = res.headers.get('etag')
+  if (method === 'GET' && etag) lastGet.set(path, { etag, body })
+  else if (method !== 'GET') lastGet.clear()  // a change may show up on any page: ask afresh
+  return body as T
 }
 
 export type Me = { email: string; name: string; role: string; role_label: string; permissions: string[] }

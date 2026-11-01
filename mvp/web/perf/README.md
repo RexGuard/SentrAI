@@ -16,6 +16,27 @@ SIGNIN_EMAIL=... SIGNIN_PASSWORD=... node ../web/perf/pages.js <authenticator co
 `pages.js` signs in, opens all 20 pages and prints how long each takes to go quiet, how many calls it made and any
 console errors.
 
+## Faster loading (1 Nov 2026)
+
+The panel felt slow on a real network with machines connected because of how much it sent, not how long the core
+took. Opening the Command center downloaded about 1.9 MB (the whole console as one 883 KB file, every incident with
+its full timeline for the chat box, 2.2 MB uncompressed, plus the full Incidents and Approvals lists to show eight
+rows each), and the 10 s refresh downloaded about 1 MB again. Now:
+
+- `serve.py` compresses the console's files and the core's answers (gzip, 10 to 50 times smaller for JSON) and
+  answers a refresh whose data did not change with "304, nothing changed" and no body (ETag).
+- The console is split per page (`React.lazy`): the first load fetches the shell and the page asked for, the rest
+  is fetched quietly a few seconds later. Chat and its Markdown renderer load when first used.
+- The Command center asks `/ui/incidents?brief=8` and `/ui/approvals?brief=8`; the chat and Manager view ask
+  `/incidents?fields=...` for the few keys they use.
+
+`load.js` (Chromium, 914 incidents, the Command center, before → after):
+
+| | First load, local | First load, 20 Mbit/s and 60 ms | Data per 10 s refresh |
+| --- | --- | --- | --- |
+| Before | 0.45 s, 4.1 MB | 1.59 s, 1.9 MB | 939 KB |
+| After | 0.5 s, 0.27 MB | 0.71 s, 0.27 MB | 3 KB |
+
 ## Results (31 Oct 2026, one core process, 1 vCPU sandbox, Chromium headless)
 
 **Browser, 20 pages, 4,000 events in the core:** zero console errors on all 20 pages. First paint of the sign-in

@@ -13,9 +13,9 @@ import { ask } from '../lib/notice'
 
 type Risk = { risk_index?: number; band?: string; threshold?: number; history?: Point[] }
 type ApprovalRow = { id: string; what: string; host: string; severity: string; status: string; target: string; needs: string[]; can: { decide: boolean } }
-type Approvals = { headline: string; total: number; rows: ApprovalRow[]; protection_on: boolean }
+type Approvals = { headline: string; total: number; rows: ApprovalRow[]; rows_total?: number; protection_on: boolean }
 type IncRow = { id: string; what: string; host: string; severity: string; owner: string; open_for: string; needs: string }
-type Incidents = { counts: { open: number; attention: number; overdue: number }; todo: IncRow[] }
+type Incidents = { counts: { open: number; attention: number; overdue: number }; todo: IncRow[]; todo_total?: number }
 type MachineRow = { name: string; host: string; online: boolean; waiting: boolean; index: number | null; band: string; open: number }
 
 const bandColor: Record<string, string> = { green: 'var(--green)', amber: 'var(--amber)', red: 'var(--red)', critical: 'var(--critical)' }
@@ -44,7 +44,7 @@ export default function Command() {
   const [note, setNote] = useState('')
   const load = useCallback(async () => {
     try {
-      const [r, a, i, m] = await Promise.all([api<Risk>('/risk'), api<Approvals>('/ui/approvals'), api<Incidents>('/ui/incidents'),
+      const [r, a, i, m] = await Promise.all([api<Risk>('/risk'), api<Approvals>(`/ui/approvals?brief=${SHOW}`), api<Incidents>(`/ui/incidents?brief=${SHOW}`),
         api<{ machines: MachineRow[] }>('/ui/machines')])
       setRisk(r); setAppr(a); setIncs(i); setMachines(m.machines); setError('')
     } catch (e) { setError(e instanceof ApiError ? e.message : 'Could not reach SentrAI.') }
@@ -103,7 +103,7 @@ export default function Command() {
                         </div>)}
                     </li>))}
                 </ul>)}
-              {appr && appr.rows.length > SHOW && <p className="text-xs text-muted">… and {appr.rows.length - SHOW} more on Approvals.</p>}
+              {appr && (appr.rows_total ?? appr.rows.length) > SHOW && <p className="text-xs text-muted">… and {(appr.rows_total ?? appr.rows.length) - SHOW} more on Approvals.</p>}
             </Card>
             <Card title="Needs a person" to="/incidents" more="All incidents">
               {!incs ? <p className="text-muted" role="status">Loading…</p> : incs.todo.length === 0 ? <p className="text-ok">Every open incident is in hand.</p> : (
@@ -114,7 +114,7 @@ export default function Command() {
                       <p className="truncate text-xs text-muted">{r.host} · {r.owner} · {r.open_for} · {r.needs}</p>
                     </li>))}
                 </ul>)}
-              {incs && incs.todo.length > SHOW && <p className="text-xs text-muted">… and {incs.todo.length - SHOW} more on Incidents.</p>}
+              {incs && (incs.todo_total ?? incs.todo.length) > SHOW && <p className="text-xs text-muted">… and {(incs.todo_total ?? incs.todo.length) - SHOW} more on Incidents.</p>}
             </Card>
           </div>
           <Card title="Machines" to="/machines" more="All machines">
