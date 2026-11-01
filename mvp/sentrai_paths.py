@@ -142,6 +142,10 @@ ENTRIES: dict[str, Entry] = {e.key: e for e in (
           "(Analytics page)", "Analytics", optional=True),
     Entry("core.privacy", "core", "privacy.json", "the privacy policy: retention periods and the staff contact "
           "(Privacy page)", "Scribe", optional=True),
+    Entry("core.chat_memory", "core", "chat-memory.json", "what the team taught Cyanide: standing instructions and "
+          "remembered facts (Manager view)", "Cyanide", optional=True),
+    Entry("core.chat_shares", "core", "chat-shares.json", "copies of chats shared with teammates (Manager view)",
+          "Cyanide", optional=True),
     Entry("core.recovery", "core", "recovery.json", "recovery steps ticked off after an incident (Incidents page)",
           "Scribe", optional=True),
     Entry("core.routing", "core", "people/routing.json", "who gets what: contacts, routing rules, escalation",

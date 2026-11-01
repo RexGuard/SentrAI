@@ -6,7 +6,7 @@
 import type React from 'react'
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowUp, BarChart3, Check, FileText, Image as ImageIcon, Mic, MicOff, Square, FileDown, RotateCcw, ThumbsDown, ThumbsUp, Zap, ChevronDown, LayoutDashboard, ListChecks, LogOut, MessageSquare, PanelLeftClose, PanelLeftOpen, Pencil, Pin, PinOff, Search, Plus, ShieldQuestion, SquarePen, X } from 'lucide-react'
+import { ArrowUp, BarChart3, Brain, Share2, Users, Check, FileText, Image as ImageIcon, Mic, MicOff, Square, FileDown, RotateCcw, ThumbsDown, ThumbsUp, Zap, ChevronDown, LayoutDashboard, ListChecks, LogOut, MessageSquare, PanelLeftClose, PanelLeftOpen, Pencil, Pin, PinOff, Search, Plus, ShieldQuestion, SquarePen, X } from 'lucide-react'
 import { api, ApiError, stream } from '../lib/api'
 import { ACCEPT, MAX_FILES, read as readFile, sizeLabel, type Attachment } from '../lib/attach'
 import { canListen, listen } from '../lib/voice'
@@ -14,6 +14,7 @@ import { useSession } from '../lib/session'
 import { useSimple } from '../lib/simple'
 import AutoMode from './AutoMode'
 import { Blocks, CopyButton, Text } from '../lib/Rich'
+import { MemoryPanel, ShareDialog, SharedView, type ShareInfo } from '../lib/CyanideTeam'
 import { SuggestionCard, type Incident, type Message } from './Chat'
 
 type History = { assistant?: string; model?: string; messages: Message[] }
@@ -79,6 +80,9 @@ export default function Manager() {
   const [files, setFiles] = useState<Attachment[]>([])
   const [hearing, setHearing] = useState<null | (() => void)>(null) // stops voice input while listening
   const [heard, setHeard] = useState('') // words not yet final
+  const [panel, setPanel] = useState<null | 'memory' | 'share'>(null)
+  const [shares, setShares] = useState<ShareInfo[]>([])
+  const [viewing, setViewing] = useState<string | null>(null) // a shared chat open instead of the conversation
   const abort = useRef<AbortController | null>(null)
   const picker = useRef<HTMLInputElement>(null)
   const end = useRef<HTMLDivElement>(null)
@@ -92,6 +96,8 @@ export default function Manager() {
     } catch (e) { setNote(e instanceof ApiError ? `Cyanide is not available: ${e.message}` : 'Could not reach SentrAI.') }
   }, [])
   useEffect(() => { void load() }, [load])
+  const loadShares = useCallback(() => api<{ shares: ShareInfo[] }>('/chat/shares').then((r) => setShares(r.shares)).catch(() => {}), [])
+  useEffect(() => { void loadShares(); const t = setInterval(loadShares, 60000); return () => clearInterval(t) }, [loadShares])
   useEffect(() => { saveConvos(convos) }, [convos])
   useEffect(() => {
     const risk = () => api<{ band?: string }>('/risk').then((r) => r.band && setBand(r.band)).catch(() => {})
@@ -169,7 +175,7 @@ export default function Manager() {
   const ids = new Set(convo?.ids ?? [])
   const shown = convo ? (hist?.messages ?? []).filter((m) => ids.has(key(m))) : []
   const gone = !!convo && convo.ids.length > 0 && shown.length === 0
-  const newChat = () => { setCurrent(null); setNote(''); setText('') }
+  const newChat = () => { setCurrent(null); setViewing(null); setNote(''); setText('') }
   const patch = (cid: string, p: Partial<Convo>) => setConvos((cs) => cs.map((c) => (c.id === cid ? { ...c, ...p } : c)))
   const listed = convos.filter((c) => !find.trim() || c.title.toLowerCase().includes(find.trim().toLowerCase()))
     .sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned) || b.at.localeCompare(a.at))
@@ -224,10 +230,19 @@ export default function Manager() {
     </form>
   )
 
+  const dialogs = (
+    <>
+      {panel === 'memory' && <MemoryPanel name={assistant} onClose={() => setPanel(null)} />}
+      {panel === 'share' && convo && (
+        <ShareDialog title={convo.title} messageIds={shown.map((m) => m.id)} onClose={() => setPanel(null)}
+          onDone={(sh) => { setPanel(null); setNote(`Shared "${sh.title}" with ${sh.to.includes('everyone') ? 'everyone' : sh.to.join(', ')}.`); void loadShares() }} />)}
+    </>
+  )
   const [g1, g2] = GLOW[band] ?? GLOW.green
   return (
     <div className="mgr" style={{ '--glow-a': g1, '--glow-b': g2 } as React.CSSProperties}>
       <div className="mgr-glow" aria-hidden />
+      {dialogs}
       <div className="relative z-10 flex min-h-screen">
         {side && (
           <aside className="mgr-side" aria-label="Past conversations">
@@ -252,7 +267,7 @@ export default function Manager() {
                         onKeyDown={(e) => { if (e.key === 'Escape') setRenaming(null) }} />
                     </form>
                   ) : (
-                    <button className="min-w-0 flex-1 text-left" onClick={() => { setCurrent(c.id); setNote('') }} onDoubleClick={() => setRenaming(c.id)}
+                    <button className="min-w-0 flex-1 text-left" onClick={() => { setCurrent(c.id); setViewing(null); setNote('') }} onDoubleClick={() => setRenaming(c.id)}
                       aria-current={c.id === current ? 'true' : undefined}>
                       <span className="flex items-center gap-2">{c.pinned ? <Pin size={13} className="shrink-0 text-muted" aria-label="Pinned" /> : <MessageSquare size={13} className="shrink-0 text-muted" aria-hidden />}<span className="truncate">{c.title}</span></span>
                       <span className="block pl-5 text-[11px] text-muted">{when(c.at)}</span>
@@ -262,18 +277,39 @@ export default function Manager() {
                   <button className="mgr-x" onClick={() => forget(c.id)} title="Delete from this list" aria-label={`Delete ${c.title} from the list`}><X size={13} aria-hidden /></button>
                 </li>))}
             </ul>
-            <p className="px-4 pb-3 text-[11px] text-muted">Kept in this browser only.</p>
+            {shares.length > 0 && (
+              <>
+                <p className="px-4 pb-1 pt-2 text-xs text-muted">Shared</p>
+                <ul className="max-h-48 space-y-0.5 overflow-y-auto px-2 pb-3">
+                  {shares.map((sh) => (
+                    <li key={sh.id} className={'mgr-convo' + (viewing === sh.id ? ' is-on' : '')}>
+                      <button className="min-w-0 flex-1 text-left" onClick={() => setViewing(sh.id)} aria-current={viewing === sh.id ? 'true' : undefined}>
+                        <span className="flex items-center gap-2"><Users size={13} className="shrink-0 text-muted" aria-hidden /><span className="truncate">{sh.title}</span></span>
+                        <span className="block truncate pl-5 text-[11px] text-muted">{sh.by === me?.email ? 'you shared' : sh.by} · {when(sh.at)}</span>
+                      </button>
+                    </li>))}
+                </ul>
+              </>)}
+            <div className="border-t border-line p-2">
+              <button className="mgr-convo w-full" onClick={() => setPanel('memory')}><Brain size={14} aria-hidden /> What {assistant} remembers</button>
+              <p className="px-2 pt-1 text-[11px] text-muted">Your chat list is kept in this browser.</p>
+            </div>
           </aside>)}
         <div className="flex min-w-0 flex-1 flex-col">
       <header className="mgr-noprint flex flex-wrap items-center justify-end gap-2 p-4 text-sm">
         {!side && <button className="mgr-icon mr-auto" onClick={() => setSide(true)} title="Show past conversations" aria-label="Show past conversations"><PanelLeftOpen size={16} aria-hidden /></button>}
+        {chatting && !viewing && (convo?.ids.length ?? 0) > 0 && <button onClick={() => setPanel('share')} className="mgr-top" title="Send a copy to teammates"><Share2 size={14} aria-hidden /> Share</button>}
         {chatting && <button onClick={() => window.print()} className="mgr-top" title="Save this conversation as a PDF"><FileDown size={14} aria-hidden /> Export PDF</button>}
         <AutoMode />
         <button onClick={full} className="mgr-top" title="Every page, for IT staff"><LayoutDashboard size={14} aria-hidden /> Full dashboard</button>
         <button onClick={() => void signOut()} className="mgr-top"><LogOut size={14} aria-hidden /> Sign out</button>
       </header>
 
-      {!chatting ? (
+      {viewing ? (
+        <main className="mx-auto w-full max-w-3xl flex-1 px-4">
+          <SharedView id={viewing} me={me?.email} assistant={assistant} onRemoved={() => { setViewing(null); void loadShares() }} />
+        </main>
+      ) : !chatting ? (
         <main className="mx-auto flex min-h-[calc(100vh-9rem)] w-full max-w-3xl flex-col items-center justify-center gap-6 px-4">
           <h1 className="text-center text-3xl font-light tracking-tight sm:text-[2.25rem]">{greeting()}{first ? `, ${first}` : ''}. Where should we start?</h1>
           <div className="w-full max-w-2xl">{box}</div>

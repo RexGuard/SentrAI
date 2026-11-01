@@ -43,6 +43,8 @@ BACKUP_WORDS = re.compile(r"(?i)\b(back ?ups?|backed up|restore|restoring)\b")
 SCAN_WORDS = re.compile(r"(?i)\b(scan|processes|log (files|folders|sources)|what (should|to) (i )?(monitor|watch))\b")
 INCIDENT_ID = re.compile(r"\b[A-Z]{2,5}-\d{4}-\d{2,4}\b")
 
+REMEMBER = re.compile(r"(?is)^\s*(?:please\s+)?remember(?:\s+that)?\s*[:,-]?\s*(?P<fact>\S.*)$")
+RECALL = re.compile(r"(?i)\bwhat do you (remember|know about us)\b")
 IP_RE = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
 BAD_LINE = re.compile(r"(?i)(fail|invalid|denied|refused|unauthori[sz]ed|forbidden|\b40[13]\b|error|attack|blocked)")
 MAX_ATTACHMENTS = 3
@@ -231,6 +233,10 @@ TOOLS: list[dict[str, Any]] = [
              "required": ["name", "values"], "additionalProperties": False}},
          "unit": {"type": "string", "description": "What the numbers count, e.g. 'incidents'."}},
          "required": ["title", "kind", "labels", "series", "unit"], "additionalProperties": False}},
+    {"name": "remember", "description": "Save one short fact the operator asked you to remember (for example "
+                                        "'rexguard is our game server'). Every later chat sees it. Only when asked.",
+     "input_schema": {"type": "object", "properties": {"text": {"type": "string"}},
+                      "required": ["text"], "additionalProperties": False}},
     {"name": "suggest_followups", "description": "Offer two or three short follow-up questions as chips the "
                                                  "operator can tap.",
      "input_schema": {"type": "object", "properties": {"questions": {"type": "array", "items": {"type": "string"}}},
@@ -265,6 +271,7 @@ class OperatorChat:
                  threats: Any = None, backups: Any = None) -> None:
         self.core, self.provider, self.discovery, self.threats = core, provider, discovery, threats
         self.backups = backups
+        self.memory: Any = None  # chat_memory.Memory, set by chat_memory.install
         self.off_reason: str | None = None  # why there is no model (set by main.py and /ai/reload)
         self.lock = threading.Lock()
         self.history: list[dict[str, Any]] = []
@@ -324,7 +331,7 @@ class OperatorChat:
                          **({"attachments": [{k: f[k] for k in ("name", "kind", "size")} for f in files]} if files else {}))
         looked_at: list[str] = _Steps(progress)
         suggestions: list[dict[str, str]] = []
-        rich: dict[str, list[Any]] = {"blocks": [], "followups": []}
+        rich: dict[str, Any] = {"blocks": [], "followups": [], "by": operator}
         source = "ai"
         answer = None
         stopped = False
@@ -394,7 +401,10 @@ class OperatorChat:
                    looked_at: list[str], suggestions: list[dict[str, str]],
                    rich: dict[str, list[Any]] | None = None, files: list[dict[str, Any]] | None = None,
                    stop: threading.Event | None = None) -> str:
-        convo = self.provider.conversation(SYSTEM.format(name=self.core.name), TOOLS)
+        system = SYSTEM.format(name=self.core.name)
+        if self.memory is not None and (known := self.memory.prompt()):
+            system += "\n\n" + known
+        convo = self.provider.conversation(system, TOOLS)
         prompt = self._prompt(text, incident, earlier)
         for f in files or []:
             if f["kind"] == "text":
@@ -453,6 +463,14 @@ class OperatorChat:
         if name == "show_chart":
             rich["blocks"].append(chart(a.get("title"), a.get("kind"), a.get("labels"), a.get("series"), a.get("unit")))
             return "Chart shown under your answer."
+        if name == "remember":
+            if self.memory is None:
+                raise ValueError("memory is not available")
+            who = str(rich.get("by") or "dashboard")
+            fact = self.memory.add(str(a.get("text") or ""), who)
+            c.scribe.record(c.name, "chat_memory_added", {"operator": who, "fact": fact, "via": "chat",
+                                                          "summary": f"{who} taught {c.name}: {fact['text'][:60]}"})
+            return f"Saved. Everyone's chats will know this from now on (id {fact['id']})."
         if name == "suggest_followups":
             rich["followups"][:] = [str(q).strip()[:120] for q in (a.get("questions") or []) if str(q).strip()][:3]
             return "Shown as chips."
@@ -573,6 +591,24 @@ class OperatorChat:
         rich = rich if rich is not None else {"blocks": [], "followups": []}
         if files:
             return self._fallback_files(files, looked_at, rich)
+        said = REMEMBER.match(text)
+        if said:
+            if self.memory is None:
+                return "I can't remember things on this server."
+            who = str(rich.get("by") or "dashboard")
+            fact = self.memory.add(said.group("fact"), who)
+            self.core.scribe.record(self.core.name, "chat_memory_added", {
+                "operator": who, "fact": fact, "via": "chat", "summary": f"{who} taught {self.core.name}: {fact['text'][:60]}"})
+            rich["followups"][:] = ["What do you remember?", "Are we safe right now?"]
+            return (f"Got it. I'll remember: **{fact['text']}**\n\nEveryone's chats will know this. You can see or "
+                    f"remove what I remember under \"What {self.core.name} remembers\", below the chat list.")
+        if self.memory is not None and RECALL.search(text):
+            facts = self.memory.load()["facts"]
+            if not facts:
+                return "Nobody has asked me to remember anything yet. Start a message with \"Remember that\" to teach me."
+            rich["blocks"].append(table("What I remember", ["Fact", "Taught by", "When"],
+                                        [[f["text"], f["by"], f["at"][:10]] for f in facts]))
+            return f"I remember **{len(facts)} thing{'' if len(facts) == 1 else 's'}** the team told me."
         if WEEK_WORDS.search(text) and not INCIDENT_ID.search(text):
             return self._fallback_week(looked_at, rich)
         if self.backups is not None and BACKUP_WORDS.search(text):
@@ -635,6 +671,9 @@ class OperatorChat:
             rich["followups"][:] = ([f"Explain {active[0]['id']} in plain words"] if active else []) + \
                 ["Summarise this week for me", "Are our backups OK?"]
             parts.append("\n\n".join(lines))
+        told = self.memory.about(text + " " + " ".join(ids)) if self.memory is not None else []
+        if told:
+            parts.append("**What the team told me:**\n" + "\n".join(f"- {t}" for t in told[:5]))
         parts.append("(No AI key is set, so I can only give the core's own explanations. Ask about an incident "
                      "id or an IP address. Add a key in Configuration, section AI, for full answers.)")
         return "\n\n".join(parts)

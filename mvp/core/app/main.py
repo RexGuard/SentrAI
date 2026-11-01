@@ -25,7 +25,7 @@ from .reports import build_report, render_markdown, render_pdf
 from . import summary as client_summary
 from . import auth as auth_cookie
 from . import ui_analytics, ui_approvals, ui_tuning, ui_audit, ui_incidents, ui_limits, ui_machine, ui_machines, ui_overview, ui_report, ui_routing, ui_settings, ui_setup, ui_team, ui_recovery, ui_privacy
-from . import ai, anchor, apidocs, depscan, fleet, hardware, integrations, jobs, webhook
+from . import ai, anchor, apidocs, chat_memory, depscan, fleet, hardware, integrations, jobs, webhook
 from .extensions import ExtensionError
 from . import chat as chat_mod
 from .chat import OperatorChat, default_chat_provider
@@ -465,6 +465,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ui_recovery.install(app, core, ui_recovery.Ticks(
         sentrai_paths.path("core.recovery", core.settings.db_path.parent, migrate=False)), backups)
     ui_team.install(app)
+    chat_memory.install(app, core, chat,
+                        chat_memory.Memory(sentrai_paths.path("core.chat_memory", core.settings.db_path.parent, migrate=False)),
+                        chat_memory.Shares(sentrai_paths.path("core.chat_shares", core.settings.db_path.parent, migrate=False)))
     ui_overview.install(app, core, machines, machine_health, lambda: core.extensions.reload())
     ui_routing.install(app, core)
     ui_limits.install(app)

@@ -261,3 +261,43 @@ def test_attached_log_is_read_with_rules_and_pictures_need_a_model(client):
     assert bad.status_code == 400
     four = [{"name": f"{i}.log", "kind": "text", "text": "x"} for i in range(4)]
     assert client.post("/chat", json={"operator": "erick", "message": "x", "attachments": four}).status_code == 400
+
+
+def test_memory_is_taught_in_chat_and_read_back(client):
+    r = client.post("/chat", json={"operator": "erick", "message": "Remember that 203.0.113.45 is our office router"}).json()
+    assert "203.0.113.45 is our office router" in r["text"]
+    mem = client.get("/chat/memory").json()
+    assert [f["text"] for f in mem["facts"]] == ["203.0.113.45 is our office router"]
+    brute_force(client)
+    r = client.post("/chat", json={"operator": "erick", "message": "why is 203.0.113.45 blocked?"}).json()
+    assert "What the team told me" in r["text"] and "office router" in r["text"]
+    r = client.post("/chat", json={"operator": "erick", "message": "What do you remember?"}).json()
+    assert r["blocks"][0]["rows"][0][0] == "203.0.113.45 is our office router"
+    fid = mem["facts"][0]["id"]
+    assert client.delete(f"/chat/memory/facts/{fid}").json()["ok"]
+    assert client.get("/chat/memory").json()["facts"] == []
+    assert client.delete(f"/chat/memory/facts/{fid}").status_code == 404
+    assert client.post("/chat/memory/facts", json={"text": "  "}).status_code == 400
+    types = [x["type"] for x in client.get("/audit").json()["records"]]
+    assert "chat_memory_added" in types and "chat_memory_forgot" in types
+
+
+def test_model_sees_memory_and_can_remember(client):
+    client.post("/chat/memory", json={"instructions": "Answer in plain words."})
+    client.post("/chat/memory/facts", json={"text": "rexguard is our game server"})
+    chat = client.app.state.chat
+    assert "plain words" in chat.memory.prompt() and "rexguard" in chat.memory.prompt()
+    out = chat._dispatch("remember", {"text": "backups run at 2am"}, [], [], {"blocks": [], "followups": [], "by": "erick"})
+    assert "Saved" in out and any(f["text"] == "backups run at 2am" for f in client.get("/chat/memory").json()["facts"])
+
+
+def test_share_a_chat(client):
+    r = client.post("/chat", json={"operator": "erick", "message": "are we safe?"}).json()
+    share = client.post("/chat/shares", json={"title": "Safe?", "message_ids": [r["id"] - 1, r["id"]]}).json()
+    assert share["to"] == ["everyone"] and share["count"] == 2
+    assert client.get("/chat/shares").json()["shares"][0]["id"] == share["id"]
+    full = client.get(f"/chat/shares/{share['id']}").json()
+    assert [m["role"] for m in full["messages"]] == ["operator", "assistant"]
+    assert client.post("/chat/shares", json={"message_ids": [9999]}).status_code == 400
+    assert client.delete(f"/chat/shares/{share['id']}").json()["ok"]
+    assert client.get(f"/chat/shares/{share['id']}").status_code == 404

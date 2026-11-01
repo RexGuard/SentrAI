@@ -148,6 +148,59 @@ Thumbs up or down on one of Cyanide's answers. Kept on the message and written t
 
 **Errors**: `400` bad vote, `404` no such answer.
 
+## Memory
+
+What the team taught Cyanide: standing instructions and remembered facts. Cyanide reads both before every answer.
+A question starting with "Remember that ..." saves a fact (the model does it with its `remember` tool); "What do you
+remember?" lists them. Every change is on the audit trail (`chat_memory_changed`, `chat_memory_added`,
+`chat_memory_forgot`).
+
+### `GET /chat/memory`
+
+**Returns** `{"instructions": "...", "facts": [{"id": "m1a2b3c4", "text": "rexguard is our game server", "by", "at"}], "updated_at", "updated_by"}`
+
+### `POST /chat/memory`
+
+Sets the standing instructions (up to 2000 characters). Owner or Admin.
+
+**Body**: `{"instructions": "Answer in plain words; our managers are not IT people."}`
+
+**Errors**: `403` not an Owner or Admin.
+
+### `POST /chat/memory/facts`
+
+Remembers one fact (up to 300 characters; the same fact twice is kept once; 100 at most). Owner or Admin.
+
+**Body**: `{"text": "rexguard is our game server"}` **Returns** the fact. **Errors**: `400`, `403`.
+
+### `DELETE /chat/memory/facts/{fid}`
+
+Forgets one fact. **Returns** `{"ok": true, "forgot": {...}}`. **Errors**: `403`, `404`.
+
+## Shared chats
+
+A read-only copy of a conversation, for teammates or the whole team (`chat_shared` on the audit trail).
+
+### `GET /chat/shares`
+
+The shared chats this person can see (shared by them, with them, or with everyone), newest first, without messages:
+`{"me", "shares": [{"id", "title", "by", "at", "to": ["everyone"], "note", "count"}]}`
+
+### `GET /chat/shares/{sid}`
+
+One shared chat with its `messages` (as `GET /chat` gives them). **Errors**: `404` unknown or not shared with you.
+
+### `POST /chat/shares`
+
+**Body**: `{"title": "Are we safe?", "message_ids": [1, 2], "to": ["sam@example.com"] or ["everyone"], "note": ""}`.
+`to` defaults to everyone; each address must have a dashboard account.
+
+**Errors**: `400` unknown person or nothing to share.
+
+### `DELETE /chat/shares/{sid}`
+
+Removes a shared chat: the person who shared it, an Owner or an Admin. **Errors**: `403`, `404`.
+
 ### `POST /chat/clear`
 
 Empties the conversation. The audit trail keeps its copy.
