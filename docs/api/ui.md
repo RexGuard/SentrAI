@@ -201,6 +201,11 @@ Drop a pattern's AI draft and go back to the rules-based playbook.
 
 **Body** `{"pattern": "brute_force:web"}` **Returns** `{"pattern": ..., "forgotten": true}`.
 
+### `GET /ui/tuning`
+
+What made the most incidents and alerts in the last 7 days, and what would quiet each without hiding real attacks. Nothing changes on its own.
+
+**Returns** `days`, `incidents`, `alerts`, `alerts_per_day`, `noisy` (more than 20 alerts a day), `false_alarms` (rejected, or resolved with a note that says it was not real), `learning` (`day`, `of`, `on`: the first week of an install), `settings` (`busy_server`, `trusted`) and `rows` (`kind` = `machine` or `network`, `key`, `what`, `incidents`, `false_alarms`, `addresses`, `per_day`, `suggestion` with `do` = `trust`, `busy`, `review` or `keep`, `text` and `where`, the setting to change on Configuration).
 ### `GET /ui/privacy`
 
 The Privacy page: what SentrAI records about people, why, who can see it, how long the organisation keeps it, and how old the oldest record is.

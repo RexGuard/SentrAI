@@ -1,7 +1,7 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import {
   BarChart3, Boxes, Briefcase, Eye, ClipboardCheck, LayoutDashboard, DatabaseBackup, FileText, Flag, Gauge, Link2, Lock, LogOut, Moon, Network,
-  Puzzle, ScrollText, Server, Settings2, ShieldCheck, Siren, Sun, Users, Workflow, type LucideIcon,
+  Puzzle, ScrollText, Server, Settings2, ShieldCheck, Siren, SlidersHorizontal, Sun, Users, Workflow, type LucideIcon,
 } from 'lucide-react'
 import { useSession } from '../lib/session'
 import { useTheme } from '../lib/theme'
@@ -25,6 +25,7 @@ export const MENU: { group: string; items: Item[] }[] = [
     { to: '/classifier', label: 'Classifier', icon: Boxes },
     { to: '/responder', label: 'Action taker', icon: ShieldCheck },
     { to: '/guardrails', label: 'Automation guardrails', icon: Settings2 },
+    { to: '/tuning', label: 'Tuning', icon: SlidersHorizontal },
   ] },
   { group: 'Oversight', items: [
     { to: '/machines', label: 'Machines', icon: Server },
