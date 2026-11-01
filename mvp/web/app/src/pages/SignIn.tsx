@@ -127,7 +127,7 @@ export default function SignIn() {
       <div className="w-full max-w-sm space-y-4 rounded-xl border border-line bg-surface p-6">
         <div className="flex items-center gap-2"><img src="/mark.svg" alt="" width={28} height={28} /><span className="text-xl font-semibold">SentrAI</span></div>
         {err && <p role="alert" className="rounded-md border border-line bg-surface-2 p-2 text-sm text-bad">{err}</p>}
-        {body}
+        <div key={step}>{body}</div> {/* a new step is a new form: React must not carry the password into the code box */}
       </div>
     </main>
   )
