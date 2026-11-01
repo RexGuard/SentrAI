@@ -6,11 +6,12 @@
 import type React from 'react'
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowUp, BarChart3, ChevronDown, LayoutDashboard, ListChecks, LogOut, MessageSquare, PanelLeftClose, PanelLeftOpen, Pencil, Pin, PinOff, Search, Plus, ShieldQuestion, SquarePen, X } from 'lucide-react'
+import { ArrowUp, BarChart3, FileDown, RotateCcw, ThumbsDown, ThumbsUp, Zap, ChevronDown, LayoutDashboard, ListChecks, LogOut, MessageSquare, PanelLeftClose, PanelLeftOpen, Pencil, Pin, PinOff, Search, Plus, ShieldQuestion, SquarePen, X } from 'lucide-react'
 import { api, ApiError } from '../lib/api'
 import { useSession } from '../lib/session'
 import { useSimple } from '../lib/simple'
 import AutoMode from './AutoMode'
+import { Blocks, CopyButton, Text } from '../lib/Rich'
 import { SuggestionCard, type Incident, type Message } from './Chat'
 
 type History = { assistant?: string; model?: string; messages: Message[] }
@@ -53,6 +54,10 @@ export default function Manager() {
   const [band, setBand] = useState('green')
   const [find, setFind] = useState('')
   const [renaming, setRenaming] = useState<string | null>(null)
+  const [editing, setEditing] = useState<string | null>(null) // key of the question being edited
+  const [draft, setDraft] = useState('')
+  const [act, setAct] = useState<string | null>(null) // the suggested action whose confirm card is open
+  const [why, setWhy] = useState<{ id: string | number; note: string } | null>(null) // thumbs down: what was wrong
   const [about, setAbout] = useState('')
   const [text, setText] = useState('')
   const [asking, setAsking] = useState(false)
@@ -94,6 +99,10 @@ export default function Manager() {
     setAsking(false)
   }
 
+  const rate = async (m: Message, vote: 'up' | 'down' | null, note = '') => {
+    try { await api(`/chat/${m.id}/feedback`, { body: { vote, note } }); await load() }
+    catch (e) { setNote(e instanceof ApiError ? `Could not save that: ${e.message}` : 'Could not save that.') }
+  }
   const assistant = hist?.assistant || 'Cyanide'
   const convo = convos.find((c) => c.id === current)
   const ids = new Set(convo?.ids ?? [])
@@ -173,8 +182,9 @@ export default function Manager() {
             <p className="px-4 pb-3 text-[11px] text-muted">Kept in this browser only.</p>
           </aside>)}
         <div className="flex min-w-0 flex-1 flex-col">
-      <header className="flex flex-wrap items-center justify-end gap-2 p-4 text-sm">
+      <header className="mgr-noprint flex flex-wrap items-center justify-end gap-2 p-4 text-sm">
         {!side && <button className="mgr-icon mr-auto" onClick={() => setSide(true)} title="Show past conversations" aria-label="Show past conversations"><PanelLeftOpen size={16} aria-hidden /></button>}
+        {chatting && <button onClick={() => window.print()} className="mgr-top" title="Save this conversation as a PDF"><FileDown size={14} aria-hidden /> Export PDF</button>}
         <AutoMode />
         <button onClick={full} className="mgr-top" title="Every page, for IT staff"><LayoutDashboard size={14} aria-hidden /> Full dashboard</button>
         <button onClick={() => void signOut()} className="mgr-top"><LogOut size={14} aria-hidden /> Sign out</button>
@@ -192,14 +202,68 @@ export default function Manager() {
         </main>
       ) : (
         <main className="mx-auto flex flex-1 w-full max-w-3xl flex-col px-4">
+          <h1 className="mgr-print-title hidden pt-4 text-xl font-semibold">{convo?.title ?? 'Conversation'} · {assistant} · {convo ? when(convo.at) : ''}</h1>
           <div className="flex-1 space-y-6 py-6" role="log" aria-live="polite" aria-label="Conversation">
-            {shown.map((m) => m.role === 'operator' ? (
-              <p key={m.id} className="ml-auto w-fit max-w-[85%] whitespace-pre-wrap rounded-2xl bg-surface-3 px-4 py-2.5">{m.text}</p>
+            {shown.map((m, n) => m.role === 'operator' ? (
+              editing === key(m) ? (
+                <form key={m.id} className="ml-auto w-full max-w-[85%] space-y-2" onSubmit={(e) => { e.preventDefault(); setEditing(null); void ask(draft) }}>
+                  <label className="sr-only" htmlFor={`${inputId}-edit`}>Edit your question</label>
+                  <textarea id={`${inputId}-edit`} autoFocus rows={2} className="w-full rounded-2xl border border-line bg-surface-3 px-4 py-2.5 text-ink"
+                    value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === 'Escape') setEditing(null) }} />
+                  <div className="flex justify-end gap-2 text-sm">
+                    <button type="button" className="mgr-top" onClick={() => setEditing(null)}>Cancel</button>
+                    <button className="mgr-top bg-surface-3" disabled={!draft.trim() || asking}>Send</button>
+                  </div>
+                </form>
+              ) : (
+                <div key={m.id} className="group ml-auto flex w-fit max-w-[85%] items-start gap-1">
+                  <span className="mgr-noprint flex opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                    <CopyButton text={m.text} label="Copy question" />
+                    <button type="button" className="rich-tool" title="Edit and send again" aria-label="Edit and send again" disabled={asking}
+                      onClick={() => { setEditing(key(m)); setDraft(m.text) }}><Pencil size={14} aria-hidden /></button>
+                  </span>
+                  <p className="whitespace-pre-wrap rounded-2xl bg-surface-3 px-4 py-2.5">{m.text}</p>
+                </div>)
             ) : (
-              <div key={m.id} className="space-y-2">
+              <div key={m.id} className="space-y-3">
                 <p className="text-xs text-muted">{assistant}{m.incident ? ` · about ${m.incident}` : ''}</p>
-                <p className="whitespace-pre-wrap leading-relaxed">{m.text}</p>
-                {(m.suggestions ?? []).map((s, k) => <SuggestionCard key={k} s={s} inc={byId[String(s.incident)]} onDone={(t) => { setNote(t); void load() }} />)}
+                <Text md={m.text} />
+                <Blocks blocks={m.blocks} onOpen={(id) => void ask(`Explain ${id} in plain words`)} />
+                {(m.suggestions?.length ?? 0) > 0 && (
+                  <div className="mgr-noprint space-y-2">
+                    <div className="flex flex-wrap gap-2" role="group" aria-label="Suggested actions">
+                      {m.suggestions!.map((s, k) => {
+                        const id = `${key(m)}#${k}`
+                        return <button key={k} type="button" className={'mgr-act' + (act === id ? ' is-on' : '')} aria-expanded={act === id}
+                          onClick={() => setAct(act === id ? null : id)}><Zap size={13} aria-hidden /> {s.label || `${s.decision} ${s.incident}`}</button>
+                      })}
+                    </div>
+                    {m.suggestions!.map((s, k) => act === `${key(m)}#${k}` && (
+                      <SuggestionCard key={k} s={s} inc={byId[String(s.incident)]} onDone={(t) => { setAct(null); setNote(t); void load() }} />))}
+                  </div>)}
+                <div className="mgr-noprint flex items-center gap-0.5 text-muted">
+                  <CopyButton text={m.text} label="Copy answer" />
+                  <button type="button" className="rich-tool" title="Ask again for a fresh answer" aria-label="Retry" disabled={asking || !(m.question || shown[n - 1]?.text)}
+                    onClick={() => void ask(m.question || shown[n - 1]?.text || '')}><RotateCcw size={14} aria-hidden /></button>
+                  <button type="button" className={'rich-tool' + (m.feedback?.vote === 'up' ? ' is-on' : '')} aria-pressed={m.feedback?.vote === 'up'}
+                    title="Good answer" aria-label="Good answer" onClick={() => void rate(m, m.feedback?.vote === 'up' ? null : 'up')}>
+                    <ThumbsUp size={14} fill={m.feedback?.vote === 'up' ? 'currentColor' : 'none'} aria-hidden /></button>
+                  <button type="button" className={'rich-tool' + (m.feedback?.vote === 'down' ? ' is-on' : '')} aria-pressed={m.feedback?.vote === 'down'}
+                    title="Not helpful" aria-label="Not helpful" onClick={() => (m.feedback?.vote === 'down' ? void rate(m, null) : setWhy({ id: m.id, note: '' }))}>
+                    <ThumbsDown size={14} fill={m.feedback?.vote === 'down' ? 'currentColor' : 'none'} aria-hidden /></button>
+                </div>
+                {why?.id === m.id && (
+                  <form className="mgr-noprint rich-frame flex flex-wrap items-center gap-2 p-2 text-sm" onSubmit={(e) => { e.preventDefault(); void rate(m, 'down', why.note); setWhy(null) }}>
+                    <label className="min-w-0 flex-1"><span className="sr-only">What was wrong? (optional)</span>
+                      <input autoFocus className="mgr-search" placeholder="What was wrong? (optional, helps tuning)" value={why.note} maxLength={500}
+                        onChange={(e) => setWhy({ id: m.id, note: e.target.value })} onKeyDown={(e) => { if (e.key === 'Escape') setWhy(null) }} /></label>
+                    <button type="button" className="mgr-top" onClick={() => setWhy(null)}>Cancel</button>
+                    <button className="mgr-top">Send</button>
+                  </form>)}
+                {n === shown.length - 1 && !asking && (m.followups?.length ?? 0) > 0 && (
+                  <div className="mgr-noprint flex flex-wrap gap-2">
+                    {m.followups!.map((q) => <button key={q} className="mgr-chip" onClick={() => void ask(q)}>{q}</button>)}
+                  </div>)}
               </div>))}
             {gone && <p className="text-sm text-muted">These messages are no longer on the server (the chat was cleared or is older than it keeps). Ask again to continue.</p>}
             {asking && <p className="text-muted" role="status">{assistant} is looking into it…</p>}

@@ -62,7 +62,7 @@ main tbody tr { transition: background-color .12s ease-out; }
 @media (prefers-reduced-motion: reduce) { .stat, main tbody tr, .prompt { transition: none; } }
 
 /* Manager view: one page, one chat box under a soft glow. */
-.mgr { position: relative; min-height: 100vh; background: var(--bg); color: var(--ink); overflow-x: hidden; }
+.mgr { position: relative; min-height: 100vh; background: var(--bg); color: var(--ink); overflow-x: clip; }
 @property --glow-a { syntax: '<color>'; inherits: true; initial-value: rgba(37, 99, 235, .45); }
 @property --glow-b { syntax: '<color>'; inherits: true; initial-value: rgba(20, 184, 166, .28); }
 .mgr { transition: --glow-a 4s ease, --glow-b 4s ease; }
@@ -108,3 +108,38 @@ main tbody tr { transition: background-color .12s ease-out; }
 .mgr-top { display: inline-flex; align-items: center; gap: .35rem; border: 1px solid var(--line); border-radius: 999px; padding: .3rem .75rem;
   color: var(--ink-soft); background: color-mix(in srgb, var(--surface) 70%, transparent); }
 .mgr-top:hover { color: var(--ink); }
+
+/* Rich chat answers (lib/Rich.tsx). Series colours: fixed categorical slots, stepped per theme. */
+:root { --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; }
+:root[data-theme="light"] { --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; }
+.rich-frame { border: 1px solid var(--line); border-radius: .75rem; background: color-mix(in srgb, var(--surface) 82%, transparent); }
+.rich-table { width: 100%; text-align: left; font-size: .8125rem; border-collapse: collapse; }
+.rich-table th { position: sticky; top: 0; background: var(--surface-2); color: var(--ink-muted); font-weight: 500; padding: .45rem .75rem; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.rich-table td { padding: .45rem .75rem; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+.rich-table tr:last-child td { border-bottom: 0; }
+.rich-table tbody tr:hover td { background: color-mix(in srgb, var(--surface-3) 50%, transparent); }
+.rich-tool { display: inline-flex; align-items: center; gap: .25rem; border-radius: .4rem; padding: .25rem .4rem; color: var(--ink-muted); }
+.rich-tool:hover { background: var(--surface-3); color: var(--ink); }
+.rich-grid { stroke: var(--line-soft); stroke-width: 1; }
+.rich-axis { stroke: var(--line); stroke-width: 1; }
+.rich-tick { fill: var(--ink-muted); font-size: 11px; }
+.rich-tip { position: absolute; top: .5rem; transform: translateX(-50%); pointer-events: none; background: var(--surface-2); border: 1px solid var(--line); border-radius: .5rem; padding: .35rem .55rem; box-shadow: 0 6px 20px rgba(0,0,0,.3); white-space: nowrap; }
+.rich-md > * + * { margin-top: .6rem; }
+.rich-md ul { list-style: disc; padding-left: 1.25rem; } .rich-md ol { list-style: decimal; padding-left: 1.25rem; }
+.rich-md li + li { margin-top: .2rem; }
+.rich-md h1, .rich-md h2, .rich-md h3 { font-weight: 600; font-size: 1.05rem; }
+.rich-md strong { font-weight: 600; color: var(--ink); }
+.mgr-chip { border: 1px solid var(--line); border-radius: 999px; padding: .3rem .8rem; font-size: .8125rem; color: var(--ink-soft); background: color-mix(in srgb, var(--surface) 60%, transparent); }
+.mgr-chip:hover { background: var(--surface-3); color: var(--ink); }
+.mgr-act { display: inline-flex; align-items: center; gap: .35rem; border-radius: .6rem; padding: .35rem .7rem; font-size: .8125rem;
+  border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); }
+.mgr-act:hover, .mgr-act.is-on { background: var(--surface-3); border-color: var(--ink-faint, var(--line)); }
+.rich-table td:first-child { white-space: nowrap; }
+.rich-tool.is-on { color: var(--ink); }
+@media print {
+  .mgr-side, .mgr-glow, .mgr-dock, .mgr-noprint { display: none !important; }
+  .mgr { --bg: #fff; --ink: #111; --ink-soft: #333; --ink-muted: #555; --line: #ccc; --line-soft: #e5e5e5;
+    --surface: #fff; --surface-2: #f4f4f4; --surface-3: #eee; background: #fff !important; color: #111 !important; }
+  .mgr .min-h-screen { min-height: 0; }
+  .mgr-print-title { display: block !important; }
+}

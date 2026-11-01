@@ -79,6 +79,22 @@ Asks Cyanide a question and waits for the answer. Written to the audit trail (`o
 | `source` | `ai` when the model answered, `fallback` when the core's explanations did (no model, or it failed) |
 | `looked_at` | what Cyanide looked up to answer |
 | `suggestions` | buttons to show the operator; nothing happens unless they press one |
+| `blocks` | tables, charts and figures to draw under the text (below); the text is Markdown |
+| `followups` | up to three short questions the operator may ask next, shown as chips |
+| `question` | the question this answers (used by Retry) |
+| `feedback` | `{"vote": "up" or "down", "note", "by"}` once someone rated the answer |
+
+Each block has a `type`:
+
+| Block | Fields |
+| --- | --- |
+| `"type": "table"` | `title`, `columns` (up to 8), `rows` (up to 50, plain text cells), `link` (`"incident"`: the first column opens that incident) |
+| `"type": "chart"` | `title`, `kind` (`bar` or `line`), `labels`, `series` (up to 3 `{name, values}` on one scale), `unit` |
+| `"type": "stats"` | `items`: `{label, value, tone}`, tone being a risk band (`green`, `amber`, `red`, `critical`) |
+
+With an AI model, Cyanide makes tables, charts and follow-ups with its `show_table`, `show_chart` and
+`suggest_followups` tools. Without one, the overview answer carries the risk figures, a table of active incidents
+and the risk over time, and a question about the week carries incidents per day and per kind.
 
 Each suggestion has a `label` and a `reason`, plus what pressing it does:
 
@@ -90,6 +106,17 @@ Each suggestion has a `label` and a `reason`, plus what pressing it does:
 | `"kind": "backup_now"` | | [`POST /backups`](scans.html#post-backups) |
 
 **Errors**: `400` `empty message`.
+
+### `POST /chat/{message_id}/feedback`
+
+Thumbs up or down on one of Cyanide's answers. Kept on the message and written to the audit trail
+(`chat_feedback`); the Tuning page counts them.
+
+**Body**: `{"vote": "up" | "down" | null, "note": "optional, what was wrong"}`. `null` takes the vote back.
+
+**Returns** the message with its `feedback`.
+
+**Errors**: `400` bad vote, `404` no such answer.
 
 ### `POST /chat/clear`
 
