@@ -137,8 +137,8 @@ def agent_table(agents: list[dict], records: list[dict]) -> list[dict]:
 def install(app: FastAPI, core: Any) -> None:
     @app.get("/ui/audit")
     def get_audit_page(limit: int = Query(60, ge=1, le=500)) -> dict[str, Any]:
-        valid, bad = core.audit.verify()
-        records = core.audit.records()
+        valid, bad = core.audit.verify_recent()
+        records = core.audit.snapshot()
         latest = sorted(records, key=lambda r: r.get("seq") or 0)[-max(limit, 200):]
         return {"chain_valid": valid, "first_invalid_seq": bad, "count": len(records),
                 "head_hash": core.audit.head_hash(), "feed": feed(records, limit),
