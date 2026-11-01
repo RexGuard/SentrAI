@@ -579,9 +579,20 @@ fi
 WEB=0
 WEBAPP="$MVP/web/app"
 if [ -f "$WEBAPP/package.json" ]; then
-    if command -v npm >/dev/null 2>&1 && command -v node >/dev/null 2>&1 \
-        && node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 20 ? 0 : 1)' 2>/dev/null; then
-        echo "Building the web dashboard (this takes a minute) ..."
+    NODE_WHY=""
+    if ! command -v node >/dev/null 2>&1; then
+        NODE_WHY="node is not on root's PATH ($PATH)"
+    else
+        NODE_VER="$(node -p 'process.versions.node' 2>/dev/null || true)"  # prereleases like 27.0.0-alpha.0 count by their major
+        NODE_MAJOR="${NODE_VER%%.*}"
+        case "$NODE_MAJOR" in ''|*[!0-9]*) NODE_WHY="could not read the version of $(command -v node)" ;;
+            *) [ "$NODE_MAJOR" -ge 20 ] || NODE_WHY="node $NODE_VER ($(command -v node)) is older than 20" ;; esac
+        if [ -z "$NODE_WHY" ] && ! command -v npm >/dev/null 2>&1; then
+            NODE_WHY="node $NODE_VER is at $(command -v node), but npm is not installed (or not on root's PATH)"
+        fi
+    fi
+    if [ -z "$NODE_WHY" ]; then
+        echo "Building the web dashboard with Node $NODE_VER (this takes a minute) ..."
         if (cd "$WEBAPP" && npm ci --no-audit --no-fund --loglevel=error && npm run build >/dev/null) \
             && [ -f "$WEBAPP/dist/index.html" ]; then
             WEB=1
@@ -592,8 +603,9 @@ if [ -f "$WEBAPP/package.json" ]; then
         chown -R root:root "$WEBAPP" 2>/dev/null || true
         chmod -R u=rwX,go=rX "$WEBAPP" 2>/dev/null || true
     else
-        echo "NOTE: Node.js 20 or newer is not installed, so the web dashboard was not built and the classic" >&2
-        echo "      dashboard is used. Install Node.js (https://nodejs.org), then run: sudo sentrai-update --force" >&2
+        echo "NOTE: the web dashboard was not built, so the classic dashboard is used: $NODE_WHY." >&2
+        echo "      It needs Node.js 20 or newer with npm (a current LTS such as 22 is best). Install it, then run:" >&2
+        echo "      sudo sentrai-update --force" >&2
     fi
 fi
 if [ "$WEB" = 1 ]; then
