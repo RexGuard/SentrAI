@@ -23,3 +23,31 @@ export async function api<T = unknown>(path: string, init: { method?: string; bo
 }
 
 export type Me = { email: string; name: string; role: string; role_label: string; permissions: string[] }
+
+/** A streamed answer: POSTs `body` and calls `onEvent` with each JSON line as it arrives. Aborting `signal` closes the
+ *  connection, which the core takes as Stop. */
+export async function stream(path: string, body: unknown, onEvent: (e: Record<string, unknown>) => void, signal?: AbortSignal): Promise<void> {
+  const res = await fetch('/api' + path, {
+    method: 'POST', credentials: 'same-origin', signal,
+    headers: { 'Content-Type': 'application/json', 'X-SentrAI-Web': '1' }, body: JSON.stringify(body),
+  })
+  if (!res.ok || !res.body) {
+    let detail = res.statusText
+    try { const j = await res.json(); if (typeof j.detail === 'string') detail = j.detail } catch { /* not JSON */ }
+    throw new ApiError(detail, res.status)
+  }
+  const reader = res.body.getReader()
+  const dec = new TextDecoder()
+  let buf = ''
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buf += dec.decode(value, { stream: true })
+    let nl
+    while ((nl = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, nl).trim(); buf = buf.slice(nl + 1)
+      if (line) onEvent(JSON.parse(line))
+    }
+  }
+  if (buf.trim()) onEvent(JSON.parse(buf))
+}

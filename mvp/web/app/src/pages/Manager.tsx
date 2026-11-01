@@ -6,8 +6,10 @@
 import type React from 'react'
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowUp, BarChart3, FileDown, RotateCcw, ThumbsDown, ThumbsUp, Zap, ChevronDown, LayoutDashboard, ListChecks, LogOut, MessageSquare, PanelLeftClose, PanelLeftOpen, Pencil, Pin, PinOff, Search, Plus, ShieldQuestion, SquarePen, X } from 'lucide-react'
-import { api, ApiError } from '../lib/api'
+import { ArrowUp, BarChart3, Check, FileText, Image as ImageIcon, Mic, MicOff, Square, FileDown, RotateCcw, ThumbsDown, ThumbsUp, Zap, ChevronDown, LayoutDashboard, ListChecks, LogOut, MessageSquare, PanelLeftClose, PanelLeftOpen, Pencil, Pin, PinOff, Search, Plus, ShieldQuestion, SquarePen, X } from 'lucide-react'
+import { api, ApiError, stream } from '../lib/api'
+import { ACCEPT, MAX_FILES, read as readFile, sizeLabel, type Attachment } from '../lib/attach'
+import { canListen, listen } from '../lib/voice'
 import { useSession } from '../lib/session'
 import { useSimple } from '../lib/simple'
 import AutoMode from './AutoMode'
@@ -39,6 +41,17 @@ const GLOW: Record<string, [string, string]> = {
   red: ['rgba(79, 70, 229, .38)', 'rgba(239, 68, 68, .32)'], critical: ['rgba(124, 58, 237, .38)', 'rgba(220, 38, 38, .40)'],
 }
 
+/** Attached files on a question: names and sizes (the chat keeps no content). */
+function Files({ list }: { list: { name: string; kind: string; size: number }[] }) {
+  return (
+    <ul className="flex flex-wrap justify-end gap-2" aria-label="Attached files">
+      {list.map((f, i) => (
+        <li key={i} className="mgr-file">{f.kind === 'image' ? <ImageIcon size={15} aria-hidden /> : <FileText size={15} aria-hidden />}
+          <span className="max-w-[12rem] truncate">{f.name}</span><span className="text-[11px] text-muted">{sizeLabel(f.size)}</span></li>))}
+    </ul>
+  )
+}
+
 const greeting = () => { const h = new Date().getHours(); return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening' }
 
 export default function Manager() {
@@ -62,6 +75,12 @@ export default function Manager() {
   const [text, setText] = useState('')
   const [asking, setAsking] = useState(false)
   const [note, setNote] = useState('')
+  const [live, setLive] = useState<{ question: string; files: Attachment[]; steps: string[]; text: string } | null>(null)
+  const [files, setFiles] = useState<Attachment[]>([])
+  const [hearing, setHearing] = useState<null | (() => void)>(null) // stops voice input while listening
+  const [heard, setHeard] = useState('') // words not yet final
+  const abort = useRef<AbortController | null>(null)
+  const picker = useRef<HTMLInputElement>(null)
   const end = useRef<HTMLDivElement>(null)
 
   const load = useCallback(async () => {
@@ -78,25 +97,67 @@ export default function Manager() {
     const risk = () => api<{ band?: string }>('/risk').then((r) => r.band && setBand(r.band)).catch(() => {})
     void risk(); const t = setInterval(risk, 20000); return () => clearInterval(t)
   }, [])
-  useEffect(() => { end.current?.scrollIntoView({ block: 'end', behavior: 'smooth' }) }, [hist?.messages.length, asking])
+  useEffect(() => { end.current?.scrollIntoView({ block: 'end' }) }, [hist?.messages.length, asking, live?.text.length, live?.steps.length])
+  useEffect(() => () => { abort.current?.abort() }, [])
+
+  const attach = async (list: FileList | File[] | null) => {
+    const picked = [...(list ?? [])]
+    if (!picked.length) return
+    const room = MAX_FILES - files.length
+    if (picked.length > room) setNote(`Attach up to ${MAX_FILES} files to one question.`)
+    const got: Attachment[] = []
+    for (const f of picked.slice(0, Math.max(0, room))) {
+      try { got.push(await readFile(f)) } catch (e) { setNote(e instanceof Error ? e.message : `Could not read ${f.name}.`) }
+    }
+    if (got.length) setFiles((fs) => [...fs, ...got])
+  }
+  const talk = () => {
+    if (hearing) { hearing(); return }
+    const base = text ? text.replace(/\s*$/, ' ') : ''
+    setNote('')
+    const stopIt = listen((final, interim) => { setText(base + final); setHeard(interim) },
+      (err) => { setHearing(null); setHeard(''); if (err) setNote(err) })
+    setHearing(() => stopIt)
+  }
 
   const ask = async (message: string) => {
-    if (!message.trim() || asking) return
+    if ((!message.trim() && !files.length) || asking) return
+    hearing?.()
+    const sending = files
+    const question = message.trim() || 'What does the attached file show?'
     const before = new Set((hist?.messages ?? []).map(key))
     let id = current
     if (!id) {
       id = `c${Date.now()}`
-      const c: Convo = { id, title: message.trim().slice(0, 80), at: new Date().toISOString(), ids: [] }
+      const c: Convo = { id, title: question.slice(0, 80), at: new Date().toISOString(), ids: [] }
       setConvos((cs) => [c, ...cs]); setCurrent(id)
     }
-    setAsking(true); setNote(''); setText('')
-    try { await api('/chat', { body: { operator: me?.email ?? 'dashboard', message, incident: about || null } }) }
-    catch (e) { setNote(e instanceof ApiError ? `That did not go through: ${e.message}` : 'That did not go through.') }
-    const next = await load()
+    setAsking(true); setNote(''); setText(''); setFiles([])
+    setLive({ question, files: sending, steps: [], text: '' })
+    const ctl = new AbortController(); abort.current = ctl
+    let stopped = false
+    try {
+      await stream('/chat/stream', { operator: me?.email ?? 'dashboard', message, incident: about || null,
+        attachments: sending.length ? sending.map(({ name, kind, text, media_type, data }) => ({ name, kind, text, media_type, data })) : undefined },
+      (e) => {
+        if (e.type === 'step') setLive((l) => l && { ...l, steps: [...l.steps, String(e.text)] })
+        else if (e.type === 'text') setLive((l) => l && { ...l, text: l.text + String(e.delta) })
+        else if (e.type === 'error') setNote(`That did not go through: ${String(e.detail)}`)
+      }, ctl.signal)
+    } catch (e) {
+      if (ctl.signal.aborted) stopped = true
+      else setNote(e instanceof ApiError ? `That did not go through: ${e.message}` : 'That did not go through.')
+    }
+    abort.current = null
+    // After Stop the core needs a moment to finish the step it is on and save what was sent.
+    let next = await load()
+    for (let i = 0; stopped && i < 10 && (next?.messages ?? []).filter((m) => !before.has(key(m))).length < 2; i++) {
+      await new Promise((r) => setTimeout(r, 400)); next = await load()
+    }
     const added = (next?.messages ?? []).map(key).filter((x) => !before.has(x))
     const cid = id
     setConvos((cs) => cs.map((c) => (c.id === cid ? { ...c, ids: [...c.ids, ...added], at: new Date().toISOString() } : c)))
-    setAsking(false)
+    setLive(null); setAsking(false)
   }
 
   const rate = async (m: Message, vote: 'up' | 'down' | null, note = '') => {
@@ -120,23 +181,45 @@ export default function Manager() {
   const full = () => { if (simple) toggle(); nav('/command') }
 
   const box = (
-    <form onSubmit={(e) => { e.preventDefault(); void ask(text) }} className="w-full">
+    <form onSubmit={(e) => { e.preventDefault(); void ask(text) }} className="w-full"
+      onDragOver={(e) => { if (e.dataTransfer.types.includes('Files')) e.preventDefault() }}
+      onDrop={(e) => { if (e.dataTransfer.files.length) { e.preventDefault(); void attach(e.dataTransfer.files) } }}>
       <label className="sr-only" htmlFor={inputId}>Ask {assistant}</label>
-      <div className="mgr-box">
-        <button type="button" className="mgr-icon" title="Start a new conversation" aria-label="New conversation"
-          onClick={newChat}><Plus size={18} aria-hidden /></button>
-        <textarea id={inputId} rows={1} value={text} disabled={asking} placeholder={`Ask ${assistant} anything about your security`}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void ask(text) } }} />
-        <label className="mgr-pick">
-          <span className="sr-only">Talk about</span>
-          <select value={about} onChange={(e) => setAbout(e.target.value)}>
-            <option value="">{assistant} · everything</option>
-            {openIncidents.map((i) => <option key={i.id} value={i.id}>{assistant} · {i.id}</option>)}
-          </select>
-          <ChevronDown size={14} aria-hidden />
-        </label>
-        <button className="mgr-send" disabled={asking || !text.trim()} aria-label="Send"><ArrowUp size={18} aria-hidden /></button>
+      <input ref={picker} type="file" multiple accept={ACCEPT} className="hidden" tabIndex={-1} aria-hidden
+        onChange={(e) => { void attach(e.target.files); e.target.value = '' }} />
+      <div className="mgr-box flex-col !items-stretch">
+        {files.length > 0 && (
+          <ul className="flex flex-wrap gap-2 px-1 pt-1" aria-label="Attached files">
+            {files.map((f, i) => (
+              <li key={i} className="mgr-file">
+                {f.kind === 'image' ? <img src={`data:${f.media_type};base64,${f.data}`} alt="" className="h-8 w-8 rounded object-cover" /> : <FileText size={16} aria-hidden />}
+                <span className="min-w-0"><span className="block max-w-[10rem] truncate">{f.name}</span><span className="block text-[11px] text-muted">{sizeLabel(f.size)}</span></span>
+                <button type="button" className="mgr-x !opacity-100" aria-label={`Remove ${f.name}`} onClick={() => setFiles((fs) => fs.filter((_, k) => k !== i))}><X size={13} aria-hidden /></button>
+              </li>))}
+          </ul>)}
+        <div className="flex items-center gap-2">
+          <button type="button" className="mgr-icon" title="Attach a log or a screenshot" aria-label="Attach a log or a screenshot"
+            disabled={asking || files.length >= MAX_FILES} onClick={() => picker.current?.click()}><Plus size={18} aria-hidden /></button>
+          <textarea id={inputId} rows={1} value={heard ? `${text}${heard}` : text} disabled={asking} placeholder={hearing ? 'Listening…' : `Ask ${assistant} anything about your security`}
+            onChange={(e) => setText(e.target.value)}
+            onPaste={(e) => { const pics = [...e.clipboardData.files]; if (pics.length) { e.preventDefault(); void attach(pics) } }}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void ask(text) } }} />
+          <label className="mgr-pick">
+            <span className="sr-only">Talk about</span>
+            <select value={about} onChange={(e) => setAbout(e.target.value)}>
+              <option value="">{assistant} · everything</option>
+              {openIncidents.map((i) => <option key={i.id} value={i.id}>{assistant} · {i.id}</option>)}
+            </select>
+            <ChevronDown size={14} aria-hidden />
+          </label>
+          {canListen() && !asking && (
+            <button type="button" className={'mgr-icon' + (hearing ? ' mgr-hearing' : '')} onClick={talk} aria-pressed={!!hearing}
+              title={hearing ? 'Stop listening' : 'Speak your question (your browser may send the audio to its speech service)'}
+              aria-label={hearing ? 'Stop listening' : 'Speak your question'}>{hearing ? <MicOff size={18} aria-hidden /> : <Mic size={18} aria-hidden />}</button>)}
+          {asking
+            ? <button type="button" className="mgr-send" onClick={() => abort.current?.abort()} aria-label="Stop" title="Stop"><Square size={14} fill="currentColor" aria-hidden /></button>
+            : <button className="mgr-send" disabled={!text.trim() && !files.length} aria-label="Send"><ArrowUp size={18} aria-hidden /></button>}
+        </div>
       </div>
     </form>
   )
@@ -222,7 +305,10 @@ export default function Manager() {
                     <button type="button" className="rich-tool" title="Edit and send again" aria-label="Edit and send again" disabled={asking}
                       onClick={() => { setEditing(key(m)); setDraft(m.text) }}><Pencil size={14} aria-hidden /></button>
                   </span>
-                  <p className="whitespace-pre-wrap rounded-2xl bg-surface-3 px-4 py-2.5">{m.text}</p>
+                  <div className="space-y-2">
+                    {(m.attachments?.length ?? 0) > 0 && <Files list={m.attachments!} />}
+                    <p className="whitespace-pre-wrap rounded-2xl bg-surface-3 px-4 py-2.5">{m.text}</p>
+                  </div>
                 </div>)
             ) : (
               <div key={m.id} className="space-y-3">
@@ -266,7 +352,22 @@ export default function Manager() {
                   </div>)}
               </div>))}
             {gone && <p className="text-sm text-muted">These messages are no longer on the server (the chat was cleared or is older than it keeps). Ask again to continue.</p>}
-            {asking && <p className="text-muted" role="status">{assistant} is looking into it…</p>}
+            {live && (
+              <>
+                <div className="ml-auto w-fit max-w-[85%] space-y-2">
+                  {live.files.length > 0 && <Files list={live.files} />}
+                  <p className="whitespace-pre-wrap rounded-2xl bg-surface-3 px-4 py-2.5">{live.question}</p>
+                </div>
+                <div className="space-y-3" aria-busy="true">
+                  <p className="text-xs text-muted">{assistant}</p>
+                  {!live.text && (
+                    <ul className="space-y-1 text-sm text-muted" role="status">
+                      {(live.steps.length ? live.steps : ['Thinking']).map((t, i, all) => (
+                        <li key={i} className="flex items-center gap-2">{i === all.length - 1 ? <span className="mgr-dot" aria-hidden /> : <Check size={13} aria-hidden />}{t}…</li>))}
+                    </ul>)}
+                  {live.text && <Text md={live.text + ' ▍'} />}
+                </div>
+              </>)}
             {note && <p role="status" className="text-sm text-soft">{note}</p>}
             <div ref={end} />
           </div>

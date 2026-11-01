@@ -234,7 +234,8 @@ class Provider:
 
 
 class Conversation:
-    def send_user(self, text: str) -> Turn:
+    def send_user(self, text: str, images: list[dict[str, str]] | None = None) -> Turn:
+        """images: [{"media_type": "image/png", "data": base64}], for models that can see pictures."""
         raise NotImplementedError
 
     def send_tool_results(self, results: list[tuple[str, str, bool]]) -> Turn:
@@ -289,8 +290,12 @@ class _AnthropicConversation(Conversation):
                 turn.tool_calls.append(ToolCall(b.id, b.name, dict(b.input)))
         return turn
 
-    def send_user(self, text: str) -> Turn:
-        self.messages.append({"role": "user", "content": text})
+    def send_user(self, text: str, images: list[dict[str, str]] | None = None) -> Turn:
+        content: Any = text
+        if images:
+            content = [{"type": "image", "source": {"type": "base64", "media_type": i["media_type"], "data": i["data"]}}
+                       for i in images] + [{"type": "text", "text": text}]
+        self.messages.append({"role": "user", "content": content})
         return self._step()
 
     def send_tool_results(self, results: list[tuple[str, str, bool]]) -> Turn:
@@ -363,8 +368,12 @@ class _OpenAIConversation(Conversation):
             turn.tool_calls.append(ToolCall(c.id, c.function.name, args if isinstance(args, dict) else {}))
         return turn
 
-    def send_user(self, text: str) -> Turn:
-        self.messages.append({"role": "user", "content": text})
+    def send_user(self, text: str, images: list[dict[str, str]] | None = None) -> Turn:
+        content: Any = text
+        if images:
+            content = [{"type": "text", "text": text}] + [
+                {"type": "image_url", "image_url": {"url": f"data:{i['media_type']};base64,{i['data']}"}} for i in images]
+        self.messages.append({"role": "user", "content": content})
         return self._step()
 
     def send_tool_results(self, results: list[tuple[str, str, bool]]) -> Turn:

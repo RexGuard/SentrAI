@@ -97,6 +97,27 @@ def test_openai_conversation_round_trip():
     assert sent[2]["tool_calls"][0]["id"] == "call_0" and sent[3]["tool_call_id"] == "call_0"
 
 
+def test_pictures_go_in_each_api_format():
+    fake = FakeOpenAI([reply("A login page.")])
+    OpenAIProvider(client=fake).conversation("sys", TOOLS).send_user("what is this?", images=[{"media_type": "image/png", "data": "QUJD"}])
+    content = fake.calls[0]["messages"][1]["content"]
+    assert content[0] == {"type": "text", "text": "what is this?"}
+    assert content[1]["image_url"]["url"] == "data:image/png;base64,QUJD"
+
+    class FakeAnthropic:
+        def __init__(self):
+            self.calls, self.messages = [], self
+
+        def create(self, **kw):
+            self.calls.append(kw)
+            return NS(stop_reason="end_turn", content=[NS(type="text", text="A login page.")])
+    fa = FakeAnthropic()
+    turn = AnthropicProvider(client=fa).conversation("sys", TOOLS).send_user("what is this?", images=[{"media_type": "image/png", "data": "QUJD"}])
+    sent = fa.calls[0]["messages"][0]["content"]
+    assert sent[0]["source"] == {"type": "base64", "media_type": "image/png", "data": "QUJD"} and sent[1]["text"] == "what is this?"
+    assert turn.texts == ["A login page."]
+
+
 def test_errors_become_llm_error():
     class Broken:
         def __init__(self):

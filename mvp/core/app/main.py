@@ -5,13 +5,17 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import hmac
+import json
 import logging
 import os
+import re
+import threading
+import time
 from pathlib import Path
 from typing import Any, Optional, Union
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request
-from fastapi.responses import PlainTextResponse, Response
+from fastapi.responses import PlainTextResponse, Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from .config import Settings, sign
@@ -23,6 +27,7 @@ from . import auth as auth_cookie
 from . import ui_analytics, ui_approvals, ui_tuning, ui_audit, ui_incidents, ui_limits, ui_machine, ui_machines, ui_overview, ui_report, ui_routing, ui_settings, ui_setup, ui_team, ui_recovery, ui_privacy
 from . import ai, anchor, apidocs, depscan, fleet, hardware, integrations, jobs, webhook
 from .extensions import ExtensionError
+from . import chat as chat_mod
 from .chat import OperatorChat, default_chat_provider
 from .discovery import Discovery
 from .staff_reports import RateLimited, ReportError, StaffReports
@@ -32,6 +37,7 @@ from .cyanide import Cyanide, default_planner
 from .saguaro import BadRequestError, ConflictError, Saguaro
 
 log = logging.getLogger("sentrai.core")
+STREAM_PACE_S = float(os.getenv("SENTRAI_CHAT_STREAM_PACE_S", "0.012"))  # between words of a streamed answer
 
 
 class EventIn(BaseModel):
@@ -122,8 +128,9 @@ class SummaryScheduleIn(BaseModel):
 
 class ChatIn(BaseModel):
     operator: str
-    message: str
+    message: str = ""
     incident: Optional[str] = None
+    attachments: Optional[list[dict[str, Any]]] = None  # [{name, kind: text|image, text | media_type + data}]
 
 
 class ScanIn(BaseModel):
@@ -776,9 +783,66 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/chat")
     def post_chat(body: ChatIn) -> dict[str, Any]:
         try:
-            return chat.ask(body.operator, body.message, body.incident)
+            return chat.ask(body.operator, body.message, body.incident, body.attachments)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
+
+    @app.post("/chat/stream")
+    async def post_chat_stream(body: ChatIn, request: Request) -> StreamingResponse:
+        """Like POST /chat, but answers as newline-delimited JSON while it works: {"type": "step"} for each lookup,
+        {"type": "text", "delta"} pieces of the answer, then {"type": "done", "message"}. Closing the connection
+        is the Stop button: the work ends at the next step and the chat keeps what was already sent."""
+        chat_mod.check_attachments(body.attachments)  # 400 before the stream starts
+        if not (body.message or "").strip() and not body.attachments:
+            raise HTTPException(status_code=400, detail="empty message")
+        loop = asyncio.get_running_loop()
+        out: asyncio.Queue = asyncio.Queue()
+        stop = threading.Event()
+        put = lambda e: loop.call_soon_threadsafe(out.put_nowait, e)  # noqa: E731
+
+        def deliver(text: str) -> str:
+            sent = ""
+            for piece in re.findall(r"\S+\s*|\s+", text):
+                if stop.is_set():
+                    break
+                sent += piece
+                put({"type": "text", "delta": piece})
+                time.sleep(STREAM_PACE_S)
+            return sent
+
+        def work() -> None:
+            try:
+                put({"type": "done", "message": chat.ask(body.operator, body.message, body.incident, body.attachments,
+                                                         progress=put, stop=stop, deliver=deliver)})
+            except ValueError as exc:
+                put({"type": "error", "detail": str(exc)})
+            except Exception:  # noqa: BLE001 - the stream must end with a line the page understands
+                log.exception("chat stream failed")
+                put({"type": "error", "detail": "Cyanide hit an error; try again."})
+            put(None)
+
+        threading.Thread(target=work, name="chat-stream", daemon=True).start()
+
+        async def lines():
+            try:
+                while True:
+                    try:
+                        e = await asyncio.wait_for(out.get(), timeout=0.5)
+                    except asyncio.TimeoutError:
+                        if await request.is_disconnected():
+                            stop.set()
+                            return
+                        continue
+                    if e is None:
+                        return
+                    yield json.dumps(e) + "\n"
+                    if await request.is_disconnected():
+                        stop.set()
+                        return
+            finally:
+                stop.set()
+
+        return StreamingResponse(lines(), media_type="application/x-ndjson", headers={"Cache-Control": "no-store"})
 
     @app.post("/chat/setup/interpret")
     def post_setup_interpret(body: SetupInterpretIn) -> dict[str, Any]:

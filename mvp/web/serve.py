@@ -27,6 +27,7 @@ import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Any
 
 HOP = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailers",
        "transfer-encoding", "upgrade", "host", "content-length", "x-forwarded-for", "x-forwarded-proto"}
@@ -123,6 +124,8 @@ def make_handler(dist: Path, core: str, https: bool):
                 resp = e  # an error answer is still the core's answer
             except OSError:
                 return self._send(502, b'{"detail":"The core is not answering."}', "application/json")
+            if (resp.headers.get("Content-Type") or "").startswith("application/x-ndjson"):
+                return self._stream(resp)
             data = resp.read()
             self.send_response(resp.status if hasattr(resp, "status") else resp.code)
             for k, v in resp.headers.items():
@@ -135,6 +138,30 @@ def make_handler(dist: Path, core: str, https: bool):
             self.end_headers()
             if self.command != "HEAD":
                 self.wfile.write(data)
+
+        def _stream(self, resp: Any) -> None:
+            """A streamed answer (Cyanide's chat): pass each piece on as it comes. The browser closing the page or
+            pressing Stop closes the connection to the core too, which is how the core hears Stop."""
+            self.send_response(resp.status)
+            self.send_header("Content-Type", resp.headers.get("Content-Type"))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Accel-Buffering", "no")
+            self.send_header("Connection", "close")
+            for k, v in HEADERS.items():
+                self.send_header(k, v)
+            self.end_headers()
+            self.close_connection = True
+            try:
+                while True:
+                    chunk = resp.read1(8192)
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                    self.wfile.flush()
+            except OSError:
+                pass  # the browser went away
+            finally:
+                resp.close()
 
         def _route(self, head: bool = False) -> None:
             if self.path == "/api" or self.path.startswith("/api/") or self.path.startswith("/api?"):

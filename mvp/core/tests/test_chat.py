@@ -215,3 +215,49 @@ def test_rich_blocks_are_cut_to_size():
     import pytest
     with pytest.raises(ValueError):
         chatmod.chart("x", "pie", ["a"], [{"name": "n", "values": [1]}])
+
+
+def test_stream_sends_steps_text_and_done(client):
+    import json as _json
+    brute_force(client)
+    with client.stream("POST", "/chat/stream", json={"operator": "erick", "message": "are we safe?"}) as r:
+        assert r.status_code == 200 and r.headers["content-type"].startswith("application/x-ndjson")
+        events = [_json.loads(x) for x in r.iter_lines() if x]
+    kinds = [e["type"] for e in events]
+    assert kinds[0] == "step" and "text" in kinds and kinds[-1] == "done"
+    text = "".join(e["delta"] for e in events if e["type"] == "text")
+    assert text == events[-1]["message"]["text"] and events[-1]["message"]["blocks"]
+    assert client.post("/chat/stream", json={"operator": "erick", "message": "  "}).status_code == 400
+
+
+def test_stop_keeps_what_was_sent(client):
+    import threading as _t
+    r = client.post("/chat", json={"operator": "erick", "message": "are we safe?"}).json()
+    assert "stopped" not in r
+    # Stop before any work: nothing but the note is kept.
+    oc = client.app.state.chat
+    stop = _t.Event(); stop.set()
+    out = oc.ask("erick", "are we safe?", stop=stop, deliver=lambda t: t)
+    assert out["text"] == "_(Stopped.)_" and out["stopped"] and out["blocks"] == []
+    # Stop while the answer is going out: the sent part is kept, buttons and tables are dropped.
+    out = oc.ask("erick", "are we safe?", deliver=lambda t: t[:10])
+    assert out["stopped"] and out["text"].startswith("Risk index") and out["blocks"] == []
+
+
+def test_attached_log_is_read_with_rules_and_pictures_need_a_model(client):
+    log = "\n".join([f"Oct 1 sshd: Failed password for root from 203.0.113.9 port {i}" for i in range(7)] +
+                    ["Oct 1 sshd: Accepted publickey for erick from 192.0.2.1"])
+    r = client.post("/chat", json={"operator": "erick", "message": "",
+                                   "attachments": [{"name": "auth.log", "kind": "text", "text": log}]}).json()
+    assert "auth.log" in r["text"] and "203.0.113.9" in r["text"]
+    assert r["blocks"][0]["rows"][0][:3] == ["203.0.113.9", "7", "7"]
+    q = client.get("/chat").json()["messages"][-2]
+    assert q["attachments"] == [{"name": "auth.log", "kind": "text", "size": len(log.encode())}]
+    r = client.post("/chat", json={"operator": "erick", "message": "what is this?", "attachments": [
+        {"name": "shot.png", "kind": "image", "media_type": "image/png", "data": "iVBORw0KGgo="}]}).json()
+    assert "pictures" in r["text"]
+    bad = client.post("/chat", json={"operator": "erick", "message": "x", "attachments": [
+        {"name": "x.svg", "kind": "image", "media_type": "image/svg+xml", "data": "AAAA"}]})
+    assert bad.status_code == 400
+    four = [{"name": f"{i}.log", "kind": "text", "text": "x"} for i in range(4)]
+    assert client.post("/chat", json={"operator": "erick", "message": "x", "attachments": four}).status_code == 400

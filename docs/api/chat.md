@@ -107,6 +107,36 @@ Each suggestion has a `label` and a `reason`, plus what pressing it does:
 
 **Errors**: `400` `empty message`.
 
+### `POST /chat/stream`
+
+Same body as `POST /chat`, but the answer arrives while Cyanide works, as newline-delimited JSON
+(`application/x-ndjson`), one object per line:
+
+| Line | Meaning |
+| --- | --- |
+| `{"type": "step", "text": "Looking at risk overview"}` | a lookup has started |
+| `{"type": "text", "delta": "Risk "}` | the next piece of the answer |
+| `{"type": "done", "message": {...}}` | the saved answer, as `POST /chat` returns it |
+| `{"type": "error", "detail": "..."}` | the question could not be answered |
+
+Closing the connection is the Stop button: the work ends at the next step, and the chat keeps the part
+already sent, marked `"stopped": true` and without buttons, tables or charts.
+
+**Errors** (before the stream starts): `400` empty message, bad attachment.
+
+### Attachments
+
+`POST /chat` and `POST /chat/stream` take up to 3 `attachments`, the message may then be empty:
+
+| Kind | Fields |
+| --- | --- |
+| a log or other text file | `{"name": "auth.log", "kind": "text", "text": "..."}`, kept up to 200,000 characters |
+| a screenshot | `{"name": "shot.png", "kind": "image", "media_type": "image/png", "data": "<base64>"}`, PNG, JPEG, WebP or GIF up to 4 MB |
+
+The model reads text files (as untrusted data) and pictures. Without a model, Cyanide reads a log with simple rules
+(addresses, failed or refused lines) and says it cannot read pictures. The chat stores only each file's name, kind
+and size (`attachments` on the question), never its content.
+
 ### `POST /chat/{message_id}/feedback`
 
 Thumbs up or down on one of Cyanide's answers. Kept on the message and written to the audit trail
