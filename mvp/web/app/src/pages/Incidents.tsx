@@ -6,6 +6,7 @@ import { api, ApiError } from '../lib/api'
 import { btn, btnPrimary } from '../lib/ui'
 import { useSession } from '../lib/session'
 import { useFilters, type Filter } from '../lib/Filters'
+import { SimilarIncidents } from '../lib/Fixes'
 
 type Row = {
   id: string; what: string; host: string; severity: string; status: string; owner: string; backup: string
@@ -52,6 +53,7 @@ function Details({ r, contacts, done }: { r: Row; contacts: Page['contacts']; do
             onClick={() => void run(() => api(`/incidents/${id}/resolve`, { body: { operator: op, note: note.trim() } }), `${r.id} resolved`)}>Resolve</button>
         </div>
       )}
+      <SimilarIncidents incident={r.id} />
     </div>
   )
 }

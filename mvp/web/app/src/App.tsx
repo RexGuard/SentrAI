@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { SessionProvider, useSession } from './lib/session'
 import Layout from './pages/Layout'
 import SignIn from './pages/SignIn'
+import Analytics from './pages/Analytics'
 import Approvals from './pages/Approvals'
 import Audit from './pages/Audit'
 import Chat from './pages/Chat'
@@ -52,6 +53,7 @@ function Gate() {
         <Route path="/reports" element={<Reports />} />
         <Route path="/backups" element={<Backups />} />
         <Route path="/incidents" element={<Incidents />} />
+        <Route path="/analytics" element={<Analytics />} />
         <Route path="*" element={<Navigate to="/command" replace />} />
       </Route>
     </Routes>

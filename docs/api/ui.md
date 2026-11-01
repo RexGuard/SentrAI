@@ -173,6 +173,34 @@ Who owns each incident and what still needs a person.
 
 **Returns** `counts` (`open`, `attention`, `overdue`, `escalated`, `unassigned`, `mine`), `todo` (rows that need a person, most urgent first), `todo_waves` (a wave's incidents as one line each), `all` (rows), `waves`, and `contacts` (who an incident can be assigned to). Each row has `id`, `what`, `host`, `severity`, `status`, `owner`, `backup`, `open_for`, `needs`, `closed`, `attention`, `wave` and `summary`. Assign and resolve use `POST /incidents/{iid}/assign` and `/resolve`.
 
+## Analytics
+
+How incidents add up over time, and fixes learned from similar past incidents. A playbook is advice only: any block it mentions still goes through Approvals and the automation guardrails.
+
+### `GET /ui/analytics`
+
+Every incident as a row for the charts, and the patterns (incidents of the same type on the same layer, across machines) with a playbook each.
+
+**Query** `host` (only patterns and rows that touch this machine). **Returns** `rows` (`id`, `what`, `category`, `severity`, `host`, `status`, `closed`, `attacker`, `user`, `opened`, `day`, `contain_min`, `close_min`, `answer_min`, `contain`, `close`, `auto`, `pattern`, `pattern_label`), `patterns` (`id`, `label`, `count`, `open`, `closed`, `machines`, `here`, `elsewhere`, `attackers`, `last`, `history` with the blocks that `held` or were `rolled_back` and closing `notes`, `playbook`, `rules`) and `ai` (whether an AI model can draft playbooks). A pattern's `playbook` has `title`, `summary`, `steps`, `prevent`, `watch_for` and `source` (`rules`, or `ai` once drafted).
+
+### `GET /ui/analytics/similar`
+
+Incidents like one incident, on any machine, with why each is similar, and its pattern's playbook.
+
+**Query** `incident` (required). **Returns** `similar` (rows as above plus `score` from 0 to 1, `why` and the closing `note`), `pattern` (as above) and `ai`. `404` when there is no such incident.
+
+### `POST /ui/analytics/playbooks/draft`
+
+Ask the AI model to draft the playbook for one pattern from how its past incidents were handled. The draft replaces the rules-based playbook for that pattern until it is forgotten.
+
+**Body** `{"pattern": "brute_force:web"}` **Returns** `{"pattern": ..., "playbook": {...}}`. `409` when no AI model is set up, `502` when the model failed (the rules-based playbook still applies).
+
+### `POST /ui/analytics/playbooks/forget`
+
+Drop a pattern's AI draft and go back to the rules-based playbook.
+
+**Body** `{"pattern": "brute_force:web"}` **Returns** `{"pattern": ..., "forgotten": true}`.
+
 ## Configuration
 
 ### `GET /ui/settings`

@@ -138,6 +138,8 @@ ENTRIES: dict[str, Entry] = {e.key: e for e in (
           "Extensions", optional=True, old=("part:extensions.json",)),
     Entry("core.remote_copy_token", "core", "remote-copy.token", "the witness's append token (install.sh --remote-copy)",
           "Scribe", "SENTRAI_REMOTE_COPY_TOKEN_FILE", optional=True),
+    Entry("core.playbooks", "core", "playbooks.json", "playbooks an AI model drafted from similar past incidents "
+          "(Analytics page)", "Analytics", optional=True),
     Entry("core.routing", "core", "people/routing.json", "who gets what: contacts, routing rules, escalation",
           "Warden", "SENTRAI_ROUTING", old=("part:routing.json",)),
     Entry("core.telegram_links", "core", "people/telegram_links.json", "contacts linked to their Telegram chats",
