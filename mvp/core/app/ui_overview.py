@@ -46,7 +46,7 @@ def install(app: FastAPI, core: Any, fleet: Any, health: Any, reload_extensions:
         incidents = core.list_incidents(host=None)
         agents = core.agents_status()
         exts = [r for r in integrations.status(core) if isinstance(r, dict)]
-        valid, _ = core.audit.verify_recent()
+        valid, _ = core.audit.verify_recent(wait=False)
         settings = {f.env: f.default for f in cfg.FIELDS.values()} | cfg.read()
         flow = cm.flow_map_data(risk, incidents, agents, core.blocklist(), exts, core.audit.snapshot(), settings, valid)
         found = cm.panel_machines(core.machines(), core.fleet_agents() if hasattr(core, "fleet_agents") else [], risk) \

@@ -104,3 +104,21 @@ export function cellFilters(head: string[], rows: ReactNode[][], skip: string[] 
     return seen.size > 1 && seen.size <= 15 && seen.size < rows.length ? [{ key: String(i), label: h, get: (r: ReactNode[]) => nodeText(r[i]).trim() }] : []
   })
 }
+
+/** A long table draws its first rows only, with a button for more: a page with a thousand incidents then opens and
+ *  refreshes as fast as one with fifty. Filters and search still look at every row. Starts again when `reset`
+ *  changes (a new filter). */
+export function useShowMore<T>(rows: T[], reset: unknown = null, step = 50) {
+  const [limit, setLimit] = useState(step)
+  const [last, setLast] = useState(reset)
+  if (last !== reset) { setLast(reset); setLimit(step) }
+  const left = rows.length - limit
+  const more: ReactNode = left <= 0 ? null : (
+    <div className="flex flex-wrap items-center gap-2 p-2 text-sm text-soft">
+      <span>Showing {limit} of {rows.length}.</span>
+      <button className="rounded-md border border-line px-2 py-1 hover:bg-surface-2" onClick={() => setLimit(limit + step)}>Show {Math.min(step, left)} more</button>
+      {left > step && <button className="rounded-md px-2 py-1 hover:bg-surface-2" onClick={() => setLimit(rows.length)}>Show all {rows.length}</button>}
+    </div>
+  )
+  return { shown: left > 0 ? rows.slice(0, limit) : rows, more }
+}

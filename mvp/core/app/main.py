@@ -633,7 +633,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                   quick: bool = Query(False, description="for a page that asks every second: the whole chain is "
                                                          "re-hashed at most once a minute, not on every call")) -> dict[str, Any]:
         if quick:
-            valid, bad = core.audit.verify_recent()
+            valid, bad = core.audit.verify_recent(wait=False)
             records = core.audit.snapshot()
         else:
             valid, bad = core.audit.verify()

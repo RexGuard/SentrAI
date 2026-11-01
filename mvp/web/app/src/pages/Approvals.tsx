@@ -3,7 +3,7 @@ import { Check, ChevronDown, ChevronRight, FolderPlus, Pin, Undo2, UserCheck, X 
 import { api, ApiError } from '../lib/api'
 import { btn, btnPrimary } from '../lib/ui'
 import { useSession } from '../lib/session'
-import { useFilters, type Filter } from '../lib/Filters'
+import { useFilters, useShowMore, type Filter } from '../lib/Filters'
 import { ask } from '../lib/notice'
 
 type Row = {
@@ -71,6 +71,7 @@ function Table({ rows, picking, picked, toggle, page, run, empty }: {
   run: (verb: Verb, ids: string[], why: string) => Promise<void>
 }) {
   const [open, setOpen] = useState<string | null>(null)
+  const { shown, more } = useShowMore(rows)
   if (!rows.length) return <p className="rounded-lg border border-line bg-surface p-4 text-soft">{empty}</p>
   return (
     <div className="overflow-x-auto rounded-lg border border-line bg-surface" role="region" aria-label="Approvals" tabIndex={0}>
@@ -83,7 +84,7 @@ function Table({ rows, picking, picked, toggle, page, run, empty }: {
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => (
+          {shown.map((r) => (
             <Fragment key={r.id}>
               <tr className="border-b border-line-soft last:border-0 hover:bg-surface-2">
                 {picking && <td className="p-2"><input type="checkbox" checked={picked.has(r.id)} onChange={() => toggle(r.id)} aria-label={`Pick ${r.id}`} /></td>}
@@ -114,6 +115,7 @@ function Table({ rows, picking, picked, toggle, page, run, empty }: {
           ))}
         </tbody>
       </table>
+      {more}
     </div>
   )
 }

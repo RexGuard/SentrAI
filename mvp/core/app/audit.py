@@ -35,6 +35,7 @@ class AuditLog:
         self.listeners: list[Callable[[], None]] = []  # called after each append (the off-box copy wakes up)
         self._snap: list[dict[str, Any]] = []  # snapshot(): the records read so far, grown instead of re-read
         self._seen: dict[str, Any] = {}  # verify_recent(): when the whole chain was last checked, and how far
+        self._checking = False  # verify_recent(wait=False): a full re-check is running in the background
         self._open()
 
     def _open(self) -> None:
@@ -136,17 +137,24 @@ class AuditLog:
                     return self._snap
                 self._snap.extend(more)
 
-    def verify_recent(self, max_age: float = 60.0) -> tuple[bool, int | None]:
+    def verify_recent(self, max_age: float = 60.0, wait: bool = True) -> tuple[bool, int | None]:
         """verify() for pages that load often: the whole chain is re-hashed at most every ``max_age`` seconds;
         in between, only the records added since are checked, from where the last check ended. A broken
-        result is never reused, so a page keeps showing it until the chain is checked and found whole."""
+        result is never reused, so a page keeps showing it until the chain is checked and found whole.
+
+        ``wait=False`` (the pages): when the full re-check is due, it runs in the background, a chunk at a time,
+        and this answer uses the last one. A long chain then never holds up a page load or new records."""
         with self._lock:
             seen = self._seen
-            if not seen or not seen.get("ok") or time.monotonic() - seen["at"] >= max_age:
+            due = not seen or not seen.get("ok") or time.monotonic() - seen["at"] >= max_age
+            if due and (wait or not seen or not seen.get("ok")):
                 valid, bad = self.verify()
                 head = self.head()
                 self._seen = {"ok": valid, "bad": bad, "at": time.monotonic(), "seq": head[0], "hash": head[1]}
                 return valid, bad
+            if due and not self._checking:
+                self._checking = True
+                threading.Thread(target=self._full_check, name="audit-full-check", daemon=True).start()
             prev, expected = seen["hash"], seen["seq"] + 1
             for rec in self.records_after(seen["seq"], 100000):
                 if rec["seq"] != expected or rec["prev_hash"] != prev or \
@@ -156,6 +164,28 @@ class AuditLog:
                 prev, expected = rec["hash"], expected + 1
             seen.update(seq=expected - 1, hash=prev)
             return True, None
+
+    def _full_check(self, chunk: int = 5000) -> None:
+        """The background full re-check: reads the chain a chunk at a time (the lock is held per chunk only)."""
+        try:
+            prev, expected, ok, bad = GENESIS_HASH, 1, True, None
+            while ok:
+                recs = self.records_after(expected - 1, chunk)
+                for rec in recs:
+                    if rec["seq"] != expected or rec["prev_hash"] != prev or \
+                            compute_hash(prev, rec["seq"], rec["ts"], rec["type"], rec["data"]) != rec["hash"]:
+                        ok, bad = False, rec["seq"]
+                        break
+                    prev, expected = rec["hash"], expected + 1
+                if len(recs) < chunk:
+                    break
+            with self._lock:
+                if not ok:
+                    self._seen = {"ok": False, "bad": bad, "at": 0.0, "seq": 0, "hash": GENESIS_HASH}
+                elif self._seen.get("ok"):
+                    self._seen["at"] = time.monotonic()  # the records after where it ended are checked as they come
+        finally:
+            self._checking = False
 
     def head_hash(self) -> str:
         with self._lock:
