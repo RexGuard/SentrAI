@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import Stat from '../lib/Stat'
 import { Link } from 'react-router-dom'
-import { ChevronRight, Copy, Hourglass, KeyRound, Plus, ShieldCheck, ShieldOff, Unplug } from 'lucide-react'
+import { ChevronRight, Copy, Hourglass, Trash2, KeyRound, Plus, ShieldCheck, ShieldOff, Unplug } from 'lucide-react'
 import { api, ApiError } from '../lib/api'
 import { btn, btnPrimary } from '../lib/ui'
 import { useSession } from '../lib/session'
@@ -23,6 +23,10 @@ type Made = { code: string; expires_at: string; https: boolean; pin: string | nu
 const bandColor: Record<string, string> = { green: 'var(--green)', amber: 'var(--amber)', red: 'var(--red)', critical: 'var(--critical)' }
 const pct = (v: number | null | undefined) => (v == null ? '-' : `${Math.round(v)}%`)
 
+// One fixed grid for every row, so the state, the numbers, the score and the buttons line up down the list.
+const ROW = 'grid items-center gap-x-6 gap-y-2 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_11rem_5.5rem_8rem] xl:grid-cols-[minmax(12rem,1.2fr)_11rem_minmax(20rem,1.6fr)_5.5rem_8rem]'
+const STATS = 'lg:col-span-4 lg:row-start-2 xl:col-span-1 xl:row-start-auto'
+const live = (m: Machine) => m.online && !m.waiting
 const stateWord = (m: Machine) => (m.waiting ? 'Waiting' : !m.online ? 'Offline' : m.monitor_only ? 'Protection off' : 'Protecting')
 const FILTERS: Filter<Machine>[] = [
   { key: 'state', label: 'State', get: stateWord }, { key: 'band', label: 'Risk band', get: (m) => m.band },
@@ -94,6 +98,17 @@ export default function Machines() {
   }, [])
   useEffect(() => { void load(); const t = setInterval(() => void load(), 10000); return () => clearInterval(t) }, [load])
   const s = page?.stats
+  const { can } = useSession()
+  const [note, setNote] = useState('')
+  const remove = async (m: Machine) => {
+    const ok = window.confirm(`Delete ${m.name} from the panel?\n\n`
+      + `• Its agent's key is revoked, so it stops reporting and its queued jobs are cancelled. The agent stays installed on that computer until you uninstall it there.\n`
+      + `• Its incidents and audit records are kept: the audit trail can't be edited, and they still show on Incidents and Audit trail.\n`
+      + `• It comes back on this list if it reports again, or if you join it again with a new code.\n\nThis is written to the audit log under your name.`)
+    if (!ok) return
+    try { setNote((await api<{ message: string }>(`/ui/machines/${encodeURIComponent(m.host)}/delete`, { body: {} })).message); await load() }
+    catch (e) { setNote(e instanceof ApiError ? e.message : 'The machine could not be deleted.') }
+  }
   const list = useFilters(page?.machines ?? NO_M, FILTERS, (m) => [m.name, m.host, m.place, m.services], 'machines')
   const joined = useFilters(page?.joined ?? NO_J, JOINED, (a) => [a.host, a.agent_id, a.invited_by, a.status], 'joined machines')
   return (
@@ -103,6 +118,7 @@ export default function Machines() {
         <p className="text-sm text-muted">every computer that reports to this panel, and adding a new one</p>
       </header>
       {error && <p role="alert" className="rounded-md border border-line bg-surface p-3 text-bad">{error}</p>}
+      {note && <p role="status" className="rounded-md border border-line bg-surface p-3">{note}</p>}
       {page && s && (
         <>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -122,31 +138,33 @@ export default function Machines() {
             {list.active && list.rows.length === 0 && <p className="text-soft">No machines match these filters.</p>}
             <ul className="divide-y divide-line-soft">
               {list.rows.map((m) => (
-                <li key={m.name} className="flex flex-wrap items-center gap-x-6 gap-y-2 py-3">
-                  <div className="min-w-40 flex-1">
-                    <p className="font-medium">{m.host ? <Link to={`/machines/${encodeURIComponent(m.host)}`} className="underline-offset-2 hover:underline">{m.name}</Link> : m.name}</p>
-                    <p className="text-xs text-muted">{m.place}{!m.waiting && m.online ? ` · threshold ${Math.round(m.threshold)}` : ''}{m.services.length ? ` · ${m.services.join(', ')}` : ''}</p>
-                    <div className="mt-1 h-1.5 w-40 rounded bg-surface-3" aria-hidden>
+                <li key={m.name} className={ROW + ' py-3'}>
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">{m.host ? <Link to={`/machines/${encodeURIComponent(m.host)}`} className="underline-offset-2 hover:underline">{m.name}</Link> : m.name}</p>
+                    <p className="truncate text-xs text-muted">{m.place}{!m.waiting && m.online ? ` · threshold ${Math.round(m.threshold)}` : ''}{m.services.length ? ` · ${m.services.join(', ')}` : ''}</p>
+                    <div className="mt-1 h-1.5 w-40 max-w-full rounded bg-surface-3" aria-hidden>
                       <div className="h-full rounded" style={{ width: `${m.online && m.index ? m.index : 0}%`, background: bandColor[m.band] ?? 'var(--ink-muted)' }} />
                     </div>
                   </div>
-                  <div className="w-48 text-sm"><State m={m} /></div>
-                  {m.online && !m.waiting && (
-                    <dl className="grid min-w-0 grid-cols-3 gap-x-4 gap-y-1 text-xs text-soft">
-                      {([['CPU', pct(m.hardware.cpu)], ['Memory', pct(m.hardware.memory)], ['Disk', pct(m.hardware.disk)],
-                        ['Incidents', m.open || m.contained ? [m.open && `${m.open} open`, m.contained && `${m.contained} contained`].filter(Boolean).join(' · ') : 'None'],
-                        ['Blocks', m.blocked ? `${m.blocked} in force` : 'None'], ['Last seen', m.last_seen]] as [string, string][]).map(([k, v]) => (
-                        <div key={k}><dt className="text-muted">{k}</dt><dd>{v}</dd></div>
-                      ))}
-                    </dl>
-                  )}
-                  <div className="ml-auto w-24 text-right">
-                    <p className="text-2xl font-semibold" style={{ color: m.online && !m.waiting ? bandColor[m.band] : undefined }}>
+                  <div className="text-sm"><State m={m} /></div>
+                  <dl className={STATS + ' grid min-w-0 grid-cols-3 gap-x-4 gap-y-1 text-xs text-soft'}>
+                    {([['CPU', live(m) ? pct(m.hardware.cpu) : '-'], ['Memory', live(m) ? pct(m.hardware.memory) : '-'], ['Disk', live(m) ? pct(m.hardware.disk) : '-'],
+                      ['Incidents', m.open || m.contained ? [m.open && `${m.open} open`, m.contained && `${m.contained} contained`].filter(Boolean).join(' · ') : 'None'],
+                      ['Blocks', m.blocked ? `${m.blocked} in force` : 'None'], ['Last seen', m.last_seen || '-']] as [string, string][]).map(([k, v]) => (
+                      <div key={k} className="min-w-0"><dt className="text-muted">{k}</dt><dd className="break-words">{v}</dd></div>
+                    ))}
+                  </dl>
+                  <div className="text-right">
+                    <p className="text-2xl font-semibold" style={{ color: live(m) ? bandColor[m.band] : undefined }}>
                       {m.waiting ? '-' : !m.online ? '0' : m.index == null ? '-' : Math.round(m.index)}
                     </p>
                     <p className="text-xs text-muted">{m.waiting ? 'Waiting' : !m.online ? 'Offline' : page.band_words[m.band] ?? 'Unknown'}</p>
                   </div>
-                  {m.host && <Link to={`/machines/${encodeURIComponent(m.host)}`} className={btn} aria-label={`Open ${m.name}`}>Open <ChevronRight size={14} aria-hidden /></Link>}
+                  <div className="flex justify-end gap-2">
+                    {m.host && <Link to={`/machines/${encodeURIComponent(m.host)}`} className={btn} aria-label={`Open ${m.name}`}>Open <ChevronRight size={14} aria-hidden /></Link>}
+                    {m.host && page.panel && <button className={btn + ' text-bad'} disabled={!can('configure')} aria-label={`Delete ${m.name}`}
+                      title={can('configure') ? `Delete ${m.name} from the panel` : 'Only an Owner or Admin can delete a machine.'} onClick={() => void remove(m)}><Trash2 size={14} aria-hidden /></button>}
+                  </div>
                 </li>
               ))}
             </ul>

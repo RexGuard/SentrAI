@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .config import Settings, sign
 import sentrai_paths
+import sentrai_accounts as acc  # noqa: E402
 from .reports import build_report, render_markdown, render_pdf
 from . import summary as client_summary
 from . import auth as auth_cookie
@@ -1026,6 +1027,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         machine_jobs.drop_host(out["host"], body.operator)
         machine_health.forget(out["host"])
         return out
+
+    @app.post("/ui/machines/{host}/delete")
+    def post_remove_machine(host: str, request: Request) -> dict[str, Any]:
+        """The Machines list's Delete: Owner and Admin only. Revokes its agent's key, cancels its queued jobs and
+        hides it from the list. Its incidents and audit records stay."""
+        account = getattr(request.state, "account", None)
+        if account and not acc.can(account.get("role"), "configure"):
+            raise HTTPException(403, "Only an Owner or Admin can delete a machine.")
+        operator = (account or {}).get("email") or "dashboard"
+        out = machines.remove_host(host, operator)
+        core.scribe.record(core.name, "machine_removed", {"host": host, "revoked": out["revoked"], "operator": operator})
+        dropped = machine_jobs.drop_host(host, operator)
+        machine_health.forget(host)
+        return {**out, "jobs_cancelled": dropped,
+                "message": f"{host} was deleted from the panel" + (" and its agent's key was revoked" if out["revoked"] else "")}
 
     @app.post("/fleet/services")
     def post_services(request: Request, body: ServicesIn, host: Optional[str] = Query(None)) -> dict[str, Any]:

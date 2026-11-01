@@ -151,9 +151,9 @@ export default function MachinePage() {
             {tab === 'Packages' && (details ? <PackagesTab d={details} host={host} hasAgent={!!agent} canAct={can('act')} why={offWhy} run={run} /> : <p className="text-muted" role="status">Loading…</p>)}
             {tab === 'Jobs' && (jobs.length === 0 ? <p className="text-soft">Nothing has been asked of this machine's agent yet.</p> : (
               <ul className="divide-y divide-line-soft">{jobs.map((j) => (
-                <li key={j.id} className="flex flex-wrap items-center gap-3 py-2 text-sm">
-                  <b>{j.kind.replace(/_/g, ' ')}</b><span className="capitalize text-soft">{j.status}</span><span className="text-muted">{dt(j.created_at)} · {j.requested_by}</span>
-                  {j.status === 'queued' && <button className={btn + ' ml-auto'} disabled={!can('act')} onClick={() => void run(() => api(`/fleet/jobs/${encodeURIComponent(j.id)}/cancel`, { body: { operator: op } }), `${j.id} cancelled`)}>Cancel</button>}
+                <li key={j.id} className="grid items-center gap-x-4 gap-y-1 py-2 text-sm sm:grid-cols-[10rem_6rem_minmax(0,1fr)_6rem]">
+                  <b>{j.kind.replace(/_/g, ' ')}</b><span className="capitalize text-soft">{j.status}</span><span className="truncate text-muted">{dt(j.created_at)} · {j.requested_by}</span>
+                  {j.status !== 'queued' ? <span /> : <button className={btn + ' justify-self-end'} disabled={!can('act')} onClick={() => void run(() => api(`/fleet/jobs/${encodeURIComponent(j.id)}/cancel`, { body: { operator: op } }), `${j.id} cancelled`)}>Cancel</button>}
                 </li>))}</ul>))}
             {tab === 'Agent' && (agent ? (
               <div className="space-y-3">
