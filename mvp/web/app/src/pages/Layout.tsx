@@ -1,11 +1,11 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import {
-  Boxes, ClipboardCheck, DatabaseBackup, FileText, Flag, Gauge, Link2, LogOut, MessageSquare, Moon, Network,
+  Boxes, ClipboardCheck, DatabaseBackup, FileText, Flag, Gauge, Link2, LogOut, Moon, Network,
   Puzzle, ScrollText, Server, Settings2, ShieldCheck, Siren, Sun, Users, Workflow, type LucideIcon,
-  MessageSquareWarning,
 } from 'lucide-react'
 import { useSession } from '../lib/session'
 import { useTheme } from '../lib/theme'
+import HelpDock, { useDock } from './HelpDock'
 
 type Item = { to: string; label: string; icon: LucideIcon; needs?: string }
 
@@ -14,8 +14,6 @@ export const MENU: { group: string; items: Item[] }[] = [
     { to: '/approvals', label: 'Approvals', icon: ClipboardCheck },
     { to: '/incidents', label: 'Incidents', icon: Siren },
     { to: '/staff', label: 'Staff reports', icon: Flag },
-    { to: '/report', label: 'Report something', icon: MessageSquareWarning },
-    { to: '/chat', label: 'Chat', icon: MessageSquare },
   ] },
   { group: 'Pipeline', items: [
     { to: '/overview', label: 'Overview', icon: Network },
@@ -43,6 +41,7 @@ const side = 'flex flex-1 items-center justify-center gap-1 rounded-md border bo
 export default function Layout() {
   const { me, signOut, can } = useSession()
   const [theme, toggle] = useTheme()
+  const dock = useDock()
   return (
     <div className="flex min-h-screen">
       <aside className="sticky top-0 flex h-screen w-60 shrink-0 flex-col gap-4 overflow-y-auto border-r border-line bg-sidebar p-3">
@@ -84,7 +83,8 @@ export default function Layout() {
           </div>
         </div>
       </aside>
-      <main className="min-w-0 flex-1 p-6"><Outlet /></main>
+      <main className={'min-w-0 flex-1 p-6 pb-20' + (dock.open ? ' lg:mr-[26rem]' : '')}><Outlet /></main>
+      <HelpDock dock={dock} />
     </div>
   )
 }

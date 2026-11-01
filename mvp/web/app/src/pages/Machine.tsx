@@ -4,6 +4,7 @@ import { ArrowLeft, DatabaseBackup, ShieldCheck } from 'lucide-react'
 import { api, ApiError } from '../lib/api'
 import { btn } from '../lib/ui'
 import { useSession } from '../lib/session'
+import { useFilters, type Filter } from '../lib/Filters'
 import { PackagesTab, ServicesTab, SignedInTab, type Details } from './MachineDetails'
 
 type Machine = {
@@ -24,6 +25,27 @@ const bandColor: Record<string, string> = { green: 'var(--green)', amber: 'var(-
 const pct = (v?: number | null) => (v == null ? '-' : `${Math.round(v)}%`)
 const gb = (b?: number) => (b ? `${(b / 1073741824).toFixed(1)} GB` : '-')
 const dt = (v?: string) => (v ? new Date(v).toLocaleString() : '-')
+
+const INC: Filter<Inc>[] = [
+  { key: 'severity', label: 'Severity', get: (i) => i.severity }, { key: 'status', label: 'Status', get: (i) => i.status },
+  { key: 'category', label: 'Type', get: (i) => (i.category ?? '').replace(/_/g, ' ') }, { key: 'opened', label: 'Opened', get: (i) => i.opened_at, kind: 'date' },
+]
+
+function MachineIncidents({ incs }: { incs: Inc[] }) {
+  const f = useFilters(incs, INC, (i) => [i.id, i.category, i.summary, i.status], 'incidents')
+  if (incs.length === 0) return <p className="text-soft">No incidents on this machine.</p>
+  return (
+    <>
+      {f.bar}
+      {f.rows.length === 0 ? <p className="text-soft">No incidents match these filters.</p> : (
+        <div className="overflow-x-auto" role="region" aria-label="Incidents on this machine" tabIndex={0}>
+          <table className="w-full text-left text-sm"><thead className="border-b border-line text-xs uppercase tracking-wide text-muted"><tr>{['Incident', 'What', 'Severity', 'Status', 'Opened'].map((h) => <th key={h} className="p-2 font-medium">{h}</th>)}</tr></thead>
+            <tbody>{f.rows.map((i) => <tr key={i.id} className="border-b border-line-soft last:border-0"><td className="p-2 font-mono text-xs">{i.id}</td><td className="p-2">{(i.category ?? '').replace(/_/g, ' ')}</td>
+              <td className="p-2 capitalize">{i.severity}</td><td className="p-2 capitalize">{i.status}</td><td className="p-2">{dt(i.opened_at)}</td></tr>)}</tbody></table>
+        </div>)}
+    </>
+  )
+}
 
 function Bar({ label, value, limit }: { label: string; value?: number | null; limit?: number }) {
   const hot = value != null && limit != null && value >= limit
@@ -116,12 +138,7 @@ export default function MachinePage() {
                 <p className="text-xs text-muted lg:col-span-2">{hw.latest.cpu?.cores ? `${hw.latest.cpu.cores} cores` : ''}{hw.latest.cpu?.load ? ` · load ${hw.latest.cpu.load[0]?.toFixed(2)}` : ''}{hw.latest.uptime_s ? ` · up ${Math.round(hw.latest.uptime_s / 3600)} h` : ''} · its agent reports every 30 s</p>
               </div>
             ) : <p className="text-soft">No hardware reading yet. Its agent sends one every 30 seconds once it is running.</p>)}
-            {tab === 'Incidents' && (incs.length === 0 ? <p className="text-soft">No incidents on this machine.</p> : (
-              <div className="overflow-x-auto" role="region" aria-label="Incidents on this machine" tabIndex={0}>
-                <table className="w-full text-left text-sm"><thead className="border-b border-line text-xs uppercase tracking-wide text-muted"><tr>{['Incident', 'What', 'Severity', 'Status', 'Opened'].map((h) => <th key={h} className="p-2 font-medium">{h}</th>)}</tr></thead>
-                  <tbody>{incs.map((i) => <tr key={i.id} className="border-b border-line-soft last:border-0"><td className="p-2 font-mono text-xs">{i.id}</td><td className="p-2">{(i.category ?? '').replace(/_/g, ' ')}</td>
-                    <td className="p-2 capitalize">{i.severity}</td><td className="p-2 capitalize">{i.status}</td><td className="p-2">{dt(i.opened_at)}</td></tr>)}</tbody></table>
-              </div>))}
+            {tab === 'Incidents' && <MachineIncidents incs={incs} />}
             {tab === 'Blocks' && (
               <div className="grid gap-4 lg:grid-cols-2">
                 <div><h2 className="font-semibold">Addresses</h2>{blocks.ips?.length ? <ul className="font-mono text-sm">{blocks.ips.map((x) => <li key={x}>{x}</li>)}</ul> : <p className="text-soft">None blocked here.</p>}</div>

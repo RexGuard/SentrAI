@@ -3,6 +3,7 @@ import { useState, type FormEvent, type ReactNode } from 'react'
 import { ArrowUp, Plus, Search, Trash2, Undo2 } from 'lucide-react'
 import { api, ApiError } from '../lib/api'
 import { btn, btnPrimary } from '../lib/ui'
+import { useFilters, type Filter } from '../lib/Filters'
 
 type Known = { how: string; by: string; at?: string | null; last_seen?: string | null }
 type Entry = { kind: 'account' | 'address' | 'key'; value: string; host: string | null; headline: string; known: Known; note: string; forget: boolean }
@@ -23,6 +24,23 @@ type Run = (fn: () => Promise<unknown>, msg: string) => Promise<void>
 const dt = (v?: string | null) => (v ? new Date(v).toLocaleString() : '-')
 const plural = (n: number, one: string, many = one + 's') => `${n} ${n === 1 ? one : many}`
 const sevColor: Record<string, string> = { critical: 'var(--critical)', high: 'var(--red)', medium: 'var(--amber)', low: 'var(--ink-soft)' }
+
+const SESSIONS: Filter<Session>[] = [
+  { key: 'user', label: 'User', get: (x) => x.user }, { key: 'how', label: 'How', get: (x) => x.how }, { key: 'trust', label: 'Trust', get: (x) => x.trust_words },
+]
+const ACTIVITY: Filter<Activity>[] = [
+  { key: 'user', label: 'Who', get: (x) => x.user }, { key: 'how', label: 'How', get: (x) => x.how }, { key: 'at', label: 'Date', get: (x) => x.at, kind: 'date' },
+]
+const SERVICES: Filter<Service>[] = [
+  { key: 'proto', label: 'Protocol', get: (x) => x.proto }, { key: 'process', label: 'Process', get: (x) => x.process },
+  { key: 'inc', label: 'Incidents', get: (x) => (x.open_incidents ? 'Has open incidents' : 'None') },
+]
+const FINDINGS: Filter<Finding>[] = [
+  { key: 'severity', label: 'Severity', get: (x) => x.severity }, { key: 'kind', label: 'Kind', get: (x) => x.kind },
+  { key: 'update', label: 'Fix', get: (x) => (x.update === 'safe' ? 'Safe update available' : x.fixed ? 'Fix exists' : 'No fix yet') },
+  { key: 'path', label: 'Where', get: (x) => x.path },
+]
+const NO_FINDINGS: Finding[] = []
 
 function knownText(k: Known): string {
   const when = k.at ? ` on ${dt(k.at)}` : ''
@@ -56,6 +74,8 @@ function Table({ label, head, rows, empty }: { label: string; head: string[]; ro
 }
 
 export function SignedInTab({ d, host, canAct, why, run, asking, onAnswer }: { d: Details; host: string; canAct: boolean; why?: string; run: Run; asking: number; onAnswer: () => void }) {
+  const sessions = useFilters(d.admins.sessions, SESSIONS, (x) => [x.user, x.how, x.from, x.trust_words, x.why], 'sessions')
+  const activity = useFilters(d.admins.activity, ACTIVITY, (x) => [x.user, x.how, x.what, x.why, x.would_have_been], 'commands')
   const a = d.admins
   const [kind, setKind] = useState('address')
   const [value, setValue] = useState('')
@@ -82,15 +102,17 @@ export function SignedInTab({ d, host, canAct, why, run, asking, onAnswer }: { d
         </div>
       )}
       <Card title="Signed in now" sub="who is on this machine, how they got in, and whether SentrAI knows them as an administrator">
+        {sessions.bar}
         <Table label="Signed in now" head={['User', 'How', 'From', 'Trust', 'Since', 'Root commands', 'Why']} empty={`Nobody SentrAI has seen is signed in on ${host} right now.`}
-          rows={a.sessions.map((s) => [<b>{s.user}</b>, s.how, <span className="font-mono text-xs">{s.from}</span>,
+          rows={sessions.rows.map((s) => [<b>{s.user}</b>, s.how, <span className="font-mono text-xs">{s.from}</span>,
             <span className={s.trust === 'suspect' ? 'text-bad' : s.trust === 'trusted' ? 'text-ok' : 'text-warn'}>{s.trust_words}</span>,
             dt(s.since) + (s.preexisting ? ' (before SentrAI started watching)' : ''), s.actions, <span className="text-soft">{s.why || '-'}</span>])} />
         {a.suspect.length > 0 && <p className="text-xs text-muted">Distrusted for now: {a.suspect.map((s) => `${s.address} (${s.why || 'suspect'}) until ${dt(s.until)}`).join(' · ')}</p>}
       </Card>
       <Card title="Recent admin work" sub="root commands by known administrators, newest first · recorded, never an incident">
+        {activity.bar}
         <Table label="Recent admin work" head={['When', 'Who', 'How', 'What', 'Would have been', 'Why']} empty={`No root work by a known administrator on ${host} yet.`}
-          rows={a.activity.map((x) => [dt(x.at), x.user, x.how, <span className="font-mono text-xs">{x.what}</span>, x.would_have_been || '-', <span className="text-soft">{x.why || '-'}</span>])} />
+          rows={activity.rows.map((x) => [dt(x.at), x.user, x.how, <span className="font-mono text-xs">{x.what}</span>, x.would_have_been || '-', <span className="text-soft">{x.why || '-'}</span>])} />
       </Card>
       <Card title="Known administrators" sub="whose root work SentrAI records instead of raising · from the settings, taught with This was me or here, or learned from a trusted sign-in">
         {(['account', 'address', 'key'] as const).map((k) => {
@@ -126,10 +148,12 @@ export function SignedInTab({ d, host, canAct, why, run, asking, onAnswer }: { d
 }
 
 export function ServicesTab({ d, hasAgent }: { d: Details; hasAgent: boolean }) {
+  const f = useFilters(d.services, SERVICES, (x) => [x.name, x.port, x.proto, x.process], 'services')
   return (
     <Card title="Services" sub={'what listens on it, reported by its agent every minute' + (d.services_at ? ` · last report ${dt(d.services_at)}` : '')}>
+      {f.bar}
       <Table label="Services" head={['Service', 'Port', 'Protocol', 'Process', 'Open incidents']} empty={hasAgent ? 'No services reported yet.' : 'No agent on this machine reports its services.'}
-        rows={d.services.map((s) => [<b>{s.name}</b>, s.port ?? '-', s.proto, <span className="font-mono text-xs">{s.process}</span>,
+        rows={f.rows.map((s) => [<b>{s.name}</b>, s.port ?? '-', s.proto, <span className="font-mono text-xs">{s.process}</span>,
           s.open_incidents ? <span className="text-bad">{s.open_incidents}</span> : '0'])} />
     </Card>
   )
@@ -138,6 +162,7 @@ export function ServicesTab({ d, hasAgent }: { d: Details; hasAgent: boolean }) 
 export function PackagesTab({ d, host, hasAgent, canAct, why, run }: { d: Details; host: string; hasAgent: boolean; canAct: boolean; why?: string; run: Run }) {
   const p = d.packages
   const r = p.latest
+  const found = useFilters(r?.findings ?? NO_FINDINGS, FINDINGS, (x) => [x.name, x.version, x.fixed, x.line, x.path, x.how], 'findings')
   const job = (kind: string, msg: string, params?: Record<string, string>) =>
     run(() => api('/fleet/jobs', { body: { host, kind, operator: 'dashboard', ...(params ? { params } : {}) } }), msg)
   if (!hasAgent) return <Card title="Packages with known vulnerabilities"><p className="text-soft">Package checks run through SentrAI's agent, and this machine has none.</p></Card>
@@ -152,8 +177,9 @@ export function PackagesTab({ d, host, hasAgent, canAct, why, run }: { d: Detail
         <div className="space-y-2">
           <p className="text-sm text-muted">Checked {plural(r.packages_checked ?? 0, 'package')} in {plural((r.sources ?? []).length, 'place')}{r.scanned_at ? ` ${dt(r.scanned_at)}` : ''} · {c.critical ?? 0} critical, {c.high ?? 0} high, {c.medium ?? 0} medium, {c.low ?? 0} low{c.no_fix_os ? ` · ${c.no_fix_os} OS packages wait on a fix from the distribution` : ''}</p>
           {r.missing?.length ? <p className="text-sm text-warn">Folders not found: {r.missing.join(', ')}</p> : null}
-          {r.findings.length === 0 ? <p className="text-ok">No known vulnerabilities in the installed packages.</p> : (
-            <ul className="divide-y divide-line-soft">{r.findings.slice(0, 40).map((f) => (
+          {found.bar}
+          {r.findings.length === 0 ? <p className="text-ok">No known vulnerabilities in the installed packages.</p> : found.rows.length === 0 ? <p className="text-soft">No findings match these filters.</p> : (
+            <ul className="divide-y divide-line-soft">{found.rows.slice(0, 40).map((f) => (
               <li key={f.id} className="flex flex-wrap items-start gap-2 py-2 text-sm">
                 <span className="mt-1.5 inline-block h-2 w-2 shrink-0 rounded-full" style={{ background: sevColor[f.severity ?? ''] ?? 'var(--ink-soft)' }} aria-hidden />
                 <div className="min-w-0 flex-1">
@@ -163,7 +189,7 @@ export function PackagesTab({ d, host, hasAgent, canAct, why, run }: { d: Detail
                 {f.update === 'safe' && <button className={btn} disabled={!canAct} title={canAct ? `Asks ${host} to install ${f.fixed}; you can undo it below` : why}
                   onClick={() => void job('dep_update', `Asked ${host} to update ${f.name} to ${f.fixed}`, { finding: String(f.id) })}><ArrowUp size={14} aria-hidden /> Update</button>}
               </li>))}</ul>)}
-          {r.findings.length > 40 && <p className="text-xs text-muted">… and {r.findings.length - 40} more.</p>}
+          {found.rows.length > 40 && <p className="text-xs text-muted">… and {found.rows.length - 40} more. Narrow them with the filters above.</p>}
         </div>
       )}
       {p.updates.length > 0 && (

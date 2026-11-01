@@ -21,6 +21,9 @@ For development, `npm run dev` in `app/` does the same with live reload.
 | Overview canvas, Collector (with Scout's proposals and the process, threat and package scans), Classifier, Action taker, Automation guardrails (with the limits map) |
 | Machines, one machine (all its tabs, incl. signed in, services, packages) |
 | Review, Reports, Audit trail, Backups, Team, Extensions, Configuration |
+| On every page: the **?** button at the bottom right opens a docked panel with Chat with Cyanide and Report something (both also full pages at `/chat` and `/report`) |
+
+Every table has a filter bar (`src/lib/Filters.tsx`): a search box, a pick list for each column with repeating values, and a date range where rows carry a time.
 
 ## How it fits together
 

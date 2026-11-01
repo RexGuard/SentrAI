@@ -114,7 +114,7 @@ def row(inc: dict) -> dict[str, Any]:
         "id": inc.get("id"), "what": category_label(inc.get("category")), "host": inc.get("host") or "-",
         "severity": str(inc.get("severity") or "-"),
         "status": STATUS.get(str(inc.get("status")), str(inc.get("status"))),
-        "owner": inc.get("owner") or "Nobody", "open_for": span_label(age), "needs": needs(inc),
+        "owner": inc.get("owner") or "Nobody", "opened": str(inc.get("opened_at") or ""), "open_for": span_label(age), "needs": needs(inc),
         "target": str(live[-1]["target"]) if live else str(inc.get("src_ip") or ""),
         "points": contribution(inc), "can": can(inc), "attacker": attacker(inc),
         "summary": inc.get("summary") or inc.get("reason") or "",

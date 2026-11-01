@@ -109,7 +109,7 @@ def feed(records: list[dict], limit: int) -> list[dict]:
         out.append({"seq": rec.get("seq"), "time": short_time(rec.get("ts")),
                     "agent": agent_for(rec).replace("Operator:", "Operator · "),
                     "type": TYPE_LABELS.get(str(rec.get("type")), str(rec.get("type") or "-").replace("_", " ")),
-                    "summary": summarize(rec), "hash": short_hash(rec.get("hash"))})
+                    "summary": summarize(rec), "hash": short_hash(rec.get("hash")), "ts": str(rec.get("ts") or "")})
     return out
 
 
