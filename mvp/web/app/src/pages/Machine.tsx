@@ -7,6 +7,7 @@ import { useSession } from '../lib/session'
 import { useFilters, type Filter } from '../lib/Filters'
 import { MachineFixes } from '../lib/Fixes'
 import { PackagesTab, ServicesTab, SignedInTab, type Details } from './MachineDetails'
+import { ask } from '../lib/notice'
 
 type Machine = {
   name: string; host: string; place: string; online: boolean; waiting: boolean; index: number | null; band: string; threshold: number
@@ -163,7 +164,7 @@ export default function MachinePage() {
                     <div key={k}><dt className="text-xs uppercase tracking-wide text-muted">{k}</dt><dd className="break-all font-medium">{v}</dd></div>))}
                 </dl>
                 <button className={btn} disabled={!can('configure')} title={can('configure') ? 'Stop accepting this machine’s key; it has to join again' : 'Your role can read everything but change nothing.'}
-                  onClick={() => { if (window.confirm(`Revoke ${host}'s key? It has to join again to report.`)) void run(() => api(`/fleet/agents/${encodeURIComponent(agent.agent_id)}/revoke`, { body: { operator: op } }), `${host}'s key was revoked`) }}>Revoke key</button>
+                  onClick={async () => { if (await ask({ title: `Revoke ${host}'s key?`, body: 'It has to join again to report.', confirm: 'Revoke key', danger: true }) !== null) void run(() => api(`/fleet/agents/${encodeURIComponent(agent.agent_id)}/revoke`, { body: { operator: op } }), `${host}'s key was revoked`) }}>Revoke key</button>
               </div>
             ) : <p className="text-soft">This machine has no agent: it is only seen in the logs.</p>)}
           </div>

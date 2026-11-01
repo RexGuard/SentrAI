@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { SessionProvider, useSession } from './lib/session'
 import { SimpleProvider, useSimple } from './lib/simple'
+import { Notices } from './lib/notice'
 import Layout from './pages/Layout'
 import SignIn from './pages/SignIn'
 import Analytics from './pages/Analytics'
@@ -71,7 +72,7 @@ function Gate() {
 export default function App() {
   return (
     <BrowserRouter>
-      <SessionProvider><SimpleProvider><Gate /></SimpleProvider></SessionProvider>
+      <SessionProvider><SimpleProvider><Gate /><Notices /></SimpleProvider></SessionProvider>
     </BrowserRouter>
   )
 }

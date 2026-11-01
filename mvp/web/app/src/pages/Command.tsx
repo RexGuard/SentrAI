@@ -9,6 +9,7 @@ import { useSession } from '../lib/session'
 import Stat from '../lib/Stat'
 import Chat from './Chat'
 import { Chart, type Point } from './Review'
+import { ask } from '../lib/notice'
 
 type Risk = { risk_index?: number; band?: string; threshold?: number; history?: Point[] }
 type ApprovalRow = { id: string; what: string; host: string; severity: string; status: string; target: string; needs: string[]; can: { decide: boolean } }
@@ -53,7 +54,8 @@ export default function Command() {
   const decide = async (verb: 'approve' | 'reject', r: ApprovalRow) => {
     let justification = ''
     if (verb === 'reject') {
-      justification = window.prompt(`Why reject ${r.id}? (written to the audit log)`) ?? ''
+      justification = (await ask({ title: `Reject ${r.id}?`, confirm: 'Reject', danger: true,
+        input: { label: 'Why? (written to the audit log)', required: true } })) ?? ''
       if (!justification.trim()) return
     }
     try { setNote((await api<{ message: string }>('/ui/approvals/bulk', { body: { verb, ids: [r.id], justification } })).message); await load() }
