@@ -26,6 +26,8 @@ type Convo = { id: string; title: string; at: string; ids: string[]; pinned?: bo
 const KEY = 'sentrai.manager.chats'
 const loadConvos = (): Convo[] => { try { const v = JSON.parse(localStorage.getItem(KEY) ?? '[]'); return Array.isArray(v) ? v : [] } catch { return [] } }
 const saveConvos = (c: Convo[]) => { try { localStorage.setItem(KEY, JSON.stringify(c.slice(0, 50))) } catch { /* private window */ } }
+// A message's key: the core numbers messages from 1 again after a restart, so the time tells them apart.
+const key = (m: Message) => `${m.id}|${m.ts}`
 const when = (iso: string) => {
   const d = new Date(iso), days = Math.floor((Date.now() - d.getTime()) / 86400000)
   return days === 0 ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : days === 1 ? 'Yesterday' : d.toLocaleDateString([], { day: 'numeric', month: 'short' })
@@ -75,7 +77,7 @@ export default function Manager() {
 
   const ask = async (message: string) => {
     if (!message.trim() || asking) return
-    const before = new Set((hist?.messages ?? []).map((m) => String(m.id)))
+    const before = new Set((hist?.messages ?? []).map(key))
     let id = current
     if (!id) {
       id = `c${Date.now()}`
@@ -86,7 +88,7 @@ export default function Manager() {
     try { await api('/chat', { body: { operator: me?.email ?? 'dashboard', message, incident: about || null } }) }
     catch (e) { setNote(e instanceof ApiError ? `That did not go through: ${e.message}` : 'That did not go through.') }
     const next = await load()
-    const added = (next?.messages ?? []).map((m) => String(m.id)).filter((x) => !before.has(x))
+    const added = (next?.messages ?? []).map(key).filter((x) => !before.has(x))
     const cid = id
     setConvos((cs) => cs.map((c) => (c.id === cid ? { ...c, ids: [...c.ids, ...added], at: new Date().toISOString() } : c)))
     setAsking(false)
@@ -95,7 +97,7 @@ export default function Manager() {
   const assistant = hist?.assistant || 'Cyanide'
   const convo = convos.find((c) => c.id === current)
   const ids = new Set(convo?.ids ?? [])
-  const shown = convo ? (hist?.messages ?? []).filter((m) => ids.has(String(m.id))) : []
+  const shown = convo ? (hist?.messages ?? []).filter((m) => ids.has(key(m))) : []
   const gone = !!convo && convo.ids.length > 0 && shown.length === 0
   const newChat = () => { setCurrent(null); setNote(''); setText('') }
   const patch = (cid: string, p: Partial<Convo>) => setConvos((cs) => cs.map((c) => (c.id === cid ? { ...c, ...p } : c)))
