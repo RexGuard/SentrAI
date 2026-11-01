@@ -784,6 +784,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def post_setup_interpret(body: SetupInterpretIn) -> dict[str, Any]:
         return chat.interpret_setup(body.question, [o.model_dump() for o in body.options], body.answer)
 
+    @app.post("/chat/{message_id}/feedback")
+    def post_chat_feedback(message_id: int, request: Request, body: dict = Body(...)) -> dict[str, Any]:
+        account = getattr(request.state, "account", None)
+        who = (account or {}).get("email") or str(body.get("operator") or "dashboard")
+        vote = body.get("vote") or None
+        try:
+            return chat.feedback(who, message_id, vote, str(body.get("note") or ""))
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc).strip("'"))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
     @app.post("/chat/clear")
     def clear_chat() -> dict[str, Any]:
         return chat.clear()

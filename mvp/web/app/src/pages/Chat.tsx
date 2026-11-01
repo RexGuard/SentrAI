@@ -1,3 +1,4 @@
+import { Blocks, Text, type Block } from '../lib/Rich'
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import { Lightbulb, Send, Trash2 } from 'lucide-react'
 import { api, ApiError } from '../lib/api'
@@ -10,14 +11,15 @@ export type Suggestion = {
 }
 export type Message = {
   id: string | number; role: string; text: string; ts?: string; operator?: string; incident?: string; source?: string
-  looked_at?: string[]; suggestions?: Suggestion[]
+  looked_at?: string[]; suggestions?: Suggestion[]; blocks?: Block[]; followups?: string[]; question?: string
+  feedback?: { vote: 'up' | 'down'; note?: string; by?: string } | null
 }
 type History = { assistant?: string; model?: string; messages: Message[] }
 export type Incident = { id: string; status: string; category?: string; acked?: boolean; actions?: { status?: string }[] }
 
 const STARTERS = ['What is happening right now?', 'Which incident should I deal with first?', 'Why did you block the last IP address?']
 const FOLLOW_UPS = [...STARTERS, 'Is anything waiting for my approval?', 'What changed in the last hour?', 'Is any machine offline?']
-const NEEDS: Record<string, 'decide' | 'ack' | 'mine' | 'contain'> = { approve: 'decide', reject: 'decide', ack: 'ack', mine: 'mine', rollback: 'contain', keep: 'contain', permanent: 'contain' }
+const NEEDS: Record<string, 'decide' | 'ack' | 'mine' | 'contain'> = { approve: 'decide', reject: 'decide', ack: 'ack', mine: 'mine', rollback: 'contain', keep: 'contain', permanent: 'contain', make_permanent: 'contain' }
 
 function canDo(inc: Incident | undefined, decision: string): [boolean, string] {
   if (!inc) return [false, 'incident not found']
@@ -155,7 +157,7 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
               return (
                 <div key={m.id} className={(compact ? 'max-w-[92%]' : 'max-w-[85%]') + ' space-y-1 rounded-lg p-3 ' + (mine ? 'ml-auto bg-surface-3' : 'bg-surface-2')}>
                   <p className="text-xs text-muted">{mine ? m.operator || me?.email : assistant} · {time(m.ts)}{m.incident ? ` · about ${m.incident}` : ''}{!mine && m.source === 'fallback' ? ' · core explanation (no AI)' : ''}</p>
-                  <p className="whitespace-pre-wrap">{m.text}</p>
+                  {mine ? <p className="whitespace-pre-wrap">{m.text}</p> : <><Text md={m.text} /><Blocks blocks={m.blocks} onOpen={(id) => void ask(`Explain ${id} in plain words`)} /></>}
                   {m.looked_at?.length ? <p className="text-xs text-muted">Looked at: {[...new Set(m.looked_at)].join(', ')}</p> : null}
                   {(m.suggestions ?? []).map((s, k) => <SuggestionCard key={k} s={s} inc={byId[String(s.incident)]} onDone={(t) => { setNote(t); void load() }} />)}
                   {n === lastReply && followUps.length > 0 && (

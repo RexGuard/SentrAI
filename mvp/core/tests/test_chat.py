@@ -164,3 +164,54 @@ def test_setup_interpret_maps_an_answer_to_an_option(client):
     assert client.post("/chat/setup/interpret", json=SETUP).json()["choice"] == ""
     chat.provider = SetupProvider(error="boom")
     assert client.post("/chat/setup/interpret", json=SETUP).json()["ai"] is False
+
+
+def test_overview_carries_figures_table_chart_and_followups(client):
+    brute_force(client)
+    reply = client.post("/chat", json={"operator": "erick", "message": "are we safe?"}).json()
+    kinds = [b["type"] for b in reply["blocks"]]
+    assert kinds[:2] == ["stats", "table"]
+    table = reply["blocks"][1]
+    assert table["link"] == "incident" and table["rows"][0][0] == INC
+    assert reply["followups"] and reply["question"] == "are we safe?"
+
+
+def test_week_question_draws_a_chart(client):
+    brute_force(client)
+    reply = client.post("/chat", json={"operator": "erick", "message": "Summarise this week for me"}).json()
+    chart = next(b for b in reply["blocks"] if b["type"] == "chart")
+    assert chart["kind"] == "bar" and len(chart["labels"]) == 7 and sum(chart["series"][0]["values"]) >= 1
+
+
+def test_model_can_draw_tables_and_charts():
+    from app.chat import OperatorChat as OC
+    oc = OC(None)
+    rich = {"blocks": [], "followups": []}
+    OC._dispatch(oc, "show_table", {"title": "T", "columns": ["a"], "rows": [["1"]]}, [], [], rich)
+    OC._dispatch(oc, "show_chart", {"title": "C", "kind": "line", "labels": ["x", "y"],
+                                    "series": [{"name": "s", "values": [1, 2]}], "unit": "n"}, [], [], rich)
+    OC._dispatch(oc, "suggest_followups", {"questions": ["a?", "b?", "c?", "d?"]}, [], [], rich)
+    assert [b["type"] for b in rich["blocks"]] == ["table", "chart"] and rich["followups"] == ["a?", "b?", "c?"]
+
+
+def test_feedback_is_kept_and_counted(client):
+    reply = client.post("/chat", json={"operator": "erick", "message": "are we safe?"}).json()
+    r = client.post(f"/chat/{reply['id']}/feedback", json={"vote": "down", "note": "too technical"})
+    assert r.status_code == 200 and r.json()["feedback"]["vote"] == "down"
+    assert client.get("/chat").json()["messages"][-1]["feedback"]["note"] == "too technical"
+    assert client.post(f"/chat/{reply['id']}/feedback", json={"vote": "meh"}).status_code == 400
+    assert client.post("/chat/9999/feedback", json={"vote": "up"}).status_code == 404
+    assert client.post(f"/chat/{reply['id'] - 1}/feedback", json={"vote": "up"}).status_code == 404  # a question
+    assert client.get("/ui/tuning").json()["answers"]["down"] == 1
+    assert client.get("/audit").json()["records"][-1]["type"] == "chat_feedback"
+
+
+def test_rich_blocks_are_cut_to_size():
+    from app import chat as chatmod
+    t = chatmod.table("Active", ["Incident", "What"], [["RSK-1", "x" * 500, "extra"]], link="incident")
+    assert t["rows"][0] == ["RSK-1", "x" * 200] and t["link"] == "incident"
+    c = chatmod.chart("Per day", "bar", ["a", "b"], [{"name": "n", "values": [1, True, 3]}])
+    assert c["series"][0]["values"] == [1.0, 0.0]
+    import pytest
+    with pytest.raises(ValueError):
+        chatmod.chart("x", "pie", ["a"], [{"name": "n", "values": [1]}])

@@ -88,7 +88,10 @@ def tuning(core: Any) -> dict[str, Any]:
     rows += [row("network", net, "", m) for net, m in by_net.items() if len(m) >= 3]
     rows.sort(key=lambda r: (r["suggestion"]["do"] == "keep", -r["incidents"]))
     per_day = round(len(alerts) / TUNING_DAYS, 1)
+    votes = Counter(str(r["data"].get("vote")) for r in core.audit.snapshot()
+                    if r.get("type") == "chat_feedback" and (_epoch(r.get("ts")) or 0) >= since)
     return {
+        "answers": {"up": votes.get("up", 0), "down": votes.get("down", 0)},
         "days": TUNING_DAYS, "incidents": len(incs), "alerts": len(alerts), "alerts_per_day": per_day,
         "noisy": per_day > NOISY_PER_DAY, "false_alarms": sum(1 for i in incs if false_alarm(i)),
         "learning": {"day": min(age_days + 1, LEARNING_DAYS), "of": LEARNING_DAYS, "on": age_days < LEARNING_DAYS},
