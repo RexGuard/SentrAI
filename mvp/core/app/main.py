@@ -20,7 +20,7 @@ import sentrai_accounts as acc  # noqa: E402
 from .reports import build_report, render_markdown, render_pdf
 from . import summary as client_summary
 from . import auth as auth_cookie
-from . import ui_analytics, ui_approvals, ui_recovery, ui_audit, ui_incidents, ui_limits, ui_machine, ui_machines, ui_overview, ui_report, ui_routing, ui_settings, ui_setup, ui_team
+from . import ui_analytics, ui_approvals, ui_privacy, ui_audit, ui_incidents, ui_limits, ui_machine, ui_machines, ui_overview, ui_report, ui_routing, ui_settings, ui_setup, ui_team, ui_recovery
 from . import ai, anchor, apidocs, depscan, fleet, hardware, integrations, jobs, webhook
 from .extensions import ExtensionError
 from .chat import OperatorChat, default_chat_provider
@@ -452,6 +452,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ui_incidents.install(app, core)
     ui_analytics.install(app, core, ui_analytics.Playbooks(
         sentrai_paths.path("core.playbooks", core.settings.db_path.parent, migrate=False), lambda: chat.provider))
+    ui_privacy.install(app, core, ui_privacy.PrivacyPolicy(
+        sentrai_paths.path("core.privacy", core.settings.db_path.parent, migrate=False)), lambda: chat.provider is not None)
     ui_recovery.install(app, core, ui_recovery.Ticks(
         sentrai_paths.path("core.recovery", core.settings.db_path.parent, migrate=False)), backups)
     ui_team.install(app)

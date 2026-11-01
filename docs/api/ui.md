@@ -201,6 +201,21 @@ Drop a pattern's AI draft and go back to the rules-based playbook.
 
 **Body** `{"pattern": "brute_force:web"}` **Returns** `{"pattern": ..., "forgotten": true}`.
 
+### `GET /ui/privacy`
+
+The Privacy page: what SentrAI records about people, why, who can see it, how long the organisation keeps it, and how old the oldest record is.
+
+**Returns** `policy` (`organisation`, `contact`, `months` per kind, `updated_at`, `updated_by`), `kinds` (`key`, `what`, `about`, `why`, `months`, `kept`, `who`, `oldest_days`, `over`), `over` (kinds older than their period), `ai_on` and `roles` (each role's permissions). SentrAI flags data past its period; it does not delete it on its own.
+
+### `POST /ui/privacy`
+
+Save the privacy policy. Owner or Admin only; the change goes on the audit record (`privacy_policy_changed`).
+
+**Body** `{"organisation": "...", "contact": "...", "months": {"events": 6, "accounts": null}}` (0 to 120 months, `null` = while it exists). **Returns** the page as `GET /ui/privacy`. `400` for an unknown kind or a period out of range, `403` for an Auditor.
+
+### `GET /ui/privacy/notice.md`
+
+A staff notice in plain words, built from the live policy, for HR to check and share. Markdown, as a download.
 ### `GET /ui/recovery`
 
 The recovery checklist for one incident: five phases (stop it, lock the doors, put things back, tell people, learn from it) with the usual steps for its type, which steps are ticked off, whether personal data may be involved, and the newest backup made before the incident opened (checked ones first).

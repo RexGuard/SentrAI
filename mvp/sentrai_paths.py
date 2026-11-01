@@ -140,6 +140,8 @@ ENTRIES: dict[str, Entry] = {e.key: e for e in (
           "Scribe", "SENTRAI_REMOTE_COPY_TOKEN_FILE", optional=True),
     Entry("core.playbooks", "core", "playbooks.json", "playbooks an AI model drafted from similar past incidents "
           "(Analytics page)", "Analytics", optional=True),
+    Entry("core.privacy", "core", "privacy.json", "the privacy policy: retention periods and the staff contact "
+          "(Privacy page)", "Scribe", optional=True),
     Entry("core.recovery", "core", "recovery.json", "recovery steps ticked off after an incident (Incidents page)",
           "Scribe", optional=True),
     Entry("core.routing", "core", "people/routing.json", "who gets what: contacts, routing rules, escalation",

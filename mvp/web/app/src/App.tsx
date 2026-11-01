@@ -16,6 +16,7 @@ import MachinePage from './pages/Machine'
 import Machines from './pages/Machines'
 import Backups from './pages/Backups'
 import { Classifier, Collector, Responder } from './pages/Pipeline'
+import Privacy from './pages/Privacy'
 import Overview from './pages/Overview'
 import Report from './pages/Report'
 import Reports from './pages/Reports'
@@ -58,6 +59,7 @@ function Gate() {
         <Route path="/backups" element={<Backups />} />
         <Route path="/incidents" element={<Incidents />} />
         <Route path="/analytics" element={<Analytics />} />
+        <Route path="/privacy" element={<Privacy />} />
         <Route path="*" element={<Navigate to="/command" replace />} />
       </Route>
     </Routes>
