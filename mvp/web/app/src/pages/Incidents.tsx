@@ -7,6 +7,7 @@ import { btn, btnPrimary } from '../lib/ui'
 import { useSession } from '../lib/session'
 import { useFilters, type Filter } from '../lib/Filters'
 import { SimilarIncidents } from '../lib/Fixes'
+import { RecoveryPlan } from '../lib/Recovery'
 
 type Row = {
   id: string; what: string; host: string; severity: string; status: string; owner: string; backup: string
@@ -53,6 +54,7 @@ function Details({ r, contacts, done }: { r: Row; contacts: Page['contacts']; do
             onClick={() => void run(() => api(`/incidents/${id}/resolve`, { body: { operator: op, note: note.trim() } }), `${r.id} resolved`)}>Resolve</button>
         </div>
       )}
+      <RecoveryPlan incident={r.id} />
       <SimilarIncidents incident={r.id} />
     </div>
   )
