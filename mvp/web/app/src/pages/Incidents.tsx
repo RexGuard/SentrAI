@@ -5,7 +5,7 @@ import { Link } from 'react-router-dom'
 import { api, ApiError } from '../lib/api'
 import { btn, btnPrimary } from '../lib/ui'
 import { useSession } from '../lib/session'
-import { useFilters, type Filter } from '../lib/Filters'
+import { useFilters, useShowMore, type Filter } from '../lib/Filters'
 import { SimilarIncidents } from '../lib/Fixes'
 import { RecoveryPlan } from '../lib/Recovery'
 
@@ -100,6 +100,7 @@ function Waves({ waves }: { waves: Wave[] }) {
 function Board({ rows, contacts, done, empty }: { rows: Row[]; contacts: Page['contacts']; done: (n: string) => void; empty: string }) {
   const [open, setOpen] = useState<string | null>(null)
   const f = useFilters(rows, FILTERS, (r) => [r.id, r.what, r.host, r.owner, r.status, r.needs, r.summary], 'incidents')
+  const { shown, more } = useShowMore(f.rows, f.active)
   if (!rows.length) return <p className="text-soft">{empty}</p>
   return (
     <>
@@ -112,7 +113,7 @@ function Board({ rows, contacts, done, empty }: { rows: Row[]; contacts: Page['c
             {['Incident', 'What', 'Host', 'Severity', 'Status', 'Owner', 'Backup', 'Open for', 'Needs'].map((h) => <th key={h} className="p-2 font-medium">{h}</th>)}</tr>
         </thead>
         <tbody>
-          {f.rows.map((r) => (
+          {shown.map((r) => (
             <Fragment key={r.id}>
               <tr className="border-b border-line-soft hover:bg-surface-2">
                 <td className="p-2"><button aria-expanded={open === r.id} aria-label={`Details of ${r.id}`} className="text-soft" onClick={() => setOpen(open === r.id ? null : r.id)}>
@@ -127,6 +128,7 @@ function Board({ rows, contacts, done, empty }: { rows: Row[]; contacts: Page['c
           ))}
         </tbody>
       </table>
+      {more}
     </div>)}
     </>
   )

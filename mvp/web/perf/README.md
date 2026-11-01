@@ -37,6 +37,18 @@ rows each), and the 10 s refresh downloaded about 1 MB again. Now:
 | Before | 0.45 s, 4.1 MB | 1.59 s, 1.9 MB | 939 KB |
 | After | 0.5 s, 0.27 MB | 0.71 s, 0.27 MB | 3 KB |
 
+### Long tables (1 Nov 2026, later)
+
+Approvals and Incidents drew every row: about 14,000 page elements with 914 items, redrawn on each refresh that
+changed anything. They now draw 50 rows with Show more / Show all (`useShowMore` in `lib/Filters.tsx`); search and
+filters still cover every row. The audit chain's once-a-minute full re-check (Overview, Audit trail) now runs in
+the background (`verify_recent(wait=False)`), a chunk at a time, so it never holds up a page or new records.
+
+| Page (914 items, CPU slowed 4x like a laptop) | Before | After |
+| --- | --- | --- |
+| Approvals | 3.1 s, 13,900 elements | 1.0 s, 1,300 elements |
+| Incidents | 2.9 s, 12,800 elements | 0.8 s, 1,000 elements |
+
 ## Results (31 Oct 2026, one core process, 1 vCPU sandbox, Chromium headless)
 
 **Browser, 20 pages, 4,000 events in the core:** zero console errors on all 20 pages. First paint of the sign-in

@@ -70,3 +70,31 @@ def test_the_audit_page_feed_asks_for_the_quick_check(client):
     quick = client.get("/audit?limit=5&quick=1").json()
     assert quick["chain_valid"] is True and quick["records"] == strict["records"] and quick["count"] == strict["count"]
     assert quick["head_hash"] == strict["head_hash"]
+
+
+def test_pages_get_the_full_check_in_the_background(tmp_path):
+    """wait=False: a due full check never holds up the call; it runs aside and its finding shows right after."""
+    import time
+    log = _log(tmp_path)
+    assert log.verify_recent(max_age=3600, wait=False) == (True, None)  # the first check is always made in full
+    _edit_behind_its_back(log, 2)
+    assert log.verify_recent(max_age=0, wait=False) == (True, None)  # due: started aside, the last result stands
+    for _ in range(100):
+        if not log._checking:
+            break
+        time.sleep(0.02)
+    assert log.verify_recent(max_age=3600, wait=False) == (False, 2)  # the background check found the edit
+    assert log.verify_recent(max_age=3600, wait=False) == (False, 2)  # and it is never reused as fine
+
+
+def test_a_background_check_that_finds_nothing_keeps_counting_new_records(tmp_path):
+    import time
+    log = _log(tmp_path, n=12)
+    log.verify_recent(max_age=3600, wait=False)
+    log.verify_recent(max_age=0, wait=False)
+    for _ in range(100):
+        if not log._checking:
+            break
+        time.sleep(0.02)
+    log.append("note", {"i": 99}, "2026-10-31T10:01:00Z")
+    assert log.verify_recent(max_age=3600, wait=False) == (True, None) and log._seen["seq"] == 13
