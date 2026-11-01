@@ -91,8 +91,10 @@ def make_handler(dist: Path, core: str, https: bool):
             except ValueError:
                 return self._send(404, b"not found", "text/plain", head=head)
             if not target.is_file():
-                # A page address (/incidents, /machines/srv-01) is the app's own; a missing file is a 404.
-                if "." in posixpath.basename(path):
+                # A page address (/incidents, /machines/srv-01, /machines/web.example.com) is the app's own.
+                # Only a missing build file (under assets/, or a top-level name like favicon.ico) is a 404:
+                # a machine name with dots in it must still open its page.
+                if path.startswith("assets/") or ("/" not in path and "." in path):
                     return self._send(404, b"not found", "text/plain", head=head)
                 target = root / "index.html"
             if not target.is_file():
