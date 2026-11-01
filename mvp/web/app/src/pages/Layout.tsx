@@ -1,16 +1,18 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import {
-  Boxes, ClipboardCheck, DatabaseBackup, FileText, Flag, Gauge, Link2, LogOut, Moon, Network,
+  Boxes, ClipboardCheck, LayoutDashboard, DatabaseBackup, FileText, Flag, Gauge, Link2, LogOut, Moon, Network,
   Puzzle, ScrollText, Server, Settings2, ShieldCheck, Siren, Sun, Users, Workflow, type LucideIcon,
 } from 'lucide-react'
 import { useSession } from '../lib/session'
 import { useTheme } from '../lib/theme'
 import HelpDock, { useDock } from './HelpDock'
+import AutoMode from './AutoMode'
 
 type Item = { to: string; label: string; icon: LucideIcon; needs?: string }
 
 export const MENU: { group: string; items: Item[] }[] = [
   { group: 'Decide', items: [
+    { to: '/command', label: 'Command center', icon: LayoutDashboard },
     { to: '/approvals', label: 'Approvals', icon: ClipboardCheck },
     { to: '/incidents', label: 'Incidents', icon: Siren },
     { to: '/staff', label: 'Staff reports', icon: Flag },
@@ -83,7 +85,7 @@ export default function Layout() {
           </div>
         </div>
       </aside>
-      <main className={'min-w-0 flex-1 p-6 pb-20' + (dock.open ? ' lg:mr-[26rem]' : '')}><Outlet /></main>
+      <main className={'min-w-0 flex-1 p-6 pb-20' + (dock.open ? ' lg:mr-[26rem]' : '')}><div className="mb-3"><AutoMode /></div><Outlet /></main>
       <HelpDock dock={dock} />
     </div>
   )

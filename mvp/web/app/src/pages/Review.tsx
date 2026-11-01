@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { api, ApiError } from '../lib/api'
 import { useFilters, type Filter } from '../lib/Filters'
 
-type Point = { t: string; risk_index: number }
+export type Point = { t: string; risk_index: number }
 type Risk = { risk_index?: number; raw_score?: number; threshold?: number; history?: Point[] }
 type Inc = {
   id: string; category?: string; status?: string; base_points?: number; ai_confidence?: number; asset_criticality?: number
@@ -31,7 +31,7 @@ function Stat({ label: l, value, note, hot }: { label: string; value: string; no
   )
 }
 
-function Chart({ points, threshold }: { points: Point[]; threshold: number }) {
+export function Chart({ points, threshold }: { points: Point[]; threshold: number }) {
   const W = 1200, H = 150, P = 26
   const ts = points.map((p) => new Date(p.t).getTime())
   const t0 = Math.min(...ts), t1 = Math.max(...ts, t0 + 1)

@@ -56,6 +56,17 @@ A one-time join code, valid 24 hours, with the commands to paste on the new mach
 
 **Returns** `{"code": "...", "expires_at": "...", "https": true, "pin": "...", "commands": {"linux": "...", "windows": "..."}}`.
 
+### `POST /ui/auto-mode`
+
+The Auto mode switch at the top of every web dashboard page. **Body** `{"on": false, "reason": "..."}`. Owner and Admin
+only (`403` for an Auditor), `400` unless `on` is true or false. On (the default), SentrAI contains incidents over the
+threshold by itself, within the Automation guardrails. Off, nothing is contained on its own: each would-be action is
+recorded once as `containment_skipped` (reason `auto mode off`) and waits for a person on Approvals. Separate from the
+Protection switch (`/protection`), which stops all containment, approved or not. Recorded as `auto_mode_changed` and
+kept across restarts in `protection.json`.
+
+**Returns** the same as `GET /protection`, which now also carries `auto_mode` and `auto_mode_meta`.
+
 ### `POST /ui/machines/{host}/delete`
 
 The Machines list's Delete. Owner and Admin only (`403` for an Auditor). Revokes the machine's agent key, cancels its

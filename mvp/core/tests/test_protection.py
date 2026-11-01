@@ -105,3 +105,33 @@ def test_switch_survives_reset_and_restart(tmp_path):
     # An explicit SENTRAI_MONITOR_ONLY wins at start.
     with TestClient(create_app(Settings(db_path=tmp_path / "p.db", background=False, monitor_only="0")), headers=AUTH) as c:
         assert c.get("/protection").json()["monitor_only"] is False
+
+
+def test_auto_mode_off_waits_for_a_person(client):
+    assert client.get("/protection").json()["auto_mode"] is True  # on by default: same behaviour as before
+    p = client.post("/ui/auto-mode", json={"on": False, "reason": "demo: approve by hand"}).json()
+    assert p["auto_mode"] is False and p["protection"] == "on" and p["auto_mode_meta"]["reason"] == "demo: approve by hand"
+    brute_force(client)
+    client.post("/events", json=ev(10, SQLI, source="flask_access"))
+    assert client.get("/risk").json()["risk_index"] >= 80
+    assert client.get("/blocklist").json()["ips"] == []  # nothing contained on its own
+    client.core.advance(0.5)
+    records = client.get("/audit").json()["records"]
+    assert [r["data"]["reason"] for r in records if r["type"] == "containment_skipped"] == ["auto mode off"] * 2
+    # A person can still approve.
+    ok = client.post("/incidents/RSK-2026-081/decision", json={"operator": "erick", "decision": "approve"})
+    assert ok.status_code == 200
+    # Back on: the rest is contained by itself.
+    assert client.post("/ui/auto-mode", json={"on": True}).json()["auto_mode"] is True
+    assert "203.0.113.45" in client.get("/blocklist").json()["ips"]
+    changes = [r["data"]["auto_mode"] for r in client.get("/audit").json()["records"] if r["type"] == "auto_mode_changed"]
+    assert changes == [False, True]
+    assert client.post("/ui/auto-mode", json={"on": "yes"}).status_code == 400
+
+
+def test_auto_mode_survives_restart(tmp_path):
+    s = Settings(db_path=tmp_path / "p.db", background=False)
+    with TestClient(create_app(s), headers=AUTH) as c:
+        c.post("/ui/auto-mode", json={"on": False})
+    with TestClient(create_app(Settings(db_path=tmp_path / "p.db", background=False, monitor_only="0")), headers=AUTH) as c:
+        assert c.get("/protection").json()["auto_mode"] is False

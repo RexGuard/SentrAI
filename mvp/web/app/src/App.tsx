@@ -5,6 +5,7 @@ import SignIn from './pages/SignIn'
 import Approvals from './pages/Approvals'
 import Audit from './pages/Audit'
 import Chat from './pages/Chat'
+import Command from './pages/Command'
 import Guardrails from './pages/Guardrails'
 import Extensions from './pages/Extensions'
 import Incidents from './pages/Incidents'
@@ -29,7 +30,8 @@ function Gate() {
   return (
     <Routes>
       <Route element={<Layout />}>
-        <Route index element={<Navigate to="/approvals" replace />} />
+        <Route index element={<Navigate to="/command" replace />} />
+        <Route path="/command" element={<Command />} />
         <Route path="/approvals" element={<Approvals />} />
         <Route path="/machines" element={<Machines />} />
         <Route path="/machines/:host" element={<MachinePage />} />
@@ -50,7 +52,7 @@ function Gate() {
         <Route path="/reports" element={<Reports />} />
         <Route path="/backups" element={<Backups />} />
         <Route path="/incidents" element={<Incidents />} />
-        <Route path="*" element={<Navigate to="/approvals" replace />} />
+        <Route path="*" element={<Navigate to="/command" replace />} />
       </Route>
     </Routes>
   )
