@@ -4,6 +4,7 @@ import { CheckCircle2, CircleHelp, DatabaseBackup, ShieldAlert } from 'lucide-re
 import { api, ApiError } from '../lib/api'
 import { btn, btnPrimary } from '../lib/ui'
 import { useSession } from '../lib/session'
+import { useFilters, type Filter } from '../lib/Filters'
 
 type Backup = {
   id: string; created?: string; reason?: string; by?: string; files?: number; bytes?: number
@@ -15,6 +16,11 @@ type Data = {
 }
 
 const REASON: Record<string, string> = { schedule: 'on schedule', manual: 'by hand', before_restore: 'safety copy before a restore' }
+const PICK: Filter<Backup>[] = [
+  { key: 'reason', label: 'Made', get: (b) => REASON[b.reason ?? ''] ?? b.reason }, { key: 'by', label: 'By', get: (b) => b.by },
+  { key: 'check', label: 'Check', get: (b) => (b.verified?.ok ? 'Intact' : b.verified?.ok === false ? 'Problem' : 'Not checked') },
+  { key: 'created', label: 'Made on', get: (b) => b.created, kind: 'date' },
+]
 const when = (v?: string) => (v ? new Date(v).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '-')
 const mb = (b?: number) => ((b ?? 0) / 1048576).toFixed(1)
 const field = 'mt-1 block rounded-md border border-line bg-surface-2 px-3 py-1.5 text-ink'
@@ -84,6 +90,7 @@ export default function Backups() {
     setBusy(false)
   }
   const kept = data?.backups ?? []
+  const f = useFilters(kept, PICK, (b) => [b.id, b.reason, b.by], 'backups')
   const last = kept.find((b) => b.reason !== 'before_restore')
   const check = last?.verified ?? {}
   return (
@@ -118,7 +125,8 @@ export default function Backups() {
           </div>
           <div className="space-y-2 rounded-lg border border-line bg-surface p-4">
             <h2 className="font-semibold">Backups kept <span className="font-normal text-muted">· newest first · a restore always checks the backup first</span></h2>
-            {kept.length === 0 ? <p className="text-soft">No backups yet.</p> : <ul className="divide-y divide-line-soft">{kept.map((b) => <Row key={b.id} b={b} done={done} />)}</ul>}
+            {f.bar}
+            {kept.length === 0 ? <p className="text-soft">No backups yet.</p> : f.rows.length === 0 ? <p className="text-soft">No backups match these filters.</p> : <ul className="divide-y divide-line-soft">{f.rows.map((b) => <Row key={b.id} b={b} done={done} />)}</ul>}
           </div>
         </>
       )}

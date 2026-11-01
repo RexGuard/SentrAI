@@ -9,7 +9,8 @@ type Sent = { id: string; kind_label?: string; urgency?: string; advice?: string
 
 const input = 'mt-1 block w-full rounded-md border border-line bg-surface-2 px-3 py-2 text-ink placeholder:text-muted'
 
-export default function Report() {
+/** The report form. `compact` fits it into the side panel the ? button opens. */
+export default function Report({ compact = false }: { compact?: boolean }) {
   const [info, setInfo] = useState<Info | null>(null)
   const [sent, setSent] = useState<Sent | null>(null)
   const [err, setErr] = useState('')
@@ -28,8 +29,8 @@ export default function Report() {
   }
 
   return (
-    <section className="max-w-xl space-y-4">
-      <h1 className="text-2xl font-semibold">Report something suspicious</h1>
+    <section className={compact ? 'space-y-3' : 'max-w-xl space-y-4'}>
+      {!compact && <h1 className="text-2xl font-semibold">Report something suspicious</h1>}
       {info && !info.on ? <p className="rounded-md border border-line bg-surface p-4">Reporting from this page is turned off. Please tell your IT contact directly.</p>
         : sent ? (
           <div className="space-y-3 rounded-lg border border-line bg-surface p-4">
@@ -44,9 +45,9 @@ export default function Report() {
             <div>
               <p className="text-sm text-muted">Seen a strange email, a pop-up, a login you didn't make, or a stranger near the computers? Tell us in your own words. You don't need to be sure; it is always fine to report.</p></div>
             <label className="block text-sm text-soft">What did you notice?
-              <textarea className={input} rows={6} maxLength={4000} value={f.text} onChange={set('text')} required
+              <textarea className={input} rows={compact ? 4 : 6} maxLength={4000} value={f.text} onChange={set('text')} required
                 placeholder="e.g. I got an email from 'IT support' asking me to confirm my password. I clicked the link but did not type anything." /></label>
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className={'grid gap-3 ' + (compact ? '' : 'sm:grid-cols-2')}>
               <label className="block text-sm text-soft">Your name (optional)<input className={input} maxLength={120} value={f.reporter} onChange={set('reporter')} /></label>
               <label className="block text-sm text-soft">Where? (computer, room or account)<input className={input} maxLength={120} value={f.where} onChange={set('where')} placeholder="e.g. front desk PC" /></label>
             </div>

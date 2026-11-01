@@ -83,7 +83,7 @@ def row(inc: dict) -> dict[str, Any]:
     needs = attention(inc)
     return {"id": inc.get("id", "?"), "what": category_label(inc.get("category")), "host": inc.get("host") or "-",
             "severity": str(inc.get("severity") or "-"), "status": STATUS.get(str(inc.get("status")), str(inc.get("status"))),
-            "owner": inc.get("owner") or "Nobody", "backup": inc.get("backup") or "-",
+            "owner": inc.get("owner") or "Nobody", "backup": inc.get("backup") or "-", "opened": str(inc.get("opened_at") or ""),
             "open_for": "-" if closed else span_label(age_hours(inc) * 3600),
             "needs": ("Closed by " + str(inc.get("resolved_by") or inc.get("acked_by") or "-")) if closed
             else ("; ".join(needs) if needs else "In hand"),

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Copy, KeyRound, Trash2, UserPlus } from 'lucide-react'
+import { useFilters, type Filter } from '../lib/Filters'
 import { api, ApiError } from '../lib/api'
 import { btn, btnPrimary } from '../lib/ui'
 
@@ -10,6 +11,12 @@ type Made = { code: string; path: string; message: string }
 
 const when = (t: number | null) => (t ? new Date(t * 1000).toLocaleString() : 'never')
 const field = 'mt-1 block rounded-md border border-line bg-surface-2 px-3 py-1.5 text-ink'
+
+const PICK: Filter<Person>[] = [
+  { key: 'role', label: 'Role', get: (p) => p.role_label }, { key: 'auth', label: 'Authenticator', get: (p) => (p.authenticator ? 'Yes' : 'Not yet') },
+  { key: 'seen', label: 'Signed in', get: (p) => (p.last_sign_in ? 'Has signed in' : 'Never') },
+]
+const NOBODY: Person[] = []
 
 export default function Team() {
   const [page, setPage] = useState<Page | null>(null)
@@ -27,6 +34,7 @@ export default function Team() {
     catch (e) { setError(e instanceof ApiError ? e.message : 'Could not load the team.') }
   }, [])
   useEffect(() => { void load() }, [load])
+  const people = useFilters(page?.people ?? NOBODY, PICK, (p) => [p.name, p.email, p.role_label, p.last_ip], 'people')
 
   const others = page?.people.filter((p) => p.email !== page.me) ?? []
   const person = others.find((p) => p.email === who) ?? others[0]
@@ -64,13 +72,14 @@ export default function Team() {
         <>
           <div className="space-y-3 rounded-lg border border-line bg-surface p-4">
             <h2 className="font-semibold">People <span className="font-normal text-muted">· {page.people.length} with access</span></h2>
+            {people.bar}
             <div className="overflow-x-auto" role="region" aria-label="People" tabIndex={0}>
               <table className="w-full text-left text-sm">
                 <thead className="border-b border-line text-xs uppercase tracking-wide text-muted">
                   <tr>{['Name', 'Email', 'Role', 'Authenticator', 'Last sign-in'].map((h) => <th key={h} className="p-2 font-medium">{h}</th>)}</tr>
                 </thead>
                 <tbody>
-                  {page.people.map((p) => (
+                  {people.rows.map((p) => (
                     <tr key={p.email} className="border-b border-line-soft last:border-0">
                       <td className="p-2">{p.name}</td><td className="p-2">{p.email}</td><td className="p-2">{p.role_label}</td>
                       <td className="p-2">{p.authenticator ? 'Yes' : 'Not yet'}</td>

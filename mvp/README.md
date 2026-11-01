@@ -249,7 +249,7 @@ Only the configured chat, and people's linked private chats, can press the butto
 Anyone at the business can report something suspicious (a strange email, a pop-up, a login they
 did not make, a stranger at the computers) without a dashboard account:
 
-- **Web, signed in:** the web dashboard's *Report something suspicious* page (`/report`), for people with a dashboard account.
+- **Web, signed in:** the **?** button at the bottom right of every web dashboard page opens a side panel with a *Report something* tab (also at `/report`), for people with a dashboard account.
 - **Web, no account:** the classic dashboard address plus `/?report`, for example `https://server:8501/?report`. No
   sign-in, and the page shows nothing from SentrAI. Set `SENTRAI_REPORT_CODE` to ask for a shared code.
   Staff must be able to reach the dashboard (on a server, add their network to `--protect`).

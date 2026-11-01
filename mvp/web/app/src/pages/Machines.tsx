@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import Stat from '../lib/Stat'
 import { Link } from 'react-router-dom'
-import { Copy, Hourglass, KeyRound, Plus, ShieldCheck, ShieldOff, Unplug } from 'lucide-react'
+import { ChevronRight, Copy, Hourglass, KeyRound, Plus, ShieldCheck, ShieldOff, Unplug } from 'lucide-react'
 import { api, ApiError } from '../lib/api'
 import { btn, btnPrimary } from '../lib/ui'
 import { useSession } from '../lib/session'
+import { useFilters, type Filter } from '../lib/Filters'
 
 type Machine = {
   name: string; host: string; place: string; online: boolean; waiting: boolean; index: number | null; band: string
@@ -21,6 +22,18 @@ type Made = { code: string; expires_at: string; https: boolean; pin: string | nu
 
 const bandColor: Record<string, string> = { green: 'var(--green)', amber: 'var(--amber)', red: 'var(--red)', critical: 'var(--critical)' }
 const pct = (v: number | null | undefined) => (v == null ? '-' : `${Math.round(v)}%`)
+
+const stateWord = (m: Machine) => (m.waiting ? 'Waiting' : !m.online ? 'Offline' : m.monitor_only ? 'Protection off' : 'Protecting')
+const FILTERS: Filter<Machine>[] = [
+  { key: 'state', label: 'State', get: stateWord }, { key: 'band', label: 'Risk band', get: (m) => m.band },
+  { key: 'place', label: 'Kind', get: (m) => m.place }, { key: 'services', label: 'Service', get: (m) => m.services },
+  { key: 'issues', label: 'Incidents', get: (m) => (m.open ? 'Open incidents' : m.contained ? 'Contained only' : 'None') },
+]
+const JOINED: Filter<Joined>[] = [
+  { key: 'status', label: 'Status', get: (a) => a.status }, { key: 'invited_by', label: 'Invited by', get: (a) => a.invited_by },
+  { key: 'joined_at', label: 'Joined', get: (a) => a.joined_at, kind: 'date' },
+]
+const NO_M: Machine[] = [], NO_J: Joined[] = []
 
 function State({ m }: { m: Machine }) {
   if (m.waiting) return <span className="inline-flex items-center gap-1 text-muted"><Hourglass size={14} aria-hidden /> Waiting for its first data</span>
@@ -81,6 +94,8 @@ export default function Machines() {
   }, [])
   useEffect(() => { void load(); const t = setInterval(() => void load(), 10000); return () => clearInterval(t) }, [load])
   const s = page?.stats
+  const list = useFilters(page?.machines ?? NO_M, FILTERS, (m) => [m.name, m.host, m.place, m.services], 'machines')
+  const joined = useFilters(page?.joined ?? NO_J, JOINED, (a) => [a.host, a.agent_id, a.invited_by, a.status], 'joined machines')
   return (
     <section className="space-y-4">
       <header>
@@ -103,8 +118,10 @@ export default function Machines() {
               <button className={btn} aria-expanded={adding} onClick={() => setAdding(!adding)}><Plus size={14} aria-hidden /> Add machine</button>
             </div>
             {adding && <AddMachine page={page} onMade={() => void load()} />}
+            {list.bar}
+            {list.active && list.rows.length === 0 && <p className="text-soft">No machines match these filters.</p>}
             <ul className="divide-y divide-line-soft">
-              {page.machines.map((m) => (
+              {list.rows.map((m) => (
                 <li key={m.name} className="flex flex-wrap items-center gap-x-6 gap-y-2 py-3">
                   <div className="min-w-40 flex-1">
                     <p className="font-medium">{m.host ? <Link to={`/machines/${encodeURIComponent(m.host)}`} className="underline-offset-2 hover:underline">{m.name}</Link> : m.name}</p>
@@ -129,6 +146,7 @@ export default function Machines() {
                     </p>
                     <p className="text-xs text-muted">{m.waiting ? 'Waiting' : !m.online ? 'Offline' : page.band_words[m.band] ?? 'Unknown'}</p>
                   </div>
+                  {m.host && <Link to={`/machines/${encodeURIComponent(m.host)}`} className={btn} aria-label={`Open ${m.name}`}>Open <ChevronRight size={14} aria-hidden /></Link>}
                 </li>
               ))}
             </ul>
@@ -136,6 +154,7 @@ export default function Machines() {
           {page.panel && (
             <div className="space-y-3 rounded-lg border border-line bg-surface p-4">
               <h2 className="font-semibold">Joined machines <span className="font-normal text-muted">· each has its own key; revoking one never touches the others</span></h2>
+              {joined.bar}
               {page.joined.length === 0 ? <p className="text-soft">No machine has joined yet. Make a join code above.</p> : (
                 <div className="overflow-x-auto" role="region" aria-label="Joined machines" tabIndex={0}>
                   <table className="w-full text-left text-sm">
@@ -143,9 +162,9 @@ export default function Machines() {
                       <tr>{['Machine', 'Id', 'Joined', 'Invited by', 'Last seen', 'Status'].map((h) => <th key={h} className="p-2 font-medium">{h}</th>)}</tr>
                     </thead>
                     <tbody>
-                      {page.joined.map((a) => (
+                      {joined.rows.map((a) => (
                         <tr key={a.agent_id} className="border-b border-line-soft last:border-0">
-                          <td className="p-2">{a.host}</td><td className="p-2 font-mono text-xs">{a.agent_id}</td>
+                          <td className="p-2"><Link to={`/machines/${encodeURIComponent(a.host)}`} className="underline-offset-2 hover:underline">{a.host}</Link></td><td className="p-2 font-mono text-xs">{a.agent_id}</td>
                           <td className="p-2">{a.joined_at ? new Date(a.joined_at).toLocaleString() : '-'}</td><td className="p-2">{a.invited_by}</td>
                           <td className="p-2">{a.last_seen ? new Date(a.last_seen).toLocaleTimeString() : 'never'}</td><td className="p-2">{a.status}</td>
                         </tr>

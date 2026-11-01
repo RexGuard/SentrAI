@@ -3,9 +3,10 @@ import { Check, ChevronDown, ChevronRight, FolderPlus, Pin, Undo2, UserCheck, X 
 import { api, ApiError } from '../lib/api'
 import { btn, btnPrimary } from '../lib/ui'
 import { useSession } from '../lib/session'
+import { useFilters, type Filter } from '../lib/Filters'
 
 type Row = {
-  id: string; what: string; host: string; severity: string; status: string; owner: string; open_for: string
+  id: string; what: string; host: string; severity: string; status: string; owner: string; open_for: string; opened?: string
   needs: string[]; target: string; points: number; attacker: string; summary: string
   can: { decide: boolean; ack: boolean; contain_controls: boolean; mine: boolean }
 }
@@ -116,6 +117,13 @@ function Table({ rows, picking, picked, toggle, page, run, empty }: {
   )
 }
 
+const FILTERS: Filter<Row>[] = [
+  { key: 'severity', label: 'Severity', get: (r) => r.severity }, { key: 'status', label: 'Status', get: (r) => r.status },
+  { key: 'host', label: 'Machine', get: (r) => r.host }, { key: 'what', label: 'Type', get: (r) => r.what },
+  { key: 'owner', label: 'Owner', get: (r) => r.owner }, { key: 'needs', label: 'Needs', get: (r) => r.needs },
+  { key: 'attacker', label: 'Source', get: (r) => r.attacker }, { key: 'opened', label: 'Opened', get: (r) => r.opened, kind: 'date' },
+]
+
 export default function Approvals() {
   const { can } = useSession()
   const [page, setPage] = useState<Page | null>(null)
@@ -149,7 +157,11 @@ export default function Approvals() {
     setNote(r.message); await load()
   }
 
-  const rows = page?.rows ?? []
+  const all = page?.rows ?? []
+  const f = useFilters(all, FILTERS, (r) => [r.id, r.what, r.host, r.owner, r.target, r.attacker, r.summary, r.needs], 'requests')
+  const rows = f.rows
+  const keep = new Set(rows.map((r) => r.id))
+  const grouped = (page?.grouped ?? []).map((g) => ({ ...g, rows: g.rows.filter((r) => keep.has(r.id)) })).filter((g) => g.rows.length)
   const picking = can('act') && rows.length > 1
   const pickedRows = useMemo(() => rows.filter((r) => picked.has(r.id)), [rows, picked])
   const toggle = (id: string) => setPicked((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n })
@@ -170,7 +182,7 @@ export default function Approvals() {
             {(['waiting', ...(page.groups.length ? ['groups'] : [])] as ('waiting' | 'groups')[]).map((t) => (
               <button key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)}
                 className={'rounded-md px-3 py-1.5 text-sm ' + (tab === t ? 'bg-surface-3 text-ink' : 'text-soft hover:bg-surface-2')}>
-                {t === 'waiting' ? `Waiting (${rows.length})` : `Your groups (${page.groups.length})`}
+                {t === 'waiting' ? `Waiting (${all.length})` : `Your groups (${page.groups.length})`}
               </button>
             ))}
           </div>
@@ -190,19 +202,20 @@ export default function Approvals() {
                     extra={<button className={btn} onClick={() => setPicked(new Set())}>Clear</button>} />
                 </div>
               )}
+              {f.bar}
               <label className="inline-flex items-center gap-2 text-sm text-soft">
                 Group by
                 <select value={by} onChange={(e) => setBy(e.target.value)} className="rounded-md border border-line bg-surface-2 px-2 py-1 text-ink">
                   <option value="">Nothing</option><option value="attacker">Attacker</option><option value="machine">Machine</option><option value="type">Type</option>
                 </select>
               </label>
-              {by && page.grouped.length ? page.grouped.map((g) => (
+              {by && grouped.length ? grouped.map((g) => (
                 <div key={g.name} className="space-y-2">
                   <h2 className="text-sm font-semibold text-soft">{g.name} · {g.rows.length}</h2>
                   <Table rows={g.rows} picking={picking} picked={picked} toggle={toggle} page={page} run={run} empty="" />
                 </div>
               )) : <Table rows={rows} picking={picking} picked={picked} toggle={toggle} page={page} run={run}
-                empty={page.groups.length ? 'Everything waiting is in one of your groups.' : 'Nothing waiting for a decision.'} />}
+                empty={f.active ? 'No requests match these filters.' : page.groups.length ? 'Everything waiting is in one of your groups.' : 'Nothing waiting for a decision.'} />}
             </>
           )}
         </>

@@ -5,10 +5,11 @@ import { Link } from 'react-router-dom'
 import { api, ApiError } from '../lib/api'
 import { btn, btnPrimary } from '../lib/ui'
 import { useSession } from '../lib/session'
+import { useFilters, type Filter } from '../lib/Filters'
 
 type Row = {
   id: string; what: string; host: string; severity: string; status: string; owner: string; backup: string
-  open_for: string; needs: string; closed: boolean; attention: boolean; wave: string; summary: string
+  open_for: string; opened: string; needs: string; closed: boolean; attention: boolean; wave: string; summary: string
 }
 type Wave = { id: string; what: string; machine: string; addresses: number; networks: string; started: string; last_seen: string; going: boolean }
 type Page = {
@@ -55,10 +56,51 @@ function Details({ r, contacts, done }: { r: Row; contacts: Page['contacts']; do
   )
 }
 
+const FILTERS: Filter<Row>[] = [
+  { key: 'severity', label: 'Severity', get: (r) => r.severity }, { key: 'status', label: 'Status', get: (r) => r.status },
+  { key: 'host', label: 'Machine', get: (r) => r.host }, { key: 'what', label: 'Type', get: (r) => r.what },
+  { key: 'owner', label: 'Owner', get: (r) => r.owner }, { key: 'backup', label: 'Backup', get: (r) => r.backup },
+  { key: 'opened', label: 'Opened', get: (r) => r.opened, kind: 'date' },
+]
+const WAVE_FILTERS: Filter<Wave>[] = [
+  { key: 'what', label: 'Type', get: (w) => w.what }, { key: 'machine', label: 'Machine', get: (w) => w.machine },
+  { key: 'now', label: 'Now', get: (w) => (w.going ? 'Going' : 'Quiet') },
+]
+
+function Waves({ waves }: { waves: Wave[] }) {
+  const f = useFilters(waves, WAVE_FILTERS, (w) => [w.id, w.what, w.machine, w.networks], 'waves')
+  return (
+    <>
+      {f.bar}
+      <div className="overflow-x-auto" role="region" aria-label="Waves" tabIndex={0}>
+        <table className="w-full text-left text-sm">
+          <thead className="border-b border-line text-xs uppercase tracking-wide text-muted">
+            <tr>{['Wave', 'What', 'Machine', 'Addresses', 'Top networks', 'Started', 'Last seen', 'Now'].map((h) => <th key={h} className="p-2 font-medium">{h}</th>)}</tr>
+          </thead>
+          <tbody>
+            {f.rows.map((w) => (
+              <tr key={w.id} className="border-b border-line-soft last:border-0">
+                <td className="p-2 font-mono text-xs">{w.id}</td><td className="p-2">{w.what}</td><td className="p-2">{w.machine}</td>
+                <td className="p-2">{w.addresses}</td><td className="p-2">{w.networks}</td><td className="p-2">{w.started}</td>
+                <td className="p-2">{w.last_seen}</td><td className="p-2">{w.going ? 'Going' : 'Quiet'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {f.active && f.rows.length === 0 && <p className="text-soft">No waves match these filters.</p>}
+    </>
+  )
+}
+
 function Board({ rows, contacts, done, empty }: { rows: Row[]; contacts: Page['contacts']; done: (n: string) => void; empty: string }) {
   const [open, setOpen] = useState<string | null>(null)
+  const f = useFilters(rows, FILTERS, (r) => [r.id, r.what, r.host, r.owner, r.status, r.needs, r.summary], 'incidents')
   if (!rows.length) return <p className="text-soft">{empty}</p>
   return (
+    <>
+    {f.bar}
+    {f.rows.length === 0 ? <p className="text-soft">No incidents match these filters.</p> : (
     <div className="overflow-x-auto" role="region" aria-label="Incidents" tabIndex={0}>
       <table className="w-full text-left text-sm">
         <thead className="border-b border-line text-xs uppercase tracking-wide text-muted">
@@ -66,7 +108,7 @@ function Board({ rows, contacts, done, empty }: { rows: Row[]; contacts: Page['c
             {['Incident', 'What', 'Host', 'Severity', 'Status', 'Owner', 'Backup', 'Open for', 'Needs'].map((h) => <th key={h} className="p-2 font-medium">{h}</th>)}</tr>
         </thead>
         <tbody>
-          {rows.map((r) => (
+          {f.rows.map((r) => (
             <Fragment key={r.id}>
               <tr className="border-b border-line-soft hover:bg-surface-2">
                 <td className="p-2"><button aria-expanded={open === r.id} aria-label={`Details of ${r.id}`} className="text-soft" onClick={() => setOpen(open === r.id ? null : r.id)}>
@@ -81,7 +123,8 @@ function Board({ rows, contacts, done, empty }: { rows: Row[]; contacts: Page['c
           ))}
         </tbody>
       </table>
-    </div>
+    </div>)}
+    </>
   )
 }
 
@@ -147,22 +190,7 @@ export default function Incidents() {
             {tab === 'waves' && (
               <>
                 <h2 className="font-semibold">Waves <span className="font-normal text-muted">· many addresses doing the same thing to one machine, handled as one</span></h2>
-                <div className="overflow-x-auto" role="region" aria-label="Waves" tabIndex={0}>
-                  <table className="w-full text-left text-sm">
-                    <thead className="border-b border-line text-xs uppercase tracking-wide text-muted">
-                      <tr>{['Wave', 'What', 'Machine', 'Addresses', 'Top networks', 'Started', 'Last seen', 'Now'].map((h) => <th key={h} className="p-2 font-medium">{h}</th>)}</tr>
-                    </thead>
-                    <tbody>
-                      {page.waves.map((w) => (
-                        <tr key={w.id} className="border-b border-line-soft last:border-0">
-                          <td className="p-2 font-mono text-xs">{w.id}</td><td className="p-2">{w.what}</td><td className="p-2">{w.machine}</td>
-                          <td className="p-2">{w.addresses}</td><td className="p-2">{w.networks}</td><td className="p-2">{w.started}</td>
-                          <td className="p-2">{w.last_seen}</td><td className="p-2">{w.going ? 'Going' : 'Quiet'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <Waves waves={page.waves} />
               </>
             )}
           </div>

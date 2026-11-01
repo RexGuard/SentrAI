@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import { Lightbulb, Send, Trash2 } from 'lucide-react'
 import { api, ApiError } from '../lib/api'
 import { btn, btnPrimary } from '../lib/ui'
@@ -78,7 +78,9 @@ function SuggestionCard({ s, inc, onDone }: { s: Suggestion; inc?: Incident; onD
   )
 }
 
-export default function Chat() {
+/** The conversation with Cyanide. `compact` fits it into the side panel the ? button opens. */
+export default function Chat({ compact = false }: { compact?: boolean }) {
+  const inputId = useId()
   const { me, can } = useSession()
   const [hist, setHist] = useState<History | null>(null)
   const [incidents, setIncidents] = useState<Incident[]>([])
@@ -119,16 +121,16 @@ export default function Chat() {
   const chip = 'rounded-full border border-line px-3 py-1 text-sm text-soft hover:bg-surface-2 disabled:opacity-50'
 
   return (
-    <section className="space-y-4">
-      <header>
+    <section className={compact ? 'flex h-full min-h-0 flex-col gap-3' : 'space-y-4'}>
+      {!compact && <header>
         <h1 className="text-2xl font-semibold">Chat</h1>
         <p className="text-sm text-muted">ask the orchestrator what it sees and why it acted · it suggests, you decide</p>
-      </header>
+      </header>}
       {error && <p role="alert" className="rounded-md border border-line bg-surface p-3 text-bad">{error}</p>}
       {note && <p role="status" className="rounded-md border border-line bg-surface p-3">{note}</p>}
       {setup?.active ? <SetupConversation setup={setup} onChange={setSetup} onLeave={() => { setSetup({ ...setup, active: false }); setLater(true) }} /> : (
       <>
-      {setup && <SetupBanner setup={setup} onChange={setSetup} later={later} onLater={() => setLater(true)} />}
+      {setup && !compact && <SetupBanner setup={setup} onChange={setSetup} later={later} onLater={() => setLater(true)} />}
       {hist && (
         <>
           <div className="flex flex-wrap items-end gap-3">
@@ -138,10 +140,10 @@ export default function Chat() {
                 {[...incidents].sort((a, b) => b.id.localeCompare(a.id)).map((i) => <option key={i.id} value={i.id}>{i.id} · {(i.category ?? '').replace(/_/g, ' ')}</option>)}
               </select>
             </label>
-            <p className="min-w-0 flex-1 text-xs text-muted">{assistant} · {hist.model || 'model unknown'} · read-only: every action still needs your click and goes through the normal approval checks</p>
-            <button className={btn} disabled={!messages.length || !can('act')} onClick={() => void clear()}><Trash2 size={14} aria-hidden /> Clear chat</button>
+            <p className="min-w-0 flex-1 text-xs text-muted">{compact ? 'It suggests, you decide' : `${assistant} · ${hist.model || 'model unknown'} · read-only: every action still needs your click and goes through the normal approval checks`}</p>
+            <button className={btn} disabled={!messages.length || !can('act')} onClick={() => void clear()} aria-label="Clear chat"><Trash2 size={14} aria-hidden />{compact ? '' : ' Clear chat'}</button>
           </div>
-          <div className="h-[28rem] space-y-4 overflow-y-auto rounded-lg border border-line bg-surface p-4" role="log" aria-live="polite" aria-label="Conversation" tabIndex={0}>
+          <div className={(compact ? 'min-h-0 flex-1 ' : 'h-[28rem] ') + 'space-y-4 overflow-y-auto rounded-lg border border-line bg-surface p-4'} role="log" aria-live="polite" aria-label="Conversation" tabIndex={0}>
             {!messages.length && (
               <div className="space-y-2">
                 <p>Hi, I'm {assistant}. Ask me about incidents, why I acted, or what to do next. Or pick one of these to start:</p>
@@ -151,7 +153,7 @@ export default function Chat() {
             {messages.map((m, n) => {
               const mine = m.role === 'operator'
               return (
-                <div key={m.id} className={'max-w-[85%] space-y-1 rounded-lg p-3 ' + (mine ? 'ml-auto bg-surface-3' : 'bg-surface-2')}>
+                <div key={m.id} className={(compact ? 'max-w-[92%]' : 'max-w-[85%]') + ' space-y-1 rounded-lg p-3 ' + (mine ? 'ml-auto bg-surface-3' : 'bg-surface-2')}>
                   <p className="text-xs text-muted">{mine ? m.operator || me?.email : assistant} · {time(m.ts)}{m.incident ? ` · about ${m.incident}` : ''}{!mine && m.source === 'fallback' ? ' · core explanation (no AI)' : ''}</p>
                   <p className="whitespace-pre-wrap">{m.text}</p>
                   {m.looked_at?.length ? <p className="text-xs text-muted">Looked at: {[...new Set(m.looked_at)].join(', ')}</p> : null}
@@ -166,9 +168,9 @@ export default function Chat() {
             <div ref={end} />
           </div>
           <form onSubmit={(e) => { e.preventDefault(); void ask(text) }}>
-            <label className="sr-only" htmlFor="chat-input">Ask {assistant}</label>
+            <label className="sr-only" htmlFor={inputId}>Ask {assistant}</label>
             <div className="prompt">
-              <textarea id="chat-input" rows={1} value={text} disabled={asking} placeholder={`Ask ${assistant}…`}
+              <textarea id={inputId} rows={1} value={text} disabled={asking} placeholder={`Ask ${assistant}…`}
                 onChange={(e) => setText(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void ask(text) } }} />
               <button className="prompt-send" disabled={asking || !text.trim()} aria-label="Send"><Send size={16} aria-hidden /></button>
@@ -177,7 +179,7 @@ export default function Chat() {
           </form>
         </>
       )}
-      <div className="flex"><button className={btn} onClick={() => void api<Setup>('/ui/setup/start', { body: {} }).then(setSetup).catch(() => {})}>Setup</button></div>
+      <div className={compact ? 'hidden' : 'flex'}><button className={btn} onClick={() => void api<Setup>('/ui/setup/start', { body: {} }).then(setSetup).catch(() => {})}>Setup</button></div>
       </>
       )}
     </section>

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { api, ApiError } from '../lib/api'
 import { btn, btnPrimary } from '../lib/ui'
 import { useSession } from '../lib/session'
+import { useFilters, type Filter } from '../lib/Filters'
 
 type Report = {
   id: string; status: string; kind_label?: string; reporter?: string; contact?: string; where?: string; host?: string
@@ -12,6 +13,12 @@ type Report = {
 type Data = { reports: Report[]; counts: Record<string, number> }
 
 const FILTERS: [string, string | null][] = [['Open', 'open'], ['New', 'new'], ['Reviewing', 'reviewing'], ['Resolved', 'resolved'], ['Not a threat', 'not_a_threat'], ['All', null]]
+const PICK: Filter<Report>[] = [
+  { key: 'urgency', label: 'Urgency', get: (r) => r.triage?.urgency }, { key: 'kind', label: 'Kind', get: (r) => r.kind_label || r.triage?.kind },
+  { key: 'reporter', label: 'Reported by', get: (r) => r.reporter || 'anonymous' }, { key: 'assignee', label: 'With', get: (r) => r.assignee },
+  { key: 'host', label: 'Machine', get: (r) => r.host }, { key: 'channel', label: 'Came in by', get: (r) => r.channel },
+  { key: 'received_at', label: 'Received', get: (r) => r.received_at, kind: 'date' },
+]
 const LABEL: Record<string, string> = { new: 'New', reviewing: 'Reviewing', resolved: 'Resolved', not_a_threat: 'Not a threat' }
 const urgColor: Record<string, string> = { high: 'text-crit', medium: 'text-warn', low: 'text-ok' }
 const field = 'mt-1 block rounded-md border border-line bg-surface-2 px-3 py-1.5 text-ink'
@@ -93,7 +100,9 @@ export default function Staff() {
   useEffect(() => { void load(); const t = setInterval(() => void load(), 10000); return () => clearInterval(t) }, [load])
   const counts = data?.counts ?? {}
   const want = FILTERS.find(([, v]) => (v ?? 'all') === filter)?.[1] ?? null
-  const reports = (data?.reports ?? []).filter((r) => want === null || r.status === want || (want === 'open' && (r.status === 'new' || r.status === 'reviewing')))
+  const byStatus = (data?.reports ?? []).filter((r) => want === null || r.status === want || (want === 'open' && (r.status === 'new' || r.status === 'reviewing')))
+  const f = useFilters(byStatus, PICK, (r) => [r.id, r.text, r.reporter, r.where, r.host, r.kind_label, r.triage?.summary, r.assignee, r.incident], 'reports')
+  const reports = f.rows
 
   return (
     <section className="space-y-4">
@@ -111,15 +120,16 @@ export default function Staff() {
             <Stat label="Resolved" value={counts.resolved ?? 0} note="real problems dealt with" />
             <Stat label="Not a threat" value={counts.not_a_threat ?? 0} note="checked and harmless" />
           </div>
-          <p className="text-sm text-muted">Staff report from the open report page, which needs no sign-in and is still served by the current console (add <code className="font-mono">/?report</code> to its address).</p>
+          <p className="text-sm text-muted">Anyone signed in can send one from the <b>?</b> button at the bottom right of every page.</p>
           <div role="tablist" aria-label="Show" className="flex flex-wrap gap-2">
             {FILTERS.map(([label, v]) => (
               <button key={label} role="tab" aria-selected={filter === (v ?? 'all')} onClick={() => setFilter(v ?? 'all')}
                 className={'rounded-md px-3 py-1.5 text-sm ' + (filter === (v ?? 'all') ? 'bg-surface-3 text-ink' : 'text-soft hover:bg-surface-2')}>{label}</button>
             ))}
           </div>
+          {f.bar}
           {reports.length === 0
-            ? <p className={'rounded-lg border border-line bg-surface p-4 ' + (filter === 'open' ? 'text-ok' : 'text-soft')}>{filter === 'open' ? 'No open staff reports. All quiet.' : 'No staff reports here.'}</p>
+            ? <p className={'rounded-lg border border-line bg-surface p-4 ' + (filter === 'open' && !f.active ? 'text-ok' : 'text-soft')}>{f.active ? 'No staff reports match these filters.' : filter === 'open' ? 'No open staff reports. All quiet.' : 'No staff reports here.'}</p>
             : reports.map((r) => {
               const t = r.triage ?? {}
               const expanded = (openId ?? (reports[0]?.status === 'new' ? reports[0].id : null)) === r.id

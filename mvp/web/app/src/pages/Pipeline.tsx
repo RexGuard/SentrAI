@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { api, ApiError } from '../lib/api'
+import { cellFilters, nodeText, useFilters } from '../lib/Filters'
 import Scans from './Scans'
 
 type Rec = { seq?: number; ts?: string; type?: string; data?: Record<string, unknown> }
@@ -42,14 +43,20 @@ function Card({ title, note, children }: { title: string; note?: string; childre
 }
 
 function Table({ head, rows, empty, name }: { head: string[]; rows: ReactNode[][]; empty: string; name: string }) {
+  const pick = useMemo(() => cellFilters(head, rows), [head, rows])
+  const f = useFilters(rows, pick, (r) => r.map(nodeText), name.toLowerCase())
   if (!rows.length) return <p className="text-soft">{empty}</p>
   return (
+    <>
+    {rows.length > 3 && f.bar}
+    {f.rows.length === 0 ? <p className="text-soft">Nothing matches these filters.</p> : (
     <div className="overflow-x-auto" role="region" aria-label={name} tabIndex={0}>
       <table className="w-full text-left text-sm">
         <thead className="border-b border-line text-xs uppercase tracking-wide text-muted"><tr>{head.map((h) => <th key={h} className="p-2 font-medium">{h}</th>)}</tr></thead>
-        <tbody>{rows.map((r, i) => <tr key={i} className="border-b border-line-soft last:border-0">{r.map((c, j) => <td key={j} className="p-2 align-top">{c}</td>)}</tr>)}</tbody>
+        <tbody>{f.rows.map((r, i) => <tr key={i} className="border-b border-line-soft last:border-0">{r.map((c, j) => <td key={j} className="p-2 align-top">{c}</td>)}</tr>)}</tbody>
       </table>
-    </div>
+    </div>)}
+    </>
   )
 }
 
