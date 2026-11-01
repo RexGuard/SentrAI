@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom'
 import { Bot, Hand, ShieldOff } from 'lucide-react'
 import { api, ApiError } from '../lib/api'
 import { useSession } from '../lib/session'
+import { ask } from '../lib/notice'
 
 type Protection = { protection: 'on' | 'off'; auto_mode: boolean; auto_mode_meta?: { changed_by?: string; changed_at?: string; reason?: string | null } }
 
@@ -21,11 +22,12 @@ export default function AutoMode() {
   const allowed = can('configure')
   const flip = async () => {
     const turnOn = !on
-    const text = turnOn
-      ? 'Turn Auto mode on?\n\nSentrAI will contain incidents over the risk threshold by itself, within the Automation guardrails (which actions, how long, how many per hour). Everything it does is in the audit trail and can be rolled back.'
-      : 'Turn Auto mode off?\n\nSentrAI keeps watching and scoring, but nothing is contained on its own: every protective action waits for a person on Approvals. Actions already in force stay until they expire or are rolled back.'
-    if (!window.confirm(text)) return
-    const reason = turnOn ? '' : (window.prompt('Why? (written to the audit log, optional)') ?? '')
+    const reason = await ask(turnOn
+      ? { title: 'Turn Auto mode on?', confirm: 'Turn on', body: 'SentrAI will contain incidents over the risk threshold by itself, within the Automation guardrails (which actions, how long, how many per hour). Everything it does is in the audit trail and can be rolled back.' }
+      : { title: 'Turn Auto mode off?', confirm: 'Turn off', danger: true,
+          body: 'SentrAI keeps watching and scoring, but nothing is contained on its own: every protective action waits for a person on Approvals. Actions already in force stay until they expire or are rolled back.',
+          input: { label: 'Why? (written to the audit log, optional)' } })
+    if (reason === null) return
     setBusy(true); setErr('')
     try { setP(await api<Protection>('/ui/auto-mode', { body: { on: turnOn, reason } })) }
     catch (e) { setErr(e instanceof ApiError ? e.message : 'Auto mode could not be changed.') }
