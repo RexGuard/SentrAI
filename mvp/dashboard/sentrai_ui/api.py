@@ -109,7 +109,9 @@ class CoreClient:
             return []
 
     def audit(self, limit: int = 0) -> Any:
-        return self.get_json(f"/audit?limit={limit}" if limit else "/audit")
+        # quick=1: the console reads this every second, so the core re-hashes the whole chain at most once a minute
+        # (older cores ignore the word and check it every time)
+        return self.get_json(f"/audit?limit={limit}&quick=1" if limit else "/audit")
 
     def agents(self) -> list[dict]:
         return list(self.get_json("/agents") or [])
