@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { AlertTriangle, Info, X } from 'lucide-react'
 import { btn, btnPrimary } from './ui'
+import { transition } from './motion'
 
 export type Ask = {
   title: string
@@ -24,8 +25,8 @@ const emit = () => subs.forEach((f) => f())
 export function ask(a: Ask): Promise<string | null> {
   return new Promise((resolve) => {
     const id = ++seq
-    open = [...open, { ...a, id, done: (v) => { open = open.filter((o) => o.id !== id); emit(); resolve(v) } }]
-    emit()
+    open = [...open, { ...a, id, done: (v) => { transition(() => { open = open.filter((o) => o.id !== id); emit() }); resolve(v) } }]
+    transition(emit)
   })
 }
 
@@ -37,7 +38,7 @@ function Card({ n }: { n: Open }) {
   const ok = () => { if (!blocked) n.done(n.input ? text : '') }
   const lines = Array.isArray(n.body) ? n.body : n.body ? [n.body] : []
   return (
-    <div role="alertdialog" aria-labelledby={`n${n.id}`} className="notice pointer-events-auto w-[24rem] max-w-[calc(100vw-2rem)] rounded-xl border border-line bg-surface p-4 shadow-2xl"
+    <div role="alertdialog" aria-labelledby={`n${n.id}`} style={{ viewTransitionName: `notice-${n.id}`, viewTransitionClass: "notice" } as React.CSSProperties} className="notice pointer-events-auto w-[24rem] max-w-[calc(100vw-2rem)] rounded-xl border border-line bg-surface p-4 shadow-2xl"
       onKeyDown={(e) => { if (e.key === 'Escape') n.done(null) }}>
       <div className="flex items-start gap-3">
         {n.danger ? <AlertTriangle size={18} className="mt-0.5 shrink-0 text-warn" aria-hidden /> : <Info size={18} className="mt-0.5 shrink-0 text-soft" aria-hidden />}

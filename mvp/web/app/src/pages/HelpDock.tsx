@@ -2,6 +2,7 @@
 // chat with Sentry, and report something suspicious. The page beside it stays usable.
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { transition } from '../lib/motion'
 import { CircleHelp, Maximize2, MessageSquare, MessageSquareWarning, X } from 'lucide-react'
 
 // Fetched when the dock is first opened, not with every page.
@@ -24,8 +25,9 @@ export function useDock() {
   useEffect(() => { try { localStorage.setItem(KEY, JSON.stringify(state)) } catch { /* private window: nothing to keep */ } }, [state])
   return {
     ...state,
-    show: (tab: DockTab) => setState({ open: true, tab }),
-    close: () => setState((s) => ({ ...s, open: false })),
+    // The ? button grows into the panel and the panel shrinks back into it (both are named "dock").
+    show: (tab: DockTab) => transition(() => setState({ open: true, tab })),
+    close: () => transition(() => setState((s) => ({ ...s, open: false }))),
   }
 }
 
@@ -39,7 +41,7 @@ export default function HelpDock({ dock }: { dock: ReturnType<typeof useDock> })
 
   if (!dock.open) {
     return (
-      <button onClick={() => dock.show(dock.tab)} aria-label="Help: chat with Sentry or report something" title="Chat with Sentry or report something"
+      <button onClick={() => dock.show(dock.tab)} aria-label="Help: chat with Sentry or report something" title="Chat with Sentry or report something" style={{ viewTransitionName: 'dock' }}
         className="fixed bottom-5 right-5 z-40 flex h-12 w-12 items-center justify-center rounded-full border border-accent bg-accent text-on-accent shadow-lg hover:opacity-90">
         <CircleHelp size={22} aria-hidden />
       </button>
@@ -48,7 +50,7 @@ export default function HelpDock({ dock }: { dock: ReturnType<typeof useDock> })
 
   const tabs: [DockTab, string, typeof MessageSquare][] = [['chat', 'Chat with Sentry', MessageSquare], ['report', 'Report something', MessageSquareWarning]]
   return (
-    <aside aria-label="Help panel" className="fixed inset-y-0 right-0 z-40 flex w-full flex-col gap-3 border-l border-line bg-bg p-3 shadow-xl sm:w-[26rem]">
+    <aside aria-label="Help panel" style={{ viewTransitionName: 'dock' }} className="fixed inset-y-0 right-0 z-40 flex w-full flex-col gap-3 border-l border-line bg-bg p-3 shadow-xl sm:w-[26rem]">
       <div className="flex items-center gap-1">
         <div role="tablist" aria-label="Help" className="flex flex-1 gap-1">
           {tabs.map(([t, label, Icon]) => (

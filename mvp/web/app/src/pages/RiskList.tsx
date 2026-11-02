@@ -1,10 +1,12 @@
 // One severity's risks as bubbles (opened from the Command center's grouped buttons). Approvals and incidents that
 // need a person are one list here; a wave of many addresses doing the same thing is one bubble.
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { flushSync } from 'react-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { ChevronLeft } from 'lucide-react'
 import { api, ApiError } from '../lib/api'
 import { btn } from '../lib/ui'
+import { transition, useGo, VLink } from '../lib/motion'
 import { LEVEL_TEXT, RiskBubble, RiskDetail, type Level, type Risks } from '../lib/Risks'
 
 const LEVELS: Level[] = ['critical', 'high', 'medium', 'low']
@@ -14,7 +16,7 @@ export default function RiskList() {
   const { severity = 'critical' } = useParams()
   const level = (LEVELS.includes(severity as Level) ? severity : 'critical') as Level
   const [params, setParams] = useSearchParams()
-  const go = useNavigate()
+  const go = useGo()
   const [data, setData] = useState<Risks | null>(null)
   const [error, setError] = useState('')
   const [note, setNote] = useState('')
@@ -28,14 +30,20 @@ export default function RiskList() {
   const openId = params.get('open')
   const rows = data?.rows ?? []
   const open = rows.find((r) => r.id === openId) ?? null
-  const setOpen = (id: string | null) => setParams(id ? { open: id } : {}, { replace: !id })
+  // Only the bubble being opened (or just closed) carries the shared transition name, so it alone grows into the
+  // dialog and back; the other bubbles stay in the page underneath.
+  const [last, setLast] = useState<string | null>(openId)
+  const setOpen = (id: string | null) => {
+    if (id) flushSync(() => setLast(id))
+    transition(() => setParams(id ? { open: id } : {}, { replace: !id }))
+  }
   const t = LEVEL_TEXT[level]
   const count = data?.levels.find((l) => l.severity === level)?.count ?? 0
 
   return (
-    <section className="space-y-4">
+    <section className="space-y-4" style={{ viewTransitionName: `sev-${level}` }}>
       <header className="space-y-2">
-        <Link to="/command" className="inline-flex items-center gap-0.5 text-sm text-soft hover:text-ink"><ChevronLeft size={14} aria-hidden /> Command Center</Link>
+        <VLink to="/command" className="inline-flex items-center gap-0.5 text-sm text-soft hover:text-ink"><ChevronLeft size={14} aria-hidden /> Command Center</VLink>
         <h1 className="text-2xl font-semibold"><span style={{ color: t.color }}>{t.name}</span> Risks <span className="font-normal text-muted">({count})</span></h1>
         <p className="text-sm text-muted">Open a bubble to see what happened, what it means and what to do.</p>
         <p className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
@@ -56,12 +64,15 @@ export default function RiskList() {
       </header>
       {error && <p role="alert" className="rounded-md border border-line bg-surface p-3 text-bad">{error}</p>}
       {note && <p role="status" className="rounded-md border border-line bg-surface p-3">{note}</p>}
-      {!data ? <p className="text-muted" role="status">Loading…</p> : rows.length === 0 ? (
+      {!data ? (
+        <ul role="status" aria-label="Loading" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+          {[0, 1, 2].map((i) => <li key={i} className="skeleton h-40 rounded-[2rem]" />)}
+        </ul>) : rows.length === 0 ? (
         <p className="rounded-[2rem] border border-line bg-surface p-6 text-ok">Nothing {t.name.toLowerCase()} needs a person. All quiet at the gate.</p>
       ) : (
         <>
           <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-            {rows.slice(0, shown).map((r) => <li key={r.id}><RiskBubble r={r} onOpen={() => setOpen(r.id)} /></li>)}
+            {rows.slice(0, shown).map((r) => <li key={r.id}><RiskBubble r={r} named={r.id === last && r.id !== openId} onOpen={() => setOpen(r.id)} /></li>)}
           </ul>
           {rows.length > shown && <button className={btn} onClick={() => setShown(shown + PAGE)}>Show {Math.min(PAGE, rows.length - shown)} more of {rows.length - shown}</button>}
         </>
