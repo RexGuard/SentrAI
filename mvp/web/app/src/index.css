@@ -291,3 +291,19 @@ main tbody tr { transition: background-color .12s ease-out; }
   ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
   .console-pop, .notice, .risk-backdrop, .skeleton::after, .page-in { animation: none !important; }
 }
+
+/* Moving through the menus. Only while a slide runs is the content panel its own transition layer ("page"), so
+   at rest nothing traps the dialogs inside it. Sidebar sections slide up/down, top tabs left/right; the distance
+   grows with the number of steps crossed (in the same time, so a long jump is faster). */
+:root[data-slide] .console-main { view-transition-name: page; }
+::view-transition-image-pair(page) { overflow: hidden; }
+:root[data-slide] { --slide-d: calc(var(--slide-steps, 1) * 18% + 12%); }
+:root[data-slide]::view-transition-group(page) { animation-duration: .5s; }
+:root[data-slide]::view-transition-old(page) { animation: .5s cubic-bezier(.65, 0, .35, 1) both slide-out; }
+:root[data-slide]::view-transition-new(page) { animation: .5s cubic-bezier(.65, 0, .35, 1) both slide-in; }
+:root[data-slide='up'] { --slide-x: 0; --slide-y: calc(var(--slide-d) * -1); }
+:root[data-slide='down'] { --slide-x: 0; --slide-y: var(--slide-d); }
+:root[data-slide='left'] { --slide-x: calc(var(--slide-d) * -1); --slide-y: 0; }
+:root[data-slide='right'] { --slide-x: var(--slide-d); --slide-y: 0; }
+@keyframes slide-out { to { opacity: 0; transform: translate(var(--slide-x), var(--slide-y)); } }
+@keyframes slide-in { from { opacity: 0; transform: translate(calc(var(--slide-x) * -1), calc(var(--slide-y) * -1)); } }

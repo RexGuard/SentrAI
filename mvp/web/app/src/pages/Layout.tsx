@@ -241,6 +241,10 @@ export default function Layout() {
   // A page outside every group (Chat, Report) keeps the last group picked on top.
   const [picked, setPicked] = useState(menu[0].group)
   const current = groupOf(menu, pathname) ?? menu.find((g) => g.group === picked) ?? menu[0]
+  // Where we are, for the direction of the slide: Sentry sits above the groups (-1).
+  const groupIndex = pathname.startsWith('/manager') ? -1 : menu.indexOf(current)
+  const tabIndex = items(current).findIndex((i) => pathname === i.to || pathname.startsWith(i.to + '/'))
+  const tabSlide = (i: number) => (tabIndex < 0 || i === tabIndex ? undefined : { dir: i > tabIndex ? 'left' : 'right', steps: Math.abs(i - tabIndex) } as const)
   return (
     <>
     <Waves />
@@ -251,8 +255,8 @@ export default function Layout() {
           <span className="leading-tight"><span className="console-brand block">SentrAI</span><span className="block text-[0.8125rem] text-soft">Cybersecurity Console</span></span>
         </VLink>
         <nav aria-label={current.group} className={'console-topnav' + (items(current).length > 4 ? ' is-many' : '')}>
-          {items(current).map(({ to, label, icon: Icon }) => (
-            <VNavLink key={to} to={to}
+          {items(current).map(({ to, label, icon: Icon }, i) => (
+            <VNavLink key={to} to={to} slide={tabSlide(i)}
               className={({ isActive }) => 'topnav flex shrink-0 items-center gap-2.5 rounded-2xl px-5 py-2.5 text-base font-medium ' + (isActive || groupOf([{ ...current, items: [{ to, label, icon: Icon }] }], pathname) ? 'topnav-on' : 'text-soft hover:text-ink')}>
               <Icon size={20} aria-hidden /> {label}
             </VNavLink>))}
@@ -266,13 +270,18 @@ export default function Layout() {
       <div className="flex">
         <aside className="console-side">
           <nav aria-label="Sections" className="flex flex-col gap-3">
-            <VNavLink to="/manager" className={({ isActive }) => 'flex items-center gap-3.5 rounded-2xl px-4 py-3 text-left text-[0.9375rem] font-medium ' + (isActive ? 'side-on' : 'text-soft hover:text-ink')}>
+            <VNavLink to="/manager" slide={{ dir: 'down', steps: groupIndex + 1 }} className={({ isActive }) => 'flex items-center gap-3.5 rounded-2xl px-4 py-3 text-left text-[0.9375rem] font-medium ' + (isActive ? 'side-on' : 'text-soft hover:text-ink')}>
               <Sparkles size={20} aria-hidden /> Sentry
             </VNavLink>
             {menu.map((g) => {
               const on = g.group === current?.group
               return (
-                <button key={g.group} aria-current={on ? 'true' : undefined} onClick={() => { setPicked(g.group); const first = items(g)[0]; if (first) go(first.to) }}
+                <button key={g.group} aria-current={on ? 'true' : undefined} onClick={() => {
+                  setPicked(g.group); const first = items(g)[0]
+                  // Further down the menu: the page slides up; further up: it slides down. More steps, longer slide.
+                  const to = menu.indexOf(g)
+                  if (first) go(first.to, { slide: { dir: to > groupIndex ? 'up' : 'down', steps: Math.abs(to - groupIndex) } })
+                }}
                   className={'flex items-center gap-3.5 rounded-2xl px-4 py-3 text-left text-[0.9375rem] font-medium ' + (on ? 'side-on' : 'text-soft hover:text-ink')}>
                   <g.icon size={20} aria-hidden /> {g.group}
                 </button>)
@@ -281,8 +290,8 @@ export default function Layout() {
           <div className="console-auto"><AutoMode /></div>
         </aside>
         <main className={'console-main min-w-0 flex-1' + (dock.open ? ' lg:mr-[26rem]' : '')}>
-          {/* A new page rises in; keyed by path so it plays on every page change. */}
-          <div key={pathname} className="page-in"><Suspense fallback={<PageSkeleton />}><Outlet /></Suspense></div>
+          {/* A new page rises in (keyed by path); a menu slide moves it instead. */}
+          <div key={pathname} className={document.documentElement.dataset.slide ? undefined : 'page-in'}><Suspense fallback={<PageSkeleton />}><Outlet /></Suspense></div>
         </main>
       </div>
       <HelpDock dock={dock} />

@@ -8,13 +8,24 @@ import { Link, NavLink, useNavigate } from 'react-router-dom'
 
 export const reducedMotion = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
 
-type VT = { startViewTransition?: (cb: () => void) => unknown }
+type VT = { startViewTransition?: (cb: () => void) => { finished: Promise<void> } }
 
-/** Run a state change inside a view transition when the browser has them. */
-export function transition(update: () => void) {
+/** Which way the page slides when moving through the menus: sidebar sections go up/down, top tabs left/right. */
+export type Slide = { dir: 'up' | 'down' | 'left' | 'right'; steps: number }
+
+/** Run a state change inside a view transition when the browser has them. With `slide`, the content panel
+ *  (named "page" only for the length of the transition) slides in that direction, further the more menu steps
+ *  it crosses, so a long jump moves faster than a short one in the same time. */
+export function transition(update: () => void, slide?: Slide) {
   const d = document as Document & VT
   if (!d.startViewTransition || reducedMotion()) { update(); return }
-  d.startViewTransition(() => flushSync(update))
+  const root = document.documentElement
+  if (slide && slide.steps > 0) {
+    root.dataset.slide = slide.dir
+    root.style.setProperty('--slide-steps', String(Math.min(slide.steps, 4)))
+  }
+  const vt = d.startViewTransition(() => flushSync(update))
+  if (slide) void vt.finished.finally(() => { delete root.dataset.slide; root.style.removeProperty('--slide-steps') })
 }
 
 /** A CSS-safe view-transition-name for an id such as "RSK-2026-085". */
@@ -37,7 +48,7 @@ const plainClick = (e: React.MouseEvent) => e.button === 0 && !e.metaKey && !e.c
 /** navigate() that animates the change of page (a view transition). */
 export function useGo() {
   const navigate = useNavigate()
-  return (to: string, opts?: { replace?: boolean }) => transition(() => navigate(to, opts))
+  return (to: string, opts?: { replace?: boolean; slide?: Slide }) => transition(() => navigate(to, { replace: opts?.replace }), opts?.slide)
 }
 
 /** <Link> that animates the change of page. Elements with the same view-transition-name morph across it. */
@@ -47,7 +58,7 @@ export function VLink({ to, onClick, ...rest }: React.ComponentProps<typeof Link
 }
 
 /** <NavLink> that animates the change of page. */
-export function VNavLink({ to, onClick, ...rest }: React.ComponentProps<typeof NavLink> & { to: string }) {
+export function VNavLink({ to, onClick, slide, ...rest }: React.ComponentProps<typeof NavLink> & { to: string; slide?: Slide }) {
   const go = useGo()
-  return <NavLink to={to} {...rest} onClick={(e) => { onClick?.(e); if (!e.defaultPrevented && plainClick(e)) { e.preventDefault(); go(to) } }} />
+  return <NavLink to={to} {...rest} onClick={(e) => { onClick?.(e); if (!e.defaultPrevented && plainClick(e)) { e.preventDefault(); go(to, { slide }) } }} />
 }
