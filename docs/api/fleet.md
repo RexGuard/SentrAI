@@ -428,3 +428,56 @@ Each action: `ip` (required), `category` (required), `reason`, `score`, `at`, `u
 ```
 
 **Errors**: `400` `only a machine's agent sends an offline report`.
+
+## Backup copies
+
+A machine's backups are also kept, sealed, on the panel and on other machines
+([Copies on other machines](scans.html#copies-on-other-machines)). The agent does this every 10
+minutes and right after a backup job; `SENTRAI_BACKUP_COPIES=off` in its `agent.env` turns it off.
+
+### `POST /fleet/backup-key`
+
+**Agent.** This machine's backup key (32 bytes, base64), sent once, so the panel can unlock its copy
+when the machine is lost. Written to the audit trail as `backup_key_kept`, without the key.
+
+**Body**: `{"key": "q0o1...="}` · **Returns**: `{"ok": true, "key_id": "8c41d0e2a95f7b13"}`
+
+### `POST /fleet/backup-copies`
+
+**Agent.** One sealed copy of this machine's own newest backup, as the request body
+(`application/octet-stream`). Query: `id` (the backup id), `sealed_sha256` (the copy's SHA-256,
+required), and `sha256`, `created`, `created_ts`, `files` from the backup's note. The panel keeps the
+newest `SENTRAI_BACKUP_COPIES_KEEP` (3) per machine. Written to the audit trail as
+`backup_copy_received`.
+
+**Returns**: `{"ok": true, "id": "b-20261102-021500", "holders": ["shop-pc", "office-pc"]}`
+
+**Errors**: `400` for a bad id; `409` `the copy arrived damaged`, `the panel has no key for this copy
+yet`, or over `SENTRAI_BACKUP_COPY_MAX_MB` (5120).
+
+### `GET /fleet/backup-copies/wanted`
+
+**Agent.** The copies this machine was picked to keep: the newest `SENTRAI_BACKUP_HOLD` (2) of each
+machine it holds for.
+
+**Returns**
+
+```json
+{"copies": [{"owner": "_panel", "id": "b-20261102-020000", "created": "2026-11-02T02:00:00+08:00",
+             "created_ts": 1793584800.0, "sealed_sha256": "9b1e...", "bytes": 4194304}],
+ "own_key_kept": true}
+```
+
+### `GET /fleet/backup-copies/file`
+
+**Agent.** Download one copy (`?owner=_panel&id=b-...`). Only a machine picked to keep it gets it
+(`403` otherwise). The agent checks `sealed_sha256` before keeping it.
+
+### `POST /fleet/backup-copies/held`
+
+**Agent.** The copies this machine keeps now, so the panel can show where each backup is. A machine
+only deletes a copy when it has newer ones of the same machine, never because the panel says so.
+
+**Body**: `{"held": [{"owner": "_panel", "id": "b-20261102-020000", "sealed_sha256": "9b1e..."}], "free_mb": 20480}`
+
+**Returns**: `{"held": 1}`

@@ -28,9 +28,11 @@ file at the root); else ``~/.sentrai``. deploy/install.sh uses /var/lib/sentrai,
         people/admins.json          the administrators: accounts, addresses, keys     SENTRAI_ADMINS
         machines/fleet.json         machines that joined the panel (hashed keys)
         machines/jobs.json          scans and backups queued for those machines
+        machines/backup-keys.json   backup keys: the panel's and each machine's
         threats/threat_seen.json    ThreatWatch: findings already raised             SENTRAI_THREAT_STATE
         threats/quarantine/         ThreatWatch: files moved out of reach            SENTRAI_QUARANTINE
         backups/                    BackupWatch: archives                            SENTRAI_BACKUP_DIR
+        backups/copies/             sealed copies: the panel's own and the machines'
         restores/                   BackupWatch: restored copies
       collector/state.json          read positions and the line chain               SENTRAI_COLLECTOR_STATE
       scout/sources.json            log files a person approved                     SENTRAI_SCOUT_SOURCES
@@ -39,6 +41,8 @@ file at the root); else ``~/.sentrai``. deploy/install.sh uses /var/lib/sentrai,
       notifier/last_witness.txt     the last audit fingerprint delivered            NOTIFIER_WITNESS_FILE
       agent/agent.json              the fleet agent: machine key, blocks in force   SENTRAI_AGENT_FILE
       agent/backups/                backups the panel asked this machine to make    SENTRAI_BACKUP_DIR
+      agent/backups/copies/         sealed copies of other machines' backups kept here
+      agent/backup.key              this machine's backup key (the panel keeps a copy)
       agent/deps/                   the last dependency scan, updates made and their undo copies
       logs/                         JSON-lines logs the collector tails             SENTRAI_LAB_LOGS
 
@@ -160,6 +164,8 @@ ENTRIES: dict[str, Entry] = {e.key: e for e in (
           "SSH keys (taught or learned), and who is signed in now", "Warden", "SENTRAI_ADMINS", optional=True),
     Entry("core.fleet", "core", "machines/fleet.json", "machines that joined the panel: hashed keys and join codes",
           "Fleet", old=("part:fleet.json",)),
+    Entry("core.backup_keys", "core", "machines/backup-keys.json", "backup keys: the panel's own and each machine's, "
+          "to unlock their copies kept on other machines", "BackupCopies", optional=True),
     Entry("core.jobs", "core", "machines/jobs.json", "scans and backups queued for those machines", "Fleet",
           old=("part:jobs.json",)),
     Entry("core.threat_state", "core", "threats/threat_seen.json", "findings already raised, so each one alerts once",

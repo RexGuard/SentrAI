@@ -476,6 +476,74 @@ into a new folder and copy back by hand.
 - 409 `could not take a safety backup of the current files first, so nothing was restored: ...`.
 - 409 `the restore folder is not empty; pick a new one`: `target` holds files already.
 
+## Copies on other machines
+
+When machines have joined the panel, each backup is also sealed (locked with a key, signed so a
+changed copy is refused) and kept on `SENTRAI_BACKUP_REPLICAS` (2) other machines. The panel's own
+backup is sealed with the panel's key; a machine's backup is sealed by its agent with that machine's
+key and sent through [`POST /fleet/backup-copies`](fleet.html#post-fleetbackup-copies). A machine that
+keeps a copy never has the key for it. Each record in `GET /backups` gets `sealed`
+(`{"ok", "sealed_sha256"}`, or `null` when no machine has joined) and `held_on` (the machines that
+said they keep it), and the answer gets `copies`, as below.
+
+### `GET /backups/copies`
+
+Every machine's sealed copies and where they are kept.
+
+**Returns**
+
+```json
+{
+  "replicas": 2, "machines_available": 3, "recovery_code_shown": true, "recovery_key_id": "3f9a0c2e71d84b65",
+  "machines": [
+    {"owner": "_panel", "name": "this panel", "key_kept": true, "should_hold": ["shop-pc", "web-01"],
+     "copies": [{"id": "b-20261102-020000", "created": "2026-11-02T02:00:00+08:00", "bytes": 4194304,
+                 "files": 214, "received": "2026-11-02T02:00:03+08:00", "on_panel": false,
+                 "held_on": ["shop-pc", "web-01"]}]},
+    {"owner": "web-01", "name": "Web server", "key_kept": true, "should_hold": ["shop-pc", "office-pc"],
+     "copies": [{"id": "b-20261102-021500", "bytes": 1048576, "on_panel": true, "held_on": ["shop-pc"]}]}
+  ]
+}
+```
+
+`owner` is `_panel` for the panel's own backups, else the machine's host name. `on_panel` is `true`
+for a machine's copy the panel keeps. `should_hold` are the machines picked to keep this one's copies
+(a stable choice, so a new machine only takes over a share).
+
+### `POST /backups/copies/unlock`
+
+A machine was lost: unlock its copy with the key the panel keeps for it, into the `restores` folder,
+as the `.tar.gz` it was. Written to the audit trail as `backup_copy_unlocked`.
+
+**Body**
+
+```json
+{"owner": "web-01", "id": "b-20261102-021500", "operator": "erick"}
+```
+
+**Returns**
+
+```json
+{"ok": true, "owner": "web-01", "backup": "b-20261102-021500",
+ "unlocked_to": "/var/lib/sentrai/core/restores/web-01-b-20261102-021500.tar.gz",
+ "note": "This is the backup as it was made. Unpack it on the machine that replaces the lost one (tar xzf); files/ holds the backed-up folders."}
+```
+
+**Errors**: `404` `no copy b-... of web-01`; `409` `the panel has no key for this copy`, or the copy
+was changed (`its signature does not match`).
+
+### `POST /backups/recovery-code`
+
+The panel's recovery code: the key of the panel's own copies, as 52 letters and digits. With it, any
+machine's copy of the panel's backup can be unlocked after the panel is lost
+(`python -m app.sealed open COPY.sbk backup.tar.gz --code CODE`). Only for the API token
+(`sudo sentrai backups key`): a signed-in web session gets `403`. Written to the audit trail as
+`backup_recovery_code_shown`, without the code.
+
+**Body**: `{"operator": "cli:erick"}`
+
+**Returns**: `{"code": "MFRG-GZDF-...", "key_id": "3f9a0c2e71d84b65"}`
+
 ## The backup record
 
 What `GET /backups` lists and `POST /backups` answers with, as in the example above.

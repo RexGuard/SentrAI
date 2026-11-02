@@ -17,6 +17,7 @@ On the panel (installed as /usr/local/bin/sentrai, runs as the service account):
     sudo sentrai jobs list [--host H] | scan HOST | backup HOST | deps HOST | packages HOST
                       | update HOST FINDING | undo HOST UPDATE | cancel JOB
     sudo sentrai deps show | scan
+    sudo sentrai backups list | now | copies | key | unlock HOST BACKUP_ID
     sudo sentrai incidents list [--all] | show ID | approve ID... | reject ID... --why W | rollback ID... | keep ID...
                            | resolve ID --note N
     sudo sentrai protection on|off [--reason R]
@@ -343,6 +344,45 @@ def cmd_jobs(call: Call, a: argparse.Namespace) -> Any:
                               f"Check with: sentrai jobs list --host {a.host}"
 
 
+def cmd_backups(call: Call, a: argparse.Namespace) -> Any:
+    op = operator_name()
+    if a.action == "now":
+        out = call("POST", "/backups", {"operator": op})
+        if a.json:
+            return out
+        if not out.get("ok"):
+            raise CliError(out.get("error") or out.get("note") or "the backup failed")
+        return f"Backup {out['id']}: {out.get('files')} files, {(out.get('bytes') or 0) / 1048576:.1f} MB"
+    if a.action == "key":
+        out = call("POST", "/backups/recovery-code", {"operator": op})
+        return out if a.json else (
+            "Recovery code for this panel's backups. Write it down and keep it away from this server:\n\n"
+            f"    {out['code']}\n\nIf this panel is lost, take the newest copy from any machine "
+            "(/var/lib/sentrai/agent/backups/copies/_panel/*.sbk) and unlock it with:\n"
+            "    python -m app.sealed open COPY.sbk backup.tar.gz --code CODE     (run in mvp/core)")
+    if a.action == "unlock":
+        if not (a.host and a.ref):
+            raise CliError("which copy? sentrai backups unlock HOST BACKUP_ID (sentrai backups copies lists them)")
+        out = call("POST", "/backups/copies/unlock", {"owner": a.host, "id": a.ref, "operator": op})
+        return out if a.json else f"Unlocked into {out['unlocked_to']}. {out['note']}"
+    if a.action == "copies":
+        out = call("GET", "/backups/copies")
+        if a.json:
+            return out
+        rows = [[m["name"], c["id"], c.get("created"), f"{(c.get('bytes') or 0) / 1048576:.1f}",
+                 ", ".join((["panel"] if c.get("on_panel") else []) + c.get("held_on", [])) or "-"]
+                for m in out.get("machines", []) for c in m.get("copies", [])]
+        head = f"Each backup is kept on {out.get('replicas')} other machines ({out.get('machines_available')} can keep copies)."
+        if not out.get("recovery_code_shown"):
+            head += "\nThe recovery code was never shown: sudo sentrai backups key"
+        return head + "\n\n" + table(rows, ["Machine", "Backup", "Made", "MB", "Kept on"])
+    out = call("GET", "/backups")
+    return out if a.json else table(
+        [[b["id"], b.get("created"), b.get("reason"), b.get("files"), f"{(b.get('bytes') or 0) / 1048576:.1f}",
+          ", ".join(b.get("held_on") or []) or "-"] for b in out.get("backups", [])],
+        ["Backup", "Made", "Why", "Files", "MB", "Also on"])
+
+
 def cmd_deps(call: Call, a: argparse.Namespace) -> Any:
     out = call("POST", "/deps/scan", {"operator": operator_name()}) if a.action == "scan" else call("GET", "/deps")
     if a.json:
@@ -504,6 +544,10 @@ def parser() -> argparse.ArgumentParser:
     j.add_argument("--host", dest="host_opt")
     d = add("deps", cmd_deps, "this panel machine's package check")
     d.add_argument("action", choices=["show", "scan"])
+    bk = add("backups", cmd_backups, "this panel's backups and their copies on other machines")
+    bk.add_argument("action", choices=["list", "now", "copies", "key", "unlock"])
+    bk.add_argument("host", nargs="?", help="unlock: the machine whose copy to unlock")
+    bk.add_argument("ref", nargs="?", help="unlock: the backup id (b-...)")
     n = add("incidents", cmd_incidents, "list, approve, reject, roll back, keep or resolve")
     n.add_argument("action", choices=["list", "show", "approve", "reject", "rollback", "keep", "resolve"])
     n.add_argument("ids", nargs="*")

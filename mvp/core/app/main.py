@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request
-from fastapi.responses import PlainTextResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, PlainTextResponse, Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from .config import Settings, sign
@@ -25,7 +25,7 @@ from .reports import build_report, render_markdown, render_pdf
 from . import summary as client_summary
 from . import auth as auth_cookie
 from . import ui_analytics, ui_approvals, ui_tuning, ui_audit, ui_incidents, ui_limits, ui_machine, ui_machines, ui_overview, ui_report, ui_routing, ui_settings, ui_setup, ui_team, ui_recovery, ui_privacy, ui_risks, ui_feedback
-from . import ai, anchor, apidocs, chat_memory, depscan, fleet, hardware, integrations, jobs, webhook
+from . import ai, anchor, apidocs, backup_copies, chat_memory, depscan, fleet, hardware, integrations, jobs, procscan, webhook
 from .extensions import ExtensionError
 from . import chat as chat_mod
 from .chat import OperatorChat, default_chat_provider
@@ -154,6 +154,27 @@ class QuarantineIn(BaseModel):
 
 
 class BackupIn(BaseModel):
+    operator: str = "operator"
+
+
+class BackupKeyIn(BaseModel):
+    key: str = Field(..., min_length=40, max_length=64)   # base64 of the machine's 32-byte backup key
+
+
+class HeldCopyIn(BaseModel):
+    owner: str = Field(..., max_length=63)
+    id: str = Field(..., max_length=40)
+    sealed_sha256: str = Field("", max_length=64)
+
+
+class HeldIn(BaseModel):
+    held: list[HeldCopyIn] = Field(default_factory=list, max_length=500)
+    free_mb: Optional[float] = None
+
+
+class UnlockCopyIn(BaseModel):
+    owner: str = Field(..., max_length=63)
+    id: str = Field(..., max_length=40)
     operator: str = "operator"
 
 
@@ -313,7 +334,12 @@ class OfflineReportIn(BaseModel):
 # It reports what runs there and how its hardware is doing, picks up the jobs the panel queued for its own machine and reports how they went (jobs.py).
 AGENT_ROUTES = frozenset({("POST", "/events"), ("POST", "/heartbeat"), ("GET", "/blocklist"), ("GET", "/fleet/me"),
                            ("POST", "/fleet/services"), ("POST", "/fleet/hardware"), ("GET", "/fleet/jobs/next"), ("POST", "/fleet/jobs/result"),
-                           ("POST", "/fleet/offline-report")})
+                           ("POST", "/fleet/offline-report"),
+                           # backup copies kept on other machines (backup_copies.py): send its key and its own sealed
+                           # copies, fetch the copies it was picked to keep, say what it holds
+                           ("POST", "/fleet/backup-key"), ("POST", "/fleet/backup-copies"),
+                           ("GET", "/fleet/backup-copies/wanted"), ("GET", "/fleet/backup-copies/file"),
+                           ("POST", "/fleet/backup-copies/held")})
 
 
 # Open without a token: the launchers' readiness check, the list the fake portal enforces (it holds no
@@ -393,6 +419,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     core_dir = Path(core.settings.db_path).parent  # machines/fleet.json and machines/jobs.json sit next to the database
     machines = fleet.Fleet(sentrai_paths.path("core.fleet", core_dir))
     machine_jobs = jobs.Jobs(sentrai_paths.path("core.jobs", core_dir))
+
+    def copy_hosts() -> list[str]:
+        """Joined machines that can keep backup copies: not revoked, not taken off the panel."""
+        gone = machines.removed()
+        return sorted({a["host"] for a in machines.agents() if not a.get("revoked_at") and a["host"] not in gone})
+
+    copies = backup_copies.CopyStore(backups._dir, sentrai_paths.path("core.backup_keys", core_dir, migrate=False),
+                                     copy_hosts, core.clock.iso)
+
+    def seal_panel_backup(meta: dict[str, Any], archive: Path) -> dict[str, Any] | None:
+        if not copy_hosts():
+            return None  # no other machine has joined: nowhere to keep a copy
+        c = copies.add_panel_copy(meta, archive)
+        return {"ok": True, "sealed_sha256": c["sealed_sha256"]}
+
+    backups.after_make = seal_panel_backup
     machine_health = hardware.Health(core.clock.now, core.clock.iso)
     staff = StaffReports(core, lambda: chat.provider)  # follows /ai/reload
 
@@ -484,6 +526,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.discovery = discovery
     app.state.threats = threats
     app.state.backups = backups
+    app.state.copies = copies
     app.state.fleet = machines
     app.state.jobs = machine_jobs
     app.state.health = machine_health
@@ -936,7 +979,50 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/backups")
     def get_backups() -> dict[str, Any]:
-        return backups.status()
+        out = backups.status()
+        names = machines.names()
+        for b in out["backups"]:
+            sealed = b.get("sealed") or {}
+            b["held_on"] = [names.get(h, h) for h in copies.where(backup_copies.PANEL, b["id"],
+                                                                  sealed.get("sealed_sha256"))] if sealed.get("ok") else []
+        out["copies"] = copies.summary(names)
+        return out
+
+    @app.get("/backups/copies")
+    def get_backup_copies() -> dict[str, Any]:
+        return copies.summary(machines.names())
+
+    @app.post("/backups/recovery-code")
+    def post_recovery_code(request: Request, body: BackupIn) -> dict[str, Any]:
+        """The panel's backup recovery code, for the SentrAI team's command line (sentrai backups key) only:
+        a signed-in web session is refused, so it never shows on a screen in the office."""
+        if getattr(request.state, "account", None) is not None:
+            raise HTTPException(403, "the recovery code is only shown on the command line: sudo sentrai backups key")
+        code = copies.recovery_code()
+        core.scribe.record(core.name, "backup_recovery_code_shown", {
+            "operator": body.operator, "key_id": sealed_key_id(code),
+            "summary": f"{body.operator} was shown the panel's backup recovery code"})
+        return {"code": code, "key_id": sealed_key_id(code)}
+
+    def sealed_key_id(code: str) -> str:
+        return backup_copies.sealed.key_id(backup_copies.sealed.from_code(code))
+
+    @app.post("/backups/copies/unlock")
+    def unlock_backup_copy(body: UnlockCopyIn) -> dict[str, Any]:
+        """A machine was lost: unlock its copy with the key the panel keeps, into the restores folder."""
+        try:
+            out = copies.unlock(body.owner, body.id, backups._restores_dir())
+        except KeyError as e:
+            raise HTTPException(404, str(e).strip("'\""))
+        except (ValueError, backup_copies.sealed.SealError) as e:
+            raise HTTPException(409, str(e))
+        shown = procscan.hide_home(str(out), procscan._homes())
+        core.scribe.record(core.name, "backup_copy_unlocked", {
+            "owner": body.owner, "backup": body.id, "operator": body.operator, "to": shown,
+            "summary": f"{body.operator} unlocked the copy of {body.owner}'s backup {body.id}"})
+        return {"ok": True, "owner": body.owner, "backup": body.id, "unlocked_to": shown,
+                "note": "This is the backup as it was made. Unpack it on the machine that replaces the lost one "
+                        "(tar xzf); files/ holds the backed-up folders."}
 
     @app.post("/backups")
     def post_backup(body: Optional[BackupIn] = None) -> dict[str, Any]:
@@ -1315,6 +1401,71 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                              f"{summary['to'] or '?'}), its local rules blocked: {ips}. Each block expires on its own; "
                              f"the logs from that time are being scored here now.", [])
         return {"ok": True, **summary}
+
+    # -- backup copies on other machines (backup_copies.py)
+    def only_agent(request: Request) -> dict[str, Any]:
+        a = request.state.agent
+        if a is None:
+            raise HTTPException(status_code=400, detail="only a machine's agent key does this")
+        return a
+
+    @app.post("/fleet/backup-key")
+    def post_backup_key(request: Request, body: BackupKeyIn) -> dict[str, Any]:
+        a = only_agent(request)
+        try:
+            kid = copies.escrow(a["host"], body.key)
+        except (KeyError, ValueError) as e:
+            raise HTTPException(400, str(e).strip("'\""))
+        core.scribe.record(core.name, "backup_key_kept", {"host": a["host"], "key_id": kid,
+                                                          "summary": f"Kept {a['host']}'s backup key ({kid})"})
+        return {"ok": True, "key_id": kid}
+
+    @app.post("/fleet/backup-copies")
+    async def post_backup_copy(request: Request) -> dict[str, Any]:
+        """One sealed copy of this machine's own backup, as the request body (application/octet-stream)."""
+        a = only_agent(request)
+        q = request.query_params
+        info = {k: q.get(k) for k in ("sealed_sha256", "sha256", "created", "created_ts", "files")}
+        up = None
+        try:
+            up = copies.start(a["host"], q.get("id", ""), info)
+            async for chunk in request.stream():
+                up.write(chunk)
+            meta = await asyncio.to_thread(up.finish)
+        except KeyError as e:
+            raise HTTPException(400, str(e).strip("'\""))
+        except (ValueError, backup_copies.sealed.SealError) as e:
+            raise HTTPException(409, str(e))
+        finally:
+            if up is not None:
+                up.abort()
+        core.scribe.record(core.name, "backup_copy_received", {
+            "host": a["host"], "backup": meta["id"], "bytes": meta["bytes"], "sealed_sha256": meta["sealed_sha256"],
+            "summary": f"Kept a sealed copy of {a['host']}'s backup {meta['id']} ({meta['bytes'] / 1048576:.1f} MB)"})
+        return {"ok": True, "id": meta["id"], "holders": copies.holders(a["host"])}
+
+    @app.get("/fleet/backup-copies/wanted")
+    def get_wanted_copies(request: Request) -> dict[str, Any]:
+        a = only_agent(request)
+        return {"copies": copies.wanted(a["host"]), "own_key_kept": copies.has_key(a["host"])}
+
+    @app.get("/fleet/backup-copies/file")
+    def get_copy_file(request: Request, owner: str = Query(..., max_length=63), id: str = Query(..., max_length=40)):
+        a = only_agent(request)
+        if not any(c["owner"] == owner and c["id"] == id for c in copies.wanted(a["host"])):
+            raise HTTPException(403, "this machine was not picked to keep that copy")
+        try:
+            path = copies.path(owner, id)
+        except KeyError as e:
+            raise HTTPException(404, str(e).strip("'\""))
+        if not path.is_file():
+            raise HTTPException(404, "that copy is gone")
+        return FileResponse(path, media_type="application/octet-stream")
+
+    @app.post("/fleet/backup-copies/held")
+    def post_held_copies(request: Request, body: HeldIn) -> dict[str, Any]:
+        a = only_agent(request)
+        return copies.report(a["host"], [x.model_dump() for x in body.held], body.free_mb)
 
     @app.get("/fleet/me")
     def get_fleet_me(request: Request) -> dict[str, Any]:

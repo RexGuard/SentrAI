@@ -84,6 +84,19 @@ sudo sentrai jobs list --host shop-pc
 sudo sentrai deps scan                # the panel server's own packages
 ```
 
+## Backups
+
+```bash
+sudo sentrai backups list                  # this panel's backups, and which machines keep a copy
+sudo sentrai backups now                   # take one now
+sudo sentrai backups copies                # every machine's copies and where they are kept
+sudo sentrai backups key                   # the panel's recovery code: write it down, keep it off the panel
+sudo sentrai backups unlock HOST b-...     # a machine was lost: unlock its copy into the restores folder
+```
+
+If the panel itself is lost, take the newest `.sbk` file from `/var/lib/sentrai/agent/backups/copies/_panel/`
+on any machine and run, in `mvp/core`: `python -m app.sealed open COPY.sbk backup.tar.gz --code CODE`.
+
 ## Incidents
 
 ```bash

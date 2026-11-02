@@ -9,10 +9,15 @@ import { useFilters, type Filter } from '../lib/Filters'
 type Backup = {
   id: string; created?: string; reason?: string; by?: string; files?: number; bytes?: number
   verified?: { ok?: boolean | null; at?: string; problems?: string[] }
+  held_on?: string[]
 }
+type CopyItem = { id: string; created?: string; bytes?: number; on_panel?: boolean; held_on?: string[] }
+type CopyMachine = { owner: string; name: string; key_kept?: boolean; should_hold?: string[]; copies: CopyItem[] }
+type Copies = { replicas?: number; machines_available?: number; recovery_code_shown?: boolean; machines: CopyMachine[] }
 type Data = {
   backups: Backup[]; keep?: number; every_hours?: number; next_due?: string; overdue?: boolean; folders?: string[]
   include_sentrai?: boolean; stored_in?: string; copy_to?: string; last_error?: { at?: string; error?: string }
+  copies?: Copies
 }
 
 const REASON: Record<string, string> = { schedule: 'on schedule', manual: 'by hand', before_restore: 'safety copy before a restore' }
@@ -24,6 +29,38 @@ const PICK: Filter<Backup>[] = [
 const when = (v?: string) => (v ? new Date(v).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '-')
 const mb = (b?: number) => ((b ?? 0) / 1048576).toFixed(1)
 const field = 'mt-1 block rounded-md border border-line bg-surface-2 px-3 py-1.5 text-ink'
+
+function CopyRow({ m, done }: { m: CopyMachine; done: (msg: string) => void }) {
+  const { me, can } = useSession()
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const newest = m.copies[0]
+  const lost = async () => {
+    setBusy(true); setErr('')
+    try {
+      const r = await api<{ unlocked_to: string }>('/backups/copies/unlock', { body: { owner: m.owner, id: newest.id, operator: me?.email ?? 'dashboard' } })
+      done(`The newest backup of ${m.name} was unlocked into ${r.unlocked_to}`)
+    } catch (e) { setErr(e instanceof ApiError ? e.message : 'That did not go through.') }
+    setBusy(false)
+  }
+  const places = [...(newest?.on_panel ? ['this panel'] : []), ...(newest?.held_on ?? [])]
+  return (
+    <li className="grid items-center gap-x-4 gap-y-1 py-3 text-sm sm:grid-cols-[10rem_minmax(0,1fr)_auto]">
+      <b className="truncate">{m.name}</b>
+      <span className="min-w-0">
+        Newest copy {when(newest?.created)} · {mb(newest?.bytes)} MB · kept on {places.length ? places.join(', ') : 'no other machine yet'}
+        {places.length < 2 && <span className="block text-xs text-warn">Fewer than two places hold it yet. Machines pick copies up within about 10 minutes.</span>}
+        {err && <span role="alert" className="block text-bad">{err}</span>}
+      </span>
+      {m.owner !== '_panel' && m.key_kept ? (
+        <button className={btn} disabled={busy || !can('configure')} onClick={() => void lost()}
+          title={can('configure') ? 'Use this when the machine is lost or broken: its newest backup is unlocked into the restores folder on this panel' : 'Your role can read everything but change nothing.'}>
+          Machine lost? Unlock
+        </button>
+      ) : <span />}
+    </li>
+  )
+}
 
 function Row({ b, done }: { b: Backup; done: (m: string) => void }) {
   const { me, can } = useSession()
@@ -44,7 +81,8 @@ function Row({ b, done }: { b: Backup; done: (m: string) => void }) {
     <li className="space-y-2 py-3">
       <div className="grid items-center gap-x-4 gap-y-1 text-sm sm:grid-cols-[9rem_minmax(0,1fr)_7.5rem_auto]">
         <b className="truncate font-mono text-xs">{b.id}</b>
-        <span className="min-w-0">{when(b.created)} · {REASON[String(b.reason)] ?? b.reason} by {b.by} · {b.files ?? 0} files, {mb(b.bytes)} MB</span>
+        <span className="min-w-0">{when(b.created)} · {REASON[String(b.reason)] ?? b.reason} by {b.by} · {b.files ?? 0} files, {mb(b.bytes)} MB
+          {b.reason !== 'before_restore' && <span className="block text-xs text-muted">{b.held_on?.length ? `Also kept on ${b.held_on.join(', ')}` : 'Only on this panel so far'}</span>}</span>
         {v.ok ? <span className="inline-flex items-center gap-1 text-ok"><CheckCircle2 size={14} aria-hidden /> intact</span>
           : v.ok === false ? <span className="inline-flex items-center gap-1 text-crit"><ShieldAlert size={14} aria-hidden /> problem</span>
           : <span className="inline-flex items-center gap-1 text-muted"><CircleHelp size={14} aria-hidden /> not checked</span>}
@@ -124,6 +162,17 @@ export default function Backups() {
             <button className={btnPrimary} disabled={busy || !can('act')} onClick={() => void backupNow()} title={can('act') ? undefined : 'Your role can read everything but change nothing.'}>
               <DatabaseBackup size={14} aria-hidden /> {busy ? 'Backing up…' : 'Back up now'}
             </button>
+          </div>
+          <div className="space-y-2 rounded-lg border border-line bg-surface p-4">
+            <h2 className="font-semibold">Copies On Other Machines <span className="font-normal text-muted">· locked, so the machine keeping a copy cannot read it</span></h2>
+            {!data.copies?.machines_available ? (
+              <p className="text-sm text-soft">Backups stay on one machine until other machines join this panel. Then each backup is also kept on {data.copies?.replicas ?? 2} other machines, so losing one machine does not lose its backups.</p>
+            ) : !data.copies.machines.length ? (
+              <p className="text-sm text-soft">No copies yet. The next backup is copied to {data.copies.replicas ?? 2} other machines.</p>
+            ) : <ul className="divide-y divide-line-soft">{data.copies.machines.map((m) => <CopyRow key={m.owner} m={m} done={done} />)}</ul>}
+            {data.copies?.machines_available ? (
+              <p className="text-xs text-muted">{data.copies.recovery_code_shown ? 'The recovery code for this panel was shown to your SentrAI team. It unlocks these copies if this panel itself is lost.' : 'Ask your SentrAI team to write down this panel\'s recovery code. Without it, the copies cannot be unlocked if this panel itself is lost.'}</p>
+            ) : null}
           </div>
           <div className="space-y-2 rounded-lg border border-line bg-surface p-4">
             <h2 className="font-semibold">Backups Kept <span className="font-normal text-muted">· newest first · a restore always checks the backup first</span></h2>

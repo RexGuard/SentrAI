@@ -161,6 +161,11 @@ behind an arrow.
 | `SENTRAI_BACKUP_KEEP` | `7` | core: how many backups to keep; the oldest go first |
 | `SENTRAI_BACKUP_DIR` | `backups` next to `SENTRAI_DB` | core: where backups are stored |
 | `SENTRAI_BACKUP_COPY_TO` | (none) | core: a second folder (another drive or a network share) that gets a copy of each backup |
+| `SENTRAI_BACKUP_REPLICAS` | `2` | panel: how many other joined machines keep a sealed copy of each backup (the panel's own and each machine's) |
+| `SENTRAI_BACKUP_COPIES_KEEP` | `3` | panel: sealed copies kept on the panel per machine |
+| `SENTRAI_BACKUP_HOLD` | `2` | panel: copies per machine each holding machine is asked to keep |
+| `SENTRAI_BACKUP_COPY_MAX_MB` | `5120` | panel: the largest sealed copy a machine may send |
+| `SENTRAI_BACKUP_COPIES` | `on` | agent: `off` stops this machine sending its backups and keeping other machines' copies |
 | `TYPESAFE_API_KEY` | unset | TypeSafe extension: enables Jev (TypeSafe System One); otherwise rules + fallback heuristic |
 | `JEV_TIMEOUT_S` / `JEV_BUDGET_S` | 3 / 2 | core: per-call timeout and per-request time budget for Jev |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | unset | notifier: console mode when unset |

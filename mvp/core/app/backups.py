@@ -14,6 +14,7 @@ and notes are readable by this account only (they hold the settings file and the
 
 Schedule: every ``backup.every_hours`` (24), keeping the newest ``backup.keep`` (7). ``backup.copy_to``
 puts a second copy on another drive or network share. A failed backup alerts the on-duty contact.
+On a panel with joined machines, each backup is also sealed and kept on other machines (backup_copies.py).
 
 Restore always needs a person (an operator's request through the API or the dashboard; the chat can
 only suggest it). By default it unpacks into a new folder beside the backups and changes nothing live.
@@ -101,6 +102,9 @@ class BackupWatch:
         self.lock = threading.Lock()       # one backup or restore at a time
         self.last_error: dict[str, Any] | None = None
         self._retry_at = 0.0                # after a failed scheduled backup: wait, do not alert every minute
+        # Called with (note, archive) after each backup: the panel seals a copy for other machines here
+        # (backup_copies.py). It returns a short note kept as "sealed"; a failure never fails the backup.
+        self.after_make: Any = None
 
     # ------------------------------------------------------------ settings
     def config(self) -> dict[str, Any]:
@@ -311,6 +315,11 @@ class BackupWatch:
                 "skipped": skipped[:50], "copy": None, "verified": None,
             }
             meta["copy"] = self._copy(cfg, bid, meta)
+            if self.after_make is not None and reason != "before_restore":
+                try:
+                    meta["sealed"] = self.after_make(self.public(meta), dest / f"{bid}.tar.gz")
+                except Exception as e:  # the backup itself is fine; the copies for other machines wait
+                    meta["sealed"] = {"ok": False, "error": f"{type(e).__name__}: {e}"[:200]}
             self._write_meta(meta)
             self.last_error, self._retry_at = None, 0.0
             self.core.scribe.record(self.core.name, "backup_made", {

@@ -213,6 +213,28 @@ and restores a backup. A restore goes into a new folder unless you choose "back 
 from" and type the backup's name to confirm; SentrAI then saves the current files first, so you can
 undo it.
 
+### Copies on other machines
+
+When other machines have joined the panel, no backup lives in only one place. Each one is locked
+with a key and kept on two other machines as well:
+
+* The panel's own backup is copied to two joined machines.
+* A machine's backup is sent to the panel and copied to two other machines.
+* A machine that keeps a copy cannot open it. It only throws a copy away when it has newer ones of
+  the same machine, so even someone who took over the panel cannot wipe the copies.
+
+The **Backups** page shows where each copy is kept. If a machine is lost, press **Machine lost?
+Unlock** next to it: its newest backup comes back, unlocked, in the panel's restores folder.
+
+If the panel itself is lost, the copies on the machines need the panel's **recovery code**. Your
+SentrAI team shows it once with `sudo sentrai backups key` and keeps it somewhere other than the
+panel. The panel's backup also holds every machine's key, so that one code brings everything back.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `SENTRAI_BACKUP_REPLICAS` | `2` | how many other machines keep each copy |
+| `SENTRAI_BACKUP_COPIES` (agent) | `on` | `off` stops a machine sending and keeping copies |
+
 ## All variables
 
 The full list, with every default, is in the
