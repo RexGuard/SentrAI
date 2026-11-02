@@ -1,18 +1,14 @@
-// Manager view: one page and nothing else. A greeting, one big box to ask Sentry, a few suggested questions, and
-// the answers in a single column under a soft glow. No other pages: a manager asks in plain words
-// ("are we safe?") and Sentry answers from the same live data the dashboard uses. Auto mode, the full dashboard
-// and sign out stay in the top corner. Past conversations sit on the left, kept in this browser; the glow
-// drifts slowly and turns warmer as the safety status worsens. Any action Sentry suggests still needs a click and the usual checks.
+// Sentry: the chat, as a page of the console (the side menu's first item, so it moves in like any other page). A
+// greeting, one big box to ask Sentry, a few suggested questions, and the answers in a single column: a manager asks
+// in plain words ("are we safe?") and Sentry answers from the same live data the dashboard uses. Past conversations
+// sit on the left, kept in this browser. Any action Sentry suggests still needs a click and the usual checks.
 import type React from 'react'
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { ArrowUp, BarChart3, Brain, Share2, Users, Check, FileText, Image as ImageIcon, Mic, MicOff, Square, FileDown, RotateCcw, ThumbsDown, ThumbsUp, Zap, ChevronDown, LayoutDashboard, ListChecks, LogOut, MessageSquare, PanelLeftClose, PanelLeftOpen, Pencil, Pin, PinOff, Search, Plus, ShieldQuestion, SquarePen, X } from 'lucide-react'
+import { ArrowUp, BarChart3, Brain, Share2, Users, Check, FileText, Image as ImageIcon, Mic, MicOff, Square, FileDown, RotateCcw, ThumbsDown, ThumbsUp, Zap, ChevronDown, ListChecks, MessageSquare, PanelLeftClose, PanelLeftOpen, Pencil, Pin, PinOff, Search, Plus, ShieldQuestion, SquarePen, X } from 'lucide-react'
 import { api, ApiError, stream } from '../lib/api'
 import { ACCEPT, MAX_FILES, read as readFile, sizeLabel, type Attachment } from '../lib/attach'
 import { canListen, listen } from '../lib/voice'
 import { useSession } from '../lib/session'
-import { useSimple } from '../lib/simple'
-import AutoMode from './AutoMode'
 import { Blocks, CopyButton, Text } from '../lib/Rich'
 import { backToQuestion, turns } from '../lib/turns'
 import { MemoryPanel, ShareDialog, SharedView, type ShareInfo } from '../lib/CyanideTeam'
@@ -58,9 +54,7 @@ const greeting = () => { const h = new Date().getHours(); return h < 12 ? 'Good 
 
 export default function Manager() {
   const inputId = useId()
-  const nav = useNavigate()
-  const { me, signOut } = useSession()
-  const { simple, toggle } = useSimple()
+  const { me } = useSession()
   const [hist, setHist] = useState<History | null>(null)
   const [incidents, setIncidents] = useState<Incident[]>([])
   const [convos, setConvos] = useState<Convo[]>(loadConvos)
@@ -185,7 +179,6 @@ export default function Manager() {
   const byId = Object.fromEntries(incidents.map((i) => [i.id, i]))
   const first = (me?.name || '').split(' ')[0]
   const openIncidents = incidents.filter((i) => i.status === 'open' || i.status === 'acknowledged').sort((a, b) => b.id.localeCompare(a.id))
-  const full = () => { if (simple) toggle(); nav('/command') }
 
   const box = (
     <form onSubmit={(e) => { e.preventDefault(); void ask(text) }} className="w-full"
@@ -301,9 +294,6 @@ export default function Manager() {
         {!side && <button className="mgr-icon mr-auto" onClick={() => setSide(true)} title="Show past conversations" aria-label="Show past conversations"><PanelLeftOpen size={16} aria-hidden /></button>}
         {chatting && !viewing && (convo?.ids.length ?? 0) > 0 && <button onClick={() => setPanel('share')} className="mgr-top" title="Send a copy to teammates"><Share2 size={14} aria-hidden /> Share</button>}
         {chatting && <button onClick={() => window.print()} className="mgr-top" title="Save this conversation as a PDF"><FileDown size={14} aria-hidden /> Export PDF</button>}
-        <AutoMode />
-        <button onClick={full} className="mgr-top" title="Every page, for IT staff"><LayoutDashboard size={14} aria-hidden /> Full dashboard</button>
-        <button onClick={() => void signOut()} className="mgr-top"><LogOut size={14} aria-hidden /> Sign out</button>
       </header>
 
       {viewing ? (
