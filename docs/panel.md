@@ -179,7 +179,8 @@ SENTRAI_BACKUP_PATHS=/srv/app/data
 ```
 
 The agent picks a job up within about 15 seconds. Serious scan findings open an incident on that
-machine, and backups stay on the machine.
+machine. A backup stays on the machine and a locked copy is also kept on the panel and on two other
+machines, so losing the machine does not lose it ([Copies on other machines](settings.md#copies-on-other-machines)).
 
 **Admins** shows who is signed in on the machine right now (the account, how and from where, and
 whether SentrAI trusts that sign-in and why), the root work your known administrators did lately,
