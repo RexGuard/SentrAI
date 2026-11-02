@@ -8,7 +8,7 @@ from typing import Any
 
 from fastapi import FastAPI, Query, Request
 
-from .ui_approvals import STATUS, can, category_label, parse_ts, span_label
+from .ui_approvals import STATUS, can, category_label, handled, parse_ts, span_label
 
 OPEN_STATUSES = ("open", "acknowledged", "contained")
 SEVERITY_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
@@ -24,7 +24,7 @@ def age_hours(inc: dict) -> float:
 
 def attention(inc: dict) -> list[str]:
     """Why a person should look at this incident now, most urgent first. Empty when it is fine."""
-    if inc.get("status") not in OPEN_STATUSES:
+    if inc.get("status") not in OPEN_STATUSES or handled(inc):
         return []
     why = []
     if not inc.get("owner"):
@@ -52,8 +52,8 @@ def needs_attention(incidents: list[dict]) -> list[dict]:
 
 
 def counts(incidents: list[dict], me: set[str]) -> dict[str, int]:
-    incs = [i for i in incidents if i.get("status") in OPEN_STATUSES]
-    return {"open": len(incs), "attention": sum(1 for i in incs if attention(i)),
+    incs = [i for i in incidents if i.get("status") in OPEN_STATUSES and not handled(i)]
+    return {"open": len(incs), "handled": sum(1 for i in incidents if handled(i)), "attention": sum(1 for i in incs if attention(i)),
             "overdue": sum(1 for i in incs if i.get("sla_breached") and not i.get("acked")),
             "escalated": sum(1 for i in incs if int(i.get("escalation_level") or 0) > 0),
             "unassigned": sum(1 for i in incs if not i.get("owner")),
@@ -86,7 +86,9 @@ def row(inc: dict) -> dict[str, Any]:
             "owner": inc.get("owner") or "Nobody", "backup": inc.get("backup") or "-", "opened": str(inc.get("opened_at") or ""),
             "open_for": "-" if closed else span_label(age_hours(inc) * 3600),
             "needs": ("Closed by " + str(inc.get("resolved_by") or inc.get("acked_by") or "-")) if closed
+            else "Handled by SentrAI (undo it if it was a false alarm)" if handled(inc)
             else ("; ".join(needs) if needs else "In hand"),
+            "handled": handled(inc),
             "closed": closed, "attention": bool(needs), "wave": inc.get("wave") or "",
             "can_resolve": not closed, "summary": inc.get("summary") or inc.get("reason") or "",
             "rank": [closed, not needs, SEVERITY_RANK.get(str(inc.get("severity")), 9)]}
@@ -117,7 +119,8 @@ def install(app: FastAPI, core: Any) -> None:
         todo, todo_waves = split_waves(needs_attention(incidents))
         if brief:
             return {"counts": counts(incidents, names), "todo": [row(i) for i in todo[:brief]], "todo_total": len(todo)}
-        shown = [i for i in incidents if (closed or i.get("status") in OPEN_STATUSES)
+        # Handled by SentrAI on its own: off the open list, shown with the resolved ones (where they can be undone).
+        shown = [i for i in incidents if (closed or (i.get("status") in OPEN_STATUSES and not handled(i)))
                  and (not mine or str(i.get("owner") or "").lower().lstrip("@") in names)]
         contacts = (core.routing_public() or {}).get("contacts") or []
         return {"counts": counts(incidents, names), "todo": [row(i) for i in todo], "todo_total": len(todo),

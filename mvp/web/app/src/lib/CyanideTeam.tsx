@@ -1,6 +1,7 @@
 // Sentry's memory and shared chats, for the Manager view. Memory: standing instructions (Owner, Admin) and facts
 // the team taught it, read before every answer. Shared chats: read-only copies sent to teammates or everyone.
 import { useCallback, useEffect, useId, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { Brain, Share2, Trash2, Users, X } from 'lucide-react'
 import { api, ApiError } from './api'
 import { useSession } from './session'
@@ -20,8 +21,10 @@ function Panel({ title, icon: Icon, onClose, children }: { title: string; icon: 
     const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', esc); return () => window.removeEventListener('keydown', esc)
   }, [onClose])
-  return (
-    <div className="fixed inset-0 z-40 grid place-items-center bg-black/50 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
+  // Portalled to <body>: inside the page panel (which has its own transform/filter) "fixed" only covered the panel,
+  // so the side menu and top bar stayed undimmed.
+  return createPortal(
+    <div className="fixed inset-0 z-[60] grid place-items-center bg-black/50 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
       <section role="dialog" aria-modal="true" aria-labelledby={id} className="rich-frame max-h-[85vh] w-full max-w-lg overflow-y-auto !bg-[var(--surface)] p-5 shadow-2xl">
         <header className="mb-4 flex items-center gap-2">
           <Icon size={18} aria-hidden /><h2 id={id} className="text-lg font-semibold">{title}</h2>
@@ -29,8 +32,7 @@ function Panel({ title, icon: Icon, onClose, children }: { title: string; icon: 
         </header>
         {children}
       </section>
-    </div>
-  )
+    </div>, document.body)
 }
 
 const field = 'mgr-search !py-2 !text-sm'

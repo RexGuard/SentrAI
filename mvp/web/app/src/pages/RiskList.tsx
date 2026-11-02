@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { useParams, useSearchParams } from 'react-router-dom'
-import { ChevronLeft } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ShieldCheck } from 'lucide-react'
 import { api, ApiError } from '../lib/api'
 import { btn } from '../lib/ui'
 import { transition, useGo, VLink } from '../lib/motion'
@@ -29,7 +29,9 @@ export default function RiskList() {
 
   const openId = params.get('open')
   const rows = data?.rows ?? []
-  const open = rows.find((r) => r.id === openId) ?? null
+  const done = data?.handled ?? []
+  const [showDone, setShowDone] = useState(false)
+  const open = rows.find((r) => r.id === openId) ?? done.find((r) => r.id === openId) ?? null
   // Only the bubble being opened (or just closed) carries the shared transition name, so it alone grows into the
   // dialog and back; the other bubbles stay in the page underneath.
   const [last, setLast] = useState<string | null>(openId)
@@ -71,6 +73,18 @@ export default function RiskList() {
           {rows.length > shown && <button className={btn} onClick={() => setShown(shown + PAGE)}>Show {Math.min(PAGE, rows.length - shown)} more of {rows.length - shown}</button>}
         </>
       )}
+      {done.length > 0 && (
+        <div className="space-y-3 border-t border-line-soft pt-4">
+          <button aria-expanded={showDone} onClick={() => setShowDone(!showDone)} className="flex items-center gap-2 text-sm text-soft hover:text-ink">
+            <ShieldCheck size={16} className="text-ok" aria-hidden />
+            Already handled by SentrAI ({done.length}) <span className="text-muted">· blocked on its own, open one to undo it if it was a false alarm</span>
+            <ChevronDown size={14} className={showDone ? 'rotate-180' : ''} aria-hidden />
+          </button>
+          {showDone && (
+            <ul className="grid gap-4 opacity-80 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+              {done.map((r) => <li key={r.id}><RiskBubble r={r} handled named={r.id === last && r.id !== openId} onOpen={() => setOpen(r.id)} /></li>)}
+            </ul>)}
+        </div>)}
       {open && data && <RiskDetail key={open.id} r={open} protectionOn={data.protection_on} onClose={() => setOpen(null)}
         onDone={(n) => { setNote(n); setOpen(null); void load() }} />}
     </section>

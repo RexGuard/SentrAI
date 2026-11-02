@@ -64,13 +64,33 @@ def can(inc: dict) -> dict[str, bool]:
             "mine": status in ACTIVE and str(inc.get("category") or "") == ADMIN_CATEGORY}
 
 
+def handled(inc: dict) -> bool:
+    """SentrAI already dealt with it on its own: contained, the block is still in force, and nothing about it needs
+    a person. These leave the active lists (risk bubbles, the bell, approvals, open incidents) but stay in the
+    Activity Log and under "Already handled", where they can still be undone. Kept on the active lists instead:
+    a block that failed its after-action check (did not work, or may be hurting real users), one that was rolled
+    back or ran out, a "was this you?" root sign-in, and one the AI was unsure about."""
+    if str(inc.get("status") or "") != "contained" or inc.get("needs_review"):
+        return False
+    if str(inc.get("category") or "") == ADMIN_CATEGORY:
+        return False
+    acts = [a for a in inc.get("actions") or [] if isinstance(a, dict)]
+    if not any(a.get("status") in ("active", "permanent") for a in acts):
+        return False
+    for a in acts:
+        check = a.get("check") or {}
+        if a.get("status") in ("active", "permanent") and (check.get("worked") is False or check.get("disruption") is True):
+            return False
+    return True
+
+
 def contribution(inc: dict) -> float:
     return round(float(inc.get("points") or 0) + float(inc.get("inaction_penalty") or 0), 1)
 
 
 def pending(incidents: list[dict]) -> list[dict]:
     """Open ones to approve or reject, contained ones to keep or roll back; decisions first, biggest first."""
-    waiting = [i for i in incidents if (c := can(i))["decide"] or c["contain_controls"]]
+    waiting = [i for i in incidents if ((c := can(i))["decide"] or c["contain_controls"]) and not handled(i)]
     return sorted(waiting, key=lambda i: (not can(i)["decide"], -contribution(i)))
 
 

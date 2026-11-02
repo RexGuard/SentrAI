@@ -941,7 +941,7 @@ class Editor {
     this.pending = { id, renamed: settled.renamed, timer: setTimeout(() => {
       if (this.pending && this.pending.id === id) {
         this.pending = null;
-        this.error = "No answer from the console. Check that it is still running, then save again.";
+        this.error = "No answer from the control panel. Check that it is still running, then save again.";
         this.render();
       }
     }, 20000) };

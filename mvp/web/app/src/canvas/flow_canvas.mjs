@@ -686,7 +686,7 @@ class Canvas {
     const p = this.pending.get(id);
     if (!p) return;
     this.pending.delete(id);
-    this.error = "No answer from the console. Check that it is still running, then try again.";
+    this.error = "No answer from the control panel. Check that it is still running, then try again.";
     this.panelFor = null;
     this.render();
   }

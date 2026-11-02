@@ -29,6 +29,8 @@ export default function Command() {
       <h1>Command Center</h1>
       {error && <p role="alert" className="rounded-md border border-line bg-surface p-3 text-bad">{error}</p>}
       <SeverityBubbles data={risks} />
+      {!!risks?.handled_count && (
+        <p className="text-sm text-soft">SentrAI already blocked {risks.handled_count} risk{risks.handled_count === 1 ? '' : 's'} on its own, so {risks.handled_count === 1 ? 'it is' : 'they are'} not counted above. Each list shows them under "Already handled", where you can undo one if it was a false alarm.</p>)}
       {tab && (
         <div role="region" aria-label={tab.label} className="min-w-0 space-y-3 rounded-2xl border border-line bg-surface p-4">
           <div className="flex items-start justify-between gap-2">
