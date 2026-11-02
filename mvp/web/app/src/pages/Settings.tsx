@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ExternalLink, Info, Plug, Save, Search } from 'lucide-react'
+import { ExternalLink, Info, Lock, Plug, Save, Search, Terminal } from 'lucide-react'
 import { api, ApiError } from '../lib/api'
 import { btn, btnPrimary } from '../lib/ui'
 import { useSession } from '../lib/session'
 
 type Field = {
-  env: string; prompt: string; kind: string; secret: boolean; generated: boolean; choices: string[]; preset_field: boolean
+  env: string; prompt: string; kind: string; secret: boolean; generated: boolean; choices: string[]; preset_field: boolean; advanced?: boolean
   value: string; is_set: boolean; default: string
 }
 type Section = { key: string; title: string; about: string; extension: boolean; feature?: boolean; name?: string; fields: Field[] }
@@ -39,6 +39,18 @@ function Row({ f, value, onChange, disabled }: { f: Field; value: string; onChan
           placeholder={f.secret ? (f.is_set ? 'Set. Leave blank to keep it.' : 'Not set') : ''} onChange={(e) => onChange(e.target.value)} aria-describedby={`${id}-d`} />
       )}
       <p id={`${id}-d`} className="mt-0.5 text-xs text-muted">Environment variable {f.env}</p>
+    </div>
+  )
+}
+
+/** An advanced setting: shown as plain text, never a box or a menu. Only the SentrAI team changes it, in the terminal. */
+function ReadOnly({ f }: { f: Field }) {
+  const shown = f.secret || f.generated ? (f.is_set ? 'Set' : 'Not set') : f.value || 'Not set'
+  return (
+    <div>
+      <p className="text-sm text-soft">{f.prompt}</p>
+      <p className={'mt-1 break-words text-sm ' + (f.value || f.is_set ? 'font-medium text-ink' : 'text-muted')}>{shown}</p>
+      <p className="mt-0.5 text-xs text-muted">Environment variable {f.env}</p>
     </div>
   )
 }
@@ -202,7 +214,16 @@ export default function Settings() {
               <details key={s.key} className="rounded-lg border border-line bg-surface" open={!!q}>
                 <summary className="cursor-pointer p-4 font-semibold">{s.title.replace(/^\d+\.\s*/, '')}{tag && <span className="ml-2 rounded-full border border-line px-2 py-0.5 text-xs font-normal text-soft">{tag}</span>} <span className="font-normal text-muted">· {s.about}</span></summary>
                 <Status s={s} x={x} reload={loadExts} />
-                <div className="grid gap-4 p-4 pt-0 lg:grid-cols-2">{hits.map((f) => <Row key={f.env} f={f} value={val(f)} onChange={(v) => set(f, v)} disabled={off} />)}</div>
+                {hits.some((f) => !f.advanced) && <div className="grid gap-4 p-4 pt-0 lg:grid-cols-2">{hits.filter((f) => !f.advanced).map((f) => <Row key={f.env} f={f} value={val(f)} onChange={(v) => set(f, v)} disabled={off} />)}</div>}
+                {hits.some((f) => f.advanced) && (
+                  <div className="mx-4 mb-4 rounded-md border border-line-soft bg-surface-2 p-3">
+                    <p className="mb-3 flex flex-wrap items-center gap-1.5 text-xs text-muted">
+                      <Lock size={12} aria-hidden /> <b className="font-semibold text-soft">Advanced · read only.</b> Your SentrAI team changes these in the terminal
+                      <span className="inline-flex items-center gap-1 rounded bg-surface px-1.5 py-0.5 font-mono"><Terminal size={11} aria-hidden />sudo sentrai settings set</span>
+                    </p>
+                    <div className="grid gap-4 lg:grid-cols-2">{hits.filter((f) => f.advanced).map((f) => <ReadOnly key={f.env} f={f} />)}</div>
+                  </div>
+                )}
               </details>
             )
           })}
