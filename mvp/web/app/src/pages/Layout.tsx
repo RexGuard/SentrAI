@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { useSession } from '../lib/session'
 import { useTheme } from '../lib/theme'
+import Waves from '../lib/Waves'
 import { useSimple } from '../lib/simple'
 import HelpDock, { useDock } from './HelpDock'
 import AutoMode from './AutoMode'
@@ -81,18 +82,20 @@ export default function Layout() {
   const [picked, setPicked] = useState(menu[0].group)
   const current = groupOf(menu, pathname) ?? menu.find((g) => g.group === picked) ?? menu[0]
   return (
-    <div className="flex min-h-screen">
-      <aside className="sticky top-0 flex h-screen w-60 shrink-0 flex-col gap-4 overflow-y-auto border-r border-line bg-sidebar p-3">
-        <div className="flex items-center gap-2 px-2 py-1">
-          <img src="/mark.svg" alt="" width={24} height={24} />
-          <span className="font-semibold">SentrAI</span>
+    <>
+    <Waves />
+    <div className="console-shell flex min-h-screen">
+      <aside className="console-side sticky top-0 flex h-screen w-60 shrink-0 flex-col gap-4 overflow-y-auto p-3">
+        <div className="flex items-center gap-2.5 px-2 py-2">
+          <img src="/mark.svg" alt="" width={36} height={36} className="console-brand-mark" />
+          <span className="console-brand">SentrAI</span>
         </div>
         <nav aria-label="Sections" className="flex flex-1 flex-col gap-1">
           {menu.map((g) => {
             const on = g.group === current?.group
             return (
               <button key={g.group} aria-current={on ? 'true' : undefined} onClick={() => { setPicked(g.group); const first = items(g)[0]; if (first) go(first.to) }}
-                className={'flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-sm font-medium ' + (on ? 'side-on' : 'text-soft hover:bg-surface-2')}>
+                className={'flex items-center gap-3 rounded-xl px-3.5 py-3 text-left text-[0.9375rem] font-medium ' + (on ? 'side-on' : 'text-soft hover:bg-surface-2')}>
                 <g.icon size={18} aria-hidden /> {g.group}
               </button>)
           })}
@@ -117,12 +120,12 @@ export default function Layout() {
           </div>
         </div>
       </aside>
-      <main className={'min-w-0 flex-1 p-6 pb-20' + (dock.open ? ' lg:mr-[26rem]' : '')}>
+      <main className={'console-main min-w-0 flex-1 p-8 pb-20' + (dock.open ? ' lg:mr-[26rem]' : '')}>
         <div className="mb-4 flex flex-wrap items-center gap-3 border-b border-line pb-3">
           <nav aria-label={current.group} className="flex min-w-0 flex-1 flex-wrap gap-1">
             {items(current).map(({ to, label, icon: Icon }) => (
               <NavLink key={to} to={to}
-                className={({ isActive }) => 'topnav flex items-center gap-2 rounded-xl px-3 py-2 text-sm ' + (isActive || groupOf([{ ...current, items: [{ to, label, icon: Icon }] }], pathname) ? 'topnav-on text-ink' : 'text-soft hover:bg-surface-2 hover:text-ink')}>
+                className={({ isActive }) => 'topnav flex items-center gap-2 rounded-2xl px-4 py-2 text-[0.9375rem] font-medium ' + (isActive || groupOf([{ ...current, items: [{ to, label, icon: Icon }] }], pathname) ? 'topnav-on text-ink' : 'text-soft hover:bg-surface-2 hover:text-ink')}>
                 <Icon size={16} aria-hidden /> {label}
               </NavLink>))}
           </nav>
@@ -130,5 +133,6 @@ export default function Layout() {
         </div><Suspense fallback={<p className="text-muted" role="status">Loading…</p>}><Outlet /></Suspense></main>
       <HelpDock dock={dock} />
     </div>
+    </>
   )
 }

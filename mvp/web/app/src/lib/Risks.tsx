@@ -50,9 +50,9 @@ export function SeverityBubbles({ data }: { data: Risks | null }) {
               className={'sev-card flex items-center gap-5 px-6 py-6 sm:px-8' + (l.count ? '' : ' sev-zero')} style={{ '--c': CARD_COLOR[l.severity] } as React.CSSProperties}>
               <Icon className="sev-icon shrink-0" size={56} strokeWidth={1.75} aria-hidden />
               <span className="min-w-0 space-y-1">
-                <span className="sev-name block text-xl font-bold uppercase tracking-wide">{t.name}</span>
-                <span className="block text-5xl font-bold tabular-nums leading-none text-ink">{l.count.toLocaleString()}</span>
-                <span className="flex items-center gap-1 pt-1 text-sm text-soft">
+                <span className="sev-name block text-[1.375rem] font-bold uppercase">{t.name}</span>
+                <span className="block text-[2.75rem] font-bold tabular-nums leading-none text-ink">{l.count.toLocaleString()}</span>
+                <span className="flex items-center gap-1 pt-1.5 text-[1.0625rem] text-soft">
                   {l.count === 0 ? 'Nothing needs you here' : `${l.count === 1 ? 'Risk requires' : 'Risks require'} your attention`}
                   <ChevronRight size={16} aria-hidden />
                 </span>
