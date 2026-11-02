@@ -278,7 +278,7 @@ export default function Layout() {
               return (
                 <button key={g.group} aria-current={on ? 'true' : undefined} onClick={() => {
                   setPicked(g.group); const first = items(g)[0]
-                  // Further down the menu: the page slides up; further up: it slides down. More steps, longer slide.
+                  // Further down the menu the new page rises from below; further up, it drops in from above.
                   const to = menu.indexOf(g)
                   if (first) go(first.to, { slide: { dir: to > groupIndex ? 'up' : 'down', steps: Math.abs(to - groupIndex) } })
                 }}
