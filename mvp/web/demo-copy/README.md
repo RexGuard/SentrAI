@@ -17,12 +17,14 @@ A copy of the web console that anyone can open without signing in, so people and
 
 The one-button demo's attacker page (RexGuard/SentrAI-demo, `demo-site/attack.html`, online at
 https://rexguard.github.io/SentrAI-demo/demo-site/attack.html) can attack this demo copy. Open both in the same
-browser and press its **Launch simulated attack**: after a burst of wrong passwords a Critical **Brute Force** risk
+browser, or on two devices, and press its **Launch simulated attack**: after a burst of wrong passwords a Critical **Brute Force** risk
 (`RSK-2026-099`) appears on the Command Center, the Critical list and the bell. Every risk card starts at 0 (the recorded open risks are left out of the risk lists and the bell; the
 "Already handled" ones stay). SentrAI does not block it on its own
 here, so a manager can open it and press **Do the suggested fix** (or **Not a threat**); those two answers are the
-only writes the demo copy accepts, and they live in the page only (a reload starts clean). The pages talk through a
-BroadcastChannel with a localStorage fallback, inside the browser only. Code: the "Live attack" part of
+only writes the demo copy accepts, and they live in the page only (a reload starts clean). In one browser the pages
+talk through a BroadcastChannel with a localStorage fallback; between devices through the public ntfy.sh relay, topic
+`sentrai-demo-<room>` (room `solid10`, or `?room=...` in the URL). Only a few state messages go over the relay per
+run; the attacker page plays the individual tries itself. Code: the "Live attack" part of
 `app/src/lib/demo.ts`.
 
 A normal build never sets the flag, so the real console is unchanged.
