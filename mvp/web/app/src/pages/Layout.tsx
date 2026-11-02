@@ -238,10 +238,6 @@ export default function Layout() {
     <Waves />
     <div className={'console-shell min-h-screen' + (sideHidden ? ' side-hidden' : '')}>
       <header className="console-top">
-        <button className="console-icon side-toggle" onClick={toggleSide} aria-expanded={!sideHidden} aria-controls="console-side"
-          aria-label={sideHidden ? 'Show the side menu' : 'Hide the side menu'} title={sideHidden ? 'Show the side menu' : 'Hide the side menu'}>
-          {sideHidden ? <PanelLeftOpen size={20} aria-hidden /> : <PanelLeftClose size={20} aria-hidden />}
-        </button>
         <VLink to="/" className="console-logo" aria-label="SentrAI home">
           <img src={import.meta.env.BASE_URL + "mark.svg"} alt="" width={52} height={52} className="console-brand-mark" />
           <span className="leading-tight"><span className="console-brand block">SentrAI</span><span className="block text-[0.8125rem] text-soft">Cybersecurity Console</span></span>
@@ -260,7 +256,12 @@ export default function Layout() {
         </div>
       </header>
       <div className="flex">
-        <aside id="console-side" className="console-side" inert={sideHidden}>
+        <aside id="console-side" className="console-side">
+          <button className="console-icon side-toggle" onClick={toggleSide} aria-expanded={!sideHidden} aria-controls="console-side"
+            aria-label={sideHidden ? 'Show the side menu' : 'Hide the side menu'} title={sideHidden ? 'Show the side menu' : 'Hide the side menu'}>
+            {sideHidden ? <PanelLeftOpen size={20} aria-hidden /> : <PanelLeftClose size={20} aria-hidden />}
+          </button>
+          <div className="side-body" inert={sideHidden}>
           <nav aria-label="Sections" className="flex flex-col gap-3">
             <VNavLink to="/manager" slide={{ dir: 'down', steps: groupIndex + 1 }} className={({ isActive }) => 'flex items-center gap-3.5 rounded-2xl px-4 py-3 text-left text-[0.9375rem] font-medium ' + (isActive ? 'side-on' : 'text-soft hover:text-ink')}>
               <Sparkles size={20} aria-hidden /> Sentry
@@ -284,6 +285,7 @@ export default function Layout() {
               <Headset size={20} aria-hidden /> Contact Us
             </VNavLink>
             <AutoMode />
+          </div>
           </div>
         </aside>
         <main className={'console-main min-w-0 flex-1' + (dock.open ? ' lg:mr-[26rem]' : '')}>
