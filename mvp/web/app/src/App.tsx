@@ -5,6 +5,7 @@ import { DEMO } from './lib/demo'
 import { SessionProvider, useSession } from './lib/session'
 import { SimpleProvider, useSimple } from './lib/simple'
 import { Notices } from './lib/notice'
+import { holdTransition } from './lib/motion'
 import Layout from './pages/Layout'
 import SignIn from './pages/SignIn'
 
@@ -18,7 +19,9 @@ function page(load: () => Promise<{ default: ComponentType }>) {
   const get = () => load().then((m) => { ready = m.default; return m })
   pages.push(get)
   const Lazy = lazy(get)
-  const Page = (props: object) => createElement(ready ?? Lazy, props)
+  // Opened before its file arrived (the background fetch had not reached it yet): a page change in progress waits
+  // briefly for the file, so the page slides in drawn rather than as a loading placeholder.
+  const Page = (props: object) => { if (!ready) void holdTransition(get()); return createElement(ready ?? Lazy, props) }
   return Object.assign(Page, { preload: get })
 }
 const Analytics = page(() => import('./pages/Analytics'))
@@ -130,8 +133,11 @@ function DemoNote() {
 export default function App() {
   // The demo copy is static files on any host, so it keeps the page address in the # part (no server routes needed).
   const Router = DEMO ? HashRouter : BrowserRouter
+  // useTransitions={false}: the router otherwise wraps every page change in React's startTransition, which renders
+  // in the background and can finish after the page-change animation has already taken its "after" picture, so on
+  // a busy panel the animation ran between two pictures of the same page and seemed not to happen at all.
   return (
-    <Router>
+    <Router useTransitions={false}>
       <SessionProvider><SimpleProvider><Gate /><Notices />{DEMO && <DemoNote />}</SimpleProvider></SessionProvider>
     </Router>
   )

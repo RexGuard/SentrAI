@@ -332,3 +332,23 @@ main tbody tr { transition: background-color .12s ease-out; }
 .side-chev { transition: transform .3s cubic-bezier(.4, 0, .1, 1); }
 [aria-expanded='true'] > .side-chev { transform: rotate(180deg); }
 @media (prefers-reduced-motion: reduce) { .side-sub, .side-sub a, .side-chev { transition: none; } }
+
+/* Computer list status heart (pages/Machines.tsx): green protecting (beats gently), yellow up but not fully
+   protecting, red offline; hover or focus shows what it means. */
+.status-heart { position: relative; display: inline-grid; place-items: center; width: 2.5rem; height: 2rem; border-radius: .75rem; outline-offset: 2px; }
+.status-heart svg { overflow: visible; }
+.status-heart .heart { fill: var(--c); filter: drop-shadow(0 0 6px color-mix(in srgb, var(--c) 70%, transparent)); transform-origin: 20px 18px; }
+.status-heart .wing { fill: color-mix(in srgb, var(--c) 55%, transparent); transform-origin: 20px 12px; }
+.status-ok { --c: var(--green); } .status-warn { --c: var(--amber); } .status-off { --c: var(--red); }
+.status-off .wing { fill: color-mix(in srgb, var(--c) 25%, transparent); }
+.status-ok .heart { animation: heart-beat 1.6s ease-in-out infinite; }
+.status-ok .wing { animation: wing-flap 1.6s ease-in-out infinite; }
+@keyframes heart-beat { 0%, 40%, 100% { transform: scale(1); } 15% { transform: scale(1.14); } 28% { transform: scale(1.04); } }
+@keyframes wing-flap { 0%, 40%, 100% { transform: scaleY(1); } 15% { transform: scaleY(.82); } }
+.status-tip { position: absolute; left: calc(100% + .5rem); top: 50%; z-index: 30; width: max-content; max-width: 16rem; translate: -.25rem -50%;
+  display: grid; gap: .15rem; padding: .5rem .75rem; border-radius: .75rem; border: 1px solid var(--line); background: var(--surface-2);
+  color: var(--ink-soft); font-size: .8125rem; line-height: 1.35; text-align: left; box-shadow: 0 10px 30px -10px rgb(0 0 0 / .5);
+  opacity: 0; pointer-events: none; transition: opacity .15s ease-out, translate .2s cubic-bezier(.4, 0, .1, 1); }
+.status-tip b { color: var(--c); font-weight: 600; }
+.status-heart:hover .status-tip, .status-heart:focus-visible .status-tip { opacity: 1; translate: 0 -50%; }
+@media (prefers-reduced-motion: reduce) { .status-heart .heart, .status-heart .wing { animation: none; } .status-tip { transition: none; } }

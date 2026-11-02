@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import Stat from '../lib/Stat'
 import { Link } from 'react-router-dom'
-import { ChevronRight, Copy, Hourglass, Trash2, KeyRound, Plus, ShieldCheck, ShieldOff, Unplug } from 'lucide-react'
+import { ChevronRight, Copy, Trash2, KeyRound, Plus } from 'lucide-react'
 import { api, ApiError } from '../lib/api'
 import { btn, btnPrimary } from '../lib/ui'
 import { useSession } from '../lib/session'
@@ -21,16 +21,11 @@ type Page = {
 }
 type Made = { code: string; expires_at: string; https: boolean; pin: string | null; commands: { linux: string; windows: string } }
 
-const bandColor: Record<string, string> = { green: 'var(--green)', amber: 'var(--amber)', red: 'var(--red)', critical: 'var(--critical)' }
-const pct = (v: number | null | undefined) => (v == null ? '-' : `${Math.round(v)}%`)
-
-// One fixed grid for every row, so the state, the numbers, the score and the buttons line up down the list.
-const ROW = 'grid items-center gap-x-6 gap-y-2 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_11rem_5.5rem_8rem] xl:grid-cols-[minmax(12rem,1.2fr)_11rem_minmax(20rem,1.6fr)_5.5rem_8rem]'
-const STATS = 'lg:col-span-4 lg:row-start-2 xl:col-span-1 xl:row-start-auto'
-const live = (m: Machine) => m.online && !m.waiting
+// One fixed grid for every row: status heart, name, incidents, blocks, last seen, buttons.
+const ROW = 'grid items-center gap-x-6 gap-y-2 grid-cols-[2.5rem_minmax(0,1fr)_auto] md:grid-cols-[2.5rem_minmax(10rem,1.4fr)_minmax(8rem,1fr)_7rem_8rem_8rem]'
 const stateWord = (m: Machine) => (m.waiting ? 'Waiting' : !m.online ? 'Offline' : m.monitor_only ? 'Protection off' : 'Protecting')
 const FILTERS: Filter<Machine>[] = [
-  { key: 'state', label: 'State', get: stateWord }, { key: 'band', label: 'Risk band', get: (m) => m.band },
+  { key: 'state', label: 'State', get: stateWord },
   { key: 'place', label: 'Kind', get: (m) => m.place }, { key: 'services', label: 'Service', get: (m) => m.services },
   { key: 'issues', label: 'Incidents', get: (m) => (m.open ? 'Open incidents' : m.contained ? 'Contained only' : 'None') },
 ]
@@ -40,11 +35,29 @@ const JOINED: Filter<Joined>[] = [
 ]
 const NO_M: Machine[] = [], NO_J: Joined[] = []
 
-function State({ m }: { m: Machine }) {
-  if (m.waiting) return <span className="inline-flex items-center gap-1 text-muted"><Hourglass size={14} aria-hidden /> Waiting for its first data</span>
-  if (!m.online) return <span className="inline-flex items-center gap-1 text-crit"><Unplug size={14} aria-hidden /> Offline</span>
-  if (m.monitor_only) return <span className="inline-flex items-center gap-1 text-warn"><ShieldOff size={14} aria-hidden /> Protection off</span>
-  return <span className="inline-flex items-center gap-1 text-ok"><ShieldCheck size={14} aria-hidden /> Protecting</span>
+// The status heart (like a game-server panel's): green = protecting, yellow = up but not fully protecting (hover
+// says which), red = offline. The words are always in its label and hover card.
+type Mood = 'ok' | 'warn' | 'off'
+function moodOf(m: Machine): { mood: Mood; title: string; detail: string } {
+  if (!m.online && !m.waiting) return { mood: 'off', title: 'Offline', detail: m.last_seen ? `Last heard from ${m.last_seen}.` : 'It has not reported in.' }
+  if (m.waiting) return { mood: 'warn', title: 'Waiting for its first data', detail: 'It has joined but has not sent anything yet.' }
+  if (m.monitor_only) return { mood: 'warn', title: 'Protection off', detail: 'It is watched and reported on, but nothing is blocked on it.' }
+  if (m.open) return { mood: 'warn', title: 'Protecting, needs a look', detail: `${m.open} open incident${m.open === 1 ? '' : 's'} on it.` }
+  return { mood: 'ok', title: 'Protecting', detail: 'Watched and protected.' }
+}
+
+function StatusHeart({ m }: { m: Machine }) {
+  const { mood, title, detail } = moodOf(m)
+  return (
+    <span className={'status-heart status-' + mood} tabIndex={0} role="img" aria-label={`${title}. ${detail}`}>
+      <svg viewBox="0 0 40 28" width="36" height="26" aria-hidden>
+        <path className="wing" d="M13 9C9 4 3 3 1 5c3 1 5 3 6 5-3-1-5 0-6 1 3 1 5 2 7 4-2 0-4 1-5 2 4 1 7 0 9-2z" />
+        <path className="wing" d="M27 9c4-5 10-6 12-4-3 1-5 3-6 5 3-1 5 0 6 1-3 1-5 2-7 4 2 0 4 1 5 2-4 1-7 0-9-2z" />
+        <path className="heart" d="M20 25s-8-5-8-11a4.5 4.5 0 0 1 8-2.8A4.5 4.5 0 0 1 28 14c0 6-8 11-8 11z" />
+      </svg>
+      <span className="status-tip" role="tooltip"><b>{title}</b><span>{detail}</span></span>
+    </span>
+  )
 }
 
 function AddMachine({ page, onMade }: { page: Page; onMade: () => void }) {
@@ -126,7 +139,7 @@ export default function Machines() {
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <Stat label="Machines" value={s.machines} note={page.panel ? 'joined this panel' : 'this computer'} />
             <Stat label="Online" value={s.online} note={`${s.offline} offline or waiting`} hot={s.offline > 0} tone="bad" />
-            <Stat label="Need a look" value={s.need_a_look} note="open incidents or red and above" hot={s.need_a_look > 0} tone="bad" />
+            <Stat label="Need a look" value={s.need_a_look} note="open incidents or high risk" hot={s.need_a_look > 0} tone="bad" />
             <Stat label="Blocks in force" value={s.blocks} note="each on its own machine" />
           </div>
           {!page.panel && <p className="rounded-md border border-line bg-surface p-3 text-soft">This core adds every machine into one score. To run it as a central panel, set SENTRAI_RISK_SCOPE=host (and SENTRAI_FIREWALL=off) on it and restart the core: each machine is then scored and blocked on its own.</p>}
@@ -141,27 +154,14 @@ export default function Machines() {
             <ul className="divide-y divide-line-soft">
               {list.rows.map((m) => (
                 <li key={m.name} className={ROW + ' py-3'}>
+                  <StatusHeart m={m} />
                   <div className="min-w-0">
                     <p className="truncate font-medium">{m.host ? <Link to={`/machines/${encodeURIComponent(m.host)}`} className="underline-offset-2 hover:underline">{m.name}</Link> : m.name}</p>
-                    <p className="truncate text-xs text-muted">{m.place}{!m.waiting && m.online ? ` · threshold ${Math.round(m.threshold)}` : ''}{m.services.length ? ` · ${m.services.join(', ')}` : ''}</p>
-                    <div className="mt-1 h-1.5 w-40 max-w-full rounded bg-surface-3" aria-hidden>
-                      <div className="h-full rounded" style={{ width: `${m.online && m.index ? m.index : 0}%`, background: bandColor[m.band] ?? 'var(--ink-muted)' }} />
-                    </div>
+                    <p className="truncate text-xs text-muted">{m.place}{m.services.length ? ` · ${m.services.join(', ')}` : ''}</p>
                   </div>
-                  <div className="text-sm"><State m={m} /></div>
-                  <dl className={STATS + ' grid min-w-0 grid-cols-3 gap-x-4 gap-y-1 text-xs text-soft'}>
-                    {([['CPU', live(m) ? pct(m.hardware.cpu) : '-'], ['Memory', live(m) ? pct(m.hardware.memory) : '-'], ['Disk', live(m) ? pct(m.hardware.disk) : '-'],
-                      ['Incidents', m.open || m.contained ? [m.open && `${m.open} open`, m.contained && `${m.contained} contained`].filter(Boolean).join(' · ') : 'None'],
-                      ['Blocks', m.blocked ? `${m.blocked} in force` : 'None'], ['Last seen', m.last_seen || '-']] as [string, string][]).map(([k, v]) => (
-                      <div key={k} className="min-w-0"><dt className="text-muted">{k}</dt><dd className="break-words">{v}</dd></div>
-                    ))}
-                  </dl>
-                  <div className="text-right">
-                    <p className="text-2xl font-semibold" style={{ color: live(m) ? bandColor[m.band] : undefined }}>
-                      {m.waiting ? '-' : !m.online ? '0' : m.index == null ? '-' : Math.round(m.index)}
-                    </p>
-                    <p className="text-xs text-muted">{m.waiting ? 'Waiting' : !m.online ? 'Offline' : page.band_words[m.band] ?? 'Unknown'}</p>
-                  </div>
+                  <p className="hidden text-sm text-soft md:block">{m.open || m.contained ? [m.open && `${m.open} open`, m.contained && `${m.contained} contained`].filter(Boolean).join(' · ') : 'No incidents'}</p>
+                  <p className="hidden text-sm text-soft md:block">{m.blocked ? `${m.blocked} block${m.blocked === 1 ? '' : 's'}` : 'No blocks'}</p>
+                  <p className="hidden text-sm text-soft md:block">{m.last_seen || '-'}</p>
                   <div className="flex justify-end gap-2">
                     {m.host && <Link to={`/machines/${encodeURIComponent(m.host)}`} className={btn} aria-label={`Open ${m.name}`}>Open <ChevronRight size={14} aria-hidden /></Link>}
                     {m.host && page.panel && <button className={btn + ' text-bad'} disabled={!can('configure')} aria-label={`Delete ${m.name}`}
