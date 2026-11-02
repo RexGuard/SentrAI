@@ -13,6 +13,8 @@
   url: /docs/sign-in.html
 - title: Settings
   url: /docs/settings.html
+- title: Team command line
+  url: /docs/cli.html
 - title: Extensions
   url: /docs/extensions.html
 - title: Troubleshooting

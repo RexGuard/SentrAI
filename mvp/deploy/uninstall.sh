@@ -29,7 +29,7 @@ systemctl disable --now sentrai.target sentrai-core sentrai-collector sentrai-da
 rm -f /etc/systemd/system/sentrai.target /etc/systemd/system/sentrai-{core,collector,dashboard,web,notifier}.service \
     /etc/systemd/system/sentrai-update-check.{service,timer}
 systemctl daemon-reload
-rm -f /usr/local/bin/sentrai-scout /usr/local/bin/sentrai-admin
+rm -f /usr/local/bin/sentrai-scout /usr/local/bin/sentrai-admin /usr/local/bin/sentrai
 # sudo sentrai-update stays while an agent on this machine still uses it.
 [ -f /etc/systemd/system/sentrai-agent.service ] || rm -f /usr/local/sbin/sentrai-update
 if [ -x /usr/local/sbin/sentrai-dashboard-firewall ]; then /usr/local/sbin/sentrai-dashboard-firewall remove; fi
