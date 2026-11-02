@@ -296,26 +296,39 @@ main tbody tr { transition: background-color .12s ease-out; }
    runs is the content panel its own transition layer ("page"), so at rest nothing traps the dialogs inside it.
    Sidebar = "stack": the new page rises over the old one (from below going down the menu, from above going up)
    while the old one sinks back (scale .94, 60% opacity). Top tabs = "push": the new page pushes the old one out
-   sideways. Both .5s; the panel clips them so nothing slides over the sidebar or top bar. */
+   sideways. Both .5s; the panel clips them so nothing slides over the sidebar or top bar. The pages stay glass so
+   the swirls show through; for "stack" the old page is cut back to the part the new one hasn't covered yet, so the
+   two never show through each other. */
 :root[data-slide] .console-main { view-transition-name: page; }
 :root[data-slide]::view-transition-group(page) { animation-duration: .5s; overflow: clip; border-top-left-radius: 3rem; }
 :root[data-slide]::view-transition-old(page),
 :root[data-slide]::view-transition-new(page) { animation-duration: .5s; animation-fill-mode: both; mix-blend-mode: normal;
-  /* The panel is glass; while pages move over each other each one gets a solid backing so they don't show through. */
-  background: var(--bg); border-top-left-radius: 3rem; }
+  border-top-left-radius: 3rem; }
 :root[data-slide='up']::view-transition-new(page) { animation: .5s cubic-bezier(.4, 0, .1, 1) both stack-in-below; }
 :root[data-slide='down']::view-transition-new(page) { animation: .5s cubic-bezier(.4, 0, .1, 1) both stack-in-above; }
-:root[data-slide='up']::view-transition-old(page),
-:root[data-slide='down']::view-transition-old(page) { animation: .5s cubic-bezier(.4, 0, .1, 1) both stack-sink; }
+:root[data-slide='up']::view-transition-old(page) { animation: .5s cubic-bezier(.4, 0, .1, 1) both stack-sink-up; }
+:root[data-slide='down']::view-transition-old(page) { animation: .5s cubic-bezier(.4, 0, .1, 1) both stack-sink-down; }
 :root[data-slide='left']::view-transition-new(page) { animation: .5s cubic-bezier(.77, 0, .175, 1) both push-in-right; }
 :root[data-slide='left']::view-transition-old(page) { animation: .5s cubic-bezier(.77, 0, .175, 1) both push-out-left; }
 :root[data-slide='right']::view-transition-new(page) { animation: .5s cubic-bezier(.77, 0, .175, 1) both push-in-left; }
 :root[data-slide='right']::view-transition-old(page) { animation: .5s cubic-bezier(.77, 0, .175, 1) both push-out-right; }
 @keyframes stack-in-below { from { transform: translateY(100%); } }
 @keyframes stack-in-above { from { transform: translateY(-100%); } }
-@keyframes stack-sink { to { transform: scale(.94); opacity: .6; } }
+@keyframes stack-sink-up { from { clip-path: inset(0 0 0 0); } to { transform: scale(.94); opacity: .6; clip-path: inset(0 0 100% 0); } }
+@keyframes stack-sink-down { from { clip-path: inset(0 0 0 0); } to { transform: scale(.94); opacity: .6; clip-path: inset(100% 0 0 0); } }
 @keyframes push-in-right { from { transform: translateX(100%); } }
 @keyframes push-in-left { from { transform: translateX(-100%); } }
 @keyframes push-out-left { to { transform: translateX(-100%); } }
 @keyframes push-out-right { to { transform: translateX(100%); } }
 
+
+/* Side menu: each group cascades open to show its pages, one after another. */
+.side-sub { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .35s cubic-bezier(.4, 0, .1, 1); }
+.side-sub[data-open] { grid-template-rows: 1fr; }
+.side-sub > div { overflow: hidden; min-height: 0; }
+.side-sub a { opacity: 0; transform: translateY(-.5rem); transition: opacity .2s ease-out, transform .3s cubic-bezier(.4, 0, .1, 1), background-color .15s, color .15s;
+  transition-delay: calc(var(--i, 0) * 40ms), calc(var(--i, 0) * 40ms), 0s, 0s; }
+.side-sub[data-open] a { opacity: 1; transform: none; }
+.side-chev { transition: transform .3s cubic-bezier(.4, 0, .1, 1); }
+[aria-expanded='true'] > .side-chev { transform: rotate(180deg); }
+@media (prefers-reduced-motion: reduce) { .side-sub, .side-sub a, .side-chev { transition: none; } }
