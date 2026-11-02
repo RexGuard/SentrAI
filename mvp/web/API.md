@@ -45,6 +45,7 @@ Each returns ready-to-render JSON for one page. Same functions as today, moved b
 | `POST /ui/approvals/bulk` (verb, ids[], justification) | `bulk_split`, `bulk_result`, run server-side so it is one atomic call with one audit entry |
 | `GET/POST /ui/approvals/groups` | `add_to_group`, `suggest_group_name`, saved groups |
 | `GET /ui/incidents` | `build_incident_table`, `split_waves`, `attention`, `owner_history` |
+| `GET /ui/risks` | (web only) Command center risk bubbles: approvals and incidents that need a person, per severity |
 | `GET /ui/machines`, `/ui/machines/{host}` | `machine_records`, `hardware_stats`, `service_rows`, `agent_table`, `job_rows`, `undoable_updates` |
 | `GET /ui/audit` | `build_activity_feed`, `verify_chain_links`, `normalize_audit` |
 | `GET /ui/guardrails` | `limits_map_data`, `check_limits` |

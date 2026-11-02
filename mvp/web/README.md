@@ -17,7 +17,7 @@ For development, `npm run dev` in `app/` does the same with live reload.
 
 | Pages on the web console |
 | --- |
-| Command center (risk, decisions, incidents, machines and Cyanide on one page; the landing page), Sign-in, Approvals, Incidents, Who gets what, Staff reports, Report something suspicious, Chat (with the guided setup) |
+| Command center (what needs a person as Critical / High / Medium bubbles that open a page of risk bubbles, each explained in plain words with a suggested fix, quick actions and a box to talk your own fix through with Cyanide; risk over time, machines and Cyanide; the landing page), Sign-in, Approvals, Incidents, Who gets what, Staff reports, Report something suspicious, Chat (with the guided setup) |
 | Overview canvas, Collector (with Scout's proposals and the process, threat and package scans), Classifier, Action taker, Automation guardrails (with the limits map) |
 | Machines, one machine (all its tabs, incl. signed in, services, packages) |
 | Review, Reports, Audit trail, Backups, Team, Extensions, Configuration |

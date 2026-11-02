@@ -43,6 +43,21 @@ BACKUP_WORDS = re.compile(r"(?i)\b(back ?ups?|backed up|restore|restoring)\b")
 SCAN_WORDS = re.compile(r"(?i)\b(scan|processes|log (files|folders|sources)|what (should|to) (i )?(monitor|watch))\b")
 INCIDENT_ID = re.compile(r"\b[A-Z]{2,5}-\d{4}-\d{2,4}\b")
 
+# "My fix for RSK-2026-884: block them for good" from a risk bubble on the Command center (ui_risks.py).
+MY_FIX = re.compile(r"(?is)^\s*my (?:fix|idea) for (?P<id>[A-Z]{2,5}-\d{4}-\d{2,4})\s*[:,-]\s*(?P<idea>\S.*)$")
+# Without a model, the operator's own words are matched to the one-click decisions they most likely mean.
+FIX_WORDS = (
+    ("rollback", re.compile(r"(?i)\b(undo|unblock|roll ?back|let (?:them|it|him|her) (?:back )?in|allow|lift)\b")),
+    ("reject", re.compile(r"(?i)\b(false alarm|not (?:a |an )?(?:threat|attack|problem)|ignore|harmless|legit|"
+                          r"nothing to (?:do|worry)|reject|dismiss|it'?s fine|expected|do(?:n'?t| not) (?:block|act|do))\b")),
+    ("make_permanent", re.compile(r"(?i)\b(keep|permanent(?:ly)?|for good|forever|never let)\b")),
+    ("approve", re.compile(r"(?i)\b(block|ban|stop|cut (?:them |it )?off|isolate|lock|approve|patch|contain|"
+                           r"shut|deny|apply|fix|do it|go ahead|yes)\b")),
+)
+FIX_DOES = {"approve": "applies SentrAI's suggested fix", "reject": "closes it as not a threat, without acting",
+            "rollback": "undoes the block and lets the address or account back in",
+            "make_permanent": "keeps the block after its time limit"}
+
 REMEMBER = re.compile(r"(?is)^\s*(?:please\s+)?remember(?:\s+that)?\s*[:,-]?\s*(?P<fact>\S.*)$")
 RECALL = re.compile(r"(?i)\bwhat do you (remember|know about us)\b")
 IP_RE = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
@@ -140,6 +155,10 @@ How to answer:
 - You cannot change anything yourself. When the operator wants an incident approved, rejected, rolled back, \
 made permanent or acknowledged, or you think they should, call suggest_action. The operator must press the \
 button it creates, and the normal approval rules still apply. Never claim an action was taken.
+- A message starting "My fix for <incident>:" is the operator's own idea for that incident. Look the incident up, \
+say in two or three sentences whether the idea is safe and enough, what it misses, and call suggest_action with \
+the decision closest to it (or a better one, saying why). Steps SentrAI cannot do, such as a password reset, \
+are for the operator to do by hand: say so.
 - To find logs worth watching, call scan_system. It lists the programs running on this computer and where \
 they keep logs. When the operator is setting up the system profile, asks what to monitor, or the collector \
 only has the lab logs, offer a scan. Suggest a file with suggest_log_source; the operator's button adds it to \
@@ -591,6 +610,9 @@ class OperatorChat:
         rich = rich if rich is not None else {"blocks": [], "followups": []}
         if files:
             return self._fallback_files(files, looked_at, rich)
+        fix = MY_FIX.match(text)
+        if fix and fix.group("id") in {i["id"] for i in self.core.list_incidents()}:
+            return self._fallback_fix(fix.group("id"), fix.group("idea"), looked_at, suggestions)
         said = REMEMBER.match(text)
         if said:
             if self.memory is None:
@@ -793,6 +815,41 @@ class OperatorChat:
         if st["enabled"]:
             suggestions.append({"kind": "backup_now", "label": "Back up now", "reason": "Take a fresh backup"})
         return "\n".join(lines)
+
+    def _fallback_fix(self, iid: str, idea: str, looked_at: list[str], suggestions: list[dict[str, str]]) -> str:
+        """No model: weigh the operator's own fix for one incident and offer the matching one-click action."""
+        looked_at.append(f"incident {iid}")
+        inc = self.core.get_incident(iid)
+        status = str(inc.get("status"))
+        decide = status in ("open", "acknowledged")
+        contain = status == "contained" or any(a.get("status") == "active" for a in inc.get("actions") or []
+                                                if isinstance(a, dict))
+        possible = {"approve": decide, "reject": decide, "rollback": contain, "make_permanent": contain}
+        meant = [d for d, words in FIX_WORDS if words.search(idea)]
+        fits = [d for d in meant if possible[d]]
+        fix = str(inc.get("recommended_action") or "").rstrip(".")
+        if fits:
+            d = fits[0]
+            why = f"Your idea: {idea.strip()[:200]}"
+            suggestions.append({"incident": iid, "decision": d, "label": f"{DECISION_TEXT[d]} {iid}",
+                                "reason": why[:300], "status": status})
+            text = f"That works. The closest one-click step is **{DECISION_TEXT[d]}**: it {FIX_DOES[d]}."
+            if d == "approve" and fix:
+                text += f" Here that means: {fix}."
+            if d == "reject":
+                text += " Only pick it if you are sure; write why, it goes in the audit log."
+            text += " Press the button below to do it. Nothing happens until you press it."
+            return text
+        if meant:
+            text = (f"I understood **{DECISION_TEXT[meant[0]]}**, but that is not possible now: the incident is "
+                    f"{status}. Here is what you can do instead.")
+        else:
+            text = ("I can't turn that into a one-click step without an AI model, so you would do it yourself. "
+                    "Write down what you did when you close the incident.")
+            if fix and decide:
+                text += f" SentrAI's own suggestion is: {fix}."
+        self._next_steps(iid, suggestions)
+        return text
 
     def _next_steps(self, iid: str, suggestions: list[dict[str, str]]) -> None:
         """The obvious next decision for an incident, as buttons (the playbook's advice, not the model's)."""

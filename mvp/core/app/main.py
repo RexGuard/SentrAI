@@ -24,7 +24,7 @@ import sentrai_accounts as acc  # noqa: E402
 from .reports import build_report, render_markdown, render_pdf
 from . import summary as client_summary
 from . import auth as auth_cookie
-from . import ui_analytics, ui_approvals, ui_tuning, ui_audit, ui_incidents, ui_limits, ui_machine, ui_machines, ui_overview, ui_report, ui_routing, ui_settings, ui_setup, ui_team, ui_recovery, ui_privacy
+from . import ui_analytics, ui_approvals, ui_tuning, ui_audit, ui_incidents, ui_limits, ui_machine, ui_machines, ui_overview, ui_report, ui_routing, ui_settings, ui_setup, ui_team, ui_recovery, ui_privacy, ui_risks
 from . import ai, anchor, apidocs, chat_memory, depscan, fleet, hardware, integrations, jobs, webhook
 from .extensions import ExtensionError
 from . import chat as chat_mod
@@ -457,6 +457,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ui_approvals.install(app, core)
     ui_audit.install(app, core)
     ui_incidents.install(app, core)
+    ui_risks.install(app, core)
     ui_analytics.install(app, core, ui_analytics.Playbooks(
         sentrai_paths.path("core.playbooks", core.settings.db_path.parent, migrate=False), lambda: chat.provider))
     ui_tuning.install(app, core)

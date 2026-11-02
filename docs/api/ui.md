@@ -173,6 +173,12 @@ Who owns each incident and what still needs a person.
 
 **Returns** `counts` (`open`, `attention`, `overdue`, `escalated`, `unassigned`, `mine`), `todo` (rows that need a person, most urgent first), `todo_total` (how many need a person in full), `todo_waves` (a wave's incidents as one line each), `all` (rows), `waves`, and `contacts` (who an incident can be assigned to). Each row has `id`, `what`, `host`, `severity`, `status`, `owner`, `backup`, `open_for`, `needs`, `closed`, `attention`, `wave` and `summary`. Assign and resolve use `POST /incidents/{iid}/assign` and `/resolve`.
 
+### `GET /ui/risks`
+
+The Command center's risk bubbles: approvals (a decision, or a block to keep or undo) and incidents that need a person, joined into one list per severity. A wave of many addresses doing the same thing is one bubble.
+
+**Query** `severity` (optional: `critical`, `high`, `medium` or `low`; anything else is `400`). **Returns** `levels` (one per severity: `severity`, `count` incidents, `bubbles`, `overdue`, `oldest`), `headline` (one plain sentence), `protection_on`, and with `severity` also `rows`, most urgent first. Each row has `id` (the incident, or the wave), `ids` (every incident in it), `incident` (the one to talk about), `title`, `category`, `severity`, `host`, `source`, `owner`, `open_for`, `overdue`, `status`, `needs`, `what_happened`, `meaning` (in everyday words), `fix` (the suggested fix), `steps`, `unsure` (the AI was not sure), `actions` (`verb`, `label`, `hint`: the one-click steps possible now, sent to `POST /ui/approvals/bulk` with all `ids`) and `inc` (what the chat's suggestion buttons need). The person's own fix goes to `POST /chat` as `"My fix for <incident>: ..."`; Cyanide weighs it and offers the closest button.
+
 ## Analytics
 
 How incidents add up over time, and fixes learned from similar past incidents. A playbook is advice only: any block it mentions still goes through Approvals and the automation guardrails.

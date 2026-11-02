@@ -42,6 +42,7 @@ const Report = page(() => import('./pages/Report'))
 const Reports = page(() => import('./pages/Reports'))
 const Routing = page(() => import('./pages/Routing'))
 const Review = page(() => import('./pages/Review'))
+const RiskList = page(() => import('./pages/RiskList'))
 const Settings = page(() => import('./pages/Settings'))
 const Staff = page(() => import('./pages/Staff'))
 const Team = page(() => import('./pages/Team'))
@@ -60,7 +61,7 @@ function usePrefetch(on: boolean) {
 
 // The page asked for starts downloading now, alongside the sign-in check, not after it.
 const first: Record<string, () => Promise<unknown>> = {
-  '': Command.preload, command: Command.preload, incidents: Incidents.preload, approvals: Approvals.preload,
+  '': Command.preload, command: Command.preload, risks: RiskList.preload, incidents: Incidents.preload, approvals: Approvals.preload,
   machines: Machines.preload, manager: Manager.preload,
 }
 const firstPage = (first[location.pathname.split('/')[1] ?? '']?.() ?? Promise.resolve()).catch(() => {})
@@ -81,6 +82,7 @@ function Gate() {
       <Route element={<Layout />}>
         <Route index element={<Navigate to={simple ? '/manager' : '/command'} replace />} />
         <Route path="/command" element={<Command />} />
+        <Route path="/risks/:severity" element={<RiskList />} />
         <Route path="/approvals" element={<Approvals />} />
         <Route path="/machines" element={<Machines />} />
         <Route path="/machines/:host" element={<MachinePage />} />
