@@ -4,12 +4,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { vtName, VLink } from './motion'
-import { Bell, ChevronRight, Clock, ShieldAlert, ShieldCheck, TriangleAlert, X, type LucideIcon } from 'lucide-react'
+import { Bell, ChevronRight, Clock, MessageSquare, Send, ShieldAlert, ShieldCheck, TriangleAlert, X, type LucideIcon } from 'lucide-react'
 import { api, ApiError } from './api'
 import { btn, btnPrimary } from './ui'
 import { useSession } from './session'
 import { ask } from './notice'
 import { DEMO } from './demo'
+import { Text } from './Rich'
+import { backToQuestion } from './turns'
+import { SuggestionCard, type Message } from '../pages/Chat'
 import { DEMO_FIXES } from './demoFixes'
 
 export type Level = 'critical' | 'high' | 'medium' | 'low'
@@ -89,6 +92,11 @@ export function RiskDetail({ r, protectionOn, onClose, onDone }: { r: Risk; prot
   const { can, me } = useSession()
   const [busy, setBusy] = useState('')
   const [err, setErr] = useState('')
+  const [talking, setTalking] = useState(false)  // Talk to Sentry: folded until asked for, so the card stays short
+  const [idea, setIdea] = useState('')
+  const [asking, setAsking] = useState(false)
+  const [reply, setReply] = useState<Message | null>(null)
+  const [asked, setAsked] = useState('')
   const box = useRef<HTMLDivElement>(null)
   const t = LEVEL_TEXT[r.severity]
   const off = !can('act')
@@ -114,6 +122,17 @@ export function RiskDetail({ r, protectionOn, onClose, onDone }: { r: Risk; prot
       onDone(out.message)
     } catch (e) { setErr(e instanceof ApiError ? e.message : 'That did not go through.') }
     setBusy('')
+  }
+
+  const talk = async () => {
+    const text = idea.trim()
+    if (!text || asking) return
+    setAsking(true); setErr('')
+    try {
+      setReply(await api<Message>('/chat', { body: { operator: me?.email ?? 'dashboard', message: `My fix for ${r.incident}: ${text}`, incident: r.incident } }))
+      setAsked(text); setIdea('')
+    } catch (e) { setErr(e instanceof ApiError ? `Sentry could not answer: ${e.message}` : 'Sentry could not answer.') }
+    setAsking(false)
   }
 
   const act = async (a: RiskAction) => {
@@ -162,6 +181,31 @@ export function RiskDetail({ r, protectionOn, onClose, onDone }: { r: Risk; prot
                   onClick={() => void act(a)}>{busy === a.verb ? 'Working…' : a.label}{many && a.verb !== 'escalate' ? ` (all ${r.ids.length})` : ''}</button>))}
             </div>)}
         </section>
+        {!talking ? (
+          <button className={btn} onClick={() => setTalking(true)}><MessageSquare size={14} aria-hidden /> Talk to Sentry</button>
+        ) : (
+          <section className="space-y-2">
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-muted">Talk to Sentry</h3>
+            <form onSubmit={(e) => { e.preventDefault(); void talk() }}>
+              <label className="sr-only" htmlFor="risk-idea">Ask Sentry about {r.title}</label>
+              <div className="prompt">
+                <textarea id="risk-idea" rows={1} autoFocus value={idea} disabled={asking} placeholder="e.g. block that address for good, or: this is our own backup job"
+                  onChange={(e) => setIdea(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void talk() } }} />
+                <button className="prompt-send" disabled={asking || !idea.trim()} aria-label="Send to Sentry"><Send size={16} aria-hidden /></button>
+              </div>
+            </form>
+            {asking && <p className="text-sm text-muted" role="status">Sentry is thinking…</p>}
+            {reply && (
+              <div className="space-y-1 rounded-2xl bg-surface-2 p-4" aria-live="polite" data-turn>
+                {asked && <div className="chat-stick" style={{ '--stick-bg': 'var(--surface-2)' } as React.CSSProperties} title="Back to your question" onClick={backToQuestion}>
+                  <p className="ml-auto w-fit max-w-[90%] whitespace-pre-wrap rounded-2xl bg-surface-3 px-3 py-2 text-sm">{asked}</p></div>}
+                <p className="text-xs text-muted">Sentry</p>
+                <Text md={reply.text} />
+                {(reply.suggestions ?? []).map((sg, k) => <SuggestionCard key={k} s={sg} inc={r.inc} onDone={onDone} />)}
+              </div>)}
+          </section>
+        )}
         {err && <p role="alert" className="text-sm text-bad">{err}</p>}
       </div>
     </div>,
