@@ -55,7 +55,7 @@ function Summary() {
   return (
     <div className="grid gap-4 lg:grid-cols-[4fr_8fr]">
       <form className="space-y-3 rounded-lg border border-line bg-surface p-4" onSubmit={(e) => { e.preventDefault(); void save() }}>
-        <h2 className="font-semibold">Client summary <span className="font-normal text-muted">· {sched.next_at ? `next: ${sched.next_at.slice(0, 16).replace('T', ' ')}` : 'not scheduled'}</span></h2>
+        <h2 className="font-semibold">Client Summary <span className="font-normal text-muted">· {sched.next_at ? `next: ${sched.next_at.slice(0, 16).replace('T', ' ')}` : 'not scheduled'}</span></h2>
         <fieldset className="flex flex-wrap gap-3"><legend className="text-sm text-soft">Send it</legend>
           {Object.entries(EVERY).map(([k, v]) => <label key={k} className="flex items-center gap-1 text-sm"><input type="radio" name="every" checked={sched.every === k} onChange={() => setSched({ ...sched, every: k })} /> {v}</label>)}
         </fieldset>
@@ -103,13 +103,13 @@ export default function Reports() {
     <section className="space-y-4">
       <header>
         <h1 className="text-2xl font-semibold">Reports</h1>
-        <p className="text-sm text-muted">a one-page summary for the client, and one evidence report for every incident</p>
+        <p className="text-sm text-muted">A one-page summary for the client, and one evidence report for every incident</p>
       </header>
       {error && <p role="alert" className="rounded-md border border-line bg-surface p-3 text-bad">{error}</p>}
       <Summary />
       {incidents.length === 0 ? <p className="rounded-lg border border-line bg-surface p-4 text-soft">No incidents yet, so no reports.</p> : (
         <div className="space-y-3 rounded-lg border border-line bg-surface p-4">
-          <h2 className="font-semibold">Evidence report</h2>
+          <h2 className="font-semibold">Evidence Report</h2>
           <div className="flex flex-wrap items-end gap-3">
             <label className="text-sm text-soft">Open report for
               <select className={field} value={pick} onChange={(e) => setPick(e.target.value)}>

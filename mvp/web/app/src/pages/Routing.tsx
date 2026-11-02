@@ -48,8 +48,8 @@ export default function Routing() {
     <section className="space-y-3">
       <Link to="/command?tab=incidents" className="inline-flex items-center gap-1 text-sm text-soft hover:text-ink"><ArrowLeft size={14} aria-hidden /> All incidents</Link>
       <header>
-        <h1 className="text-2xl font-semibold">Who gets what</h1>
-        <p className="text-sm text-muted">routing rules: the first match owns the incident
+        <h1 className="text-2xl font-semibold">Who Gets What</h1>
+        <p className="text-sm text-muted">Routing rules: the first match owns the incident
           {page?.source ? ` · from ${page.source}` : ''}{page?.escalate_after ? ` · unanswered alerts go to the owner's backup after ${page.escalate_after} reminders` : ''}</p>
       </header>
       {error && <p role="alert" className="rounded-md border border-line bg-surface p-3 text-bad">{error}</p>}

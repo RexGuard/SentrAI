@@ -80,8 +80,8 @@ export default function Review({ embedded = false }: { embedded?: boolean }) {
     <section className="space-y-4">
       {!embedded && (
       <header>
-        <h1 className="text-2xl font-semibold">Review</h1>
-        <p className="text-sm text-muted">how close SentrAI is to acting on its own, and why</p>
+        <h1 className="text-2xl font-semibold">Risk Review</h1>
+        <p className="text-sm text-muted">How close SentrAI is to acting on its own, and why</p>
       </header>
       )}
       {error && <p role="alert" className="rounded-md border border-line bg-surface p-3 text-bad">{error}</p>}
@@ -94,7 +94,7 @@ export default function Review({ embedded = false }: { embedded?: boolean }) {
             <Stat label="Raw score" value={Number(risk.raw_score ?? 0).toFixed(1)} note="points before scaling to 0-100" />
           </div>
           <div className="space-y-2 rounded-lg border border-line bg-surface p-4">
-            <h2 className="font-semibold">Risk over time <span className="font-normal text-muted">· dashed line is the threshold</span></h2>
+            <h2 className="font-semibold">Risk Over Time <span className="font-normal text-muted">· dashed line is the threshold</span></h2>
             {hist.length < 2 ? <p className="text-soft">No history yet. The core adds a point on every risk change.</p> : <Chart points={hist} threshold={threshold} />}
           </div>
           <div>
@@ -111,7 +111,7 @@ export default function Review({ embedded = false }: { embedded?: boolean }) {
             </div>
           </div>
           <div className="space-y-3 rounded-lg border border-line bg-surface p-4">
-            <h2 className="font-semibold">What adds to the score <span className="font-normal text-muted">· one row per incident</span></h2>
+            <h2 className="font-semibold">What Adds to the Score <span className="font-normal text-muted">· one row per incident</span></h2>
             <p className="text-sm text-soft">Each incident adds base points × AI confidence × how critical the target is, plus 5 for every hour nobody responds. The 0-100 index is 100 × (1 − e^(−raw ÷ 60)), so it slows down near the top.</p>
             {lines.bar}
             {rows.length === 0 ? <p className="text-soft">All quiet at the gate. No incidents.</p> : (

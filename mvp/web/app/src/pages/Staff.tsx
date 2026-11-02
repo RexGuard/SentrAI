@@ -60,13 +60,13 @@ function Detail({ r, done }: { r: Report; done: (msg: string) => void }) {
           <div key={k}><dt className="text-xs text-muted">{k}</dt><dd className="font-medium">{v}</dd></div>
         ))}
       </dl>
-      <div><h2 className="text-sm font-semibold">What they wrote</h2><p className="whitespace-pre-wrap text-soft">{r.text}</p></div>
+      <div><h2 className="text-sm font-semibold">What They Wrote</h2><p className="whitespace-pre-wrap text-soft">{r.text}</p></div>
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="space-y-2">
           <div><h2 className="text-sm font-semibold">Summary</h2><p className="text-soft">{t.summary || '-'}</p></div>
-          <div><h2 className="text-sm font-semibold">Check first</h2><p className="text-soft">{t.for_tech || '-'}</p></div>
+          <div><h2 className="text-sm font-semibold">Check First</h2><p className="text-soft">{t.for_tech || '-'}</p></div>
         </div>
-        <div><h2 className="text-sm font-semibold">What the reporter was told</h2>
+        <div><h2 className="text-sm font-semibold">What the Reporter Was Told</h2>
           {t.advice?.length ? <ol className="list-decimal pl-5 text-soft">{t.advice.map((a, i) => <li key={i}>{a}</li>)}</ol> : <p className="text-soft">-</p>}</div>
       </div>
       {r.notes?.length ? <div><h2 className="text-sm font-semibold">Notes</h2>{r.notes.map((n, i) => <p key={i} className="text-soft"><b>{n.by}</b> · {new Date(n.at).toLocaleTimeString()}<br />{n.text}</p>)}</div> : null}
@@ -107,8 +107,8 @@ export default function Staff() {
   return (
     <section className="space-y-4">
       <header>
-        <h1 className="text-2xl font-semibold">Staff reports</h1>
-        <p className="text-sm text-muted">what people at the business flagged · a person reads and closes each one</p>
+        <h1 className="text-2xl font-semibold">Staff Reports</h1>
+        <p className="text-sm text-muted">What people at the business flagged · a person reads and closes each one</p>
       </header>
       {error && <p role="alert" className="rounded-md border border-line bg-surface p-3 text-bad">{error}</p>}
       {note && <p role="status" className="rounded-md border border-line bg-surface p-3">{note}</p>}

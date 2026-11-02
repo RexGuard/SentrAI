@@ -129,8 +129,8 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
   return (
     <section className={compact ? 'flex h-full min-h-0 flex-col gap-3' : 'space-y-4'}>
       {!compact && <header>
-        <h1 className="text-2xl font-semibold">Chat</h1>
-        <p className="text-sm text-muted">ask the orchestrator what it sees and why it acted · it suggests, you decide</p>
+        <h1 className="text-2xl font-semibold">Sentry</h1>
+        <p className="text-sm text-muted">Ask the orchestrator what it sees and why it acted · it suggests, you decide</p>
       </header>}
       {error && <p role="alert" className="rounded-md border border-line bg-surface p-3 text-bad">{error}</p>}
       {note && <p role="status" className="rounded-md border border-line bg-surface p-3">{note}</p>}

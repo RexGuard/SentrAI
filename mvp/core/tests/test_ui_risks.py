@@ -56,3 +56,11 @@ def test_my_fix_without_a_model_offers_the_matching_button(client):
     assert "by hand" not in reply["text"] and "without an AI model" in reply["text"]
     assert reply["suggestions"] and reply["suggestions"][0]["decision"] == "approve"
     assert client.get(f"/incidents/{iid}").json()["status"] == "open"  # chat never acts on its own
+
+
+def test_all_severities_for_the_bell(client):
+    brute_force(client)
+    page = client.get("/ui/risks?severity=all").json()
+    assert len(page["rows"]) == sum(lv["bubbles"] for lv in page["levels"]) >= 1
+    hours = [r["hours"] for r in page["rows"]]
+    assert hours == sorted(hours)  # newest first

@@ -157,8 +157,8 @@ export default function Incidents({ embedded = false }: { embedded?: boolean }) 
     <section className="space-y-4">
       {!embedded && (
       <header>
-        <h1 className="text-2xl font-semibold">Incidents</h1>
-        <p className="text-sm text-muted">who owns each incident, and what still needs a person</p>
+        <h1 className="text-2xl font-semibold">All Incidents</h1>
+        <p className="text-sm text-muted">Who owns each incident, and what still needs a person</p>
       </header>
       )}
       {error && <p role="alert" className="rounded-md border border-line bg-surface p-3 text-bad">{error}</p>}
@@ -181,14 +181,14 @@ export default function Incidents({ embedded = false }: { embedded?: boolean }) 
           <div className="space-y-3 rounded-lg border border-line bg-surface p-4">
             {tab === 'todo' && (
               <>
-                <h2 className="font-semibold">Needs attention <span className="font-normal text-muted">· most urgent first</span></h2>
+                <h2 className="font-semibold">Needs Attention <span className="font-normal text-muted">· most urgent first</span></h2>
                 {page.todo_waves.map((w) => <p key={w.id}><b>{w.id}</b> · {w.line}. Approve or reject them together on Approvals (group by type).</p>)}
                 <Board rows={page.todo} contacts={page.contacts} done={done} empty="Nothing needs a person right now. Every open incident is in hand." />
               </>
             )}
             {tab === 'all' && (
               <>
-                <h2 className="font-semibold">All incidents <span className="font-normal text-muted">· owner, backup and what each one still needs</span></h2>
+                <h2 className="font-semibold">All Incidents <span className="font-normal text-muted">· owner, backup and what each one still needs</span></h2>
                 <div className="flex flex-wrap gap-4 text-sm text-soft">
                   <label className="flex items-center gap-2"><input type="checkbox" checked={closed} onChange={(e) => setClosed(e.target.checked)} /> Show resolved and rejected</label>
                   <label className="flex items-center gap-2"><input type="checkbox" checked={mine} onChange={(e) => setMine(e.target.checked)} /> Only mine</label>

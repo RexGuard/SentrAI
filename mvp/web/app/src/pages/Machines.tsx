@@ -104,7 +104,7 @@ export default function Machines() {
   const remove = async (m: Machine) => {
     const ok = await ask({ title: `Delete ${m.name} from the panel?`, confirm: 'Delete', danger: true, body: [
       "Its agent's key is revoked, so it stops reporting and its queued jobs are cancelled. The agent stays installed on that computer until you uninstall it there.",
-      "Its incidents and audit records are kept: the audit trail can't be edited, and they still show on Incidents and Audit trail.",
+      "Its incidents and audit records are kept: the audit trail can't be edited, and they still show on All Incidents and Activity Log.",
       'It comes back on this list if it reports again, or if you join it again with a new code.',
       'This is written to the audit log under your name.'] })
     if (ok === null) return
@@ -116,8 +116,8 @@ export default function Machines() {
   return (
     <section className="space-y-4">
       <header>
-        <h1 className="text-2xl font-semibold">Machines</h1>
-        <p className="text-sm text-muted">every computer that reports to this panel, and adding a new one</p>
+        <h1 className="text-2xl font-semibold">Computers</h1>
+        <p className="text-sm text-muted">Every computer that reports to this panel, and adding a new one</p>
       </header>
       {error && <p role="alert" className="rounded-md border border-line bg-surface p-3 text-bad">{error}</p>}
       {note && <p role="status" className="rounded-md border border-line bg-surface p-3">{note}</p>}
@@ -132,7 +132,7 @@ export default function Machines() {
           {!page.panel && <p className="rounded-md border border-line bg-surface p-3 text-soft">This core adds every machine into one score. To run it as a central panel, set SENTRAI_RISK_SCOPE=host (and SENTRAI_FIREWALL=off) on it and restart the core: each machine is then scored and blocked on its own.</p>}
           <div className="space-y-3 rounded-lg border border-line bg-surface p-4">
             <div className="flex items-center justify-between gap-3">
-              <h2 className="font-semibold">Machine list <span className="font-normal text-muted">· worst first</span></h2>
+              <h2 className="font-semibold">Machine List <span className="font-normal text-muted">· worst first</span></h2>
               <button className={btn} aria-expanded={adding} onClick={() => setAdding(!adding)}><Plus size={14} aria-hidden /> Add machine</button>
             </div>
             {adding && <AddMachine page={page} onMade={() => void load()} />}
@@ -173,7 +173,7 @@ export default function Machines() {
           </div>
           {page.panel && (
             <div className="space-y-3 rounded-lg border border-line bg-surface p-4">
-              <h2 className="font-semibold">Joined machines <span className="font-normal text-muted">· each has its own key; revoking one never touches the others</span></h2>
+              <h2 className="font-semibold">Joined Machines <span className="font-normal text-muted">· each has its own key; revoking one never touches the others</span></h2>
               {joined.bar}
               {page.joined.length === 0 ? <p className="text-soft">No machine has joined yet. Make a join code above.</p> : (
                 <div className="overflow-x-auto" role="region" aria-label="Joined machines" tabIndex={0}>

@@ -38,8 +38,8 @@ export default function Privacy() {
     <section className="space-y-4">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold">Privacy and data</h1>
-          <p className="text-sm text-muted">what SentrAI records about people, why, who can see it and how long it is kept</p>
+          <h1 className="text-2xl font-semibold">Privacy and Data</h1>
+          <p className="text-sm text-muted">What SentrAI records about people, why, who can see it and how long it is kept</p>
         </div>
         <a className={btn + ' no-underline'} href="/api/ui/privacy/notice.md" download><Download size={14} aria-hidden /> Staff notice for HR</a>
       </header>

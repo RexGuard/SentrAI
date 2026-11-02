@@ -88,7 +88,7 @@ export function Classifier() {
   return (
     <section className="space-y-4">
       <header>
-        <h1 className="text-2xl font-semibold">Classifier</h1>
+        <h1 className="text-2xl font-semibold">Threat Detection</h1>
         <p className="text-sm text-muted">Step 2 of 3 · decides which events are attacks: rules first, then AI, then keywords</p>
       </header>
       {e1 && <p role="alert" className="rounded-md border border-line bg-surface p-3 text-bad">{e1}</p>}
@@ -127,7 +127,7 @@ export function Responder() {
   return (
     <section className="space-y-4">
       <header>
-        <h1 className="text-2xl font-semibold">Action taker</h1>
+        <h1 className="text-2xl font-semibold">Automatic Responses</h1>
         <p className="text-sm text-muted">Step 3 of 3 · temporary blocks that undo themselves unless a person keeps them</p>
       </header>
       {e1 && <p role="alert" className="rounded-md border border-line bg-surface p-3 text-bad">{e1}</p>}
@@ -178,7 +178,7 @@ export function Collector() {
   return (
     <section className="space-y-4">
       <header>
-        <h1 className="text-2xl font-semibold">Collector</h1>
+        <h1 className="text-2xl font-semibold">Log Reading</h1>
         <p className="text-sm text-muted">Step 1 of 3 · reads your logs and turns each line into an event</p>
       </header>
       {e1 && <p role="alert" className="rounded-md border border-line bg-surface p-3 text-bad">{e1}</p>}
@@ -198,7 +198,7 @@ export function Collector() {
         <Card title="Heartbeats" note="Watchdog flags a collector that goes quiet">
           <Table name="Heartbeats" empty="No heartbeat received yet. Start the collector." head={['Collector', 'State', 'Last seen']}
             rows={collectors.map((c) => [c.collector ?? '-', c.silent ? 'Silent' : 'Alive', c.last_seen_ts ? new Date(c.last_seen_ts * 1000).toLocaleTimeString() : '-'])} />
-          <h2 className="pt-2 font-semibold">Events per layer agent</h2>
+          <h2 className="pt-2 font-semibold">Events per Layer Agent</h2>
           <Table name="Events per layer agent" empty="No agent data." head={['Agent', 'Events analysed']} rows={layer.map((a) => [a.name ?? '-', String(a.analyzed ?? 0)])} />
         </Card>
       </div>

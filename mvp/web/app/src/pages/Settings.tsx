@@ -82,7 +82,7 @@ export default function Settings() {
   return (
     <section className="space-y-4">
       <header>
-        <h1 className="text-2xl font-semibold">Configuration</h1>
+        <h1 className="text-2xl font-semibold">Setup</h1>
         <p className="text-sm text-muted">Saved to the settings file · read by every part when it starts</p>
       </header>
       {error && <p role="alert" className="rounded-md border border-line bg-surface p-3 text-bad">{error}</p>}
@@ -96,7 +96,7 @@ export default function Settings() {
           </div>
           {preset && match('preset', 'security', ...Object.values(data.presets).map((p) => p.label)) && (
             <div className="space-y-3 rounded-lg border border-line bg-surface p-4">
-              <h2 className="font-semibold">Security preset <span className="font-normal text-muted">· one choice sets the detection and response values below</span></h2>
+              <h2 className="font-semibold">Security Preset <span className="font-normal text-muted">· one choice sets the detection and response values below</span></h2>
               <div role="radiogroup" aria-label="Preset" className="flex flex-wrap gap-2">
                 {preset.choices.map((c) => (
                   <button key={c} role="radio" aria-checked={presetName === c} disabled={off} onClick={() => pickPreset(c)}

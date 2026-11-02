@@ -73,12 +73,14 @@ body { background-color: var(--bg); color: var(--ink); font-family: var(--font-s
   box-shadow: inset 1px 1px 0 rgba(255, 255, 255, .05); }
 .console-icon { display: grid; place-items: center; width: 2.5rem; height: 2.5rem; border-radius: 999px; color: var(--ink); }
 .console-icon:hover { background: var(--surface-3); }
+.console-badge { position: absolute; top: .1rem; right: .05rem; min-width: 1.1rem; height: 1.1rem; padding: 0 .25rem; border-radius: 999px; display: grid; place-items: center;
+  font-size: .625rem; font-weight: 700; color: #fff; background: #ff3b5c; box-shadow: 0 0 8px #ff3b5c; }
 .console-dot { position: absolute; top: .45rem; right: .55rem; width: .5rem; height: .5rem; border-radius: 50%; background: #ff3b5c; box-shadow: 0 0 8px #ff3b5c; }
 .console-avatar { display: grid; place-items: center; width: 2.4rem; height: 2.4rem; border-radius: 50%; color: var(--bg);
   background: linear-gradient(160deg, #e9e6ff, #aaa3cc); box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent-2) 30%, transparent); }
 :root[data-theme='light'] .console-avatar { color: #fff; background: linear-gradient(160deg, #6f68b8, #4c4590); }
 .console-pop { position: absolute; top: calc(100% + .5rem); z-index: 40; padding: .5rem; border-radius: 1.1rem; border: 1px solid var(--glass-line);
-  background: color-mix(in srgb, var(--surface) 92%, transparent); backdrop-filter: blur(14px); box-shadow: 0 18px 50px -12px rgba(0, 0, 0, .45); }
+  background: var(--surface);  box-shadow: 0 18px 50px -12px rgba(0, 0, 0, .45); }
 /* No backdrop-filter on the content panel or the risk stage: it would trap the dialogs' fixed backdrops inside them. */
 .console-main h1 { font-size: 2.25rem; line-height: 1.2; font-weight: 600; letter-spacing: -.02em;
   background: linear-gradient(90deg, var(--title-from), var(--title-to)); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }

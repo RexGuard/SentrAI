@@ -99,7 +99,7 @@ export default function Backups() {
     <section className="space-y-4">
       <header>
         <h1 className="text-2xl font-semibold">Backups</h1>
-        <p className="text-sm text-muted">copies of your folders and SentrAI's own records, ready to put back</p>
+        <p className="text-sm text-muted">Copies of your folders and SentrAI's own records, ready to put back</p>
       </header>
       {error && <p role="alert" className="rounded-md border border-line bg-surface p-3 text-bad">{error}</p>}
       {note && <p role="status" className="rounded-md border border-line bg-surface p-3">{note}</p>}
@@ -114,7 +114,7 @@ export default function Backups() {
           {data.last_error ? <p role="alert" className="text-bad">The last backup failed ({when(data.last_error.at)}): {data.last_error.error}</p>
             : data.overdue ? <p role="alert" className="text-warn">The last backup is more than two schedule periods old. Is SentrAI's core running?</p> : null}
           <div className="space-y-2 rounded-lg border border-line bg-surface p-4">
-            <h2 className="font-semibold">What is backed up</h2>
+            <h2 className="font-semibold">What Is Backed Up</h2>
             <p className="text-sm text-soft">
               {data.folders?.length ? <>Folders: {data.folders.map((f) => <code key={f} className="mr-2 font-mono text-xs">{f}</code>)}</> : "No folders chosen yet, so only SentrAI's own data is copied."}
               {data.include_sentrai ? " SentrAI's own settings, signing key and audit records are always included." : ''}
@@ -126,7 +126,7 @@ export default function Backups() {
             </button>
           </div>
           <div className="space-y-2 rounded-lg border border-line bg-surface p-4">
-            <h2 className="font-semibold">Backups kept <span className="font-normal text-muted">· newest first · a restore always checks the backup first</span></h2>
+            <h2 className="font-semibold">Backups Kept <span className="font-normal text-muted">· newest first · a restore always checks the backup first</span></h2>
             {f.bar}
             {kept.length === 0 ? <p className="text-soft">No backups yet.</p> : f.rows.length === 0 ? <p className="text-soft">No backups match these filters.</p> : <ul className="divide-y divide-line-soft">{f.rows.map((b) => <Row key={b.id} b={b} done={done} />)}</ul>}
           </div>

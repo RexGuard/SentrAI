@@ -44,8 +44,8 @@ export default function Guardrails() {
   return (
     <section className="space-y-3">
       <header>
-        <h1 className="text-2xl font-semibold">Automation guardrails</h1>
-        <p className="text-sm text-muted">what SentrAI may do without asking, and what it never touches
+        <h1 className="text-2xl font-semibold">Safety Limits</h1>
+        <p className="text-sm text-muted">What SentrAI may do without asking, and what it never touches
           · {c?.at ? `changed ${new Date(c.at).toLocaleString()}${c.by ? ` by ${c.by}` : ''}` : 'never changed'}</p>
       </header>
       {error && <p role="alert" className="rounded-md border border-line bg-surface p-3 text-bad">{error}</p>}

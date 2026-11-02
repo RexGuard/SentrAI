@@ -58,8 +58,8 @@ export default function Overview() {
   return (
     <section className="space-y-3">
       <header>
-        <h1 className="text-2xl font-semibold">Pipeline overview</h1>
-        <p className="text-sm text-muted">every step, machine and extension as a block · click one for its numbers and settings, drag it anywhere, + Add for more</p>
+        <h1 className="text-2xl font-semibold">How It Works</h1>
+        <p className="text-sm text-muted">Every step, machine and extension as a block · click one for its numbers and settings, drag it anywhere, + Add for more</p>
       </header>
       {error && <p role="alert" className="rounded-md border border-line bg-surface p-3 text-bad">{error}</p>}
       <div ref={hostEl} />

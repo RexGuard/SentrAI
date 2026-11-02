@@ -89,7 +89,7 @@ export default function SignIn() {
       <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); const f = form(e); void run(async () => {
         await api('/auth/totp', { body: { code: f.code } }); await refresh()
       }) }}>
-        <h2 className="text-lg font-semibold">Authenticator code</h2>
+        <h2 className="text-lg font-semibold">Authenticator Code</h2>
         <p className="text-sm text-muted">Signing in as {email}. Type the 6-digit code from your app, or a recovery code.</p>
         <Field label="Code" name="code" required autoComplete="one-time-code" inputMode="text" autoFocus />
         <button className={button} disabled={busy}>Sign in</button>
@@ -101,7 +101,7 @@ export default function SignIn() {
         const r = await api<{ recovery_codes: string[] }>('/auth/authenticator/confirm', { body: { code: f.code } })
         setCodes(r.recovery_codes); setStep('recovery')
       }) }}>
-        <h2 className="text-lg font-semibold">Add an authenticator</h2>
+        <h2 className="text-lg font-semibold">Add an Authenticator</h2>
         <p className="text-sm text-muted">Scan this with an authenticator app, then type the code it shows.</p>
         {qr && <img src={qr} width={200} height={200} alt={`QR code for the authenticator secret ${secret}`} className="rounded bg-white" />}
         <p className="break-all font-mono text-xs text-muted">{secret}</p>
@@ -112,7 +112,7 @@ export default function SignIn() {
   } else if (step === 'recovery') {
     body = (
       <div className="space-y-3">
-        <h2 className="text-lg font-semibold">Save your recovery codes</h2>
+        <h2 className="text-lg font-semibold">Save Your Recovery Codes</h2>
         <p className="text-sm text-muted">Each works once if you lose your phone. They are shown only now.</p>
         <ul className="grid grid-cols-2 gap-1 rounded-md border border-line bg-surface-2 p-3 font-mono text-sm">{codes.map((c) => <li key={c}>{c}</li>)}</ul>
         <button className={button} onClick={() => void refresh()}>I saved them, continue</button>
