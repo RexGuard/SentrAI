@@ -1448,7 +1448,7 @@ def protection_switch() -> None:
 
 
 def preset_settings(current: dict[str, str]) -> dict[str, str]:
-    """Strict, Moderate, Balanced or Advanced. Changing a value by hand switches to Advanced."""
+    """Strict, Moderate, Minimum or Advanced. Changing a value by hand switches to Advanced."""
     pick = f"cfg_{cfg.PRESET_ENV}"
     keys = {env: f"cfg_{env}" for env in cfg.PRESET_FIELDS}
     st.session_state.setdefault(pick, current[cfg.PRESET_ENV])

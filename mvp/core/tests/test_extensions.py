@@ -33,7 +33,8 @@ def rows(c):
 def test_the_core_runs_with_no_extension_added(client):
     r = rows(client)
     assert [n for n in r if not r[n]["built_in"]] == list(BUNDLED)  # page order from the manifests
-    assert all(not r[n]["added"] and r[n]["added_by"] == "settings" for n in BUNDLED)
+    assert all(not r[n]["added"] and r[n]["added_by"] == ("feature" if n == "typesafe" else "settings")
+               for n in BUNDLED)
     assert r["webhook"]["built_in"] and r["email"]["built_in"] and r["email"]["added"]
     assert [s.name for s in client.core.classifier.classifiers] == ["rules", "fallback"]
     assert client.core.responders.for_type("block_ip") is client.core.blocklist_responder
@@ -59,17 +60,30 @@ def test_the_core_runs_with_no_extension_installed(tmp_path, monkeypatch):
 
 def test_sentrai_extensions_on_the_server_has_the_final_word(tmp_path, monkeypatch):
     monkeypatch.setenv("SENTRAI_EXTENSIONS", "slack, nope")
-    monkeypatch.setenv("TYPESAFE_API_KEY", "ts-key")  # a saved key does not turn it on now
+    monkeypatch.setenv("ABUSEIPDB_API_KEY", "ab-key")  # a saved key does not turn it on now
     c = start(tmp_path)
     r = rows(c)
-    assert r["slack"]["added"] and not r["typesafe"]["added"]
-    assert {r[n]["added_by"] for n in BUNDLED} == {"SENTRAI_EXTENSIONS"}
+    assert r["slack"]["added"] and not r["abuseipdb"]["added"]
+    assert {r[n]["added_by"] for n in BUNDLED if n != "typesafe"} == {"SENTRAI_EXTENSIONS"}
+    assert r["typesafe"]["added_by"] == "feature"  # Jev is part of SentrAI: only its key decides
     assert any("nope" in p for p in c.core.extensions.problems)
     for verb in ("add", "remove"):
-        refused = c.post(f"/extensions/typesafe/{verb}", json={"operator": "erick"})
+        refused = c.post(f"/extensions/abuseipdb/{verb}", json={"operator": "erick"})
         assert refused.status_code == 409 and "SENTRAI_EXTENSIONS" in refused.json()["detail"]
     monkeypatch.setenv("SENTRAI_EXTENSIONS", "all")
-    assert all(x["added"] for x in c.get("/extensions").json())
+    assert all(x["added"] for x in c.get("/extensions").json() if x["name"] != "typesafe")  # no Jev key here
+
+
+def test_jev_is_a_feature_its_key_turns_on(tmp_path, monkeypatch):
+    c = start(tmp_path)
+    assert rows(c)["typesafe"]["added"] is False and rows(c)["typesafe"]["feature"] is True
+    for verb in ("add", "remove"):
+        refused = c.post(f"/extensions/typesafe/{verb}", json={"operator": "erick"})
+        assert refused.status_code == 409 and "part of SentrAI" in refused.json()["detail"]
+    (tmp_path / "extensions.json").write_text('{"extensions": {"typesafe": {"added": false}}}')  # an old Remove
+    monkeypatch.setenv("TYPESAFE_API_KEY", "ts-key")
+    r = rows(start(tmp_path))["typesafe"]
+    assert r["added"] is True and r["added_by"] == "feature"
 
 
 def test_unknown_names_are_404(client):

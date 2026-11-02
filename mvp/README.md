@@ -66,7 +66,7 @@ only and prints the address and the sign-in. See [deploy/README.md](deploy/READM
 ### First-run setup
 
 On a new machine, `run.ps1` / `run.sh` (and the collector when started on its own) first runs a
-short setup wizard. It starts with a **security preset** (Strict, Moderate or Balanced), which
+short setup wizard. It starts with a **security preset** (Strict, Moderate or Minimum), which
 sets the detection and response values, or **Advanced** to set each of them yourself. Then one section per part: **collector** (logs directory and log file names),
 **classifier** (brute-force and bulk-export thresholds, TypeSafe key), **responder** (risk
 threshold, block expiry, SLA, IPs and accounts never to touch) and **notifications**
@@ -106,7 +106,7 @@ The settings file records how setup was finished (`"setup_done"`).
 
 ### Security presets
 
-| Value | Strict | Moderate (default) | Balanced |
+| Value | Strict | Moderate (default) | Minimum |
 | --- | --- | --- | --- |
 | Brute force: failed logins / seconds (`BRUTE_FORCE_COUNT` / `_WINDOW_S`) | 3 / 120 | 5 / 60 | 8 / 60 |
 | Rows in one export that count as exfiltration (`EXPORT_ROWS_THRESHOLD`) | 50 | 100 | 250 |
@@ -116,7 +116,7 @@ The settings file records how setup was finished (`"setup_done"`).
 | AI confidence needed to act without a person (`NEEDLE_MIN_CONFIDENCE`) | 0.5 | 0.6 | 0.75 |
 
 Strict acts early and holds longer (more alerts, some false positives). Moderate is what the
-demo uses. Balanced puts day-to-day operations first. Advanced sets each value by hand. The
+demo uses. Minimum puts day-to-day operations first. Advanced sets each value by hand. The
 settings file keeps the choice (`SENTRAI_PRESET`) and every value; values that no longer match
 their preset are saved as Advanced. On the dashboard's Configuration page, changing any value
 under **Advanced settings** switches the preset to Advanced, and every other section is folded

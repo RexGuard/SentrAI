@@ -282,9 +282,14 @@ class Host:
             raise ExtensionError(f"{se.CHOICE_ENV} is set on the server, so the extensions it lists are the "
                                  "ones on. Change it there.")
 
+    def _choosable(self, m: se.Manifest) -> None:
+        self._changeable()
+        if m.feature:
+            raise ExtensionError(f"{m.title} is part of SentrAI. Save or clear its key in Settings to turn it on or off.")
+
     def add(self, name: str, operator: str) -> dict[str, Any]:
         m = self._get(name)
-        self._changeable()
+        self._choosable(m)
         with self.core.lock:
             self.choices.set(name, True, operator, self.core.clock.now_iso())
             started = False
@@ -298,7 +303,7 @@ class Host:
 
     def remove(self, name: str, operator: str) -> dict[str, Any]:
         m = self._get(name)
-        self._changeable()
+        self._choosable(m)
         with self.core.lock:
             self.choices.set(name, False, operator, self.core.clock.now_iso())
             cleanup = self._stop(name)
@@ -345,6 +350,8 @@ class Host:
                     "configured", "detail", "last_ok", "last_error", "testable")})
             except Exception as exc:  # a broken status must not break the page
                 row["last_error"] = f"{type(exc).__name__}: {exc}"[:200]
+        elif not on and m.feature:
+            row["detail"] = "Off until its key is saved in Settings."
         elif not on:
             row["detail"] = "Not added. Add it to use it; its settings are kept either way."
         elif "core" not in m.parts:

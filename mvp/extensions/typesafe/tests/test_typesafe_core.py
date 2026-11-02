@@ -161,22 +161,25 @@ def test_jev_answers_between_the_rules_and_the_fallback(make_core):
     assert jev_row["extension"] == "typesafe" and jev_row["cache"]["max"] == 2048
 
 
-def test_removing_typesafe_leaves_rules_and_fallback(make_core):
+def test_clearing_the_key_leaves_rules_and_fallback(make_core, monkeypatch):
     c = make_core(TYPESAFE_API_KEY="ts-key")
     ext = c.core.extensions.running["typesafe"].ext
-    assert c.post("/extensions/typesafe/remove", json={"operator": "erick"}).status_code == 200
+    refused = c.post("/extensions/typesafe/remove", json={"operator": "erick"})  # a feature: its key decides
+    assert refused.status_code == 409 and "part of SentrAI" in refused.json()["detail"]
+    monkeypatch.setenv("TYPESAFE_API_KEY", "")  # the key cleared in Settings
+    c.post("/extensions/reload")
     assert steps(c) == ["rules", "fallback"] and ext.client.enabled is False
     assert "Jev" not in {a["name"] for a in c.get("/agents").json()}
     c.post("/events", json=ev(1, "GET /search?q=' OR 1=1 -- 200", source="flask_access"))
     assert c.get("/incidents").json()[0]["classified_by"] == "rules"
-    assert c.post("/extensions/typesafe/add", json={"operator": "erick"}).json()["running"] is True
+    monkeypatch.setenv("TYPESAFE_API_KEY", "ts-key")  # saved again
+    assert next(r for r in c.post("/extensions/reload").json() if r["name"] == "typesafe")["running"] is True
     assert steps(c) == ["rules", "jev", "fallback"]
 
 
-def test_added_without_a_key_says_so_and_the_fallback_decides(make_core):
-    c = make_core(SENTRAI_EXTENSIONS="typesafe", JEV_CACHE_SIZE="16")
+def test_without_a_key_it_is_off_and_the_fallback_decides(make_core):
+    c = make_core(SENTRAI_EXTENSIONS="typesafe", JEV_CACHE_SIZE="16")  # naming it does not turn a feature on
     row = next(r for r in c.get("/extensions").json() if r["name"] == "typesafe")
-    assert row["added"] and row["configured"] is False and "TypeSafe API key" in row["detail"]
-    jev_row = next(a for a in c.get("/agents").json() if a["name"] == "Jev")
-    assert jev_row["status"].startswith("disabled") and jev_row["cache"]["max"] == 16
-    assert c.post("/extensions/typesafe/test").json()["ok"] is False
+    assert not row["added"] and row["added_by"] == "feature" and "key is saved in Settings" in row["detail"]
+    assert "Jev" not in {a["name"] for a in c.get("/agents").json()}
+    assert steps(c) == ["rules", "fallback"]

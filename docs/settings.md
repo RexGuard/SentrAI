@@ -29,7 +29,7 @@ part. `INDEX.md` in that folder lists them all; see
 
 One choice sets how quickly SentrAI acts and how long a block lasts.
 
-| | Strict | Moderate (default) | Balanced |
+| | Strict | Moderate (default) | Minimum |
 | --- | --- | --- | --- |
 | Failed logins that count as password guessing | 3 in 2 minutes | 5 in 1 minute | 8 in 1 minute |
 | Rows in one export that count as data theft | 50 | 100 | 250 |
@@ -37,7 +37,7 @@ One choice sets how quickly SentrAI acts and how long a block lasts.
 | Hours a block lasts | 4 | 2 | 1 |
 | Hours a person has to respond | 1 | 2 | 4 |
 
-Strict acts early and holds longer, with more false alarms. Balanced puts day-to-day work first.
+Strict acts early and holds longer, with more false alarms. Minimum puts day-to-day work first.
 **Advanced** lets you set each value yourself.
 
 ## Never block these

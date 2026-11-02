@@ -25,8 +25,17 @@ def install(app: FastAPI, reload_after_save: Callable[[], Any]) -> None:
     @app.get("/ui/settings")
     def get_settings() -> dict[str, Any]:
         current = {f.env: f.default for f in cfg.FIELDS.values()} | cfg.read()
-        sections = [{"key": s.key, "title": s.title, "about": s.about, "extension": s.key.startswith("extension:"),
+        found = cfg.sentrai_extensions.installed() if cfg.sentrai_extensions else {}
+        features = {m.section for m in found.values() if m.feature}
+        sections = [{"key": s.key, "title": s.title, "about": s.about,
+                     "extension": s.key.startswith("extension:") and s.key not in features,
+                     "feature": s.key in features, "name": s.key.removeprefix("extension:"),
                      "fields": [field_row(f, current) for f in s.fields]} for s in cfg.ALL_SECTIONS]
+        # A feature (Jev) sits with SentrAI's own sections, right after the step it is part of.
+        for row in [r for r in sections if r["feature"]]:
+            sections.remove(row)
+            at = next((i for i, r in enumerate(sections) if r["key"] == "classifier"), len(sections) - 1)
+            sections.insert(at + 1, row)
         return {"path": cfg.config_path().name, "sections": sections,
                 "presets": {name: {"label": cfg.preset_label(name), "about": cfg.PRESETS[name].about,
                                    "values": cfg.preset_values(name)} for name in cfg.PRESETS},
@@ -58,7 +67,7 @@ def install(app: FastAPI, reload_after_save: Callable[[], Any]) -> None:
         cfg.mark_setup_done("dashboard")
         try:
             reload_after_save()
-            note = "Cyanide and the extensions use the new settings now. Restart SentrAI (stop, then run) for the other settings."
+            note = "Sentry and the integrations use the new settings now. Restart SentrAI (stop, then run) for the other settings."
         except Exception:  # noqa: BLE001 - saved is saved; a reload that fails must not look like a failed save
             note = "Start SentrAI (run.ps1 or run.sh) so the core picks them up."
         return {"saved": sorted(str(k) for k in sent), "message": f"Saved. {note}"}
