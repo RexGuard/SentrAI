@@ -41,7 +41,7 @@ def test_answers_are_saved_per_part_and_loaded_as_env_defaults(config_file, monk
     cfg.save(values)
 
     saved = json.loads(config_file.read_text())
-    assert set(saved) == {"preset", "collector", "classifier", "responder", "notifications", "ai", "access",
+    assert set(saved) == {"preset", "collector", "classifier", "responder", "notifications", "ai", "contact", "access",
                           *(f"extension:{name}" for name in cfg.EXTENSION_SECTIONS)}
     assert saved["preset"]["SENTRAI_PRESET"] == "advanced"
     assert saved["collector"]["SENTRAI_LAB_LOGS"] == "/var/log/portal"

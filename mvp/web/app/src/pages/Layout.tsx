@@ -1,14 +1,14 @@
 import { Suspense, useEffect, useRef, useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import {
-  Briefcase, Eye, Gavel, LayoutDashboard, Library, DatabaseBackup, FileText, Flag, Link2, Lock, LogOut, Moon,
+  Briefcase, Eye, Gavel, Headset, Mail, Phone, LayoutDashboard, Library, DatabaseBackup, FileText, Flag, Link2, Lock, LogOut, Moon,
   ScrollText, Search, Server, Settings2, Siren, Sparkles, Sun, UserRound, Users, Bell as BellIcon, PanelLeftClose, PanelLeftOpen, type LucideIcon,
 } from 'lucide-react'
 import { api } from '../lib/api'
 import { useSession } from '../lib/session'
 import { useTheme } from '../lib/theme'
 import Waves from '../lib/Waves'
-import { transition, usePresence, useGo, VLink, VNavLink } from '../lib/motion'
+import { themeReveal, usePresence, useGo, VLink, VNavLink } from '../lib/motion'
 import { ask } from '../lib/notice'
 import { useSimple } from '../lib/simple'
 import HelpDock, { useDock } from './HelpDock'
@@ -55,8 +55,8 @@ function groupOf(menu: Group[], path: string): Group | undefined {
   return menu.find((g) => g.items.some((i) => base === i.to || base.startsWith(i.to + '/')))
 }
 
-// The account menu behind the avatar (top right): who is signed in, Simple view, Black/White, sign out.
-function Account({ simple, toggleSimple }: { simple: boolean; toggleSimple: () => void }) {
+// The account menu behind the avatar (top right): who is signed in, Black/White, sign out.
+function Account() {
   const { me, signOut } = useSession()
   const [theme, toggle] = useTheme()
   const [open, setOpen] = useState(false)
@@ -83,14 +83,51 @@ function Account({ simple, toggleSimple }: { simple: boolean; toggleSimple: () =
       {pop.mounted && (
         <div role="menu" data-state={pop.state} className="console-pop right-0 w-64">
           <p className="truncate px-3 pb-2 pt-1 font-medium">{me?.name || me?.email}<span className="block text-xs font-normal text-muted">{me?.role_label}</span></p>
-          <button role="menuitem" className={row} onClick={() => { toggleSimple(); setOpen(false) }}
-            title={simple ? 'Show every page, with the technical names' : 'Fewer pages, everyday words: for people who are not in IT'}>
-            <Eye size={16} aria-hidden /> {simple ? 'Full View' : 'Simple View'}
-          </button>
-          <button role="menuitem" className={row} onClick={() => transition(() => toggle())}>
-            {theme === 'dark' ? <Sun size={16} aria-hidden /> : <Moon size={16} aria-hidden />} {theme === 'dark' ? 'White Theme' : 'Black Theme'}
+          <button role="menuitem" className={row} onClick={(e) => { const b = e.currentTarget.getBoundingClientRect(); themeReveal(() => toggle(), { x: b.left + 20, y: b.top + b.height / 2 }) }}>
+            {theme === 'dark' ? <Sun size={16} aria-hidden /> : <Moon size={16} aria-hidden />} {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
           </button>
           <button role="menuitem" className={row} onClick={() => void out()}><LogOut size={16} aria-hidden /> Sign Out</button>
+        </div>)}
+    </div>
+  )
+}
+
+// Contact us (top right): the team's contacts, from the SENTRAI_CONTACTS setting (Setup > Contact us), so no
+// personal details live in the code.
+type Contact = { name: string; role: string; email: string; phone: string }
+function ContactUs() {
+  const [open, setOpen] = useState(false)
+  const [rows, setRows] = useState<Contact[] | null>(null)
+  const box = useRef<HTMLDivElement>(null)
+  const pop = usePresence(open)
+  useEffect(() => {
+    if (!open) return
+    if (rows === null) api<{ contacts: Contact[] }>('/ui/contacts').then((r) => setRows(r.contacts)).catch(() => setRows([]))
+    const off = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false) }
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', off); document.addEventListener('keydown', esc)
+    return () => { document.removeEventListener('mousedown', off); document.removeEventListener('keydown', esc) }
+  }, [open, rows])
+  return (
+    <div ref={box} className="relative">
+      <button className="console-icon" aria-haspopup="true" aria-expanded={open} aria-label="Contact us" title="Contact us" onClick={() => setOpen(!open)}>
+        <Headset size={22} aria-hidden />
+      </button>
+      {pop.mounted && (
+        <div data-state={pop.state} className="console-pop right-0 w-80 max-w-[calc(100vw-2rem)] p-0">
+          <p className="border-b border-line px-4 py-3 font-semibold">Contact Us</p>
+          {rows === null ? <p className="px-4 py-4 text-sm text-muted" role="status">Loading…</p>
+            : rows.length === 0 ? <p className="px-4 py-4 text-sm text-muted">No contacts saved yet. Add them in Setup, under Contact us.</p> : (
+            <ul className="divide-y divide-line-soft p-1.5">
+              {rows.map((c) => (
+                <li key={c.name + c.email} className="px-2.5 py-2.5 text-sm">
+                  <p className="font-medium">{c.name}{c.role && <span className="font-normal text-muted"> · {c.role}</span>}</p>
+                  {c.email && <a href={`mailto:${c.email}`} className="mt-0.5 flex items-center gap-1.5 text-soft hover:text-ink"><Mail size={14} aria-hidden />{c.email}</a>}
+                  {c.phone && <a href={`tel:${c.phone.replace(/[^+\d]/g, '')}`} className="mt-0.5 flex items-center gap-1.5 text-soft hover:text-ink"><Phone size={14} aria-hidden />{c.phone}</a>}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>)}
     </div>
   )
@@ -220,7 +257,7 @@ function PageSkeleton() {
 export default function Layout() {
   const { can } = useSession()
   const dock = useDock()
-  const { simple, toggle: toggleSimple } = useSimple()
+  const { simple } = useSimple()
   const { pathname } = useLocation()
   const go = useGo()
   const menu = simple ? SIMPLE_MENU : MENU
@@ -258,8 +295,9 @@ export default function Layout() {
         </nav>
         <div className="flex shrink-0 items-center gap-4 pr-2">
           <Find menu={menu} />
+          <ContactUs />
           <Bell />
-          <Account simple={simple} toggleSimple={toggleSimple} />
+          <Account />
         </div>
       </header>
       <div className="flex">

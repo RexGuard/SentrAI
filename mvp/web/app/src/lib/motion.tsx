@@ -8,7 +8,7 @@ import { Link, NavLink, useNavigate } from 'react-router-dom'
 
 export const reducedMotion = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
 
-type VT = { startViewTransition?: (cb: () => void) => { finished: Promise<void> } }
+type VT = { startViewTransition?: (cb: () => void) => { finished: Promise<void>; ready: Promise<void> } }
 
 /** Which way the page moves through the menus: sidebar "stack" (up = new page rises from below, down = from above), top tabs "push" (left = new page comes from the right). */
 export type Slide = { dir: 'up' | 'down' | 'left' | 'right'; steps: number }
@@ -38,6 +38,23 @@ export function transition(update: () => void, slide?: Slide) {
     } finally { updating = false }
   })
   if (slide) void vt.finished.finally(() => { delete root.dataset.slide; root.style.removeProperty('--slide-steps') })
+}
+
+/** Light and Dark mode, after Animate UI's theme toggler: the new theme spreads out in a circle from the button
+ *  that was pressed, over the whole page. Without view transitions (or with reduced motion) it just switches. */
+export function themeReveal(update: () => void, from?: { x: number; y: number }) {
+  const d = document as Document & VT
+  if (!d.startViewTransition || reducedMotion()) { update(); return }
+  const root = document.documentElement
+  const x = from?.x ?? window.innerWidth - 40, y = from?.y ?? 40
+  const r = Math.hypot(Math.max(x, window.innerWidth - x), Math.max(y, window.innerHeight - y))
+  root.dataset.theming = ''
+  const vt = d.startViewTransition(() => flushSync(update))
+  void vt.ready.then(() => root.animate(
+    { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${r}px at ${x}px ${y}px)`] },
+    { duration: 650, easing: 'cubic-bezier(.4, 0, .2, 1)', pseudoElement: '::view-transition-new(root)' },
+  )).catch(() => {})
+  void vt.finished.finally(() => { delete root.dataset.theming })
 }
 
 const held: Promise<unknown>[] = []

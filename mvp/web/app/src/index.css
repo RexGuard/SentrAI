@@ -287,6 +287,12 @@ main tbody tr { transition: background-color .12s ease-out; }
 @keyframes shimmer { to { transform: translateX(100%); } }
 .console-icon, .console-avatar, .side-on, .topnav, .console-side a, .console-side button { transition: background-color .2s, color .2s, box-shadow .25s, transform .2s; }
 .console-avatar:active, .console-icon:active { transform: scale(.94); }
+/* Light / Dark mode: the new theme is revealed in a growing circle (themeReveal in lib/motion.tsx), so the old
+   page stays still underneath instead of fading. */
+:root[data-theming]::view-transition-old(root), :root[data-theming]::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+:root[data-theming]::view-transition-new(root) { z-index: 9999; }
+:root[data-theming]::view-transition-old(*), :root[data-theming]::view-transition-new(*) { animation-duration: 0s; }
+
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
   .console-pop, .notice, .risk-backdrop, .skeleton::after, .page-in { animation: none !important; }

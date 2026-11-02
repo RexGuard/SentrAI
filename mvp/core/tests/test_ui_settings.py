@@ -35,3 +35,12 @@ def test_unknown_and_generated_settings_are_refused(client):
     assert client.post("/ui/settings", json={"values": {"NOT_A_SETTING": "1"}}).status_code == 400
     assert client.post("/ui/settings", json={"values": {cfg.TOKEN_ENV: "x"}}).status_code == 400
     assert client.post("/ui/settings", json={}).status_code == 400
+
+
+def test_contacts_come_from_the_setting(client):
+    from app.ui_settings import contacts
+    rows = client.get("/ui/contacts").json()["contacts"]
+    assert rows and rows[0]["name"] == "Erick Sientaro" and rows[0]["email"] == ""  # the default: names and roles only
+    assert contacts("A | CEO | a@b.c | +65 1234; ; B") == [
+        {"name": "A", "role": "CEO", "email": "a@b.c", "phone": "+65 1234"},
+        {"name": "B", "role": "", "email": "", "phone": ""}]
