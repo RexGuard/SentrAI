@@ -3,17 +3,20 @@ import { useNavigate } from 'react-router-dom'
 import mount from '../canvas/flow_canvas.mjs'
 import css from '../canvas/flow_canvas.css?raw'
 import { api, ApiError } from '../lib/api'
+import { holdTransition } from '../lib/motion'
 
 type Result = { id: string; ok: boolean; message: string }
 type Data = Record<string, unknown> & { results?: Result[] }
 type Ev = { id?: string; doc?: unknown; block?: string; changes?: unknown; name?: string; on?: boolean; title?: string; page?: string; host?: string }
 
+// The last overview seen, drawn at once on the next visit while a fresh copy loads.
+let last: Data | null = null
 const ROUTES = new Set(['approvals', 'incidents', 'collector', 'classifier', 'responder', 'guardrails', 'review', 'machines', 'extensions', 'audit', 'config', 'chat', 'reports', 'backups', 'staff', 'team'])
 
 export default function Overview() {
   const navigate = useNavigate()
   const hostEl = useRef<HTMLDivElement>(null)
-  const [data, setData] = useState<Data | null>(null)
+  const [data, setData] = useState<Data | null>(last)
   const [results, setResults] = useState<Result[]>([])
   const [error, setError] = useState('')
   const busy = useRef(false)
@@ -21,9 +24,9 @@ export default function Overview() {
 
   const load = useCallback(async () => {
     if (busy.current) return
-    try { setData(await api<Data>('/ui/overview')); setError('') } catch (e) { setError(e instanceof ApiError ? e.message : 'Could not load the overview.') }
+    try { const d = await api<Data>('/ui/overview'); last = d; setData(d); setError('') } catch (e) { setError(e instanceof ApiError ? e.message : 'Could not load the overview.') }
   }, [])
-  useEffect(() => { void load(); const t = setInterval(() => void load(), 5000); return () => clearInterval(t) }, [load])
+  useEffect(() => { void holdTransition(load()); const t = setInterval(() => void load(), 5000); return () => clearInterval(t) }, [load])
 
   const answer = useCallback((id: string, ok: boolean, message: string) => setResults((r) => [...r.filter((x) => x.id !== id), { id, ok, message }].slice(-12)), [])
   const handle = useCallback((name: string, value: unknown) => {
