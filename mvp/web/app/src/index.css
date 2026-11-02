@@ -5,23 +5,25 @@
 @font-face { font-family: 'IBM Plex Sans'; font-weight: 600; src: url('/fonts/ibm-plex-sans-latin-600-normal.woff2') format('woff2'); font-display: swap; }
 @font-face { font-family: 'JetBrains Mono'; font-weight: 400; src: url('/fonts/jetbrains-mono-latin-400-normal.woff2') format('woff2'); font-display: swap; }
 
-/* SentrAI brand: night-watch navy from the brand kit, with the logo's violet (#8057f0), periwinkle (#697ef5)
-   and deep violet (#522bbe) for what is picked, the main button and the soft glows behind the console.
-   Green, amber and red are for risk only. */
+/* Colours taken 1:1 from Erick's reference console (2 Nov 2026): deep indigo-navy with violet and blue waves (dark),
+   lavender white with soft violet waves (White). Green, amber and red are for risk only.
+   --card-* are the four severity cards on the Command center. */
 :root, :root[data-theme='dark'] {
-  --bg: #0b111d; --surface: #121a29; --surface-2: #172134; --surface-3: #1d2940; --sidebar: #090e19;
-  --ink: #e7edf6; --ink-soft: #a5b2c6; --ink-muted: #7f8ca3; --line: #26324a; --line-soft: #1b2538;
-  --green: #4fb67c; --amber: #e8b34a; --red: #ec835a; --critical: #e5484d;
-  --accent: #8057f0; --accent-2: #697ef5; --on-accent: #ffffff;
-  --wave-a: rgba(105, 126, 245, .16); --wave-b: rgba(128, 87, 240, .16); --wave-c: rgba(82, 43, 190, .24);
+  --bg: #191532; --surface: #1f1a40; --surface-2: #262150; --surface-3: #312b66; --sidebar: #1c1739;
+  --ink: #f0efff; --ink-soft: #adaeda; --ink-muted: #8c8fb2; --line: #312c5e; --line-soft: #262149;
+  --green: #4fb67c; --amber: #e8b34a; --red: #ec835a; --critical: #ff335a;
+  --accent: #6a3fe0; --accent-2: #a68cff; --on-accent: #ffffff; --accent-pill: #363179;
+  --wave-a: rgba(82, 100, 226, .30); --wave-b: rgba(147, 77, 235, .30); --wave-c: rgba(55, 64, 165, .35);
+  --card-critical: #ff335a; --card-high: #ff7026; --card-medium: #f7e320; --card-low: #b7b3ff;
   color-scheme: dark;
 }
 :root[data-theme='light'] {
-  --bg: #f5f7fb; --surface: #ffffff; --surface-2: #eef2f8; --surface-3: #e3e9f3; --sidebar: #eef2f8;
-  --ink: #0f1a2c; --ink-soft: #44536b; --ink-muted: #5c6880; --line: #d5dce8; --line-soft: #e4e9f1;
-  --green: #15803d; --amber: #96590a; --red: #c2410c; --critical: #dc2626;
-  --accent: #522bbe; --accent-2: #522bbe; --on-accent: #ffffff;
-  --wave-a: rgba(105, 126, 245, .10); --wave-b: rgba(128, 87, 240, .08); --wave-c: rgba(82, 43, 190, .07);
+  --bg: #f3f1fb; --surface: #ffffff; --surface-2: #f6f4fd; --surface-3: #e6ddfc; --sidebar: #f7f6fc;
+  --ink: #1b1840; --ink-soft: #4f4e6d; --ink-muted: #63627f; --line: #e3dff3; --line-soft: #eeebf8;
+  --green: #15803d; --amber: #96590a; --red: #c2410c; --critical: #d61045;
+  --accent: #4612e0; --accent-2: #4612e0; --on-accent: #ffffff; --accent-pill: #ddcefc;
+  --wave-a: rgba(165, 182, 251, .45); --wave-b: rgba(196, 142, 253, .40); --wave-c: rgba(187, 201, 250, .40);
+  --card-critical: #d61045; --card-high: #e5480f; --card-medium: #d99106; --card-low: #5b53a6;
   color-scheme: light;
 }
 
@@ -41,21 +43,22 @@ body { background-color: var(--bg); color: var(--ink); font-family: var(--font-s
     radial-gradient(40vw 35vh at 0% 0%, var(--wave-b), transparent 70%);
   background-attachment: fixed; }
 :focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
-/* The section picked in the sidebar and the page picked in the top bar. */
-.side-on, .topnav-on { color: var(--ink); background: linear-gradient(180deg, color-mix(in oklab, var(--accent) 32%, var(--surface-2)), color-mix(in oklab, var(--accent) 10%, var(--surface-2)));
-  box-shadow: 0 0 0 1px color-mix(in oklab, var(--accent-2) 55%, transparent), 0 6px 22px -10px var(--accent); }
-.side-on { box-shadow: inset 2px 0 0 var(--accent-2), 0 0 0 1px color-mix(in oklab, var(--accent-2) 40%, transparent), 0 6px 22px -12px var(--accent); }
+/* The section picked in the sidebar and the page picked in the top bar: an indigo pill with a violet rim. */
+.side-on, .topnav-on { color: var(--ink); background: linear-gradient(180deg, color-mix(in oklab, var(--accent-pill) 100%, var(--accent) 12%), var(--accent-pill));
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--accent-2) 55%, transparent), 0 8px 24px -12px var(--accent); }
+.side-on svg, .topnav-on svg { color: var(--accent-2); }
+:root[data-theme='light'] .side-on, :root[data-theme='light'] .topnav-on { color: var(--accent); box-shadow: 0 0 0 1px color-mix(in oklab, var(--accent) 18%, transparent), 0 6px 18px -12px var(--accent); }
 
 /* The overview canvas (src/canvas) reads the console's own variable names. */
 @font-face { font-family: 'Material Symbols Rounded'; font-style: normal; font-weight: 400; font-display: block; src: url('/fonts/sentrai-icons.woff2') format('woff2'); }
 :root, :root[data-theme='dark'] {
-  --font: 'IBM Plex Sans', system-ui, sans-serif; --mono: 'JetBrains Mono', ui-monospace, monospace; --ink-faint: #6f7d93;
-  --brand: #8f9cf7; --brand-2: #a5b2c6; --brand-fill: #8057f0; --on-brand: #ffffff; --brand-soft: #1d2940; --brand-line: #3d3f7a; --brand-fill-hover: #6d47e0;
-  --glow: rgba(128, 87, 240, 0.08); --unknown: #7f8ca3;
+  --font: 'IBM Plex Sans', system-ui, sans-serif; --mono: 'JetBrains Mono', ui-monospace, monospace; --ink-faint: #7d80a8;
+  --brand: #a68cff; --brand-2: #adaeda; --brand-fill: #6a3fe0; --on-brand: #ffffff; --brand-soft: #363179; --brand-line: #4b4499; --brand-fill-hover: #5a32cc;
+  --glow: rgba(147, 77, 235, 0.08); --unknown: #8c8fb2;
 }
 :root[data-theme='light'] {
-  --ink-faint: #6b778d; --brand: #522bbe; --brand-2: #44536b; --brand-fill: #522bbe; --on-brand: #ffffff; --brand-soft: #ebe5fc; --brand-line: #c3b4f2;
-  --brand-fill-hover: #4422a3; --glow: rgba(82, 43, 190, 0.06); --unknown: #5c6880;
+  --ink-faint: #6e6d8a; --brand: #4612e0; --brand-2: #4f4e6d; --brand-fill: #4612e0; --on-brand: #ffffff; --brand-soft: #ddcefc; --brand-line: #c3b4f2;
+  --brand-fill-hover: #3a0fc0; --glow: rgba(70, 18, 224, 0.06); --unknown: #63627f;
 }
 
 /* Looks borrowed from Watermelon UI's dashboard blocks and Cult UI's prompt input, in our own neutrals. */
@@ -80,11 +83,11 @@ main tbody tr { transition: background-color .12s ease-out; }
 .risk-stage { position: relative; isolation: isolate; overflow: hidden; }
 .risk-stage::before, .risk-stage::after { content: ''; position: absolute; z-index: -1; pointer-events: none; width: 75%; height: 70%;
   border-radius: 50%; filter: blur(60px); opacity: .22; }
-.risk-stage::before { left: -20%; bottom: -35%; background: radial-gradient(closest-side, var(--critical), transparent); }
+.risk-stage::before { left: -20%; bottom: -35%; background: radial-gradient(closest-side, #934deb, transparent); }
 .risk-stage::after { right: -20%; top: -35%; background: radial-gradient(closest-side, var(--accent-2), transparent); }
 :root[data-theme='light'] .risk-stage::before, :root[data-theme='light'] .risk-stage::after { opacity: .12; }
 .sev-card { position: relative; overflow: hidden; border-radius: 1.25rem; border: 2px solid var(--c);
-  background: linear-gradient(135deg, color-mix(in oklab, var(--c) 34%, transparent), color-mix(in oklab, var(--c) 8%, transparent) 70%), #0d0d14;
+  background: linear-gradient(135deg, color-mix(in oklab, var(--c) 34%, transparent), color-mix(in oklab, var(--c) 8%, transparent) 70%), #1b1638;
   box-shadow: 0 0 22px -2px color-mix(in oklab, var(--c) 75%, transparent), 0 0 60px -18px var(--c), inset 0 0 18px -6px color-mix(in oklab, var(--c) 55%, transparent);
   transition: transform .15s ease-out, box-shadow .15s ease-out; }
 .sev-card::after { content: ''; position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
@@ -96,6 +99,15 @@ main tbody tr { transition: background-color .12s ease-out; }
 .sev-card:focus-visible { outline: 2px solid var(--c); outline-offset: 3px; }
 .sev-icon, .sev-name { color: var(--c); }
 .sev-icon { filter: drop-shadow(0 0 10px color-mix(in oklab, var(--c) 70%, transparent)); }
+:root[data-theme='light'] .sev-card { border: 1px solid color-mix(in oklab, var(--c) 14%, #fff);
+  background: linear-gradient(135deg, color-mix(in oklab, var(--c) 9%, #fff), color-mix(in oklab, var(--c) 4%, #fff) 70%);
+  box-shadow: 0 10px 30px -14px color-mix(in oklab, var(--c) 45%, transparent), 0 1px 2px rgba(27, 24, 64, .05); }
+:root[data-theme='light'] .sev-card::after { background: radial-gradient(120% 60% at 90% 0%, rgba(255, 255, 255, .6), transparent 60%); }
+:root[data-theme='light'] .sev-card .text-ink { color: var(--ink); }
+:root[data-theme='light'] .sev-card .text-soft { color: var(--ink-soft); }
+:root[data-theme='light'] .sev-card .text-muted { color: var(--ink-muted); }
+:root[data-theme='light'] .sev-card:hover { box-shadow: 0 14px 34px -14px color-mix(in oklab, var(--c) 60%, transparent), 0 1px 2px rgba(27, 24, 64, .05); }
+:root[data-theme='light'] .sev-icon { filter: none; }
 .sev-zero { opacity: .6; box-shadow: 0 0 14px -6px color-mix(in oklab, var(--c) 60%, transparent); }
 /* Chat: a question sticks to the top of the chat while its answer scrolls by; the next question takes its place. */
 .chat-stick { position: sticky; top: 0; z-index: 5; cursor: pointer; padding: .25rem 0 .75rem;

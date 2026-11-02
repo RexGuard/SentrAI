@@ -31,7 +31,8 @@ export const LEVEL_TEXT: Record<Level, { name: string; color: string; tint: stri
 }
 
 // The cards' own colours, from Erick's reference picture (the rest of the console keeps the theme colours).
-const CARD_COLOR: Record<Level, string> = { critical: '#ff2d6b', high: '#ff7a1a', medium: '#ffd60a', low: '#d6e2f0' }
+// Per theme in index.css (--card-*), taken from the reference console.
+const CARD_COLOR: Record<Level, string> = { critical: 'var(--card-critical)', high: 'var(--card-high)', medium: 'var(--card-medium)', low: 'var(--card-low)' }
 
 const LEVEL_ICON: Record<Level, LucideIcon> = { critical: ShieldAlert, high: TriangleAlert, medium: Bell, low: ShieldCheck }
 
