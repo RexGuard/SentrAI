@@ -27,6 +27,10 @@ talk through a BroadcastChannel with a localStorage fallback; between devices th
 run; the attacker page plays the individual tries itself. Code: the "Live attack" part of
 `app/src/lib/demo.ts`.
 
+**Sentry answers** in the demo copy are pregenerated (`app/src/lib/demoChat.ts`): a couple of "looking at" steps,
+then the answer typed out like a real stream. The answer about the live attack follows its state (open, fixed by the
+manager, closed as not a threat); other questions get a short calm answer. Nothing is sent to an AI service.
+
 A normal build never sets the flag, so the real console is unchanged.
 
 ## Rebuild it

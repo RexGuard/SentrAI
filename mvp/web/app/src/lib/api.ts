@@ -16,6 +16,11 @@ export async function api<T = unknown>(path: string, init: { method?: string; bo
   const method = init.method ?? (init.body === undefined ? 'GET' : 'POST')
   if (DEMO) {
     if (method !== 'GET') {
+      if (path === '/chat') {  // the docked Sentry panel asks without streaming: same pregenerated answer
+        const { demoChat } = await import('./demoChat')
+        await demoChat(init.body, () => {}, undefined, true)
+        return { ok: true } as T
+      }
       const done = demoWrite(path, init.body)  // only the manager's answer to the live demo attack
       if (done) return done as T
       throw new ApiError(DEMO_READ_ONLY, 403)
@@ -52,7 +57,11 @@ export type Me = { email: string; name: string; role: string; role_label: string
 /** A streamed answer: POSTs `body` and calls `onEvent` with each JSON line as it arrives. Aborting `signal` closes the
  *  connection, which the core takes as Stop. */
 export async function stream(path: string, body: unknown, onEvent: (e: Record<string, unknown>) => void, signal?: AbortSignal): Promise<void> {
-  if (DEMO) throw new ApiError(DEMO_READ_ONLY, 403)
+  if (DEMO) {
+    if (path !== '/chat/stream') throw new ApiError(DEMO_READ_ONLY, 403)
+    const { demoChat } = await import('./demoChat')  // pregenerated Sentry answers
+    return demoChat(body, onEvent, signal)
+  }
   const res = await fetch('/api' + path, {
     method: 'POST', credentials: 'same-origin', signal,
     headers: { 'Content-Type': 'application/json', 'X-SentrAI-Web': '1' }, body: JSON.stringify(body),

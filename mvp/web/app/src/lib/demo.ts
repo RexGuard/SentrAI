@@ -136,6 +136,8 @@ function liveRisk() {
   }
 }
 export const isLiveRisk = (id: string) => id === LIVE_ID
+/** Where the live attack is, for Sentry's pregenerated answers (lib/demoChat.ts). */
+export const liveState = () => ({ phase, tries, minutes: openedAt ? Math.max(1, Math.round((Date.now() - openedAt) / 60000)) : 0 })
 
 type Lvl = { severity: string; count: number; bubbles: number; overdue: number; oldest: string }
 /** The risk lists as the live demo shows them: the recorded active risks are left out (every card starts at 0, as
@@ -153,7 +155,12 @@ function withLive(path: string, body: unknown): unknown {
   return out
 }
 export async function demoGetLive(path: string): Promise<unknown> {
-  return withLive(path, await demoGet(path))
+  const body = await demoGet(path)
+  if (bare(path) === '/chat' && body && typeof body === 'object') {  // Sentry's answers come from lib/demoChat.ts
+    const { demoChatLog } = await import('./demoChat')
+    return { ...(body as object), model: 'demo answers (pregenerated)', messages: demoChatLog() }
+  }
+  return withLive(path, body)
 }
 
 /** The only writes the demo copy accepts: the manager's answer to the live risk. Anything else stays read-only. */
