@@ -9,7 +9,7 @@ through one short section per part of the pipeline (collector, classifier, respo
 notifications). Pressing Enter keeps the default, which is exactly what the demo uses.
 
 The security values (when an event counts as an attack, when SentrAI acts, for how long) come
-from a preset: Strict, Moderate or Balanced, or Advanced to set each value yourself. The saved
+from a preset: Strict, Moderate or Minimum, or Advanced to set each value yourself. The saved
 file keeps the preset's name and every value. Values that no longer match their preset are saved
 as Advanced (see `settle_preset()`).
 
@@ -139,8 +139,8 @@ PRESETS = {
                        "unclear ones wait for a person.", {
         "BRUTE_FORCE_COUNT": "5", "BRUTE_FORCE_WINDOW_S": "60", "EXPORT_ROWS_THRESHOLD": "100",
         "RISK_THRESHOLD": "80", "HOTPATCH_TTL_HOURS": "2", "SLA_HOURS": "2", "NEEDLE_MIN_CONFIDENCE": "0.6"}),
-    "balanced": Preset("Balanced", "Puts day-to-day operations first: acts only on strong evidence, "
-                       "blocks briefly and gives people more time.", {
+    "balanced": Preset("Minimum", "The lightest protection, for day-to-day operations first: acts only on strong "
+                       "evidence, blocks briefly and gives people more time.", {
         "BRUTE_FORCE_COUNT": "8", "BRUTE_FORCE_WINDOW_S": "60", "EXPORT_ROWS_THRESHOLD": "250",
         "RISK_THRESHOLD": "90", "HOTPATCH_TTL_HOURS": "1", "SLA_HOURS": "4", "NEEDLE_MIN_CONFIDENCE": "0.75"}),
 }
@@ -199,7 +199,7 @@ SECTIONS = (
               advanced=True),
         Field("ON_DUTY", "On-duty responder shown in alerts (name, ID, shift)", "On-duty responder"),
     )),
-    Section("notifications", "4. Notifications", "Email alerts. Telegram and Slack alerts are extensions, "
+    Section("notifications", "4. Notifications", "Email alerts. Telegram and Slack alerts are integrations, "
             "set up after these. With neither, alerts print to the console.", (
         Field("SENTRAI_OPERATOR", "Your name, as shown on approvals", "operator"),
         Field("SMTP_HOST", "Email: SMTP server, blank for no email alerts"),

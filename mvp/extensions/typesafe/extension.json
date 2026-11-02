@@ -1,9 +1,10 @@
 {
   "name": "typesafe",
-  "title": "TypeSafe (Jev)",
+  "title": "AI Threat Detection (Jev)",
+  "feature": true,
   "kind": "Classifier",
   "what": "Asks TypeSafe System One (Jev) about log lines the rules cannot settle, before the keyword fallback.",
-  "about": "An AI classifier for what the rules cannot settle. Without it, a keyword fallback decides.",
+  "about": "Jev reads the log lines the rules cannot settle. Paste a TypeSafe key to turn it on; without one, a keyword fallback decides.",
   "docs": "https://console.typesafe.ai/",
   "order": 10,
   "on_when": ["TYPESAFE_API_KEY"],

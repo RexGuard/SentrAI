@@ -6,7 +6,7 @@ can be added or removed on the dashboard's Extensions page while SentrAI runs.
 | Folder | What it does | Parts |
 | --- | --- | --- |
 | `cloudflare/` | Blocks attackers at Cloudflare's edge, and takes the blocks out again | core |
-| `typesafe/` | Jev (TypeSafe System One), an AI classifier step | core |
+| `typesafe/` | Jev (TypeSafe System One), an AI classifier step. Built in: on whenever its key is saved, never added or removed | core |
 | `telegram/` | Alerts with buttons in Telegram, and personal chats | core (links), notifier (the bot) |
 | `slack/` | A copy of every alert in a Slack channel | core (test), notifier |
 | `abuseipdb/` | Reputation of each attacking address on its incident | core |

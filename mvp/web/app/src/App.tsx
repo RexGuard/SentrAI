@@ -30,7 +30,6 @@ const Audit = page(() => import('./pages/Audit'))
 const Chat = page(() => import('./pages/Chat'))
 const Command = page(() => import('./pages/Command'))
 const Guardrails = page(() => import('./pages/Guardrails'))
-const Extensions = page(() => import('./pages/Extensions'))
 page(() => import('./pages/Incidents'))  // drawn in the Command center's tabs; fetched early with the rest
 const Manager = page(() => import('./pages/Manager'))
 const MachinePage = page(() => import('./pages/Machine'))
@@ -104,7 +103,7 @@ function Gate() {
         <Route path="/collector" element={<Collector />} />
         <Route path="/classifier" element={<Classifier />} />
         <Route path="/responder" element={<Responder />} />
-        <Route path="/extensions" element={<Extensions />} />
+        <Route path="/extensions" element={<Navigate to="/config" replace />} />
         <Route path="/reports" element={<Reports />} />
         <Route path="/backups" element={<Backups />} />
         <Route path="/incidents" element={<Navigate to="/command?tab=incidents" replace />} />

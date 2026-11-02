@@ -1,14 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Save, Search } from 'lucide-react'
+import { ExternalLink, Plug, Save, Search } from 'lucide-react'
 import { api, ApiError } from '../lib/api'
-import { btnPrimary } from '../lib/ui'
+import { btn, btnPrimary } from '../lib/ui'
 import { useSession } from '../lib/session'
 
 type Field = {
   env: string; prompt: string; kind: string; secret: boolean; generated: boolean; choices: string[]; preset_field: boolean
   value: string; is_set: boolean; default: string
 }
-type Section = { key: string; title: string; about: string; extension: boolean; fields: Field[] }
+type Section = { key: string; title: string; about: string; extension: boolean; feature?: boolean; name?: string; fields: Field[] }
+// The core's view of each integration (GET /extensions): whether it is on and working.
+type Ext = {
+  name: string; title?: string; docs?: string; built_in?: boolean; feature?: boolean; added?: boolean; added_by?: string
+  configured?: boolean; testable?: boolean; error?: string | null; last_error?: string | null
+}
+type TestResult = { ok?: boolean; detail?: string; error?: string }
 type Data = {
   sections: Section[]; presets: Record<string, { label: string; about: string; values: Record<string, string> }>
   advanced: string; advanced_about: string
@@ -37,6 +43,53 @@ function Row({ f, value, onChange, disabled }: { f: Field; value: string; onChan
   )
 }
 
+/** The top of an integration's or a built-in feature's card: is it on, a switch (integrations only), Test, set-up help. */
+function Status({ s, x, reload }: { s: Section; x?: Ext; reload: () => void }) {
+  const { me, can } = useSession()
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState<TestResult | null>(null)
+  if (!x) return null
+  const trouble = x.error || x.last_error
+  const on = !!x.added
+  const state = !on ? 'Off' : trouble ? 'Problem' : x.configured ? 'On' : 'Needs its key'
+  const color = state === 'On' ? 'text-ok' : state === 'Off' ? 'text-muted' : 'text-warn'
+  const managed = x.added_by === 'SENTRAI_EXTENSIONS'
+  const off = managed || !can('configure') || busy
+  const why = managed ? "The server's SENTRAI_EXTENSIONS setting decides which integrations are on." : !can('configure') ? 'Your role can read the settings but not change them.' : undefined
+  const n = encodeURIComponent(x.name)
+  const flip = async () => {
+    setBusy(true); setMsg(null)
+    try { await api(`/extensions/${n}/${on ? 'remove' : 'add'}`, { body: { operator: me?.email ?? 'dashboard' } }); reload() }
+    catch (e) { setMsg({ ok: false, error: e instanceof ApiError ? e.message : 'That did not go through.' }) }
+    setBusy(false)
+  }
+  const test = async () => {
+    setBusy(true)
+    try { setMsg(await api<TestResult>(`/extensions/${n}/test`, { body: {} })) } catch (e) { setMsg({ ok: false, error: e instanceof ApiError ? e.message : 'failed' }) }
+    setBusy(false)
+  }
+  return (
+    <div className="space-y-2 px-4 pb-3">
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <span className={'font-medium ' + color}>{state}</span>
+        {s.feature && <span className="text-muted">· built into SentrAI, on whenever its key is saved</span>}
+        {!s.feature && <button role="switch" aria-checked={on} aria-label={`${s.title} on`} onClick={() => void flip()} disabled={off} title={why}
+          className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-2 py-1 disabled:opacity-60">
+          <span className={'relative h-5 w-9 rounded-full transition-colors ' + (on ? 'bg-ok' : 'bg-surface-3')} aria-hidden>
+            <span className={'absolute top-0.5 h-4 w-4 rounded-full bg-bg shadow transition-all ' + (on ? 'left-[1.125rem]' : 'left-0.5')} />
+          </span>
+          <span className="text-xs text-soft">{on ? 'Turn off' : 'Turn on'}</span>
+        </button>}
+        {x.testable && on && <button className={btn} disabled={!can('configure') || busy} onClick={() => void test()}><Plug size={14} aria-hidden /> Test</button>}
+        {x.docs && <a className={btn + ' no-underline'} href={x.docs} target="_blank" rel="noreferrer"><ExternalLink size={14} aria-hidden /> How to get a key<span className="sr-only"> (opens in a new tab)</span></a>}
+      </div>
+      {trouble && on && <p className="text-xs text-warn">{trouble}</p>}
+      {!s.feature && !on && <p className="text-xs text-muted">Turning it off keeps its settings, so turning it back on restores it.</p>}
+      {msg && (msg.ok ? <p role="status" className="text-sm text-ok">{msg.detail || 'Connected.'}</p> : <p role="alert" className="text-sm text-bad">{msg.error}</p>)}
+    </div>
+  )
+}
+
 export default function Settings() {
   const { can } = useSession()
   const [data, setData] = useState<Data | null>(null)
@@ -44,9 +97,12 @@ export default function Settings() {
   const [note, setNote] = useState('')
   const [draft, setDraft] = useState<Record<string, string>>({})
   const [query, setQuery] = useState('')
+  const [exts, setExts] = useState<Ext[]>([])
+  const loadExts = useCallback(() => { api<Ext[]>('/extensions').then(setExts).catch(() => setExts([])) }, [])
   const load = useCallback(async () => {
     try { setData(await api<Data>('/ui/settings')); setError('') } catch (e) { setError(e instanceof ApiError ? e.message : 'Could not load settings.') }
-  }, [])
+    loadExts()
+  }, [loadExts])
   useEffect(() => { void load() }, [load])
 
   const current = useMemo(() => {
@@ -111,9 +167,12 @@ export default function Settings() {
             const whole = match(s.title, s.about)
             const hits = whole ? fields : fields.filter((f) => match(f.prompt, f.env))
             if (!hits.length) return null
+            const x = (s.extension || s.feature) ? exts.find((e) => e.name === s.name) : undefined
+            const tag = s.feature ? 'Built in' : s.extension ? 'Integration' : ''
             return (
               <details key={s.key} className="rounded-lg border border-line bg-surface" open={!!q}>
-                <summary className="cursor-pointer p-4 font-semibold">{s.title} <span className="font-normal text-muted">· {s.about}</span></summary>
+                <summary className="cursor-pointer p-4 font-semibold">{s.title}{tag && <span className="ml-2 rounded-full border border-line px-2 py-0.5 text-xs font-normal text-soft">{tag}</span>} <span className="font-normal text-muted">· {s.about}</span></summary>
+                <Status s={s} x={x} reload={loadExts} />
                 <div className="grid gap-4 p-4 pt-0 lg:grid-cols-2">{hits.map((f) => <Row key={f.env} f={f} value={val(f)} onChange={(v) => set(f, v)} disabled={off} />)}</div>
               </details>
             )

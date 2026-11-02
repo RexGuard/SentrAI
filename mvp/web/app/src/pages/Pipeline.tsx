@@ -83,7 +83,7 @@ export function Classifier() {
   const status = String(jev?.status ?? '')
   const [ai, aiNote] = status.startsWith('enabled') ? ['On', 'asked when the rules are unsure']
     : status.startsWith('disabled') ? ['Off', status.includes(':') ? status.split(':')[1].split('(')[0].trim() : 'keyword fallback in use']
-    : ty ? (!ty.added ? ['Off', 'TypeSafe extension not added'] : ty.error || ty.last_error || !ty.configured ? ['Off', String(ty.error || ty.last_error || 'no TypeSafe key saved')] : ['On', 'asked when the rules are unsure'])
+    : ty ? (!ty.added ? ['Off', 'no TypeSafe key saved'] : ty.error || ty.last_error || !ty.configured ? ['Off', String(ty.error || ty.last_error || 'no TypeSafe key saved')] : ['On', 'asked when the rules are unsure'])
     : ['Unknown', 'the core did not report it']
   return (
     <section className="space-y-4">

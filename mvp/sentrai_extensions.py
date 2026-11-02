@@ -15,6 +15,7 @@ Installing or uninstalling one (adding or deleting its folder) takes effect when
 Which ones are on ("added"):
   SENTRAI_EXTENSIONS          when set, the final word: names separated by commas, "all" or "none".
                               The dashboard then shows the choice but cannot change it.
+  a feature (Jev)             part of SentrAI itself: on whenever its key is set, whatever the rest says
   extensions.json             the Add and Remove choices made on the dashboard's Extensions page, kept by
                               the core next to its database
   otherwise                   an extension counts as added once its main setting (its key or token) is
@@ -85,6 +86,7 @@ class Manifest:
     parts: tuple[str, ...] = ()  # which of core.py and notifier.py it has
     order: int = 100  # its place on the Extensions page and in the settings file
     requires: dict[str, list[str]] = field(default_factory=dict)  # part -> pip packages that part needs
+    feature: bool = False  # part of SentrAI itself (Jev): on whenever its key is set, never added or removed
 
     @property
     def section(self) -> str:
@@ -94,7 +96,8 @@ class Manifest:
         """What the API and the dashboard show about it."""
         return {"name": self.name, "title": self.title, "kind": self.kind, "what": self.what, "docs": self.docs,
                 "about": self.about, "settings": [s.env for s in self.settings], "on_when": list(self.on_when),
-                "parts": list(self.parts), "source": self.source, "requires": self.requires}
+                "parts": list(self.parts), "source": self.source, "requires": self.requires,
+                "feature": self.feature}
 
 
 def _text(data: dict, key: str, required: bool = False) -> str:
@@ -153,12 +156,17 @@ def read_manifest(folder: Path, source: str = "bundled") -> Manifest:
     order = data.get("order", 100)
     if not isinstance(order, int) or isinstance(order, bool):
         raise ValueError('"order" must be a whole number')
+    feature = data.get("feature", False)
+    if not isinstance(feature, bool):
+        raise ValueError('"feature" must be true or false')
+    if feature and source != "bundled":
+        raise ValueError("only an extension that ships with SentrAI can be a feature")
     requires = data.get("requires") or {}
     if not isinstance(requires, dict) or not all(isinstance(v, list) for v in requires.values()):
         raise ValueError('"requires" must map a part to a list of packages')
     return Manifest(name, _text(data, "title", True), kind, _text(data, "what", True), folder, source,
                     _text(data, "docs"), _text(data, "about"), settings, tuple(on_when), parts, order,
-                    {str(k): [str(x) for x in v] for k, v in requires.items()})
+                    {str(k): [str(x) for x in v] for k, v in requires.items()}, feature)
 
 
 def _unsafe(path: Path) -> str | None:
@@ -272,11 +280,15 @@ def env_choice(names: list[str] | tuple[str, ...], environ: Mapping[str, str] | 
 
 def decide(manifests: Mapping[str, Manifest], choices: Mapping[str, bool], environ: Mapping[str, str] | None = None,
            ) -> dict[str, tuple[bool, str]]:
-    """name -> (added, by what): "SENTRAI_EXTENSIONS", "dashboard" or "settings"."""
+    """name -> (added, by what): "feature", "SENTRAI_EXTENSIONS", "dashboard" or "settings".
+
+    A feature (Jev) is part of SentrAI, so it follows only its own settings: on once its key is set."""
     by_env = env_choice(list(manifests), environ)
     out: dict[str, tuple[bool, str]] = {}
     for name, m in manifests.items():
-        if by_env is not None:
+        if m.feature:
+            out[name] = (set_up(m, environ), "feature")
+        elif by_env is not None:
             out[name] = (name in by_env, CHOICE_ENV)
         elif name in choices:
             out[name] = (bool(choices[name]), "dashboard")

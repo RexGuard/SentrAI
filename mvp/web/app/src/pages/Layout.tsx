@@ -2,7 +2,7 @@ import { Suspense, useEffect, useRef, useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import {
   BarChart3, Boxes, Briefcase, Eye, Gavel, LayoutDashboard, Library, DatabaseBackup, FileText, Flag, Link2, Lock, LogOut, Moon, Network,
-  Puzzle, ScrollText, Search, Server, Settings2, ShieldCheck, Siren, Sparkles, SlidersHorizontal, Sun, UserRound, Users, Workflow, Bell as BellIcon, PanelLeftClose, PanelLeftOpen, type LucideIcon,
+  ScrollText, Search, Server, Settings2, ShieldCheck, Siren, Sparkles, SlidersHorizontal, Sun, UserRound, Users, Workflow, Bell as BellIcon, PanelLeftClose, PanelLeftOpen, type LucideIcon,
 } from 'lucide-react'
 import { api } from '../lib/api'
 import { useSession } from '../lib/session'
@@ -40,7 +40,6 @@ export const MENU: Group[] = [
     { to: '/team', label: 'People and Access', icon: Users, needs: 'people' },
   ] },
   { group: 'Settings', icon: Settings2, items: [
-    { to: '/extensions', label: 'Add-ons', icon: Puzzle },
     { to: '/config', label: 'Setup', icon: ScrollText },
   ] },
 ]
