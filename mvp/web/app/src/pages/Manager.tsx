@@ -4,6 +4,7 @@
 // sit on the left, kept in this browser. Any action Sentry suggests still needs a click and the usual checks.
 import type React from 'react'
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { ArrowUp, BarChart3, Brain, Share2, Users, Check, FileText, Image as ImageIcon, Mic, MicOff, Square, FileDown, RotateCcw, ThumbsDown, ThumbsUp, Zap, ChevronDown, ListChecks, MessageSquare, PanelLeftClose, PanelLeftOpen, Pencil, Pin, PinOff, Search, Plus, ShieldQuestion, SquarePen, X } from 'lucide-react'
 import { api, ApiError, stream } from '../lib/api'
 import { ACCEPT, MAX_FILES, read as readFile, sizeLabel, type Attachment } from '../lib/attach'
@@ -121,13 +122,13 @@ export default function Manager() {
     setHearing(() => stopIt)
   }
 
-  const ask = async (message: string) => {
+  const ask = async (message: string, incident?: string, fresh = false) => {
     if ((!message.trim() && !files.length) || asking) return
     hearing?.()
     const sending = files
     const question = message.trim() || 'What does the attached file show?'
     const before = new Set((hist?.messages ?? []).map(key))
-    let id = current
+    let id = fresh ? null : current
     if (!id) {
       id = `c${Date.now()}`
       const c: Convo = { id, title: question.slice(0, 80), at: new Date().toISOString(), ids: [] }
@@ -138,7 +139,7 @@ export default function Manager() {
     const ctl = new AbortController(); abort.current = ctl
     let stopped = false
     try {
-      await stream('/chat/stream', { operator: me?.email ?? 'dashboard', message, incident: about || null,
+      await stream('/chat/stream', { operator: me?.email ?? 'dashboard', message, incident: (incident ?? about) || null,
         attachments: sending.length ? sending.map(({ name, kind, text, media_type, data }) => ({ name, kind, text, media_type, data })) : undefined },
       (e) => {
         if (e.type === 'step') setLive((l) => l && { ...l, steps: [...l.steps, String(e.text)] })
@@ -160,6 +161,21 @@ export default function Manager() {
     setConvos((cs) => cs.map((c) => (c.id === cid ? { ...c, ids: [...c.ids, ...added], at: new Date().toISOString() } : c)))
     setLive(null); setAsking(false)
   }
+
+  // Talk to Sentry on a risk card opens this page as /manager?about=<incident>&title=...: a new chat about that risk,
+  // which Sentry opens by explaining it. Done once, then the address is cleaned up.
+  const [params, setParams] = useSearchParams()
+  const opened = useRef(false)
+  useEffect(() => {
+    const inc = params.get('about')
+    if (!inc || opened.current || !hist) return
+    opened.current = true
+    const title = params.get('title') || 'this risk'
+    setParams({}, { replace: true })
+    setViewing(null); setAbout(inc)
+    void ask(`Tell me about ${inc} (${title}): what happened, how serious is it, and what should I do?`, inc, true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params, hist])
 
   const rate = async (m: Message, vote: 'up' | 'down' | null, note = '') => {
     try { await api(`/chat/${m.id}/feedback`, { body: { vote, note } }); await load() }
@@ -208,6 +224,7 @@ export default function Manager() {
             <span className="sr-only">Talk about</span>
             <select value={about} onChange={(e) => setAbout(e.target.value)}>
               <option value="">{assistant} · everything</option>
+              {about && !openIncidents.some((i) => i.id === about) && <option value={about}>{assistant} · {about}</option>}
               {openIncidents.map((i) => <option key={i.id} value={i.id}>{assistant} · {i.id}</option>)}
             </select>
             <ChevronDown size={14} aria-hidden />
