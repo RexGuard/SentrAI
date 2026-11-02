@@ -5,17 +5,23 @@
 @font-face { font-family: 'IBM Plex Sans'; font-weight: 600; src: url('/fonts/ibm-plex-sans-latin-600-normal.woff2') format('woff2'); font-display: swap; }
 @font-face { font-family: 'JetBrains Mono'; font-weight: 400; src: url('/fonts/jetbrains-mono-latin-400-normal.woff2') format('woff2'); font-display: swap; }
 
-/* Black / White, the same neutrals as the Streamlit console. Green, amber and red are for risk only. */
+/* SentrAI brand: night-watch navy from the brand kit, with the logo's violet (#8057f0), periwinkle (#697ef5)
+   and deep violet (#522bbe) for what is picked, the main button and the soft glows behind the console.
+   Green, amber and red are for risk only. */
 :root, :root[data-theme='dark'] {
-  --bg: #0a0a0a; --surface: #141414; --surface-2: #1b1b1b; --surface-3: #262626; --sidebar: #0f0f0f;
-  --ink: #f5f5f5; --ink-soft: #b3b3b3; --ink-muted: #8c8c8c; --line: #2e2e2e; --line-soft: #212121;
+  --bg: #0b111d; --surface: #121a29; --surface-2: #172134; --surface-3: #1d2940; --sidebar: #090e19;
+  --ink: #e7edf6; --ink-soft: #a5b2c6; --ink-muted: #7f8ca3; --line: #26324a; --line-soft: #1b2538;
   --green: #4fb67c; --amber: #e8b34a; --red: #ec835a; --critical: #e5484d;
+  --accent: #8057f0; --accent-2: #697ef5; --on-accent: #ffffff;
+  --wave-a: rgba(105, 126, 245, .16); --wave-b: rgba(128, 87, 240, .16); --wave-c: rgba(82, 43, 190, .24);
   color-scheme: dark;
 }
 :root[data-theme='light'] {
-  --bg: #fafafa; --surface: #ffffff; --surface-2: #f4f4f4; --surface-3: #e8e8e8; --sidebar: #f4f4f4;
-  --ink: #0a0a0a; --ink-soft: #404040; --ink-muted: #666666; --line: #dedede; --line-soft: #ebebeb;
+  --bg: #f5f7fb; --surface: #ffffff; --surface-2: #eef2f8; --surface-3: #e3e9f3; --sidebar: #eef2f8;
+  --ink: #0f1a2c; --ink-soft: #44536b; --ink-muted: #5c6880; --line: #d5dce8; --line-soft: #e4e9f1;
   --green: #15803d; --amber: #96590a; --red: #c2410c; --critical: #dc2626;
+  --accent: #522bbe; --accent-2: #522bbe; --on-accent: #ffffff;
+  --wave-a: rgba(105, 126, 245, .10); --wave-b: rgba(128, 87, 240, .08); --wave-c: rgba(82, 43, 190, .07);
   color-scheme: light;
 }
 
@@ -24,23 +30,32 @@
   --color-surface-3: var(--surface-3); --color-sidebar: var(--sidebar); --color-ink: var(--ink);
   --color-soft: var(--ink-soft); --color-muted: var(--ink-muted); --color-line: var(--line);
   --color-line-soft: var(--line-soft); --color-ok: var(--green); --color-warn: var(--amber);
-  --color-bad: var(--red); --color-crit: var(--critical);
+  --color-bad: var(--red); --color-crit: var(--critical); --color-accent: var(--accent); --color-on-accent: var(--on-accent);
   --font-sans: 'IBM Plex Sans', system-ui, sans-serif; --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 }
 
-body { background: var(--bg); color: var(--ink); font-family: var(--font-sans); margin: 0; }
-:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+body { background-color: var(--bg); color: var(--ink); font-family: var(--font-sans); margin: 0;
+  background-image: radial-gradient(60vw 40vh at 100% 8%, var(--wave-a), transparent 70%),
+    radial-gradient(70vw 45vh at 90% 100%, var(--wave-b), transparent 70%),
+    radial-gradient(55vw 50vh at 0% 100%, var(--wave-c), transparent 70%),
+    radial-gradient(40vw 35vh at 0% 0%, var(--wave-b), transparent 70%);
+  background-attachment: fixed; }
+:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+/* The section picked in the sidebar and the page picked in the top bar. */
+.side-on, .topnav-on { color: var(--ink); background: linear-gradient(180deg, color-mix(in oklab, var(--accent) 32%, var(--surface-2)), color-mix(in oklab, var(--accent) 10%, var(--surface-2)));
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--accent-2) 55%, transparent), 0 6px 22px -10px var(--accent); }
+.side-on { box-shadow: inset 2px 0 0 var(--accent-2), 0 0 0 1px color-mix(in oklab, var(--accent-2) 40%, transparent), 0 6px 22px -12px var(--accent); }
 
 /* The overview canvas (src/canvas) reads the console's own variable names. */
 @font-face { font-family: 'Material Symbols Rounded'; font-style: normal; font-weight: 400; font-display: block; src: url('/fonts/sentrai-icons.woff2') format('woff2'); }
 :root, :root[data-theme='dark'] {
-  --font: 'IBM Plex Sans', system-ui, sans-serif; --mono: 'JetBrains Mono', ui-monospace, monospace; --ink-faint: #858585;
-  --brand: #f5f5f5; --brand-2: #b3b3b3; --brand-fill: #f5f5f5; --on-brand: #0a0a0a; --brand-soft: #262626; --brand-line: #5a5a5a; --brand-fill-hover: #d9d9d9;
-  --glow: rgba(255, 255, 255, 0.04); --unknown: #8c8c8c;
+  --font: 'IBM Plex Sans', system-ui, sans-serif; --mono: 'JetBrains Mono', ui-monospace, monospace; --ink-faint: #6f7d93;
+  --brand: #8f9cf7; --brand-2: #a5b2c6; --brand-fill: #8057f0; --on-brand: #ffffff; --brand-soft: #1d2940; --brand-line: #3d3f7a; --brand-fill-hover: #6d47e0;
+  --glow: rgba(128, 87, 240, 0.08); --unknown: #7f8ca3;
 }
 :root[data-theme='light'] {
-  --ink-faint: #6e6e6e; --brand: #0a0a0a; --brand-2: #404040; --brand-fill: #0a0a0a; --on-brand: #fafafa; --brand-soft: #e8e8e8; --brand-line: #a8a8a8;
-  --brand-fill-hover: #262626; --glow: rgba(0, 0, 0, 0.03); --unknown: #6b6b6b;
+  --ink-faint: #6b778d; --brand: #522bbe; --brand-2: #44536b; --brand-fill: #522bbe; --on-brand: #ffffff; --brand-soft: #ebe5fc; --brand-line: #c3b4f2;
+  --brand-fill-hover: #4422a3; --glow: rgba(82, 43, 190, 0.06); --unknown: #5c6880;
 }
 
 /* Looks borrowed from Watermelon UI's dashboard blocks and Cult UI's prompt input, in our own neutrals. */
@@ -66,7 +81,7 @@ main tbody tr { transition: background-color .12s ease-out; }
 .risk-stage::before, .risk-stage::after { content: ''; position: absolute; z-index: -1; pointer-events: none; width: 75%; height: 70%;
   border-radius: 50%; filter: blur(60px); opacity: .22; }
 .risk-stage::before { left: -20%; bottom: -35%; background: radial-gradient(closest-side, var(--critical), transparent); }
-.risk-stage::after { right: -20%; top: -35%; background: radial-gradient(closest-side, #14b8a6, transparent); }
+.risk-stage::after { right: -20%; top: -35%; background: radial-gradient(closest-side, var(--accent-2), transparent); }
 :root[data-theme='light'] .risk-stage::before, :root[data-theme='light'] .risk-stage::after { opacity: .12; }
 .sev-card { position: relative; overflow: hidden; border-radius: 1.25rem; border: 2px solid var(--c);
   background: linear-gradient(135deg, color-mix(in oklab, var(--c) 34%, transparent), color-mix(in oklab, var(--c) 8%, transparent) 70%), #0d0d14;
@@ -88,9 +103,6 @@ main tbody tr { transition: background-color .12s ease-out; }
 .chat-log { --stick-bg: var(--surface); }
 .chat-log .chat-stick { top: -1rem; }
 
-/* The top bar's tabs (the pages of the group picked in the sidebar). */
-.topnav-on { background: linear-gradient(180deg, color-mix(in oklab, #6d5dfc 30%, var(--surface-2)), var(--surface-2));
-  box-shadow: 0 0 0 1px color-mix(in oklab, #7c6cff 55%, transparent), 0 6px 22px -10px #6d5dfc; }
 @media (prefers-reduced-motion: reduce) { .sev-card { transition: none; } }
 
 /* Manager view: one page, one chat box under a soft glow. */

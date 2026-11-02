@@ -92,7 +92,7 @@ export default function Layout() {
             const on = g.group === current?.group
             return (
               <button key={g.group} aria-current={on ? 'true' : undefined} onClick={() => { setPicked(g.group); const first = items(g)[0]; if (first) go(first.to) }}
-                className={'flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-sm font-medium ' + (on ? 'bg-surface-3 text-ink' : 'text-soft hover:bg-surface-2')}>
+                className={'flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-sm font-medium ' + (on ? 'side-on' : 'text-soft hover:bg-surface-2')}>
                 <g.icon size={18} aria-hidden /> {g.group}
               </button>)
           })}
