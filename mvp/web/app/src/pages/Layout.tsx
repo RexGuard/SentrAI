@@ -171,7 +171,7 @@ export default function Layout() {
     <div className="console-shell min-h-screen">
       <header className="console-top">
         <Link to="/" className="console-logo" aria-label="SentrAI home">
-          <img src="/mark.svg" alt="" width={52} height={52} className="console-brand-mark" />
+          <img src={import.meta.env.BASE_URL + "mark.svg"} alt="" width={52} height={52} className="console-brand-mark" />
           <span className="leading-tight"><span className="console-brand block">SentrAI</span><span className="block text-[0.8125rem] text-soft">Cybersecurity Console</span></span>
         </Link>
         <nav aria-label={current.group} className={'console-topnav' + (items(current).length > 4 ? ' is-many' : '')}>

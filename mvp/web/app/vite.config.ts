@@ -8,6 +8,7 @@ export default defineConfig(({ mode }) => {
   const core = env.VITE_CORE_URL || 'http://127.0.0.1:8000'
   const proxy = { '/api': { target: core, changeOrigin: true, rewrite: (p: string) => p.replace(/^\/api/, '') } }
   return {
+    base: env.VITE_BASE || '/',  // the demo copy is served from a sub-folder (mvp/web/demo-copy/build.sh)
     plugins: [react(), tailwindcss()],
     server: { port: 5173, proxy },
     preview: { port: 5173, strictPort: true, proxy }, // run-web.ps1 / run-web.sh serve the built console this way

@@ -5,6 +5,8 @@ export class ApiError extends Error {
   constructor(message: string, status: number) { super(message); this.status = status }
 }
 
+import { DEMO, DEMO_READ_ONLY, demoGet } from './demo'
+
 // The last answer to each GET and its ETag, in memory only (gone on reload or sign-out). A page that refreshes
 // every few seconds sends If-None-Match, and when nothing changed the server answers 304 with no body.
 const lastGet = new Map<string, { etag: string; body: unknown }>()
@@ -12,6 +14,12 @@ export function forgetCache() { lastGet.clear() }
 
 export async function api<T = unknown>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
   const method = init.method ?? (init.body === undefined ? 'GET' : 'POST')
+  if (DEMO) {
+    if (method !== 'GET') throw new ApiError(DEMO_READ_ONLY, 403)
+    const body = await demoGet(path)
+    if (body === null) throw new ApiError('Not part of this demo copy.', 404)
+    return body as T
+  }
   const headers: Record<string, string> = {}
   if (init.body !== undefined) headers['Content-Type'] = 'application/json'
   if (method !== 'GET') headers['X-SentrAI-Web'] = '1'
@@ -40,6 +48,7 @@ export type Me = { email: string; name: string; role: string; role_label: string
 /** A streamed answer: POSTs `body` and calls `onEvent` with each JSON line as it arrives. Aborting `signal` closes the
  *  connection, which the core takes as Stop. */
 export async function stream(path: string, body: unknown, onEvent: (e: Record<string, unknown>) => void, signal?: AbortSignal): Promise<void> {
+  if (DEMO) throw new ApiError(DEMO_READ_ONLY, 403)
   const res = await fetch('/api' + path, {
     method: 'POST', credentials: 'same-origin', signal,
     headers: { 'Content-Type': 'application/json', 'X-SentrAI-Web': '1' }, body: JSON.stringify(body),

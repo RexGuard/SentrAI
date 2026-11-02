@@ -1,5 +1,7 @@
 import { createElement, lazy, Suspense, useEffect, useState, type ComponentType } from 'react'
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, HashRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { X } from 'lucide-react'
+import { DEMO } from './lib/demo'
 import { SessionProvider, useSession } from './lib/session'
 import { SimpleProvider, useSimple } from './lib/simple'
 import { Notices } from './lib/notice'
@@ -113,10 +115,24 @@ function Gate() {
   )
 }
 
-export default function App() {
+/** The demo copy's note that nothing on it is real. Small, and can be closed for a clean screen recording. */
+function DemoNote() {
+  const [shown, setShown] = useState(true)
+  if (!shown) return null
   return (
-    <BrowserRouter>
-      <SessionProvider><SimpleProvider><Gate /><Notices /></SimpleProvider></SessionProvider>
-    </BrowserRouter>
+    <div role="note" className="fixed bottom-3 left-1/2 z-50 flex -translate-x-1/2 max-w-[calc(100vw-1.5rem)] items-center gap-2 rounded-lg border border-line bg-surface px-3 py-1.5 text-xs text-soft shadow-lg">
+      <span>Demo copy: made-up data, nothing is saved.</span>
+      <button className="text-muted hover:text-ink" aria-label="Close" onClick={() => setShown(false)}><X size={14} aria-hidden /></button>
+    </div>
+  )
+}
+
+export default function App() {
+  // The demo copy is static files on any host, so it keeps the page address in the # part (no server routes needed).
+  const Router = DEMO ? HashRouter : BrowserRouter
+  return (
+    <Router>
+      <SessionProvider><SimpleProvider><Gate /><Notices />{DEMO && <DemoNote />}</SimpleProvider></SessionProvider>
+    </Router>
   )
 }
