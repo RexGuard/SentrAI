@@ -322,16 +322,14 @@ main tbody tr { transition: background-color .12s ease-out; }
 @keyframes push-out-right { to { transform: translateX(100%); } }
 
 
-/* Side menu: each group cascades open to show its pages, one after another. */
-.side-sub { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .35s cubic-bezier(.4, 0, .1, 1); }
-.side-sub[data-open] { grid-template-rows: 1fr; }
-.side-sub > div { overflow: hidden; min-height: 0; }
-.side-sub a { opacity: 0; transform: translateY(-.5rem); transition: opacity .2s ease-out, transform .3s cubic-bezier(.4, 0, .1, 1), background-color .15s, color .15s;
-  transition-delay: calc(var(--i, 0) * 40ms), calc(var(--i, 0) * 40ms), 0s, 0s; }
-.side-sub[data-open] a { opacity: 1; transform: none; }
-.side-chev { transition: transform .3s cubic-bezier(.4, 0, .1, 1); }
-[aria-expanded='true'] > .side-chev { transform: rotate(180deg); }
-@media (prefers-reduced-motion: reduce) { .side-sub, .side-sub a, .side-chev { transition: none; } }
+/* Hiding the side menu (button left of the logo): it slides out to the left and the content panel widens into
+   the space; showing it plays the same in reverse. */
+.console-side { transition: width .4s cubic-bezier(.4, 0, .1, 1), padding .4s cubic-bezier(.4, 0, .1, 1), opacity .25s ease-out, translate .4s cubic-bezier(.4, 0, .1, 1); }
+.side-hidden .console-side { width: 0; padding-left: 0; padding-right: 0; opacity: 0; translate: -3rem 0; overflow: hidden; }
+.side-hidden .console-side > * { min-width: 12.8rem; }
+.side-toggle { margin-left: -1rem; margin-right: -.75rem; }
+.side-toggle:hover { background: var(--surface-2); }
+@media (prefers-reduced-motion: reduce) { .console-side { transition: none; } }
 
 /* Computer list status heart (pages/Machines.tsx): green protecting (beats gently), yellow up but not fully
    protecting, red offline; hover or focus shows what it means. */
