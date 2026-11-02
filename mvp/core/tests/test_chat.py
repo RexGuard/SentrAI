@@ -70,7 +70,7 @@ def test_chat_about_a_blocked_ip_offers_keep_or_roll_back(client):
 def test_chat_overview_when_nothing_is_named(client):
     brute_force(client)
     reply = client.post("/chat", json={"operator": "erick", "message": "what's going on?"}).json()
-    assert "Risk index is" in reply["text"] and INC in reply["text"]
+    assert "a quick look from you" in reply["text"] and INC in reply["text"]
 
 
 def test_empty_message_is_rejected(client):
@@ -119,7 +119,27 @@ def test_unknown_incident_is_a_tool_error_not_a_crash(client):
 def test_model_failure_falls_back(client):
     brute_force(client)
     reply = OperatorChat(client.core, FakeProvider(error="timeout")).ask("erick", f"explain {INC}")
-    assert reply["source"] == "fallback" and "unavailable" in reply["text"] and INC in reply["text"]
+    assert reply["source"] == "fallback" and "not answering right now" in reply["text"] and INC in reply["text"]
+
+
+def test_answers_without_a_model_use_everyday_words(client):
+    """Sentry talks to business owners: no risk points, scores or internal part names in its own answers."""
+    brute_force(client)
+    said = {}
+    for question in (f"explain {INC}", "what's going on?", "why is 203.0.113.45 blocked?"):
+        said[question] = text = client.post("/chat", json={"operator": "erick", "message": question}).json()["text"]
+        for word in ("points", "Countersign", "Warden", "Scribe", "Cyanide", "classifier", "threshold",
+                     "Risk index", "Configuration, section"):
+            assert word not in text, (question, word, text)
+    assert "Password guessing" in said[f"explain {INC}"] and "a quick look from you" in said["what's going on?"]
+
+
+def test_default_prompt_is_written_for_business_owners():
+    from app.chat import SETUP_SYSTEM, SYSTEM
+    prompt = SYSTEM.format(name="Sentry")
+    assert "no IT" in prompt and "120 words" in prompt and "Never name SentrAI's internal parts" in prompt
+    assert "SentrAI's team can set that up for you" in prompt
+    assert "not an IT person" in SETUP_SYSTEM.format(name="Sentry")
 
 
 def test_earlier_messages_are_passed_to_the_model(client):
@@ -241,7 +261,7 @@ def test_stop_keeps_what_was_sent(client):
     assert out["text"] == "_(Stopped.)_" and out["stopped"] and out["blocks"] == []
     # Stop while the answer is going out: the sent part is kept, buttons and tables are dropped.
     out = oc.ask("erick", "are we safe?", deliver=lambda t: t[:10])
-    assert out["stopped"] and out["text"].startswith("Risk index") and out["blocks"] == []
+    assert out["stopped"] and out["text"].startswith("**You're s") and out["blocks"] == []
 
 
 def test_attached_log_is_read_with_rules_and_pictures_need_a_model(client):
