@@ -86,6 +86,17 @@ FIX_REASON = {
 }
 
 
+SMALL_WORDS = {"a", "an", "and", "as", "at", "by", "for", "from", "in", "of", "on", "or", "the", "to", "via", "with"}
+
+
+def title_case(text: str) -> str:
+    """Risk titles in title case ("Data Exfiltration", "Port or Web Scan"); short words stay small, acronyms stay."""
+    words = text.split(" ")
+    return " ".join(w if (w.isupper() and len(w) > 1) or any(c.isdigit() for c in w)
+                    else w.lower() if 0 < i < len(words) - 1 and w.lower() in SMALL_WORDS
+                    else "-".join(p[:1].upper() + p[1:] for p in w.split("-")) for i, w in enumerate(words))
+
+
 def plain_happened(inc: dict, wave_n: int = 0) -> str:
     cat = str(inc.get("category") or "")
     host = inc.get("host") or "one of your machines"
@@ -185,6 +196,7 @@ def bubble(members: list[dict], wave: str = "") -> dict[str, Any]:
     title = category_label(cat)
     if wave:
         title += f" from {len(sources) or len(members)} address{'es' if (len(sources) or len(members)) != 1 else ''}"
+    title = title_case(title)
     reasons: list[str] = []
     for i in members:
         for r in attention(i):
