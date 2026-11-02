@@ -1,11 +1,10 @@
 // Command center: what needs a person as one bubble per severity (Critical / High / Medium), the risk over time,
-// the machines and Cyanide, so a non-IT person sees at a glance where to start. A bubble opens that severity's risks
-// (pages/RiskList.tsx); the full Approvals and Incidents pages stay.
+// and the machines, so a non-IT person sees at a glance where to start. A bubble opens that severity's risks
+// (pages/RiskList.tsx); the full Approvals, Incidents and Review lists open as tabs here. Cyanide is under the ? button.
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { ChevronRight, ClipboardCheck, Gauge, Siren, X } from 'lucide-react'
 import { api, ApiError } from '../lib/api'
-import Chat from './Chat'
 import { Chart, type Point } from './Review'
 import { SeverityBubbles, type Risks } from '../lib/Risks'
 
@@ -62,7 +61,7 @@ export default function Command() {
         <p className="text-sm text-muted">what needs a person, by how serious it is</p>
       </header>
       {error && <p role="alert" className="rounded-md border border-line bg-surface p-3 text-bad">{error}</p>}
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_26rem]">
+      <div className="grid gap-4">
         <div className="min-w-0 space-y-4">
           <div className="space-y-3 rounded-lg border border-line bg-surface p-4">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -106,12 +105,6 @@ export default function Command() {
                 })}
               </ul>)}
           </Card>
-        </div>
-        <div className="xl:sticky xl:top-4 xl:h-[calc(100vh-7rem)]">
-          <div className="flex h-[36rem] flex-col gap-2 rounded-lg border border-line bg-surface p-4 xl:h-full">
-            <div className="flex items-center justify-between"><h2 className="font-semibold">Ask Cyanide</h2><Link to="/chat" className="text-sm text-soft hover:text-ink">Full page</Link></div>
-            <div className="min-h-0 flex-1"><Chat compact /></div>
-          </div>
         </div>
       </div>
     </section>

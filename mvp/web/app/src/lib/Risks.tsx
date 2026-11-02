@@ -34,7 +34,7 @@ export function SeverityBubbles({ data }: { data: Risks | null }) {
   if (!data) return <p className="text-muted" role="status">Loading…</p>
   const levels = data.levels.filter((l) => l.severity !== 'low' || l.count > 0)
   return (
-    <ul className={'grid gap-4 ' + (levels.length > 3 ? 'grid-cols-2 lg:grid-cols-4' : 'grid-cols-1 sm:grid-cols-3')}>
+    <ul className={'mx-auto grid max-w-4xl gap-4 ' + (levels.length > 3 ? 'grid-cols-2 lg:grid-cols-4' : 'grid-cols-1 sm:grid-cols-3')}>
       {levels.map((l) => {
         const t = LEVEL_TEXT[l.severity]
         return (
