@@ -1,7 +1,7 @@
 import { Suspense, useEffect, useRef, useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import {
-  BarChart3, Boxes, Briefcase, Eye, Gavel, LayoutDashboard, Library, DatabaseBackup, FileText, Flag, Link2, Lock, LogOut, Moon, Network,
+  Boxes, Briefcase, Eye, Gavel, LayoutDashboard, Library, DatabaseBackup, FileText, Flag, Link2, Lock, LogOut, Moon, Network,
   ScrollText, Search, Server, Settings2, ShieldCheck, Siren, Sparkles, SlidersHorizontal, Sun, UserRound, Users, Workflow, Bell as BellIcon, PanelLeftClose, PanelLeftOpen, type LucideIcon,
 } from 'lucide-react'
 import { api } from '../lib/api'
@@ -32,15 +32,11 @@ export const MENU: Group[] = [
   ] },
   { group: 'Monitoring', icon: Eye, items: [
     { to: '/machines', label: 'Computers', icon: Server },
-    { to: '/analytics', label: 'Trends', icon: BarChart3 },
-    { to: '/reports', label: 'Reports', icon: FileText },
     { to: '/audit', label: 'Activity Log', icon: Link2 },
-    { to: '/backups', label: 'Backups', icon: DatabaseBackup },
-    { to: '/privacy', label: 'Privacy and Data', icon: Lock },
-    { to: '/team', label: 'People and Access', icon: Users, needs: 'people' },
   ] },
   { group: 'Settings', icon: Settings2, items: [
     { to: '/config', label: 'Setup', icon: ScrollText },
+    { to: '/team', label: 'People and Access', icon: Users, needs: 'people' },
   ] },
 ]
 

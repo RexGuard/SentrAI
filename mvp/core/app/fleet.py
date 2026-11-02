@@ -94,7 +94,8 @@ class Fleet:
         self._data: dict[str, Any] = {"codes": {}, "agents": {}}
         try:
             loaded = json.loads(path.read_text(encoding="utf-8"))
-            self._data = {"codes": dict(loaded.get("codes") or {}), "agents": dict(loaded.get("agents") or {})}
+            self._data = {"codes": dict(loaded.get("codes") or {}), "agents": dict(loaded.get("agents") or {}),
+                          "removed": dict(loaded.get("removed") or {}), "names": dict(loaded.get("names") or {})}
         except (OSError, ValueError):
             pass
 
@@ -196,6 +197,25 @@ class Fleet:
     def removed(self) -> dict[str, dict[str, Any]]:
         """Hosts taken off the panel: {host: {"at": iso, "by": who}}."""
         return dict(self._data.get("removed") or {})
+
+    def rename(self, host: str, name: str, by: str) -> dict[str, Any]:
+        """The name people see for a machine on the panel. Blank goes back to its host name. The host name itself,
+        which its agent, incidents and audit records use, never changes."""
+        name = " ".join(str(name or "").split())
+        if len(name) > 60:
+            raise FleetError("A machine name can be at most 60 characters.")
+        with self.lock:
+            names = self._data.setdefault("names", {})
+            if name and name != host:
+                names[host] = {"name": name, "by": by, "at": _iso(self.clock())}
+            else:
+                names.pop(host, None)
+            self._save()
+        return {"host": host, "name": name or host}
+
+    def names(self) -> dict[str, str]:
+        """{host: the name people gave it} for the machines that were renamed."""
+        return {h: str(v.get("name")) for h, v in (self._data.get("names") or {}).items() if isinstance(v, dict) and v.get("name")}
 
     def offline_report(self, agent: dict[str, Any], report: dict[str, Any]) -> dict[str, Any]:
         """An agent is back after the panel was out of reach: keep a short summary of what it did alone."""

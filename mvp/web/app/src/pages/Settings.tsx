@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ExternalLink, Plug, Save, Search } from 'lucide-react'
+import { ExternalLink, Info, Plug, Save, Search } from 'lucide-react'
 import { api, ApiError } from '../lib/api'
 import { btn, btnPrimary } from '../lib/ui'
 import { useSession } from '../lib/session'
@@ -97,6 +97,7 @@ export default function Settings() {
   const [note, setNote] = useState('')
   const [draft, setDraft] = useState<Record<string, string>>({})
   const [query, setQuery] = useState('')
+  const [details, setDetails] = useState(false)  // the i button: what the chosen preset sets
   const [exts, setExts] = useState<Ext[]>([])
   const loadExts = useCallback(() => { api<Ext[]>('/extensions').then(setExts).catch(() => setExts([])) }, [])
   const load = useCallback(async () => {
@@ -114,7 +115,6 @@ export default function Settings() {
   const set = (f: Field, v: string) => setDraft((d) => {
     const next = { ...d }
     if (v === current[f.env]) delete next[f.env]; else next[f.env] = v
-    if (f.preset_field && data && (draft[PRESET_ENV] ?? current[PRESET_ENV]) !== data.advanced) next[PRESET_ENV] = data.advanced // a value changed by hand: Advanced
     return next
   })
   const pickPreset = (name: string) => setDraft((d) => {
@@ -150,20 +150,49 @@ export default function Settings() {
             <label htmlFor="cfg-search" className="sr-only">Search settings</label>
             <input id="cfg-search" className={input + ' mt-0 pl-9'} placeholder="Search settings: telegram, threshold, password…" value={query} onChange={(e) => setQuery(e.target.value)} />
           </div>
-          {preset && match('preset', 'security', ...Object.values(data.presets).map((p) => p.label)) && (
-            <div className="space-y-3 rounded-lg border border-line bg-surface p-4">
-              <h2 className="font-semibold">Security Preset <span className="font-normal text-muted">· one choice sets the detection and response values below</span></h2>
-              <div role="radiogroup" aria-label="Preset" className="flex flex-wrap gap-2">
-                {preset.choices.map((c) => (
-                  <button key={c} role="radio" aria-checked={presetName === c} disabled={off} onClick={() => pickPreset(c)}
-                    className={'rounded-md px-3 py-1.5 text-sm ' + (presetName === c ? 'bg-surface-3 text-ink' : 'text-soft hover:bg-surface-2')}>{c === data.advanced ? 'Advanced' : data.presets[c]?.label ?? c}</button>
-                ))}
+          {preset && match('preset', 'security', ...Object.values(data.presets).map((p) => p.label)) && (() => {
+            // Only the three presets: no Advanced. The values each one sets stay hidden until the i button is pressed.
+            const choices = preset.choices.filter((c) => c !== data.advanced)
+            const shown = data.presets[presetName] ? presetName : ''
+            const label = (env: string) => data.sections.flatMap((x) => x.fields).find((f) => f.env === env)?.prompt ?? env
+            return (
+              <div className="space-y-3 rounded-lg border border-line bg-surface p-4">
+                <h2 className="font-semibold">Security Preset <span className="font-normal text-muted">· one choice sets how quickly SentrAI acts</span></h2>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div role="radiogroup" aria-label="Preset" className="flex flex-wrap gap-2">
+                    {choices.map((c) => (
+                      <button key={c} role="radio" aria-checked={presetName === c} disabled={off} onClick={() => pickPreset(c)}
+                        className={'rounded-md px-3 py-1.5 text-sm ' + (presetName === c ? 'bg-surface-3 text-ink' : 'text-soft hover:bg-surface-2')}>{data.presets[c]?.label ?? c}</button>
+                    ))}
+                  </div>
+                  <button aria-expanded={details} aria-controls="preset-details" onClick={() => setDetails(!details)} title={details ? 'Hide what this preset sets' : 'Show what this preset sets'}
+                    className={'inline-flex h-7 w-7 items-center justify-center rounded-full border border-line ' + (details ? 'bg-surface-3 text-ink' : 'text-soft hover:bg-surface-2')}>
+                    <Info size={14} aria-hidden /><span className="sr-only">Preset details</span>
+                  </button>
+                </div>
+                <p className="text-sm text-soft">{shown ? data.presets[shown].about : 'Your values were set by hand. Pick a preset to use its values.'}</p>
+                {details && (
+                  <div id="preset-details" className="overflow-x-auto rounded-md border border-line-soft">
+                    <table className="w-full text-left text-sm">
+                      <thead className="border-b border-line text-xs uppercase tracking-wide text-muted">
+                        <tr><th className="p-2 font-medium">Setting</th>{choices.map((c) => <th key={c} className={'p-2 font-medium ' + (c === shown ? 'text-ink' : '')}>{data.presets[c]?.label ?? c}</th>)}</tr>
+                      </thead>
+                      <tbody>
+                        {Object.keys(data.presets[choices[0]]?.values ?? {}).map((env) => (
+                          <tr key={env} className="border-b border-line-soft last:border-0">
+                            <td className="p-2 text-soft">{label(env)}</td>
+                            {choices.map((c) => <td key={c} className={'p-2 tabular-nums ' + (c === shown ? 'font-semibold text-ink' : 'text-muted')}>{data.presets[c].values[env]}</td>)}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
-              <p className="text-sm text-soft">{presetName === data.advanced ? data.advanced_about + ' Pick a preset to go back to its values.' : data.presets[presetName]?.about}</p>
-            </div>
-          )}
+            )
+          })()}
           {data.sections.filter((s) => s.key !== 'preset').map((s) => {
-            const fields = s.fields.filter((f) => f.env !== PRESET_ENV)
+            const fields = s.fields.filter((f) => f.env !== PRESET_ENV && !f.preset_field)  // the preset sets these
             const whole = match(s.title, s.about)
             const hits = whole ? fields : fields.filter((f) => match(f.prompt, f.env))
             if (!hits.length) return null
@@ -171,7 +200,7 @@ export default function Settings() {
             const tag = s.feature ? 'Built in' : s.extension ? 'Integration' : ''
             return (
               <details key={s.key} className="rounded-lg border border-line bg-surface" open={!!q}>
-                <summary className="cursor-pointer p-4 font-semibold">{s.title}{tag && <span className="ml-2 rounded-full border border-line px-2 py-0.5 text-xs font-normal text-soft">{tag}</span>} <span className="font-normal text-muted">· {s.about}</span></summary>
+                <summary className="cursor-pointer p-4 font-semibold">{s.title.replace(/^\d+\.\s*/, '')}{tag && <span className="ml-2 rounded-full border border-line px-2 py-0.5 text-xs font-normal text-soft">{tag}</span>} <span className="font-normal text-muted">· {s.about}</span></summary>
                 <Status s={s} x={x} reload={loadExts} />
                 <div className="grid gap-4 p-4 pt-0 lg:grid-cols-2">{hits.map((f) => <Row key={f.env} f={f} value={val(f)} onChange={(v) => set(f, v)} disabled={off} />)}</div>
               </details>

@@ -75,6 +75,15 @@ after being deleted, or when it joins again with a new code. Recorded in the aud
 
 **Returns** `{"host": "...", "revoked": ["<agent id>"], "removed_at": "...", "jobs_cancelled": 0, "message": "..."}`.
 
+### `POST /ui/machines/{host}/rename`
+
+The Machines list's pencil: the name people see for a machine. Owner and Admin only (`403` for an Auditor). Send
+`{"name": "Shop server"}`; a blank name goes back to the host name, and more than 60 characters is a `400`. The host
+name itself, which the agent, incidents and audit records use, never changes. Kept in `fleet.json` and recorded in the
+audit log as `machine_renamed`.
+
+**Returns** `{"host": "...", "name": "...", "message": "..."}`.
+
 ### `GET /ui/machines/{host}/details`
 
 The single-machine page's Signed in, Services and Packages tabs in one call.

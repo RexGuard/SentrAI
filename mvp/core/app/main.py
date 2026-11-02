@@ -1133,6 +1133,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         machine_health.forget(out["host"])
         return out
 
+    @app.post("/ui/machines/{host}/rename")
+    def post_rename_machine(host: str, request: Request, body: dict = Body(...)) -> dict[str, Any]:
+        """The Machines list's pencil: the name people see. Owner and Admin only; blank goes back to the host name."""
+        account = getattr(request.state, "account", None)
+        if account and not acc.can(account.get("role"), "configure"):
+            raise HTTPException(403, "Only an Owner or Admin can rename a machine.")
+        operator = (account or {}).get("email") or "dashboard"
+        try:
+            out = machines.rename(host, str(body.get("name") or ""), operator)
+        except fleet.FleetError as exc:
+            raise fleet_error(exc)
+        core.scribe.record(core.name, "machine_renamed", {"host": host, "name": out["name"], "operator": operator})
+        return {**out, "message": f"{host} is now shown as {out['name']}."}
+
     @app.post("/ui/machines/{host}/delete")
     def post_remove_machine(host: str, request: Request) -> dict[str, Any]:
         """The Machines list's Delete: Owner and Admin only. Revokes its agent's key, cancels its queued jobs and
