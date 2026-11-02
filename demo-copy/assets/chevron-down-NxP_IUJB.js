@@ -1,1 +1,0 @@
-import{t as e}from"./createLucideIcon-B2-dpO1J.js";var t={name:`chevron-down`,size:24,node:[[`path`,{d:`m6 9 6 6 6-6`,key:`qrunsl`}]]};t.node;var n=e(t);export{n as t};

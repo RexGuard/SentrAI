@@ -103,16 +103,18 @@ function liveRisk() {
 export const isLiveRisk = (id: string) => id === LIVE_ID
 
 type Lvl = { severity: string; count: number; bubbles: number; overdue: number; oldest: string }
-/** Adds the live risk (while it is open) to a recorded /ui/risks answer. */
+/** The risk lists as the live demo shows them: the recorded active risks are left out (every card starts at 0, as
+ *  Erick asked, so only the live attack shows up), and the live risk is added while it is open. Risks SentrAI
+ *  already handled stay under "Already handled". */
 function withLive(path: string, body: unknown): unknown {
-  if (phase !== 'open' || !body || typeof body !== 'object' || !bare(path).startsWith('/ui/risks')) return body
+  if (!body || typeof body !== 'object' || !bare(path).startsWith('/ui/risks')) return body
   const b = body as { levels?: Lvl[]; rows?: unknown[]; headline?: string }
   const sev = new URLSearchParams(path.split('?')[1] ?? '').get('severity')
-  const levels = (b.levels ?? []).map((l) => l.severity === 'critical'
-    ? { ...l, count: l.count + 1, bubbles: l.bubbles + 1, oldest: l.oldest || 'just now' } : l)
-  const total = levels.reduce((n, l) => n + l.count, 0)
-  const out: Record<string, unknown> = { ...b, levels, headline: `${total} thing${total === 1 ? ' needs' : 's need'} a person. Start with Critical.` }
-  if (sev === 'critical' || sev === 'all') out.rows = [liveRisk(), ...((b.rows as unknown[]) ?? [])]
+  const on = phase === 'open'
+  const levels = (b.levels ?? []).map((l) => (on && l.severity === 'critical'
+    ? { ...l, count: 1, bubbles: 1, overdue: 0, oldest: 'just now' } : { ...l, count: 0, bubbles: 0, overdue: 0, oldest: '' }))
+  const out: Record<string, unknown> = { ...b, levels, headline: on ? '1 thing needs a person. Start with Critical.' : 'Nothing needs a person right now.' }
+  if ('rows' in b || sev) out.rows = on && (sev === 'critical' || sev === 'all') ? [liveRisk()] : []
   return out
 }
 export async function demoGetLive(path: string): Promise<unknown> {
