@@ -19,7 +19,7 @@ from fastapi import FastAPI, HTTPException, Query
 
 from .agents import next_steps
 from .rules import TRIPWIRE_REASONS
-from .ui_approvals import can, category_label, span_label
+from .ui_approvals import can, category_label, handled, span_label
 from .ui_incidents import OPEN_STATUSES, SEVERITY_RANK, age_hours, attention
 
 LEVELS = ("critical", "high", "medium", "low")
@@ -159,8 +159,8 @@ def plain_fix(inc: dict) -> str:
 
 def needs_person(inc: dict) -> bool:
     """Open and waiting on someone: a decision, a block to keep or undo, or one of the reasons on Incidents."""
-    if inc.get("status") not in OPEN_STATUSES:
-        return False
+    if inc.get("status") not in OPEN_STATUSES or handled(inc):
+        return False  # handled by SentrAI on its own: shown under "Already handled" instead
     c = can(inc)
     return bool(c["decide"] or c["contain_controls"] or attention(inc))
 
@@ -208,7 +208,7 @@ def bubble(members: list[dict], wave: str = "") -> dict[str, Any]:
         "host": first.get("host") or "-", "source": ", ".join(sources[:3]) + (" …" if len(sources) > 3 else ""),
         "owner": ", ".join(owners) if owners else "Nobody yet",
         "open_for": span_label(age_hours(first) * 3600), "hours": round(age_hours(first), 2),
-        "overdue": any(i.get("sla_breached") and not i.get("acked") for i in members),
+        "overdue": any(i.get("sla_breached") and not i.get("acked") and not handled(i) for i in members),
         "status": str(first.get("status")), "acked": bool(first.get("acked")),
         "needs": reasons,
         "what_happened": plain_happened(first, len(sources) if wave else 0),
@@ -268,13 +268,20 @@ def install(app: FastAPI, core: Any) -> None:
         """The Command center's severity bubbles; with `severity`, that level's risk bubbles too."""
         if severity is not None and severity not in LEVELS and severity != "all":
             raise HTTPException(400, f"severity is one of {', '.join(LEVELS)} or all")
-        incidents = [i for i in core.list_incidents(host=None) if needs_person(i)]
+        everything = core.list_incidents(host=None)
+        incidents = [i for i in everything if needs_person(i)]
+        done = [i for i in everything if handled(i)]
         rows = bubbles(incidents)
         levels = summary(rows, incidents)
         out: dict[str, Any] = {"levels": levels, "headline": headline(levels),
-                               "protection_on": not core.protection().get("monitor_only", False)}
+                               "protection_on": not core.protection().get("monitor_only", False),
+                               "handled_count": len(done)}
         if severity == "all":
             out["rows"] = sorted(rows, key=lambda b: b["hours"])
         elif severity:
             out["rows"] = [b for b in rows if b["severity"] == severity]
+            # What SentrAI already blocked on its own at this level, newest first: off the list above, but each
+            # one still opens with Keep it / Undo in case it was a false alarm.
+            out["handled"] = sorted((b for b in bubbles([i for i in done if level(i) == severity])),
+                                    key=lambda b: b["hours"])
         return out

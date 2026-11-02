@@ -21,7 +21,8 @@ export type Risk = {
   needs: string[]; what_happened: string; meaning: string; fix: string; steps: string[]; unsure: boolean
   actions: RiskAction[]; inc: { id: string; status: string; category: string; acked: boolean; actions: { status?: string }[] }
 }
-export type Risks = { levels: LevelCount[]; headline: string; protection_on: boolean; rows?: Risk[] }
+// handled: what SentrAI already blocked on its own at that level (off the active list, still undoable).
+export type Risks = { levels: LevelCount[]; headline: string; protection_on: boolean; rows?: Risk[]; handled?: Risk[]; handled_count?: number }
 
 export const LEVEL_TEXT: Record<Level, { name: string; color: string; tint: string; blurb: string }> = {
   critical: { name: 'Critical', color: 'var(--critical)', tint: 'color-mix(in oklab, var(--critical) 12%, transparent)', blurb: 'act now' },
@@ -69,14 +70,16 @@ export function SeverityBubbles({ data }: { data: Risks | null }) {
 }
 
 /** One risk on the severity page: its title and how long it has been open. */
-export function RiskBubble({ r, onOpen, named = false }: { r: Risk; onOpen: () => void; named?: boolean }) {
+export function RiskBubble({ r, onOpen, named = false, handled = false }: { r: Risk; onOpen: () => void; named?: boolean; handled?: boolean }) {
   const t = LEVEL_TEXT[r.severity]
   return (
     // The bubble and its dialog share a transition name, so the bubble grows into the dialog and back.
     <button onClick={onOpen} aria-haspopup="dialog" style={{ borderColor: t.color, viewTransitionName: named ? vtName('risk', r.id) : undefined }}
       className="flex h-full min-h-40 w-full flex-col items-start gap-2 rounded-[2rem] border-2 bg-surface p-5 text-left transition hover:-translate-y-0.5 hover:bg-surface-2">
       <span className="text-lg font-semibold leading-snug">{r.title}{r.ids.length > 1 && <span className="ml-1 text-sm font-normal text-muted">×{r.ids.length}</span>}</span>
-      <span className="flex items-center gap-1.5 text-sm text-soft"><Clock size={14} aria-hidden />open for {r.open_for}</span>
+      {handled
+        ? <span className="flex items-center gap-1.5 text-sm text-ok"><ShieldCheck size={14} aria-hidden />Blocked by SentrAI {r.open_for} ago</span>
+        : <span className="flex items-center gap-1.5 text-sm text-soft"><Clock size={14} aria-hidden />open for {r.open_for}</span>}
       <span className="mt-auto flex flex-wrap gap-1.5 text-xs text-muted">
         {r.overdue && <span className="rounded-full px-2 py-0.5 font-medium" style={{ background: t.tint, color: t.color }}>Overdue</span>}
       </span>

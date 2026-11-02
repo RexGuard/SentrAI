@@ -85,3 +85,39 @@ def test_titles_are_in_title_case():
     assert title_case("Port or web scan") == "Port or Web Scan"
     assert title_case("SQL injection") == "SQL Injection"
     assert title_case("Cross-site scripting from 3 addresses") == "Cross-Site Scripting from 3 Addresses"
+
+
+def test_handled_by_sentrai_leaves_the_active_lists(client):
+    brute_force(client)
+    sev = next(lv["severity"] for lv in client.get("/ui/risks").json()["levels"] if lv["count"])
+    iid = client.get(f"/ui/risks?severity={sev}").json()["rows"][0]["incident"]
+    client.post("/ui/approvals/bulk", json={"verb": "approve", "ids": [iid], "justification": "block it"})
+    assert client.get(f"/incidents/{iid}").json()["status"] == "contained"
+    page = client.get(f"/ui/risks?severity={sev}").json()
+    assert iid not in {i for r in page["rows"] for i in r["ids"]}
+    assert page["handled_count"] >= 1 and iid in {i for r in page["handled"] for i in r["ids"]}
+    held = next(r for r in page["handled"] if iid in r["ids"])
+    assert "rollback" in {a["verb"] for a in held["actions"]}  # still undoable from "Already handled"
+    assert iid not in {i for r in client.get("/ui/risks?severity=all").json()["rows"] for i in r["ids"]}  # the bell
+    inc_page = client.get("/ui/incidents").json()
+    assert iid not in {r["id"] for r in inc_page["all"]} and iid not in {r["id"] for r in inc_page["todo"]}
+    row = next(r for r in client.get("/ui/incidents?closed=true").json()["all"] if r["id"] == iid)
+    assert row["handled"] and "Handled by SentrAI" in row["needs"]
+    assert iid not in {i["id"] for i in client.get("/ui/approvals").json().get("rows", [])}
+    # Undo it: the incident is back with the ones that need a person.
+    client.post("/ui/approvals/bulk", json={"verb": "rollback", "ids": [iid], "justification": "false alarm"})
+    assert iid in {i for r in client.get(f"/ui/risks?severity={sev}").json()["rows"] for i in r["ids"]}
+
+
+def test_what_still_needs_a_person_after_an_automatic_block():
+    from app.ui_approvals import handled
+    block = {"status": "active", "type": "block_ip", "target": "203.0.113.9"}
+    base = {"status": "contained", "category": "brute_force", "actions": [block]}
+    assert handled(base)
+    assert not handled({**base, "needs_review": True})  # the AI was unsure
+    assert not handled({**base, "category": "unauthorised_admin"})  # "was this you?"
+    assert not handled({**base, "actions": [{**block, "status": "rolled_back"}]})  # nothing in force any more
+    assert not handled({**base, "actions": [{**block, "check": {"worked": False}}]})  # did not work
+    assert not handled({**base, "actions": [{**block, "check": {"worked": True, "disruption": True}}]})  # hurting users
+    assert handled({**base, "actions": [{**block, "check": {"worked": True, "disruption": False}}]})
+    assert not handled({**base, "status": "open"})

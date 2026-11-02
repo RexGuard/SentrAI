@@ -190,7 +190,7 @@ export default function Incidents({ embedded = false }: { embedded?: boolean }) 
               <>
                 <h2 className="font-semibold">All Incidents <span className="font-normal text-muted">· owner, backup and what each one still needs</span></h2>
                 <div className="flex flex-wrap gap-4 text-sm text-soft">
-                  <label className="flex items-center gap-2"><input type="checkbox" checked={closed} onChange={(e) => setClosed(e.target.checked)} /> Show resolved and rejected</label>
+                  <label className="flex items-center gap-2"><input type="checkbox" checked={closed} onChange={(e) => setClosed(e.target.checked)} /> Show resolved, rejected and handled by SentrAI</label>
                   <label className="flex items-center gap-2"><input type="checkbox" checked={mine} onChange={(e) => setMine(e.target.checked)} /> Only mine</label>
                 </div>
                 <Board rows={page.all} contacts={page.contacts} done={done} empty="No incidents. All quiet at the gate." />
