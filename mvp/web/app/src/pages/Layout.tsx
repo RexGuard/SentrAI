@@ -2,7 +2,7 @@ import { Suspense, useEffect, useRef, useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import {
   BarChart3, Boxes, Briefcase, Eye, Gavel, LayoutDashboard, Library, DatabaseBackup, FileText, Flag, Link2, Lock, LogOut, Moon, Network,
-  Puzzle, ScrollText, Search, Server, Settings2, ShieldCheck, Siren, Sparkles, SlidersHorizontal, Sun, UserRound, Users, Workflow, Bell as BellIcon, ChevronDown, type LucideIcon,
+  Puzzle, ScrollText, Search, Server, Settings2, ShieldCheck, Siren, Sparkles, SlidersHorizontal, Sun, UserRound, Users, Workflow, Bell as BellIcon, PanelLeftClose, PanelLeftOpen, type LucideIcon,
 } from 'lucide-react'
 import { api } from '../lib/api'
 import { useSession } from '../lib/session'
@@ -240,8 +240,9 @@ export default function Layout() {
   const items = (g: Group) => g.items.filter((i) => !i.needs || can(i.needs))
   // A page outside every group (Chat, Report) keeps the last group picked on top.
   const [picked, setPicked] = useState(menu[0].group)
-  // Groups opened by hand with their arrow (the group you are in is always open).
-  const [unfolded, setUnfolded] = useState<Set<string>>(() => new Set())
+  // The side menu can be hidden for more room (the button left of the logo); remembered in this browser.
+  const [sideHidden, setSideHidden] = useState(() => { try { return localStorage.getItem('sentrai-side-hidden') === '1' } catch { return false } })
+  const toggleSide = () => setSideHidden((h) => { try { localStorage.setItem('sentrai-side-hidden', h ? '0' : '1') } catch { /* private window */ } return !h })
   const current = groupOf(menu, pathname) ?? menu.find((g) => g.group === picked) ?? menu[0]
   // Where we are, for the direction of the slide: Sentry sits above the groups (-1).
   const onSentry = pathname.startsWith('/manager')
@@ -251,8 +252,12 @@ export default function Layout() {
   return (
     <>
     <Waves />
-    <div className="console-shell min-h-screen">
+    <div className={'console-shell min-h-screen' + (sideHidden ? ' side-hidden' : '')}>
       <header className="console-top">
+        <button className="console-icon side-toggle" onClick={toggleSide} aria-expanded={!sideHidden} aria-controls="console-side"
+          aria-label={sideHidden ? 'Show the side menu' : 'Hide the side menu'} title={sideHidden ? 'Show the side menu' : 'Hide the side menu'}>
+          {sideHidden ? <PanelLeftOpen size={20} aria-hidden /> : <PanelLeftClose size={20} aria-hidden />}
+        </button>
         <VLink to="/" className="console-logo" aria-label="SentrAI home">
           <img src={import.meta.env.BASE_URL + "mark.svg"} alt="" width={52} height={52} className="console-brand-mark" />
           <span className="leading-tight"><span className="console-brand block">SentrAI</span><span className="block text-[0.8125rem] text-soft">Cybersecurity Console</span></span>
@@ -271,7 +276,7 @@ export default function Layout() {
         </div>
       </header>
       <div className="flex">
-        <aside className="console-side">
+        <aside id="console-side" className="console-side" inert={sideHidden}>
           <nav aria-label="Sections" className="flex flex-col gap-3">
             <VNavLink to="/manager" slide={{ dir: 'down', steps: groupIndex + 1 }} className={({ isActive }) => 'flex items-center gap-3.5 rounded-2xl px-4 py-3 text-left text-[0.9375rem] font-medium ' + (isActive ? 'side-on' : 'text-soft hover:text-ink')}>
               <Sparkles size={20} aria-hidden /> Sentry
@@ -279,38 +284,15 @@ export default function Layout() {
             {menu.map((g) => {
               const on = !onSentry && g.group === current?.group
               const gi = menu.indexOf(g)
-              const groupSlide = { dir: gi > groupIndex ? 'up' : 'down', steps: Math.abs(gi - groupIndex) } as const
-              const isOpen = on || unfolded.has(g.group)
-              const fold = () => setUnfolded((u) => { const n = new Set(u); if (isOpen) { n.delete(g.group) } else { n.add(g.group) } return n })
               return (
-                <div key={g.group}>
-                  <div className={'flex items-center rounded-2xl ' + (on ? 'side-on' : 'text-soft hover:text-ink')}>
-                    <button aria-current={on ? 'true' : undefined} onClick={() => {
-                      setPicked(g.group); const first = items(g)[0]
-                      // Further down the menu the new page rises from below; further up, it drops in from above.
-                      if (first) go(first.to, { slide: groupSlide })
-                    }} className="flex min-w-0 flex-1 items-center gap-3.5 py-3 pl-4 text-left text-[0.9375rem] font-medium">
-                      <g.icon size={20} aria-hidden /> {g.group}
-                    </button>
-                    {!on && (
-                      <button aria-expanded={isOpen} aria-label={(isOpen ? 'Hide ' : 'Show ') + g.group + ' pages'} onClick={fold} className="grid h-9 w-9 shrink-0 place-items-center rounded-xl">
-                        <ChevronDown size={16} className="side-chev" aria-hidden />
-                      </button>)}
-                    {on && <span aria-expanded="true" className="grid h-9 w-9 shrink-0 place-items-center"><ChevronDown size={16} className="side-chev" aria-hidden /></span>}
-                  </div>
-                  <div className="side-sub" data-open={isOpen ? '' : undefined}>
-                    <div>
-                      <div className="ml-6 mt-1 flex flex-col gap-0.5 border-l border-line pl-3">
-                        {items(g).map(({ to, label }, i) => (
-                          <VNavLink key={to} to={to} tabIndex={isOpen ? undefined : -1} style={{ '--i': i } as React.CSSProperties}
-                            slide={on ? tabSlide(i) : groupSlide} onClick={() => setPicked(g.group)}
-                            className={({ isActive }) => 'rounded-xl px-3 py-1.5 text-sm ' + (isActive ? 'font-semibold text-ink' : 'text-soft hover:bg-surface-2 hover:text-ink')}>
-                            {label}
-                          </VNavLink>))}
-                      </div>
-                    </div>
-                  </div>
-                </div>)
+                <button key={g.group} aria-current={on ? 'true' : undefined} onClick={() => {
+                  setPicked(g.group); const first = items(g)[0]
+                  // Further down the menu the new page rises from below; further up, it drops in from above.
+                  if (first) go(first.to, { slide: { dir: gi > groupIndex ? 'up' : 'down', steps: Math.abs(gi - groupIndex) } })
+                }}
+                  className={'flex items-center gap-3.5 rounded-2xl px-4 py-3 text-left text-[0.9375rem] font-medium ' + (on ? 'side-on' : 'text-soft hover:text-ink')}>
+                  <g.icon size={20} aria-hidden /> {g.group}
+                </button>)
             })}
           </nav>
           <div className="console-auto"><AutoMode /></div>
