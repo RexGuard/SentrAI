@@ -125,11 +125,11 @@ function liveRisk() {
     overdue: false, status: 'open', acked: false, needs: ['Decide what to do'],
     what_happened: `${ATTACKER} kept trying wrong passwords for the 'admin' account on aegis-web, ${tries} times so far, and is still trying.`,
     meaning: 'Someone is guessing passwords to get into an account. If they guess right, they are in.',
-    fix: 'Block the IP address mentioned above and slow down sign-ins for 2 hours, so that they cannot keep guessing ' +
+    fix: 'Block the IP address mentioned above and stop sign-ins from that IP address for 2 hours, so that they cannot keep guessing ' +
       'passwords. Then ask the account owner to change their password.',
     steps: [], unsure: false,
     actions: [
-      { verb: 'approve', label: 'Do the suggested fix', hint: 'Blocks the address and slows down sign-ins. Written to the audit log.' },
+      { verb: 'approve', label: 'Do the suggested fix', hint: 'Blocks the address and stops sign-ins from it for 2 hours. Written to the audit log.' },
       { verb: 'reject', label: 'Not a threat', hint: 'Closes it without acting. You say why.' },
     ],
     inc: { id: LIVE_ID, status: 'open', category: 'brute_force', acked: false, actions: [] },
@@ -176,7 +176,7 @@ export function demoWrite(path: string, body: unknown): { message: string; done:
     after(1700, () => send({ type: 'refused', wait: 8 }))
     after(2400, () => send({ type: 'done', tries, by: 'manager' }))
     changed()
-    return { message: `Done. ${ATTACKER} is blocked for 2 hours and sign-ins are slowed down. Ask the account owner to change their password.`, done: [LIVE_ID] }
+    return { message: `Done. ${ATTACKER} is blocked: no sign-ins from that IP address for 2 hours. Ask the account owner to change their password.`, done: [LIVE_ID] }
   }
   if (b.verb === 'reject') {
     phase = 'dismissed'

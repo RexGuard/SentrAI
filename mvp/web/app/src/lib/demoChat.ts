@@ -20,14 +20,14 @@ function answer(question: string, incident: string | null): { text: string; look
       `**Someone is trying to guess the admin password on your student portal (aegis-web) right now.**\n\n` +
       `In the ${mins} the address 203.0.113.45 has tried **${s.tries} wrong passwords** on the admin sign-in. None has worked yet, but it keeps going.\n\n` +
       `**How serious:** Critical. One right guess would give them the portal's admin account.\n\n` +
-      `**What to do:** open the risk and press **Do the suggested fix**. That blocks 203.0.113.45 for 2 hours and slows down sign-ins, and you can undo it. ` +
+      `**What to do:** open the risk and press **Do the suggested fix**. That stops sign-ins from 203.0.113.45 for 2 hours, and you can undo it. ` +
       `Then ask whoever owns the admin account to change its password and turn on two-step sign-in.\n\n` +
       `I haven't blocked it myself, because your settings leave this one for a person to decide.` }
   }
   if (s.phase === 'fixed' && aboutLive) {
     return { looked: ['the Brute Force risk', 'blocked addresses'], text:
       `**It's handled.** You blocked 203.0.113.45, so it can no longer reach your student portal. It tried ${s.tries} passwords and none of them worked.\n\n` +
-      `The block lasts 2 hours and sign-ins stay slowed down. If it comes back after that, I'll raise it again.\n\n` +
+      `Sign-ins from that IP address stay stopped for 2 hours. If it comes back after that, I'll raise it again.\n\n` +
       `**One thing left:** ask the admin account's owner to change the password and turn on two-step sign-in, just to be safe.` }
   }
   if (s.phase === 'dismissed' && aboutLive) {
