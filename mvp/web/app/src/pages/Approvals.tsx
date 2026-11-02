@@ -127,7 +127,8 @@ const FILTERS: Filter<Row>[] = [
   { key: 'attacker', label: 'Source', get: (r) => r.attacker }, { key: 'opened', label: 'Opened', get: (r) => r.opened, kind: 'date' },
 ]
 
-export default function Approvals() {
+/** `embedded`: drawn inside the Command center's tabs, without its own page title. */
+export default function Approvals({ embedded = false }: { embedded?: boolean }) {
   const { can } = useSession()
   const [page, setPage] = useState<Page | null>(null)
   const [error, setError] = useState('')
@@ -171,10 +172,12 @@ export default function Approvals() {
 
   return (
     <section className="space-y-4">
+      {!embedded && (
       <header>
         <h1 className="text-2xl font-semibold">Approvals</h1>
         <p className="text-sm text-muted">requests waiting on a person · nothing permanent happens without one</p>
       </header>
+      )}
       {error && <p role="alert" className="rounded-md border border-line bg-surface p-3 text-bad">{error}</p>}
       {note && <p role="status" className="rounded-md border border-line bg-surface p-3">{note}</p>}
       {page && page.total === 0 && <p className="rounded-lg border border-line bg-surface p-4 text-ok">Nothing waiting for a decision. All quiet at the gate.</p>}

@@ -61,7 +61,7 @@ export function PlaybookCard({ p, ai, changed }: { p: Pattern; ai: boolean; chan
           <ul className="list-disc pl-5 text-soft">{pb.prevent.map((s, i) => <li key={i}>{s}</li>)}</ul></div>
       )}
       {pb.watch_for && <p className="text-sm"><span className="font-medium">Watch for:</span> <span className="text-soft">{pb.watch_for}</span></p>}
-      <p className="text-xs text-muted">Advice only. Any block still goes through <Link to="/approvals" className="underline">Approvals</Link> and the automation guardrails.</p>
+      <p className="text-xs text-muted">Advice only. Any block still goes through <Link to="/command" className="underline">Command center</Link> and the automation guardrails.</p>
     </div>
   )
 }

@@ -52,7 +52,8 @@ export function Chart({ points, threshold }: { points: Point[]; threshold: numbe
   )
 }
 
-export default function Review() {
+/** `embedded`: drawn inside the Command center's tabs, without its own page title. */
+export default function Review({ embedded = false }: { embedded?: boolean }) {
   const [risk, setRisk] = useState<Risk | null>(null)
   const [incs, setIncs] = useState<Inc[]>([])
   const [machines, setMachines] = useState<MachineRow[]>([])
@@ -77,10 +78,12 @@ export default function Review() {
 
   return (
     <section className="space-y-4">
+      {!embedded && (
       <header>
         <h1 className="text-2xl font-semibold">Review</h1>
         <p className="text-sm text-muted">how close SentrAI is to acting on its own, and why</p>
       </header>
+      )}
       {error && <p role="alert" className="rounded-md border border-line bg-surface p-3 text-bad">{error}</p>}
       {risk && (
         <>

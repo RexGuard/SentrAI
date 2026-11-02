@@ -1,13 +1,23 @@
 // Command center: what needs a person as one bubble per severity (Critical / High / Medium), the risk over time,
 // the machines and Cyanide, so a non-IT person sees at a glance where to start. A bubble opens that severity's risks
 // (pages/RiskList.tsx); the full Approvals and Incidents pages stay.
-import { useCallback, useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { ChevronRight } from 'lucide-react'
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
+import { ChevronRight, ClipboardCheck, Gauge, Siren, X } from 'lucide-react'
 import { api, ApiError } from '../lib/api'
 import Chat from './Chat'
 import { Chart, type Point } from './Review'
 import { SeverityBubbles, type Risks } from '../lib/Risks'
+
+// The full lists that used to be their own menu entries, folded in here and drawn only when picked.
+const Approvals = lazy(() => import('./Approvals'))
+const Incidents = lazy(() => import('./Incidents'))
+const Review = lazy(() => import('./Review'))
+const TABS = [
+  { key: 'approvals', label: 'Approve many at once', note: 'pick several, group them, approve or reject together', icon: ClipboardCheck, Page: Approvals },
+  { key: 'incidents', label: 'All incidents', note: 'owners, assign, close with a note, waves, closed ones', icon: Siren, Page: Incidents },
+  { key: 'review', label: 'Risk review', note: 'how close SentrAI is to acting on its own, and why', icon: Gauge, Page: Review },
+] as const
 
 type Risk = { risk_index?: number; band?: string; threshold?: number; history?: Point[] }
 type MachineRow = { name: string; host: string; online: boolean; waiting: boolean; index: number | null; band: string; open: number }
@@ -31,6 +41,9 @@ export default function Command() {
   const [risks, setRisks] = useState<Risks | null>(null)
   const [machines, setMachines] = useState<MachineRow[]>([])
   const [error, setError] = useState('')
+  const [params, setParams] = useSearchParams()
+  const tab = TABS.find((t) => t.key === params.get('tab'))
+  const pick = (key: string | null) => setParams(key ? { tab: key } : {}, { replace: true })
   const load = useCallback(async () => {
     try {
       const [r, k, m] = await Promise.all([api<Risk>('/risk'), api<Risks>('/ui/risks'), api<{ machines: MachineRow[] }>('/ui/machines')])
@@ -60,9 +73,23 @@ export default function Command() {
               </p>
             </div>
             <SeverityBubbles data={risks} />
-            <p className="text-xs text-muted">Each bubble joins what waits for a decision and what needs a person. Full lists: <Link to="/approvals" className="underline">Approvals</Link> · <Link to="/incidents" className="underline">Incidents</Link></p>
+            <div role="tablist" aria-label="Full lists" className="flex flex-wrap items-center gap-2 border-t border-line-soft pt-3">
+              <span className="text-xs text-muted">Full lists:</span>
+              {TABS.map((t) => (
+                <button key={t.key} role="tab" aria-selected={tab?.key === t.key} title={t.note} onClick={() => pick(tab?.key === t.key ? null : t.key)}
+                  className={'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm ' + (tab?.key === t.key ? 'border-ink bg-surface-3 text-ink' : 'border-line text-soft hover:bg-surface-2')}>
+                  <t.icon size={14} aria-hidden />{t.label}</button>))}
+            </div>
           </div>
-          <Card title="Risk over time" to="/review" more="Review">
+          {tab && (
+            <div role="tabpanel" aria-label={tab.label} className="min-w-0 space-y-3 rounded-lg border border-line bg-surface p-4">
+              <div className="flex items-start justify-between gap-2">
+                <div><h2 className="font-semibold">{tab.label}</h2><p className="text-xs text-muted">{tab.note}</p></div>
+                <button className="text-muted hover:text-ink" aria-label="Close this list" onClick={() => pick(null)}><X size={16} aria-hidden /></button>
+              </div>
+              <Suspense fallback={<p className="text-muted" role="status">Loading…</p>}><tab.Page embedded /></Suspense>
+            </div>)}
+          <Card title="Risk over time" to="/command?tab=review" more="Risk review">
             {hist.length < 2 ? <p className="text-soft">No history yet. The core adds a point on every risk change.</p> : <Chart points={hist} threshold={threshold} />}
           </Card>
           <Card title="Machines" to="/machines" more="All machines">

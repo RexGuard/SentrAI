@@ -1,7 +1,7 @@
 import { Suspense } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import {
-  BarChart3, Boxes, Briefcase, Eye, ClipboardCheck, LayoutDashboard, DatabaseBackup, FileText, Flag, Gauge, Link2, Lock, LogOut, Moon, Network,
+  BarChart3, Boxes, Briefcase, Eye, LayoutDashboard, DatabaseBackup, FileText, Flag, Link2, Lock, LogOut, Moon, Network,
   Puzzle, ScrollText, Server, Settings2, ShieldCheck, Siren, SlidersHorizontal, Sun, Users, Workflow, type LucideIcon,
 } from 'lucide-react'
 import { useSession } from '../lib/session'
@@ -16,8 +16,6 @@ export const MENU: { group: string; items: Item[] }[] = [
   { group: 'Decide', items: [
     { to: '/manager', label: 'Manager view', icon: Briefcase },
     { to: '/command', label: 'Command center', icon: LayoutDashboard },
-    { to: '/approvals', label: 'Approvals', icon: ClipboardCheck },
-    { to: '/incidents', label: 'Incidents', icon: Siren },
     { to: '/staff', label: 'Staff reports', icon: Flag },
   ] },
   { group: 'Pipeline', items: [
@@ -30,7 +28,6 @@ export const MENU: { group: string; items: Item[] }[] = [
   ] },
   { group: 'Oversight', items: [
     { to: '/machines', label: 'Machines', icon: Server },
-    { to: '/review', label: 'Review', icon: Gauge },
     { to: '/analytics', label: 'Analytics', icon: BarChart3 },
     { to: '/reports', label: 'Reports', icon: FileText },
     { to: '/audit', label: 'Audit trail', icon: Link2 },
@@ -48,8 +45,7 @@ export const MENU: { group: string; items: Item[] }[] = [
 export const SIMPLE_MENU: { group: string; items: Item[] }[] = [
   { group: 'At a glance', items: [
     { to: '/manager', label: 'Are we safe?', icon: Briefcase },
-    { to: '/approvals', label: 'Waiting for my OK', icon: ClipboardCheck },
-    { to: '/incidents', label: 'Problems found', icon: Siren },
+    { to: '/command', label: 'What needs me', icon: Siren },
   ] },
   { group: 'Records', items: [
     { to: '/machines', label: 'Our computers', icon: Server },
