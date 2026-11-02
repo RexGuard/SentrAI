@@ -132,14 +132,27 @@ For registered users only, like every other endpoint (a sign-in, or the API toke
 
 **Body** `{"text": "...", "reporter": "...", "contact": "...", "where": "...", "host": "..."}`; only `text` is needed (at least a sentence). The sender is the signed-in account. **Returns** `id`, `kind_label`, `urgency` and `advice`. `400` for a too-short text, `404` when the page is off, `429` when one sender has sent too many (5 in 10 minutes).
 
+## Contact Us
+
+### `POST /ui/feedback`
+
+The panel's Contact Us form, for the SentrAI team. Anyone signed in may send one. It is kept on the panel (`feedback.json`) and the audit record notes who sent it (not what it says).
+
+**Body** `{"name": "...", "contact": "email or company", "message": "question, feedback or bug report"}`, all three needed (at most 120, 200 and 5000 characters). **Returns** `{"id": "FB-...", "message": "..."}`. `400` for a missing or too-long field, `429` past 20 messages an hour from one person.
+
+### `GET /ui/feedback`
+
+The messages that are not done yet, oldest first (`?all=true` for every one). For the SentrAI team: `sudo sentrai feedback`.
+
+**Returns** `{"feedback": [{"id", "at", "name", "contact", "message", "by", "done"}], "total": n}`. `403` for an Auditor.
+
+### `POST /ui/feedback/done`
+
+Mark messages handled, or open again.
+
+**Body** `{"ids": ["FB-..."], "done": true}` **Returns** `{"changed": n, "message": "..."}`. `403` for an Auditor.
+
 ## Audit trail
-
-### `GET /ui/contacts`
-
-The top bar's Contact Us button. The team's contacts from the `SENTRAI_CONTACTS` setting (Setup, under Contact us):
-entries separated by `;`, each `Name | Role | email | phone`, email and phone optional. At most 20.
-
-**Returns** `{"contacts": [{"name": "...", "role": "...", "email": "...", "phone": "..."}]}`.
 
 ### `GET /ui/audit`
 

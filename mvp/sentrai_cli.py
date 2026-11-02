@@ -387,6 +387,23 @@ def cmd_incidents(call: Call, a: argparse.Namespace) -> Any:
     return out if a.json else out.get("message", out)
 
 
+def cmd_feedback(call: Call, a: argparse.Namespace) -> Any:
+    if a.action == "list":
+        out = call("GET", "/ui/feedback" + ("?all=true" if a.all else ""))
+        if a.json:
+            return out
+        rows = out.get("feedback", [])
+        if not rows:
+            return "No open messages." if not a.all else "No messages yet."
+        blocks = [f"{r.get('id')}  {r.get('at')}  {r.get('name')} <{r.get('contact')}>{'  [done]' if r.get('done') else ''}\n"
+                  + "\n".join("    " + line for line in str(r.get("message") or "").splitlines()) for r in rows]
+        return "\n\n".join(blocks) + f"\n\n{len(rows)} message{'s' if len(rows) != 1 else ''}. Mark one handled: sentrai feedback done ID"
+    if not a.ids:
+        raise CliError("which message? (sentrai feedback list)")
+    out = call("POST", "/ui/feedback/done", {"ids": a.ids, "done": a.action == "done"})
+    return out if a.json else out.get("message", out)
+
+
 def cmd_switch(path: str) -> Callable[[Call, argparse.Namespace], Any]:
     def run(call: Call, a: argparse.Namespace) -> Any:
         out = call("POST", path, {"on": a.state == "on", "operator": operator_name(), "reason": a.reason or ""})
@@ -493,6 +510,10 @@ def parser() -> argparse.ArgumentParser:
     n.add_argument("--all", action="store_true", help="list: closed ones too")
     n.add_argument("--why", help="reject: the reason (also saved for the others)")
     n.add_argument("--note", help="resolve: what was done")
+    fb = add("feedback", cmd_feedback, "messages sent with the panel's Contact Us form")
+    fb.add_argument("action", choices=["list", "done", "open"])
+    fb.add_argument("ids", nargs="*")
+    fb.add_argument("--all", action="store_true", help="list: handled ones too")
     for name, path, what in (("auto-mode", "/ui/auto-mode", "Auto mode: act on its own within the limits"),
                              ("protection", "/protection", "protection on, or watch only")):
         sw = add(name, cmd_switch(path), what)

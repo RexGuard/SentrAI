@@ -219,11 +219,6 @@ SECTIONS = (
         Field("SENTRAI_LLM_BASE_URL", "Base URL (only for another OpenAI-compatible service)"),
         Field("SENTRAI_LLM_MODEL", "Model name, blank for the provider's default"),
     )),
-    Section("contact", "Contact us", "Who people using this panel can reach: the dashboard's Contact Us button lists "
-            "them.", (
-        Field("SENTRAI_CONTACTS", "Contacts, separated by ; each as Name | Role | email | phone (email and phone "
-              "optional)", "Erick Sientaro | Developer; Ishmail | CEO; Hozen | Notes and research", advanced=True),
-    )),
     Section("access", "6. Access", "The token the parts of SentrAI use to talk to the core. "
             "People sign in with their own accounts (dashboard Team page).", (
         Field("SENTRAI_API_TOKEN", "Core API token (shared by the collector, dashboard and Telegram bot)",

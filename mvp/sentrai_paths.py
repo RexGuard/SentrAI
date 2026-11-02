@@ -142,6 +142,8 @@ ENTRIES: dict[str, Entry] = {e.key: e for e in (
           "(Analytics page)", "Analytics", optional=True),
     Entry("core.privacy", "core", "privacy.json", "the privacy policy: retention periods and the staff contact "
           "(Privacy page)", "Scribe", optional=True),
+    Entry("core.feedback", "core", "people/feedback.json", "messages sent with the panel's Contact Us form, for the "
+          "SentrAI team (sentrai feedback)", "HelpDesk", optional=True),
     Entry("core.chat_memory", "core", "chat-memory.json", "what the team taught Cyanide: standing instructions and "
           "remembered facts (Manager view)", "Cyanide", optional=True),
     Entry("core.chat_shares", "core", "chat-shares.json", "copies of chats shared with teammates (Manager view)",

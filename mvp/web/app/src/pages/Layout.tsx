@@ -1,7 +1,7 @@
 import { Suspense, useEffect, useRef, useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import {
-  Briefcase, Eye, Gavel, Headset, Mail, Phone, LayoutDashboard, Library, DatabaseBackup, FileText, Flag, Link2, Lock, LogOut, Moon,
+  Briefcase, Eye, Gavel, Headset, LayoutDashboard, Library, DatabaseBackup, FileText, Flag, Link2, Lock, LogOut, Moon,
   ScrollText, Search, Server, Settings2, Siren, Sparkles, Sun, UserRound, Users, Bell as BellIcon, PanelLeftClose, PanelLeftOpen, type LucideIcon,
 } from 'lucide-react'
 import { api } from '../lib/api'
@@ -87,47 +87,6 @@ function Account() {
             {theme === 'dark' ? <Sun size={16} aria-hidden /> : <Moon size={16} aria-hidden />} {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
           </button>
           <button role="menuitem" className={row} onClick={() => void out()}><LogOut size={16} aria-hidden /> Sign Out</button>
-        </div>)}
-    </div>
-  )
-}
-
-// Contact us (top right): the team's contacts, from the SENTRAI_CONTACTS setting (Setup > Contact us), so no
-// personal details live in the code.
-type Contact = { name: string; role: string; email: string; phone: string }
-function ContactUs() {
-  const [open, setOpen] = useState(false)
-  const [rows, setRows] = useState<Contact[] | null>(null)
-  const box = useRef<HTMLDivElement>(null)
-  const pop = usePresence(open)
-  useEffect(() => {
-    if (!open) return
-    if (rows === null) api<{ contacts: Contact[] }>('/ui/contacts').then((r) => setRows(r.contacts)).catch(() => setRows([]))
-    const off = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false) }
-    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
-    document.addEventListener('mousedown', off); document.addEventListener('keydown', esc)
-    return () => { document.removeEventListener('mousedown', off); document.removeEventListener('keydown', esc) }
-  }, [open, rows])
-  return (
-    <div ref={box} className="relative">
-      <button className="console-icon" aria-haspopup="true" aria-expanded={open} aria-label="Contact us" title="Contact us" onClick={() => setOpen(!open)}>
-        <Headset size={22} aria-hidden />
-      </button>
-      {pop.mounted && (
-        <div data-state={pop.state} className="console-pop right-0 w-80 max-w-[calc(100vw-2rem)] p-0">
-          <p className="border-b border-line px-4 py-3 font-semibold">Contact Us</p>
-          {rows === null ? <p className="px-4 py-4 text-sm text-muted" role="status">Loading…</p>
-            : rows.length === 0 ? <p className="px-4 py-4 text-sm text-muted">No contacts saved yet. Add them in Setup, under Contact us.</p> : (
-            <ul className="divide-y divide-line-soft p-1.5">
-              {rows.map((c) => (
-                <li key={c.name + c.email} className="px-2.5 py-2.5 text-sm">
-                  <p className="font-medium">{c.name}{c.role && <span className="font-normal text-muted"> · {c.role}</span>}</p>
-                  {c.email && <a href={`mailto:${c.email}`} className="mt-0.5 flex items-center gap-1.5 text-soft hover:text-ink"><Mail size={14} aria-hidden />{c.email}</a>}
-                  {c.phone && <a href={`tel:${c.phone.replace(/[^+\d]/g, '')}`} className="mt-0.5 flex items-center gap-1.5 text-soft hover:text-ink"><Phone size={14} aria-hidden />{c.phone}</a>}
-                </li>
-              ))}
-            </ul>
-          )}
         </div>)}
     </div>
   )
@@ -270,7 +229,8 @@ export default function Layout() {
   const current = groupOf(menu, pathname) ?? menu.find((g) => g.group === picked) ?? menu[0]
   // Where we are, for the direction of the slide: Sentry sits above the groups (-1).
   const onSentry = pathname.startsWith('/manager')
-  const groupIndex = onSentry ? -1 : menu.indexOf(current)
+  const onContact = pathname.startsWith('/contact')  // the bottom of the side menu: no group, no tabs
+  const groupIndex = onSentry ? -1 : onContact ? menu.length : menu.indexOf(current)
   const tabIndex = items(current).findIndex((i) => pathname === i.to || pathname.startsWith(i.to + '/'))
   const tabSlide = (i: number) => (tabIndex < 0 || i === tabIndex ? undefined : { dir: i > tabIndex ? 'left' : 'right', steps: Math.abs(i - tabIndex) } as const)
   return (
@@ -287,7 +247,7 @@ export default function Layout() {
           <span className="leading-tight"><span className="console-brand block">SentrAI</span><span className="block text-[0.8125rem] text-soft">Cybersecurity Console</span></span>
         </VLink>
         <nav aria-label={current.group} className={'console-topnav' + (items(current).length > 4 ? ' is-many' : '')}>
-          {!onSentry && items(current).map(({ to, label, icon: Icon }, i) => (
+          {!onSentry && !onContact && items(current).map(({ to, label, icon: Icon }, i) => (
             <VNavLink key={to} to={to} slide={tabSlide(i)}
               className={({ isActive }) => 'topnav flex shrink-0 items-center gap-2.5 rounded-2xl px-5 py-2.5 text-base font-medium ' + (isActive || groupOf([{ ...current, items: [{ to, label, icon: Icon }] }], pathname) ? 'topnav-on' : 'text-soft hover:text-ink')}>
               <Icon size={20} aria-hidden /> {label}
@@ -295,7 +255,6 @@ export default function Layout() {
         </nav>
         <div className="flex shrink-0 items-center gap-4 pr-2">
           <Find menu={menu} />
-          <ContactUs />
           <Bell />
           <Account />
         </div>
@@ -307,7 +266,7 @@ export default function Layout() {
               <Sparkles size={20} aria-hidden /> Sentry
             </VNavLink>
             {menu.map((g) => {
-              const on = !onSentry && g.group === current?.group
+              const on = !onSentry && !onContact && g.group === current?.group
               const gi = menu.indexOf(g)
               return (
                 <button key={g.group} aria-current={on ? 'true' : undefined} onClick={() => {
@@ -320,7 +279,12 @@ export default function Layout() {
                 </button>)
             })}
           </nav>
-          <div className="console-auto"><AutoMode /></div>
+          <div className="console-auto">
+            <VNavLink to="/contact" className={({ isActive }) => 'mb-3 flex items-center gap-3.5 rounded-2xl px-4 py-3 text-left text-[0.9375rem] font-medium ' + (isActive ? 'side-on' : 'text-soft hover:text-ink')}>
+              <Headset size={20} aria-hidden /> Contact Us
+            </VNavLink>
+            <AutoMode />
+          </div>
         </aside>
         <main className={'console-main min-w-0 flex-1' + (dock.open ? ' lg:mr-[26rem]' : '')}>
           {/* A new page rises in (keyed by path); a menu slide moves it instead. */}

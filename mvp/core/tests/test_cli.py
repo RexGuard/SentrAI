@@ -173,3 +173,12 @@ def test_jobs_and_rename_on_a_joined_machine(client, monkeypatch):
     assert "machine_renamed" in audit and "cli:erick" in audit  # the CLI's name, not "dashboard"
     code, out = run(client, "machines", "agents")
     assert code == 0 and "shop-pc" in out
+
+
+def test_feedback_list_and_done(client):
+    fid = client.post("/ui/feedback", json={"name": "Ana", "contact": "Ana's Bakery", "message": "Can I add a laptop?"}).json()["id"]
+    code, out = run(client, "feedback", "list")
+    assert code == 0 and fid in out and "Can I add a laptop?" in out
+    code, out = run(client, "feedback", "done", fid)
+    assert code == 0 and "1 message marked done" in out
+    assert fid not in run(client, "feedback", "list")[1]

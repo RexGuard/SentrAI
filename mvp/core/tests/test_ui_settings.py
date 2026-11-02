@@ -37,15 +37,6 @@ def test_unknown_and_generated_settings_are_refused(client):
     assert client.post("/ui/settings", json={}).status_code == 400
 
 
-def test_contacts_come_from_the_setting(client):
-    from app.ui_settings import contacts
-    rows = client.get("/ui/contacts").json()["contacts"]
-    assert rows and rows[0]["name"] == "Erick Sientaro" and rows[0]["email"] == ""  # the default: names and roles only
-    assert contacts("A | CEO | a@b.c | +65 1234; ; B") == [
-        {"name": "A", "role": "CEO", "email": "a@b.c", "phone": "+65 1234"},
-        {"name": "B", "role": "", "email": "", "phone": ""}]
-
-
 def test_advanced_settings_are_read_only_in_the_panel(client):
     fields = {f["env"]: f for s in client.get("/ui/settings").json()["sections"] for f in s["fields"]}
     assert fields["TRUSTED_IPS"]["advanced"] and not fields["BRUTE_FORCE_COUNT"]["advanced"]
