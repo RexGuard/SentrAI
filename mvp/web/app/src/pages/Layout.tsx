@@ -12,7 +12,6 @@ import { themeReveal, usePresence, useGo, VLink, VNavLink } from '../lib/motion'
 import { ask } from '../lib/notice'
 import { useSimple } from '../lib/simple'
 import HelpDock, { useDock } from './HelpDock'
-import AutoMode from './AutoMode'
 
 type Item = { to: string; label: string; icon: LucideIcon; needs?: string }
 type Group = { group: string; icon: LucideIcon; items: Item[] }
@@ -284,7 +283,6 @@ export default function Layout() {
             <VNavLink to="/contact" className={({ isActive }) => 'mb-3 flex items-center gap-3.5 rounded-2xl px-4 py-3 text-left text-[0.9375rem] font-medium ' + (isActive ? 'side-on' : 'text-soft hover:text-ink')}>
               <Headset size={20} aria-hidden /> Contact Us
             </VNavLink>
-            <AutoMode />
           </div>
           </div>
         </aside>
