@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import { api, ApiError, type Me } from './api'
+import { DEMO } from './demo'
 
 type Session = { me: Me | null; loading: boolean; refresh: () => Promise<void>; signOut: () => Promise<void>; can: (p: string) => boolean }
 const Ctx = createContext<Session | null>(null)
@@ -12,7 +13,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setLoading(false)
   }, [])
   useEffect(() => { void refresh() }, [refresh])
-  const signOut = async () => { await api('/auth/logout', { method: 'POST', body: {} }).catch(() => {}); setMe(null) }
+  const signOut = async () => {
+    if (DEMO) return  // the demo copy has no sign-in to leave
+    await api('/auth/logout', { method: 'POST', body: {} }).catch(() => {}); setMe(null) }
   const can = (p: string) => !!me?.permissions.includes(p)
   return <Ctx.Provider value={{ me, loading, refresh, signOut, can }}>{children}</Ctx.Provider>
 }
