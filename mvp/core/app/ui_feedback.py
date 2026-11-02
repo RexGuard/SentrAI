@@ -53,7 +53,7 @@ class Inbox:
         tmp.write_text(json.dumps(rows, indent=2, ensure_ascii=False), encoding="utf-8")
         os.replace(tmp, self.path)
 
-    def add(self, name: str, contact: str, message: str, by: str) -> dict[str, Any]:
+    def add(self, name: str, contact: str, message: str, by: str, incident: str = "") -> dict[str, Any]:
         now = time.time()
         with self._lock:
             hits = [t for t in self._recent.get(by, []) if now - t < 3600]
@@ -62,6 +62,8 @@ class Inbox:
             self._recent[by] = hits + [now]
             row = {"id": "FB-" + secrets.token_hex(4), "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
                    "name": name, "contact": contact, "message": message, "by": by, "done": False}
+            if incident:
+                row["incident"] = incident  # sent with a risk card's "Ask the SentrAI team"
             rows = self.all() + [row]
             while len(rows) > KEEP:
                 old = next((i for i, r in enumerate(rows) if r.get("done")), 0)
@@ -112,7 +114,8 @@ def build_mail(row: dict[str, Any], e: dict[str, str]) -> EmailMessage | None:
         msg["Reply-To"] = row["contact"]  # so Reply goes straight to the customer
     msg.set_content("\n".join([
         f"Name: {row['name']}", f"Email or company: {row['contact']}", f"Signed in as: {row['by']}",
-        f"Sent: {row['at']}", f"Reference: {row['id']}", "", row["message"], "",
+        f"Sent: {row['at']}", f"Reference: {row['id']}",
+        *([f"About incident: {row['incident']}"] if row.get("incident") else []), "", row["message"], "",
         f"Mark it handled on the panel: sudo sentrai feedback done {row['id']}"]))
     return msg
 
@@ -164,12 +167,14 @@ def clean(body: dict) -> tuple[str, str, str]:
 def install(app: FastAPI, core: Any, inbox: Inbox, sender: Any = send_mail) -> None:
     @app.post("/ui/feedback")
     def post_feedback(request: Request, body: dict = Body(...)) -> dict[str, Any]:
-        """Contact Us: {"name", "contact", "message"}. Anyone signed in to the panel may send one."""
+        """Contact Us: {"name", "contact", "message"}, and "incident" when a risk card's "Ask the SentrAI team"
+        sends it. Anyone signed in to the panel may send one."""
         name, contact, message = clean(body)
+        incident = str(body.get("incident") or "")[:40]
         account = getattr(request.state, "account", None)
         by = (account or {}).get("email") or "api"
         try:
-            row = inbox.add(name, contact, message, by)
+            row = inbox.add(name, contact, message, by, incident)
         except OverflowError as e:
             raise HTTPException(429, str(e)) from e
         core.scribe.record(core.name, "feedback_sent", {"id": row["id"], "operator": by})
