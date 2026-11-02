@@ -269,11 +269,11 @@ Tick a step off (or untick it). Needs the `act` permission; written to the audit
 
 Every setting the setup wizard knows, in sections (the extensions' own settings included).
 
-**Returns** `sections` (`key`, `title`, `about`, `extension`, and `fields` with `env`, `prompt`, `kind`, `secret`, `generated`, `choices`, `preset_field`, `value`, `is_set`, `default`), `presets` (each with `label`, `about` and the `values` it sets), `advanced` and `advanced_about`. A secret or generated field (such as the API token) never comes back: only `is_set` tells whether it has a value.
+**Returns** `sections` (`key`, `title`, `about`, `extension`, and `fields` with `env`, `prompt`, `kind`, `secret`, `generated`, `choices`, `preset_field`, `advanced`, `value`, `is_set`, `default`), `presets` (each with `label`, `about` and the `values` it sets), `advanced` and `advanced_about`. A secret or generated field (such as the API token) never comes back: only `is_set` tells whether it has a value.
 
 ### `POST /ui/settings`
 
-Save changed settings. A blank secret keeps the saved one; a generated field cannot be changed here. Everything is checked before anything is written, and a bad value returns `400` naming the setting.
+Save changed settings. A blank secret keeps the saved one; a generated field cannot be changed here. An advanced setting (`advanced: true`) is read-only in the panel and returns `403`: the SentrAI team changes it in the terminal with `sudo sentrai settings set`. Everything is checked before anything is written, and a bad value returns `400` naming the setting.
 
 **Body** `{"values": {"BRUTE_FORCE_COUNT": "8"}}` **Returns** `{"saved": ["BRUTE_FORCE_COUNT"], "message": "Saved. ..."}`.
 

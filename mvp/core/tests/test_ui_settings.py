@@ -44,3 +44,11 @@ def test_contacts_come_from_the_setting(client):
     assert contacts("A | CEO | a@b.c | +65 1234; ; B") == [
         {"name": "A", "role": "CEO", "email": "a@b.c", "phone": "+65 1234"},
         {"name": "B", "role": "", "email": "", "phone": ""}]
+
+
+def test_advanced_settings_are_read_only_in_the_panel(client):
+    fields = {f["env"]: f for s in client.get("/ui/settings").json()["sections"] for f in s["fields"]}
+    assert fields["TRUSTED_IPS"]["advanced"] and not fields["BRUTE_FORCE_COUNT"]["advanced"]
+    r = client.post("/ui/settings", json={"values": {"BRUTE_FORCE_COUNT": "8", "TRUSTED_IPS": "203.0.113.0/24"}})
+    assert r.status_code == 403 and "sudo sentrai settings set TRUSTED_IPS" in r.json()["detail"]
+    assert "BRUTE_FORCE_COUNT" not in cfg.read()  # nothing written when any part is refused

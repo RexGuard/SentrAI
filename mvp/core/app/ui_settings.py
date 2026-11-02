@@ -18,6 +18,7 @@ def field_row(f: Any, current: dict[str, str]) -> dict[str, Any]:
     hidden = f.secret or f.generated
     return {"env": f.env, "prompt": f.prompt, "kind": f.kind.__name__, "secret": bool(f.secret),
             "generated": bool(f.generated), "choices": list(f.choices), "preset_field": f.env in cfg.PRESET_FIELDS,
+            "advanced": bool(f.advanced),
             "value": "" if hidden else value, "is_set": bool(value), "default": "" if hidden else f.default}
 
 
@@ -62,7 +63,9 @@ def install(app: FastAPI, reload_after_save: Callable[[], Any]) -> None:
     @app.post("/ui/settings")
     def post_settings(body: dict = Body(...)) -> dict[str, Any]:
         """Save changed settings: {"values": {ENV: value}}. A blank secret keeps the saved one; generated fields
-        cannot be changed here. Everything is checked before anything is written."""
+        cannot be changed here, and neither can an advanced setting: the panel shows those read-only and the SentrAI
+        team changes them in the terminal (sudo sentrai settings set). Everything is checked before anything is
+        written."""
         sent = body.get("values")
         if not isinstance(sent, dict):
             raise HTTPException(400, "send {\"values\": {...}}")
@@ -72,6 +75,9 @@ def install(app: FastAPI, reload_after_save: Callable[[], Any]) -> None:
             f = cfg.FIELDS.get(str(env))
             if f is None or f.generated:
                 raise HTTPException(400, f"{env} is not a setting that can be changed here")
+            if f.advanced:
+                raise HTTPException(403, f"{f.prompt} is an advanced setting. Your SentrAI team changes it in the "
+                                         f"terminal: sudo sentrai settings set {f.env}=...")
             text = str(raw).strip()
             if f.secret and not text:
                 continue
