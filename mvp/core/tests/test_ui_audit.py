@@ -23,3 +23,22 @@ def test_words():
     assert ua.summarize(rec).startswith("a@b.c signed in as Owner from 203.0.113.5")
     assert ua.agent_for({"type": "decision", "data": {"operator": "erick"}}) == "Operator:erick"
     assert ua.agent_for({"type": "event"}) == "Warden"
+
+
+def test_before_pages_back_and_people_are_named(client):
+    brute_force(client)
+    first = client.get("/ui/audit?limit=3").json()["feed"]
+    older = client.get(f"/ui/audit?limit=3&before={first[-1]['seq']}").json()["feed"]
+    assert older and all(e["seq"] < first[-1]["seq"] for e in older)
+    assert ua.entry({"seq": 1, "type": "decision", "data": {"operator": "erick"}})["person"] == "erick"
+    assert ua.entry({"seq": 2, "type": "event"})["person"] == ""
+
+
+def test_export_to_pdf(client):
+    brute_force(client)
+    seqs = [e["seq"] for e in client.get("/ui/audit?limit=4").json()["feed"]]
+    r = client.post("/ui/audit/pdf", json={"seqs": seqs})
+    assert r.status_code == 200 and r.headers["content-type"] == "application/pdf" and r.content.startswith(b"%PDF")
+    assert client.post("/ui/audit/pdf", json={"all": True}).content.startswith(b"%PDF")
+    assert client.post("/ui/audit/pdf", json={"seqs": []}).status_code == 400
+    assert client.post("/ui/audit/pdf", json={"seqs": ["x"]}).status_code == 400

@@ -138,9 +138,17 @@ For registered users only, like every other endpoint (a sign-in, or the API toke
 
 The newest audit records in plain words, whether the chain checks out, and who did what.
 
-**Query** `limit` (1 to 500, default 60): how many records.
+**Query** `limit` (1 to 500, default 60): how many records. `before` (a record #): only records older than it, to page back through the whole log.
 
-**Returns** `chain_valid`, `first_invalid_seq`, `count`, `head_hash`, `feed` (newest first: `seq`, `time`, `agent`, `type`, `summary`, `hash`) and `agents` (`agent`, `role`, `can_act`, `records`, `last`).
+**Returns** `chain_valid`, `first_invalid_seq`, `count`, `head_hash`, `feed` (newest first: `seq`, `date`, `time`, `agent`, `person` (the account when a person did it, blank for an agent), `type`, `summary`, `hash`) and `agents` (`agent`, `role`, `can_act`, `records`, `last`).
+
+### `POST /ui/audit/pdf`
+
+The Activity Log's Export to PDF. Send `{"seqs": [12, 13, ...]}` for the chosen records or `{"all": true}` for every
+record; at most 5000 in one file (`400` beyond that). The PDF lists them oldest first, the order the actions were
+taken in, with the time, #, who and what was done, and whether the hash chain is intact.
+
+**Returns** `application/pdf` (`sentrai-activity-log.pdf`).
 
 ## Team
 

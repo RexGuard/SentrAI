@@ -5,11 +5,15 @@ admin_record_summary, build_activity_feed, agent_table), in plain Python.
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import FastAPI, Query
+from fastapi import Body, FastAPI, HTTPException, Query, Response
 
+from .pdfdoc import Column, PdfDoc
 from .ui_approvals import category_label, parse_ts
+
+PDF_MAX = 5000  # records in one PDF export
 
 LEGACY_AGENTS = {
     "Saguaro": "Warden", "Needle": "Countersign", "Root": "Gatehouse", "Reservoir": "Vault",
@@ -102,15 +106,44 @@ def summarize(record: dict) -> str:
     return ", ".join(parts[:5]) or str(record.get("type") or "record")
 
 
-def feed(records: list[dict], limit: int) -> list[dict]:
-    ordered = sorted(records, key=lambda r: (r.get("seq") is None, r.get("seq") or 0))
-    out = []
-    for rec in reversed(ordered[-limit:]):
-        out.append({"seq": rec.get("seq"), "time": short_time(rec.get("ts")),
-                    "agent": agent_for(rec).replace("Operator:", "Operator · "),
-                    "type": TYPE_LABELS.get(str(rec.get("type")), str(rec.get("type") or "-").replace("_", " ")),
-                    "summary": summarize(rec), "hash": short_hash(rec.get("hash")), "ts": str(rec.get("ts") or "")})
-    return out
+def date_line(value: Any) -> str:
+    ts = parse_ts(value)
+    return f"{ts.day} {ts.strftime('%b %Y')}" if ts else "-"
+
+
+def entry(rec: dict) -> dict:
+    """One record in words. `person` is the account or operator when a person did it, otherwise blank (an agent)."""
+    who = agent_for(rec)
+    person = who.split(":", 1)[1] if who.startswith("Operator:") else ("operator" if who == "Operator" else "")
+    return {"seq": rec.get("seq"), "date": date_line(rec.get("ts")), "time": short_time(rec.get("ts")),
+            "agent": who.replace("Operator:", "Operator · "), "person": person,
+            "type": TYPE_LABELS.get(str(rec.get("type")), str(rec.get("type") or "-").replace("_", " ")),
+            "summary": summarize(rec), "hash": short_hash(rec.get("hash")), "ts": str(rec.get("ts") or "")}
+
+
+def in_order(records: list[dict]) -> list[dict]:
+    """Oldest first, by sequence number: the order the actions were taken in."""
+    return sorted(records, key=lambda r: (r.get("seq") is None, r.get("seq") or 0))
+
+
+def feed(records: list[dict], limit: int, before: int | None = None) -> list[dict]:
+    """The newest `limit` records (older than `before` when given), newest first."""
+    ordered = in_order(records)
+    if before is not None:
+        ordered = [r for r in ordered if (r.get("seq") or 0) < before]
+    return [entry(rec) for rec in reversed(ordered[-limit:])]
+
+
+def render_pdf(rows: list[dict], chain_valid: bool | None, total: int) -> bytes:
+    now = datetime.now(timezone.utc).strftime("%d %b %Y %H:%M UTC")
+    doc = PdfDoc(title="SentrAI Activity Log", footer=f"SentrAI  |  Activity Log  |  exported {now}")
+    doc.heading("Activity Log", 16)
+    chain = "intact" if chain_valid else "broken" if chain_valid is False else "not checked yet"
+    doc.paragraph(f"{len(rows)} of {total} records, in the order they happened. Hash chain {chain}.")
+    doc.table([Column("When", 1.2), Column("#", 0.6), Column("Who", 1.3), Column("What was done", 4.0)],
+              [[f"{r['date']} {r['time']}", r["seq"] if r["seq"] is not None else "-", r["agent"],
+                f"{r['type']}: {r['summary']}"] for r in rows])
+    return doc.to_bytes()
 
 
 def agent_table(agents: list[dict], records: list[dict]) -> list[dict]:
@@ -136,10 +169,31 @@ def agent_table(agents: list[dict], records: list[dict]) -> list[dict]:
 
 def install(app: FastAPI, core: Any) -> None:
     @app.get("/ui/audit")
-    def get_audit_page(limit: int = Query(60, ge=1, le=500)) -> dict[str, Any]:
+    def get_audit_page(limit: int = Query(60, ge=1, le=500), before: int | None = Query(None, ge=1)) -> dict[str, Any]:
+        """The newest records, newest first; `before` (a #) pages back to older ones."""
         valid, bad = core.audit.verify_recent(wait=False)
         records = core.audit.snapshot()
         latest = sorted(records, key=lambda r: r.get("seq") or 0)[-max(limit, 200):]
         return {"chain_valid": valid, "first_invalid_seq": bad, "count": len(records),
-                "head_hash": core.audit.head_hash(), "feed": feed(records, limit),
+                "head_hash": core.audit.head_hash(), "feed": feed(records, limit, before),
                 "agents": agent_table(core.agents_status(), latest)}
+
+    @app.post("/ui/audit/pdf")
+    def post_audit_pdf(body: dict = Body(...)) -> Response:
+        """Export to PDF: {"seqs": [#, ...]} for the chosen records, or {"all": true} for every record.
+        Always oldest first, the order the actions were taken in."""
+        records = in_order(core.audit.snapshot())
+        if body.get("all") is True:
+            chosen = records
+        else:
+            seqs = body.get("seqs")
+            if not isinstance(seqs, list) or not seqs or not all(isinstance(x, int) for x in seqs):
+                raise HTTPException(400, 'send {"seqs": [numbers]} or {"all": true}')
+            want = set(seqs)
+            chosen = [r for r in records if r.get("seq") in want]
+        if len(chosen) > PDF_MAX:
+            raise HTTPException(400, f"At most {PDF_MAX} records fit in one PDF. Pick fewer.")
+        valid, _ = core.audit.verify_recent(wait=False)
+        pdf = render_pdf([entry(r) for r in chosen], valid, len(records))
+        return Response(pdf, media_type="application/pdf",
+                        headers={"Content-Disposition": 'attachment; filename="sentrai-activity-log.pdf"'})
