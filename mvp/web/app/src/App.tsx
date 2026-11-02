@@ -83,8 +83,8 @@ function Gate() {
   return (
     <Suspense fallback={<p className="p-6 text-muted" role="status">Loading…</p>}>
     <Routes>
-      <Route path="/manager" element={<Manager />} />
       <Route element={<Layout />}>
+        <Route path="/manager" element={<Manager />} />
         <Route index element={<Navigate to={simple ? '/manager' : '/command'} replace />} />
         <Route path="/command" element={<Command />} />
         <Route path="/risks/:severity" element={<RiskList />} />

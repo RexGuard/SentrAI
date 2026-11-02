@@ -244,7 +244,8 @@ export default function Layout() {
   const [unfolded, setUnfolded] = useState<Set<string>>(() => new Set())
   const current = groupOf(menu, pathname) ?? menu.find((g) => g.group === picked) ?? menu[0]
   // Where we are, for the direction of the slide: Sentry sits above the groups (-1).
-  const groupIndex = pathname.startsWith('/manager') ? -1 : menu.indexOf(current)
+  const onSentry = pathname.startsWith('/manager')
+  const groupIndex = onSentry ? -1 : menu.indexOf(current)
   const tabIndex = items(current).findIndex((i) => pathname === i.to || pathname.startsWith(i.to + '/'))
   const tabSlide = (i: number) => (tabIndex < 0 || i === tabIndex ? undefined : { dir: i > tabIndex ? 'left' : 'right', steps: Math.abs(i - tabIndex) } as const)
   return (
@@ -257,7 +258,7 @@ export default function Layout() {
           <span className="leading-tight"><span className="console-brand block">SentrAI</span><span className="block text-[0.8125rem] text-soft">Cybersecurity Console</span></span>
         </VLink>
         <nav aria-label={current.group} className={'console-topnav' + (items(current).length > 4 ? ' is-many' : '')}>
-          {items(current).map(({ to, label, icon: Icon }, i) => (
+          {!onSentry && items(current).map(({ to, label, icon: Icon }, i) => (
             <VNavLink key={to} to={to} slide={tabSlide(i)}
               className={({ isActive }) => 'topnav flex shrink-0 items-center gap-2.5 rounded-2xl px-5 py-2.5 text-base font-medium ' + (isActive || groupOf([{ ...current, items: [{ to, label, icon: Icon }] }], pathname) ? 'topnav-on' : 'text-soft hover:text-ink')}>
               <Icon size={20} aria-hidden /> {label}
@@ -276,7 +277,7 @@ export default function Layout() {
               <Sparkles size={20} aria-hidden /> Sentry
             </VNavLink>
             {menu.map((g) => {
-              const on = g.group === current?.group
+              const on = !onSentry && g.group === current?.group
               const gi = menu.indexOf(g)
               const groupSlide = { dir: gi > groupIndex ? 'up' : 'down', steps: Math.abs(gi - groupIndex) } as const
               const isOpen = on || unfolded.has(g.group)

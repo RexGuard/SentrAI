@@ -352,3 +352,17 @@ main tbody tr { transition: background-color .12s ease-out; }
 .status-tip b { color: var(--c); font-weight: 600; }
 .status-heart:hover .status-tip, .status-heart:focus-visible .status-tip { opacity: 1; translate: 0 -50%; }
 @media (prefers-reduced-motion: reduce) { .status-heart .heart, .status-heart .wing { animation: none; } .status-tip { transition: none; } }
+
+/* Sentry's chat is a console page: it fills the content panel edge to edge (its own past-chats column on the left
+   of the panel), its glow stays inside the panel, and the console's own top bar and side menu stay around it. */
+.console-main .mgr { min-height: calc(100vh - 4.75rem); margin: -2.75rem -2.25rem -5rem -3.25rem; background: transparent;
+  border-top-left-radius: 3rem; overflow: clip; }
+.console-main .mgr-glow { position: absolute; opacity: .55; }
+.console-main .mgr > .min-h-screen { min-height: calc(100vh - 4.75rem); }
+.console-main .mgr-side { height: calc(100vh - 4.75rem); top: 4.75rem; border-top-left-radius: 3rem; padding-top: 1rem;
+  background: color-mix(in srgb, var(--surface) 45%, transparent); backdrop-filter: none; }
+@media print {
+  .console-top, .console-side, .console-waves, .console-auto { display: none !important; }
+  .console-main { padding: 0 !important; border: 0 !important; background: none !important; }
+  .console-main .mgr { margin: 0; }
+}
