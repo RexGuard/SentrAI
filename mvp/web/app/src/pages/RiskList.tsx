@@ -5,6 +5,7 @@ import { flushSync } from 'react-dom'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { ChevronDown, ChevronLeft, ShieldCheck } from 'lucide-react'
 import { api, ApiError } from '../lib/api'
+import { onDemoChange } from '../lib/demo'
 import { btn } from '../lib/ui'
 import { transition, useGo, VLink } from '../lib/motion'
 import { LEVEL_TEXT, RiskBubble, RiskDetail, type Level, type Risks } from '../lib/Risks'
@@ -25,7 +26,7 @@ export default function RiskList() {
     try { setData(await api<Risks>(`/ui/risks?severity=${level}`)); setError('') }
     catch (e) { setError(e instanceof ApiError ? e.message : 'Could not load the risks.') }
   }, [level])
-  useEffect(() => { setShown(PAGE); void load(); const t = setInterval(() => void load(), 10000); return () => clearInterval(t) }, [load])
+  useEffect(() => { setShown(PAGE); void load(); const t = setInterval(() => void load(), 10000); const off = onDemoChange(() => void load()); return () => { clearInterval(t); off() } }, [load])
 
   const openId = params.get('open')
   const rows = data?.rows ?? []

@@ -9,7 +9,7 @@ import { api, ApiError } from './api'
 import { btn, btnPrimary } from './ui'
 import { useSession } from './session'
 import { ask } from './notice'
-import { DEMO } from './demo'
+import { DEMO, isLiveRisk } from './demo'
 import { DEMO_FIXES } from './demoFixes'
 
 export type Level = 'critical' | 'high' | 'medium' | 'low'
@@ -98,7 +98,7 @@ export function RiskDetail({ r, protectionOn, onClose, onDone }: { r: Risk; prot
   const off = !can('act')
   const many = r.ids.length > 1
   // The demo copy shows a fixed answer the team has checked; the real console shows the core's fix.
-  const vetted = DEMO ? DEMO_FIXES[r.category] : undefined
+  const vetted = DEMO && !isLiveRisk(r.id) ? DEMO_FIXES[r.category] : undefined
   const fix = vetted ?? (r.fix ? (r.status === 'contained' ? `SentrAI already did this for you. ${r.fix} Keep it, or undo it if it was a false alarm.` : r.fix) : '')
 
   useEffect(() => {

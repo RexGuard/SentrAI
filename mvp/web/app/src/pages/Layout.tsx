@@ -5,6 +5,7 @@ import {
   ScrollText, Search, Server, Settings2, Siren, Sparkles, Sun, UserRound, Users, Bell as BellIcon, PanelLeftClose, PanelLeftOpen, type LucideIcon,
 } from 'lucide-react'
 import { api } from '../lib/api'
+import { onDemoChange } from '../lib/demo'
 import { useSession } from '../lib/session'
 import { useTheme } from '../lib/theme'
 import Waves from '../lib/Waves'
@@ -144,7 +145,8 @@ function Bell() {
     const load = async () => {
       try { setRows((await api<{ rows?: Note[] }>('/ui/risks?severity=all')).rows ?? []) } catch { /* the pages show core errors */ }
     }
-    void load(); const t = setInterval(() => void load(), 30000); return () => clearInterval(t)
+    void load(); const t = setInterval(() => void load(), 30000); const off = onDemoChange(() => void load())
+    return () => { clearInterval(t); off() }
   }, [])
   useEffect(() => {
     if (!open) return
