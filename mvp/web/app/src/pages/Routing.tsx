@@ -46,7 +46,7 @@ export default function Routing() {
 
   return (
     <section className="space-y-3">
-      <Link to="/incidents" className="inline-flex items-center gap-1 text-sm text-soft hover:text-ink"><ArrowLeft size={14} aria-hidden /> Incidents</Link>
+      <Link to="/command?tab=incidents" className="inline-flex items-center gap-1 text-sm text-soft hover:text-ink"><ArrowLeft size={14} aria-hidden /> All incidents</Link>
       <header>
         <h1 className="text-2xl font-semibold">Who gets what</h1>
         <p className="text-sm text-muted">routing rules: the first match owns the incident

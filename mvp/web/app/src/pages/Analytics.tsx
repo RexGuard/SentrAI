@@ -201,7 +201,7 @@ export default function Analytics() {
           )}
           {tab === 'fixes' && (
             <div className="space-y-3">
-              <p className="text-sm text-soft">Incidents of the same type on the same layer are grouped, across every machine. Each group gets a playbook written from how past ones were handled{page.ai ? '; Draft with AI asks the AI model to write a better one from the same history' : ''}. Open an incident on <Link to="/incidents" className="underline">Incidents</Link> to see the ones most like it.</p>
+              <p className="text-sm text-soft">Incidents of the same type on the same layer are grouped, across every machine. Each group gets a playbook written from how past ones were handled{page.ai ? '; Draft with AI asks the AI model to write a better one from the same history' : ''}. Open an incident under <Link to="/command?tab=incidents" className="underline">All incidents</Link> to see the ones most like it.</p>
               {page.patterns.filter((p) => seen.has(p.id)).map((p) => (
                 <details key={p.id} className="rounded-lg border border-line bg-surface-2 p-3" open={p.open > 0}>
                   <summary className="cursor-pointer text-sm"><b>{p.label}</b> <span className="text-muted">· {p.count} incident{p.count === 1 ? '' : 's'} on {p.machines.length} machine{p.machines.length === 1 ? '' : 's'} ({p.machines.slice(0, 4).map((m) => `${m.host} ${m.count}`).join(', ')}){p.open ? `, ${p.open} open` : ''}</span></summary>

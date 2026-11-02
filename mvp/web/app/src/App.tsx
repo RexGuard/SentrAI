@@ -20,13 +20,13 @@ function page(load: () => Promise<{ default: ComponentType }>) {
   return Object.assign(Page, { preload: get })
 }
 const Analytics = page(() => import('./pages/Analytics'))
-const Approvals = page(() => import('./pages/Approvals'))
+page(() => import('./pages/Approvals'))  // drawn in the Command center's tabs; fetched early with the rest
 const Audit = page(() => import('./pages/Audit'))
 const Chat = page(() => import('./pages/Chat'))
 const Command = page(() => import('./pages/Command'))
 const Guardrails = page(() => import('./pages/Guardrails'))
 const Extensions = page(() => import('./pages/Extensions'))
-const Incidents = page(() => import('./pages/Incidents'))
+page(() => import('./pages/Incidents'))  // drawn in the Command center's tabs; fetched early with the rest
 const Manager = page(() => import('./pages/Manager'))
 const MachinePage = page(() => import('./pages/Machine'))
 const Machines = page(() => import('./pages/Machines'))
@@ -41,7 +41,7 @@ const Overview = page(() => import('./pages/Overview'))
 const Report = page(() => import('./pages/Report'))
 const Reports = page(() => import('./pages/Reports'))
 const Routing = page(() => import('./pages/Routing'))
-const Review = page(() => import('./pages/Review'))
+page(() => import('./pages/Review'))  // drawn in the Command center's tabs; fetched early with the rest
 const RiskList = page(() => import('./pages/RiskList'))
 const Settings = page(() => import('./pages/Settings'))
 const Staff = page(() => import('./pages/Staff'))
@@ -61,7 +61,7 @@ function usePrefetch(on: boolean) {
 
 // The page asked for starts downloading now, alongside the sign-in check, not after it.
 const first: Record<string, () => Promise<unknown>> = {
-  '': Command.preload, command: Command.preload, risks: RiskList.preload, incidents: Incidents.preload, approvals: Approvals.preload,
+  '': Command.preload, command: Command.preload, risks: RiskList.preload, incidents: Command.preload, approvals: Command.preload,
   machines: Machines.preload, manager: Manager.preload,
 }
 const firstPage = (first[location.pathname.split('/')[1] ?? '']?.() ?? Promise.resolve()).catch(() => {})
@@ -83,7 +83,7 @@ function Gate() {
         <Route index element={<Navigate to={simple ? '/manager' : '/command'} replace />} />
         <Route path="/command" element={<Command />} />
         <Route path="/risks/:severity" element={<RiskList />} />
-        <Route path="/approvals" element={<Approvals />} />
+        <Route path="/approvals" element={<Navigate to="/command?tab=approvals" replace />} />
         <Route path="/machines" element={<Machines />} />
         <Route path="/machines/:host" element={<MachinePage />} />
         <Route path="/chat" element={<Chat />} />
@@ -95,14 +95,14 @@ function Gate() {
         <Route path="/overview" element={<Overview />} />
         <Route path="/config" element={<Settings />} />
         <Route path="/guardrails" element={<Guardrails />} />
-        <Route path="/review" element={<Review />} />
+        <Route path="/review" element={<Navigate to="/command?tab=review" replace />} />
         <Route path="/collector" element={<Collector />} />
         <Route path="/classifier" element={<Classifier />} />
         <Route path="/responder" element={<Responder />} />
         <Route path="/extensions" element={<Extensions />} />
         <Route path="/reports" element={<Reports />} />
         <Route path="/backups" element={<Backups />} />
-        <Route path="/incidents" element={<Incidents />} />
+        <Route path="/incidents" element={<Navigate to="/command?tab=incidents" replace />} />
         <Route path="/analytics" element={<Analytics />} />
         <Route path="/tuning" element={<Tuning />} />
         <Route path="/privacy" element={<Privacy />} />

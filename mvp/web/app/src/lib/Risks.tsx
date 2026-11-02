@@ -79,6 +79,7 @@ export function RiskDetail({ r, protectionOn, onClose, onDone }: { r: Risk; prot
   const [busy, setBusy] = useState('')
   const [err, setErr] = useState('')
   const [idea, setIdea] = useState('')
+  const [closing, setClosing] = useState('')
   const [asking, setAsking] = useState(false)
   const [reply, setReply] = useState<Message | null>(null)
   const box = useRef<HTMLDivElement>(null)
@@ -106,6 +107,20 @@ export function RiskDetail({ r, protectionOn, onClose, onDone }: { r: Risk; prot
       if (out.done.length) onDone(out.message); else setErr(out.message)
     } catch (e) { setErr(e instanceof ApiError ? e.message : 'That did not go through.') }
     setBusy('')
+  }
+
+  const resolve = async () => {
+    const note = closing.trim()
+    if (!note) return
+    setBusy('resolve'); setErr('')
+    const failed: string[] = []
+    for (const id of r.ids) {
+      try { await api(`/incidents/${encodeURIComponent(id)}/resolve`, { body: { operator: me?.email ?? 'dashboard', note } }) }
+      catch { failed.push(id) }
+    }
+    setBusy('')
+    if (failed.length < r.ids.length) onDone(`Closed ${r.ids.length - failed.length} of ${r.ids.length}${failed.length ? `. Not closed: ${failed.join(', ')}` : ''}`)
+    else setErr('That did not go through.')
   }
 
   const talk = async () => {
@@ -153,7 +168,14 @@ export function RiskDetail({ r, protectionOn, onClose, onDone }: { r: Risk; prot
                   title={off ? 'Your role can read everything but change nothing.' : a.verb === 'approve' && !protectionOn ? 'Protection is off: turn it on to apply anything.' : a.hint}
                   onClick={() => void act(a)}>{busy === a.verb ? 'Working…' : a.label}{many ? ` (all ${r.ids.length})` : ''}</button>))}
             </div>
-          ) : <p className="text-sm text-muted">No one-click step fits this one: follow the steps above, then close it on <Link className="underline" to="/incidents">Incidents</Link>.</p>}
+          ) : <p className="text-sm text-muted">No one-click step fits this one: follow the steps above, then close it below.</p>}
+          <form className="flex flex-wrap items-end gap-2 border-t border-line-soft pt-3" onSubmit={(e) => { e.preventDefault(); void resolve() }}>
+            <label className="min-w-0 flex-1 text-sm text-soft">Done by hand? Close it with a note
+              <input value={closing} onChange={(e) => setClosing(e.target.value)} placeholder="e.g. reset j.tan's password and checked the export"
+                className="mt-1 block w-full rounded-md border border-line bg-surface px-3 py-1.5 text-ink" /></label>
+            <button className={btn} disabled={!!busy || off || !closing.trim()} title={off ? 'Your role can read everything but change nothing.' : 'Resolves it; the note goes in the audit log'}>
+              {busy === 'resolve' ? 'Closing…' : many ? `Close all ${r.ids.length}` : 'Close it'}</button>
+          </form>
         </section>
 
         <section className="space-y-2">

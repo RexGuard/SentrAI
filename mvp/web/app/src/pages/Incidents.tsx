@@ -134,7 +134,8 @@ function Board({ rows, contacts, done, empty }: { rows: Row[]; contacts: Page['c
   )
 }
 
-export default function Incidents() {
+/** `embedded`: drawn inside the Command center's tabs, without its own page title. */
+export default function Incidents({ embedded = false }: { embedded?: boolean }) {
   const [page, setPage] = useState<Page | null>(null)
   const [error, setError] = useState('')
   const [note, setNote] = useState('')
@@ -154,10 +155,12 @@ export default function Incidents() {
 
   return (
     <section className="space-y-4">
+      {!embedded && (
       <header>
         <h1 className="text-2xl font-semibold">Incidents</h1>
         <p className="text-sm text-muted">who owns each incident, and what still needs a person</p>
       </header>
+      )}
       {error && <p role="alert" className="rounded-md border border-line bg-surface p-3 text-bad">{error}</p>}
       {note && <p role="status" className="rounded-md border border-line bg-surface p-3">{note}</p>}
       {page && c && (
