@@ -44,7 +44,10 @@ def hardware_line(hw: Any) -> dict[str, float | None]:
             "disk": max(disks) if disks else None}
 
 
-def build(found: list[dict], agents: list[dict], risk: dict, panel: bool, name: str, now: datetime) -> list[dict]:
+def build(found: list[dict], agents: list[dict], risk: dict, panel: bool, name: str, now: datetime,
+          names: dict[str, str] | None = None) -> list[dict]:
+    """The machine list, worst first. `names` are the names people gave machines (Rename); the host stays the id."""
+    names = names or {}
     threshold = float(risk.get("threshold") or 80)
     if not panel:
         idx = risk.get("risk_index")
@@ -68,7 +71,7 @@ def build(found: list[dict], agents: list[dict], risk: dict, panel: bool, name: 
         idx = m.get("risk_index")
         online = not (m.get("silent") or stale)
         rows.append({
-            "name": host, "host": host, "place": "Agent" if agent else "Seen in logs", "online": online, "waiting": False,
+            "name": names.get(host, host), "host": host, "place": "Agent" if agent else "Seen in logs", "online": online, "waiting": False,
             "index": None if idx is None else max(0.0, min(100.0, float(idx))),
             "band": m.get("band") or band_for(idx), "threshold": threshold,
             "monitor_only": bool(risk.get("monitor_only")), "open": int(m.get("open_incidents") or 0),
@@ -80,7 +83,7 @@ def build(found: list[dict], agents: list[dict], risk: dict, panel: bool, name: 
             "sessions": int(m["sessions"]) if isinstance(m.get("sessions"), (int, float)) else None})
     for host, agent in live.items():
         if host not in seen:
-            rows.append({"name": host, "host": host, "place": "Agent", "online": False, "waiting": True, "index": None,
+            rows.append({"name": names.get(host, host), "host": host, "place": "Agent", "online": False, "waiting": True, "index": None,
                          "band": "unknown", "threshold": threshold, "monitor_only": False, "open": 0, "contained": 0,
                          "blocked": 0, "last_seen": "never", "services": [], "hardware": hardware_line(None),
                          "sessions": None})
@@ -134,7 +137,7 @@ def install(app: FastAPI, core: Any, machines: fleet.Fleet, health: Any) -> None
         found = [{**m, "hardware": health.latest(m["host"])} for m in core.machines()
                  if not still_removed(gone.get(m["host"]), m.get("last_seen"))] if panel else []
         agents = machines.agents()
-        rows = build(found, agents, risk, panel, "This computer", now)  # not the core agent's name: people read it
+        rows = build(found, agents, risk, panel, "This computer", now, machines.names())  # not the core agent's name: people read it
         online = sum(1 for r in rows if r["online"])
         return {
             "panel": panel, "machines": rows, "joined": agent_rows(agents) if panel else [],

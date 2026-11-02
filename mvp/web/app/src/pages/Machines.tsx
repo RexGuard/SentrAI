@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import Stat from '../lib/Stat'
 import { Link } from 'react-router-dom'
-import { ChevronRight, Copy, Trash2, KeyRound, Plus } from 'lucide-react'
+import { Bell, Check, Copy, Trash2, KeyRound, Pencil, Plus, Shield, ShieldCheck, ShieldOff, X } from 'lucide-react'
 import { api, ApiError } from '../lib/api'
 import { btn, btnPrimary } from '../lib/ui'
 import { useSession } from '../lib/session'
@@ -21,13 +21,13 @@ type Page = {
 }
 type Made = { code: string; expires_at: string; https: boolean; pin: string | null; commands: { linux: string; windows: string } }
 
-// One fixed grid for every row: status heart, name, incidents, blocks, last seen, buttons.
-const ROW = 'grid items-center gap-x-6 gap-y-2 grid-cols-[2.5rem_minmax(0,1fr)_auto] md:grid-cols-[2.5rem_minmax(10rem,1.4fr)_minmax(8rem,1fr)_7rem_8rem_8rem]'
-const stateWord = (m: Machine) => (m.waiting ? 'Waiting' : !m.online ? 'Offline' : m.monitor_only ? 'Protection off' : 'Protecting')
+// One fixed grid for every row, after Erick's sketch: name (with rename), status, risk level, actions.
+const ROW = 'grid items-center gap-x-6 gap-y-2 grid-cols-[minmax(0,1fr)_auto] md:grid-cols-[minmax(12rem,2fr)_minmax(9rem,1fr)_7rem_7rem]'
+const stateWord = (m: Machine) => (m.waiting ? 'Waiting' : !m.online ? 'Offline' : m.monitor_only ? 'Protection off' : 'Protected')
 const FILTERS: Filter<Machine>[] = [
   { key: 'state', label: 'State', get: stateWord },
+  { key: 'risk', label: 'Risk', get: (m) => riskOf(m.index).word },
   { key: 'place', label: 'Kind', get: (m) => m.place }, { key: 'services', label: 'Service', get: (m) => m.services },
-  { key: 'issues', label: 'Incidents', get: (m) => (m.open ? 'Open incidents' : m.contained ? 'Contained only' : 'None') },
 ]
 const JOINED: Filter<Joined>[] = [
   { key: 'status', label: 'Status', get: (a) => a.status }, { key: 'invited_by', label: 'Invited by', get: (a) => a.invited_by },
@@ -35,28 +35,63 @@ const JOINED: Filter<Joined>[] = [
 ]
 const NO_M: Machine[] = [], NO_J: Joined[] = []
 
-// The status heart (like a game-server panel's): green = protecting, yellow = up but not fully protecting (hover
-// says which), red = offline. The words are always in its label and hover card.
-type Mood = 'ok' | 'warn' | 'off'
-function moodOf(m: Machine): { mood: Mood; title: string; detail: string } {
-  if (!m.online && !m.waiting) return { mood: 'off', title: 'Offline', detail: m.last_seen ? `Last heard from ${m.last_seen}.` : 'It has not reported in.' }
-  if (m.waiting) return { mood: 'warn', title: 'Waiting for its first data', detail: 'It has joined but has not sent anything yet.' }
-  if (m.monitor_only) return { mood: 'warn', title: 'Protection off', detail: 'It is watched and reported on, but nothing is blocked on it.' }
-  if (m.open) return { mood: 'warn', title: 'Protecting, needs a look', detail: `${m.open} open incident${m.open === 1 ? '' : 's'} on it.` }
-  return { mood: 'ok', title: 'Protecting', detail: 'Watched and protected.' }
+/** Risk level in words: under 30 Low, 30-59 Medium, 60-79 High, 80-100 Critical. */
+export function riskOf(index: number | null): { word: string; tone: string } {
+  if (index == null) return { word: 'No data', tone: 'text-muted' }
+  const v = Math.round(index)
+  return v >= 80 ? { word: 'Critical', tone: 'text-bad' } : v >= 60 ? { word: 'High', tone: 'text-warn' } : v >= 30 ? { word: 'Medium', tone: 'text-soft' } : { word: 'Low', tone: 'text-ok' }
 }
 
-function StatusHeart({ m }: { m: Machine }) {
-  const { mood, title, detail } = moodOf(m)
+// Status as words with a small shield: Protected, Protection off, Waiting, Offline. The hover says more.
+function Status({ m }: { m: Machine }) {
+  const word = stateWord(m)
+  const [Icon, tone, detail] = word === 'Protected' ? [ShieldCheck, 'text-ok', 'Watched and protected.']
+    : word === 'Protection off' ? [ShieldOff, 'text-warn', 'Watched and reported on, but nothing is blocked on it.']
+    : word === 'Waiting' ? [Shield, 'text-warn', 'It has joined but has not sent anything yet.']
+    : [ShieldOff, 'text-muted', m.last_seen ? `Last heard from ${m.last_seen}.` : 'It has not reported in.']
+  return <span className={'inline-flex items-center gap-1.5 text-sm ' + tone} title={detail}><Icon size={15} aria-hidden />{word}</span>
+}
+
+function Risk({ m }: { m: Machine }) {
+  const r = riskOf(m.index)
   return (
-    <span className={'status-heart status-' + mood} tabIndex={0} role="img" aria-label={`${title}. ${detail}`}>
-      <svg viewBox="0 0 40 28" width="36" height="26" aria-hidden>
-        <path className="wing" d="M13 9C9 4 3 3 1 5c3 1 5 3 6 5-3-1-5 0-6 1 3 1 5 2 7 4-2 0-4 1-5 2 4 1 7 0 9-2z" />
-        <path className="wing" d="M27 9c4-5 10-6 12-4-3 1-5 3-6 5 3-1 5 0 6 1-3 1-5 2-7 4 2 0 4 1 5 2-4 1-7 0-9-2z" />
-        <path className="heart" d="M20 25s-8-5-8-11a4.5 4.5 0 0 1 8-2.8A4.5 4.5 0 0 1 28 14c0 6-8 11-8 11z" />
-      </svg>
-      <span className="status-tip" role="tooltip"><b>{title}</b><span>{detail}</span></span>
+    <span className="flex flex-col leading-tight" aria-label={`Risk ${m.index == null ? 'unknown' : Math.round(m.index)}, ${r.word}`}>
+      <span className={'text-lg font-semibold tabular-nums ' + r.tone}>{m.index == null ? '-' : Math.round(m.index)}</span>
+      <span className={'text-xs ' + r.tone}>{r.word}</span>
     </span>
+  )
+}
+
+// The name, with a pencil to rename it in place. The host name stays underneath as its id.
+function Name({ m, canRename, done }: { m: Machine; canRename: boolean; done: (msg: string) => void }) {
+  const [editing, setEditing] = useState(false)
+  const [text, setText] = useState(m.name)
+  const [err, setErr] = useState('')
+  const save = async () => {
+    setErr('')
+    try { done((await api<{ message: string }>(`/ui/machines/${encodeURIComponent(m.host)}/rename`, { body: { name: text } })).message); setEditing(false) }
+    catch (e) { setErr(e instanceof ApiError ? e.message : 'Could not rename it.') }
+  }
+  if (editing) return (
+    <form className="flex min-w-0 items-center gap-1" onSubmit={(e) => { e.preventDefault(); void save() }}>
+      <label htmlFor={`rn-${m.host}`} className="sr-only">New name for {m.host}</label>
+      <input id={`rn-${m.host}`} autoFocus maxLength={60} value={text} onChange={(e) => setText(e.target.value)} placeholder={m.host}
+        onKeyDown={(e) => { if (e.key === 'Escape') { setEditing(false); setText(m.name) } }}
+        className="min-w-0 flex-1 rounded-md border border-line bg-surface-2 px-2 py-1 text-ink" />
+      <button type="submit" className="rounded-md p-1 text-ok hover:bg-surface-2" aria-label="Save name"><Check size={15} aria-hidden /></button>
+      <button type="button" className="rounded-md p-1 text-muted hover:bg-surface-2" aria-label="Cancel" onClick={() => { setEditing(false); setText(m.name) }}><X size={15} aria-hidden /></button>
+      {err && <span role="alert" className="text-xs text-bad">{err}</span>}
+    </form>
+  )
+  return (
+    <div className="min-w-0">
+      <p className="flex min-w-0 items-center gap-1.5 font-medium">
+        {m.host ? <Link to={`/machines/${encodeURIComponent(m.host)}`} className="truncate underline-offset-2 hover:underline">{m.name}</Link> : <span className="truncate">{m.name}</span>}
+        {m.host && canRename && <button className="shrink-0 rounded-md p-1 text-muted hover:bg-surface-2 hover:text-ink" aria-label={`Rename ${m.name}`} title="Rename"
+          onClick={() => { setText(m.name); setEditing(true) }}><Pencil size={13} aria-hidden /></button>}
+      </p>
+      <p className="truncate text-xs text-muted">{m.name !== m.host && m.host ? `${m.host} · ` : ''}{m.place}{m.services.length ? ` · ${m.services.join(', ')}` : ''}</p>
+    </div>
   )
 }
 
@@ -136,34 +171,35 @@ export default function Machines() {
       {note && <p role="status" className="rounded-md border border-line bg-surface p-3">{note}</p>}
       {page && s && (
         <>
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <Stat label="Machines" value={s.machines} note={page.panel ? 'joined this panel' : 'this computer'} />
+          <div className="grid grid-cols-2 gap-3">
+            <Stat label="Registered machines" value={s.machines} note={page.panel ? 'joined this panel' : 'this computer'} />
             <Stat label="Online" value={s.online} note={`${s.offline} offline or waiting`} hot={s.offline > 0} tone="bad" />
-            <Stat label="Need a look" value={s.need_a_look} note="open incidents or high risk" hot={s.need_a_look > 0} tone="bad" />
-            <Stat label="Blocks in force" value={s.blocks} note="each on its own machine" />
           </div>
           {!page.panel && <p className="rounded-md border border-line bg-surface p-3 text-soft">This core adds every machine into one score. To run it as a central panel, set SENTRAI_RISK_SCOPE=host (and SENTRAI_FIREWALL=off) on it and restart the core: each machine is then scored and blocked on its own.</p>}
           <div className="space-y-3 rounded-lg border border-line bg-surface p-4">
             <div className="flex items-center justify-between gap-3">
-              <h2 className="font-semibold">Machine List <span className="font-normal text-muted">· worst first</span></h2>
+              <h2 className="font-semibold">Machine List <span className="font-normal text-muted">· highest risk first</span></h2>
               <button className={btn} aria-expanded={adding} onClick={() => setAdding(!adding)}><Plus size={14} aria-hidden /> Add machine</button>
             </div>
             {adding && <AddMachine page={page} onMade={() => void load()} />}
             {list.bar}
             {list.active && list.rows.length === 0 && <p className="text-soft">No machines match these filters.</p>}
+            <div className={ROW + ' hidden border-b border-line pb-2 text-xs font-medium uppercase tracking-wide text-muted md:grid'} aria-hidden>
+              <span>Name</span><span>Status</span><span>Risk level</span><span className="text-right">Actions</span>
+            </div>
             <ul className="divide-y divide-line-soft">
               {list.rows.map((m) => (
-                <li key={m.name} className={ROW + ' py-3'}>
-                  <StatusHeart m={m} />
-                  <div className="min-w-0">
-                    <p className="truncate font-medium">{m.host ? <Link to={`/machines/${encodeURIComponent(m.host)}`} className="underline-offset-2 hover:underline">{m.name}</Link> : m.name}</p>
-                    <p className="truncate text-xs text-muted">{m.place}{m.services.length ? ` · ${m.services.join(', ')}` : ''}</p>
-                  </div>
-                  <p className="hidden text-sm text-soft md:block">{m.open || m.contained ? [m.open && `${m.open} open`, m.contained && `${m.contained} contained`].filter(Boolean).join(' · ') : 'No incidents'}</p>
-                  <p className="hidden text-sm text-soft md:block">{m.blocked ? `${m.blocked} block${m.blocked === 1 ? '' : 's'}` : 'No blocks'}</p>
-                  <p className="hidden text-sm text-soft md:block">{m.last_seen || '-'}</p>
-                  <div className="flex justify-end gap-2">
-                    {m.host && <Link to={`/machines/${encodeURIComponent(m.host)}`} className={btn} aria-label={`Open ${m.name}`}>Open <ChevronRight size={14} aria-hidden /></Link>}
+                <li key={m.host || m.name} className={ROW + ' py-3'}>
+                  <Name m={m} canRename={page.panel && can('configure')} done={(msg) => { setNote(msg); void load() }} />
+                  <span className="hidden md:block"><Status m={m} /></span>
+                  <span className="hidden md:block"><Risk m={m} /></span>
+                  <div className="flex items-center justify-end gap-2">
+                    <span className="md:hidden"><Status m={m} /></span>
+                    {m.host && <Link to={`/machines/${encodeURIComponent(m.host)}?tab=Incidents`} className={btn + ' relative'} aria-label={`Alerts on ${m.name}: ${m.open} open`}
+                      title={m.open ? `${m.open} open alert${m.open === 1 ? '' : 's'}` : 'No open alerts'}>
+                      <Bell size={14} aria-hidden />
+                      {m.open > 0 && <span className="absolute -right-1.5 -top-1.5 min-w-4 rounded-full bg-bad px-1 text-center text-[10px] font-semibold leading-4 text-white" aria-hidden>{m.open}</span>}
+                    </Link>}
                     {m.host && page.panel && <button className={btn + ' text-bad'} disabled={!can('configure')} aria-label={`Delete ${m.name}`}
                       title={can('configure') ? `Delete ${m.name} from the panel` : 'Only an Owner or Admin can delete a machine.'} onClick={() => void remove(m)}><Trash2 size={14} aria-hidden /></button>}
                   </div>

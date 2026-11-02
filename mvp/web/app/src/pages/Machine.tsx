@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, DatabaseBackup, ShieldCheck } from 'lucide-react'
 import { api, ApiError } from '../lib/api'
 import { btn } from '../lib/ui'
@@ -63,7 +63,8 @@ export default function MachinePage() {
   const { host = '' } = useParams()
   const { me, can } = useSession()
   const op = me?.email ?? 'dashboard'
-  const [tab, setTab] = useState<Tab>('Overview')
+  const [params] = useSearchParams()
+  const [tab, setTab] = useState<Tab>(() => (TABS as readonly string[]).includes(params.get('tab') ?? '') ? params.get('tab') as Tab : 'Overview')  // the list's bell opens Incidents
   const [m, setM] = useState<Machine | null | undefined>(undefined)
   const [words, setWords] = useState<Record<string, string>>({})
   const [incs, setIncs] = useState<Inc[]>([])

@@ -257,3 +257,24 @@ def test_still_removed_until_heard_from_again():
     assert not still_removed(None, "2026-11-01T07:00:00+00:00")
     assert still_removed(gone, "2026-11-01T07:59:00+00:00") and still_removed(gone, None)
     assert not still_removed(gone, "2026-11-01T08:05:00+00:00")
+
+
+def test_rename_machine_keeps_its_host(panel, tmp_path):
+    a = join(panel, "web-01")
+    panel.post("/fleet/services", json={"services": [{"name": "nginx", "port": 443}]}, headers=as_agent(a["key"]))
+    row = lambda: next(m for m in panel.get("/ui/machines").json()["machines"] if m["host"] == "web-01")  # noqa: E731
+    out = panel.post("/ui/machines/web-01/rename", json={"name": "  Shop   server "}).json()
+    assert out["name"] == "Shop server" and row()["name"] == "Shop server" and row()["host"] == "web-01"
+    assert any(r.get("type") == "machine_renamed" for r in panel.core.audit.records())
+    assert panel.post("/ui/machines/web-01/rename", json={"name": "x" * 61}).status_code == 400
+    panel.post("/ui/machines/web-01/rename", json={"name": ""})
+    assert row()["name"] == "web-01"  # blank: back to the host name
+
+
+def test_renames_and_deletes_survive_a_restart(tmp_path):
+    from app.fleet import Fleet
+    f = Fleet(tmp_path / "fleet.json")
+    f.rename("web-01", "Shop", "erick")
+    f.remove_host("db-01", "erick")
+    again = Fleet(tmp_path / "fleet.json")
+    assert again.names() == {"web-01": "Shop"} and "db-01" in again.removed()
