@@ -12,11 +12,13 @@ The actions themselves go through POST /ui/approvals/bulk, so the guardrails and
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query
 
 from .agents import next_steps
+from .rules import TRIPWIRE_REASONS
 from .ui_approvals import can, category_label, span_label
 from .ui_incidents import OPEN_STATUSES, SEVERITY_RANK, age_hours, attention
 
@@ -46,7 +48,102 @@ ACTIONS = {
     "rollback": {"label": "Undo the block", "hint": "Lets the address or account back in."},
     "keep": {"label": "Keep the block", "hint": "Keeps it blocked after the time limit."},
     "mine": {"label": "This was me", "hint": "SentrAI learns this sign-in and stops asking."},
+    "escalate": {"label": "Ask the SentrAI team", "hint": "Sends this to the SentrAI team. They look into it and get back to you."},
 }
+
+NO_PLAYBOOK = "Investigate manually"  # the start of recommended_action when no safe automatic step exists
+
+# What happened, for a business owner: the address once, the machine once, no jargon, paths or byte counts.
+PLAIN_HAPPENED = {
+    "brute_force": "{src} kept trying wrong passwords for {account} on {host}.",
+    "sql_injection": "{src} sent {host} a request built to trick your website's database into handing over or "
+                     "changing data.",
+    "xss": "{src} sent {host} a request that tries to plant code on your website.",
+    "port_scan": "{src} was checking {host} for a way in, such as hidden pages or open services.",
+    "privilege_escalation": "A request from {src} made the website on {host} start a program that could take control "
+                            "of the machine.",
+    "data_exfiltration": "{src} asked {host} for a large amount of customer data at once.",
+    "misconfiguration": "A setting on {host} is left open, such as public access, an open admin page or a default "
+                        "password.",
+    "log_tampering": "Someone deleted or replaced the activity records on {host}.",
+    "prompt_injection": "{src} sent {host} a request with hidden text meant to trick SentrAI's AI into ignoring an "
+                        "attack.",
+    "malware": "A harmful file or program was found on {host}.",
+    "staff_report": "{who} reported something that looked wrong{said}",
+    "unauthorised_admin": "Someone used the full (root) access on {host} from a sign-in SentrAI does not know.",
+}
+
+# Why the suggested fix helps, finishing "... so that".
+FIX_REASON = {
+    "brute_force": "they cannot keep guessing passwords.",
+    "sql_injection": "they cannot try again while your website is checked.",
+    "xss": "they cannot try to plant code again.",
+    "port_scan": "they cannot come back through a way in they may have found.",
+    "privilege_escalation": "they cannot use that program to take over the machine.",
+    "data_exfiltration": "they cannot take any more customer data while you check.",
+    "prompt_injection": "they cannot try again.",
+    "unauthorised_admin": "they cannot use the machine while it is checked.",
+}
+
+
+def plain_happened(inc: dict, wave_n: int = 0) -> str:
+    cat = str(inc.get("category") or "")
+    host = inc.get("host") or "one of your machines"
+    src = f"{wave_n} different IP addresses" if wave_n > 1 else (inc.get("src_ip") or "Someone")
+    reason = str(inc.get("classification_reason") or "")
+    if reason.startswith(TRIPWIRE_REASONS):  # a decoy: no real visitor ever goes there
+        text = (f"{src} opened a trap on {host} that no real visitor ever sees, so this is almost certainly an "
+                "attacker.")
+    elif cat in PLAIN_HAPPENED:
+        user = inc.get("user")
+        said = "."
+        if cat == "staff_report" and "]" in reason:
+            said = ": \u201c" + reason.split("]", 1)[1].strip().rstrip(")").strip().rstrip(".") + ".\u201d"
+        text = PLAIN_HAPPENED[cat].format(src=src, host=host, account=f"the '{user}' account" if user else "an account",
+                                          who=user or "A member of staff", said=said)
+    else:
+        text = str(inc.get("explanation") or inc.get("summary") or f"Something unusual happened on {host}.")
+    if inc.get("needs_review") and cat not in ("staff_report", "unauthorised_admin"):
+        text += " SentrAI was not sure enough to act on its own, so it waited for you."
+    return text[0].upper() + text[1:]
+
+
+def _step(part: str, src: str) -> str:
+    p = part.strip()
+    low = p.lower()
+    if low.startswith("block "):
+        target = p[6:].strip()
+        return "block the IP address mentioned above" if target == src else f"block {target}"
+    if low.startswith("lock account "):
+        return f"lock the {p[13:].strip()} account"
+    if low.startswith("rate-limit "):
+        return "slow down sign-in attempts" if "login" in low else "slow down requests to that page"
+    if low.startswith("add waf rule"):
+        return "switch on a website filter for this attack"
+    if low.startswith("kill the spawned shell"):
+        return "stop the program it started"
+    if low.startswith("revoke public acl"):
+        return "close the public access"
+    return p[0].lower() + p[1:]
+
+
+def plain_fix(inc: dict) -> str:
+    """The suggested fix in plain words: "Block the IP address mentioned above for 2 hours so that ..."."""
+    rec = str(inc.get("recommended_action") or "").strip().rstrip(".")
+    if not rec or rec.startswith(NO_PLAYBOOK):
+        return ("There is no safe one-click fix for this one. Let the SentrAI team look into it for you: they "
+                "find out what happened and tell you what to do.")
+    hours = ""
+    m = re.search(r"\s+for\s+([\d.]+)\s*h$", rec)
+    if m:
+        rec = rec[:m.start()]
+        n = float(m.group(1))
+        hours = f" for {n:g} hour{'' if n == 1 else 's'}"
+    parts = [x for x in re.split(r",\s*|\s+and\s+", rec) if x.strip()]
+    steps = [_step(x, str(inc.get("src_ip") or "")) for x in parts]
+    text = (", ".join(steps[:-1]) + " and " + steps[-1]) if len(steps) > 1 else steps[0]
+    reason = FIX_REASON.get(str(inc.get("category") or ""), "they cannot try again while you check.")
+    return f"{text[0].upper()}{text[1:]}{hours} so that {reason}"
 
 
 def needs_person(inc: dict) -> bool:
@@ -69,7 +166,11 @@ def actions(members: list[dict]) -> list[dict[str, str]]:
     if all(f["mine"] for f in flags):
         out.append("mine")
     if all(f["decide"] for f in flags):
-        out += ["approve", "reject"]
+        # No safe automatic step: the owner hands it to the SentrAI team instead of "investigating" it themselves.
+        none = any(str(i.get("recommended_action") or "").startswith(NO_PLAYBOOK) for i in members)
+        out += ["escalate", "reject"] if none else ["approve", "reject"]
+    elif any(str(i.get("recommended_action") or "").startswith(NO_PLAYBOOK) for i in members):
+        out.append("escalate")
     if all(f["contain_controls"] for f in flags):
         out += ["keep", "rollback"]
     return [{"verb": v, **ACTIONS[v]} for v in out]
@@ -98,9 +199,9 @@ def bubble(members: list[dict], wave: str = "") -> dict[str, Any]:
         "overdue": any(i.get("sla_breached") and not i.get("acked") for i in members),
         "status": str(first.get("status")), "acked": bool(first.get("acked")),
         "needs": reasons,
-        "what_happened": first.get("explanation") or first.get("summary") or f"{title} on {first.get('host') or 'a machine'}.",
+        "what_happened": plain_happened(first, len(sources) if wave else 0),
         "meaning": MEANING.get(cat, "Something unusual happened that SentrAI could not act on alone."),
-        "fix": first.get("recommended_action") or "",
+        "fix": plain_fix(first),
         "steps": first.get("next_steps") or next_steps(first),
         "unsure": bool(first.get("needs_review")),
         "actions": actions(members),

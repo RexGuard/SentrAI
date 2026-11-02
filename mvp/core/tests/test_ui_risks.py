@@ -64,3 +64,16 @@ def test_all_severities_for_the_bell(client):
     assert len(page["rows"]) == sum(lv["bubbles"] for lv in page["levels"]) >= 1
     hours = [r["hours"] for r in page["rows"]]
     assert hours == sorted(hours)  # newest first
+
+
+def test_cards_use_plain_words():
+    from app.ui_risks import plain_fix, plain_happened
+    inc = {"category": "data_exfiltration", "src_ip": "198.51.100.7", "host": "shop", "needs_review": True,
+           "recommended_action": "Block 198.51.100.7 for 2 h"}
+    assert plain_happened(inc).startswith("198.51.100.7 asked shop for a large amount of customer data")
+    fix = plain_fix(inc)
+    assert fix.startswith("Block the IP address mentioned above for 2 hours so that") and "198.51" not in fix
+    tamper = {"category": "log_tampering", "host": "shop", "recommended_action": "Investigate manually; no allowlisted playbook applies.",
+              "classification_reason": "log-integrity replaced: /var/log/nginx/error.log was swapped after 357560 bytes"}
+    assert "/var/log" not in plain_happened(tamper) and "357560" not in plain_happened(tamper)
+    assert "SentrAI team" in plain_fix(tamper) and "manually" not in plain_fix(tamper)

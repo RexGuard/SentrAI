@@ -86,7 +86,7 @@ export function RiskBubble({ r, onOpen, named = false }: { r: Risk; onOpen: () =
 
 /** The opened risk, kept short: what happened, what it means and the suggested fix with its quick actions. */
 export function RiskDetail({ r, protectionOn, onClose, onDone }: { r: Risk; protectionOn: boolean; onClose: () => void; onDone: (note: string) => void }) {
-  const { can } = useSession()
+  const { can, me } = useSession()
   const [busy, setBusy] = useState('')
   const [err, setErr] = useState('')
   const box = useRef<HTMLDivElement>(null)
@@ -95,7 +95,7 @@ export function RiskDetail({ r, protectionOn, onClose, onDone }: { r: Risk; prot
   const many = r.ids.length > 1
   // The demo copy shows a fixed answer the team has checked; the real console shows the core's fix.
   const vetted = DEMO ? DEMO_FIXES[r.category] : undefined
-  const fix = vetted ?? (r.fix ? (r.status === 'contained' ? `SentrAI already did this: ${r.fix}. Keep it, or undo it if it was a false alarm.` : `${r.fix}.`) : '')
+  const fix = vetted ?? (r.fix ? (r.status === 'contained' ? `SentrAI already did this for you. ${r.fix} Keep it, or undo it if it was a false alarm.` : r.fix) : '')
 
   useEffect(() => {
     box.current?.focus()
@@ -104,7 +104,20 @@ export function RiskDetail({ r, protectionOn, onClose, onDone }: { r: Risk; prot
     return () => window.removeEventListener('keydown', esc)
   }, [onClose])
 
+  // No safe automatic step: hand it to the SentrAI team (the Contact Us inbox, emailed to them when set up).
+  const escalate = async () => {
+    setBusy('escalate'); setErr('')
+    try {
+      const out = await api<{ message: string }>('/ui/feedback', { body: {
+        name: me?.name || me?.email || 'Panel user', contact: me?.email || 'signed-in user', incident: r.incident,
+        message: `Please look into ${r.incident}: ${r.title} on ${r.host}.\n\n${r.what_happened}${many ? `\n\nIncidents: ${r.ids.join(', ')}` : ''}` } })
+      onDone(out.message)
+    } catch (e) { setErr(e instanceof ApiError ? e.message : 'That did not go through.') }
+    setBusy('')
+  }
+
   const act = async (a: RiskAction) => {
+    if (a.verb === 'escalate') return void escalate()
     let justification = ''
     if (a.verb === 'reject') {
       justification = (await ask({ title: `${a.label}?`, confirm: a.label, danger: true,
@@ -143,10 +156,10 @@ export function RiskDetail({ r, protectionOn, onClose, onDone }: { r: Risk; prot
           {r.actions.length > 0 && (
             <div className="flex flex-wrap gap-2">
               {r.actions.map((a) => (
-                <button key={a.verb} className={a.verb === 'approve' || a.verb === 'keep' ? btnPrimary : btn}
+                <button key={a.verb} className={a.verb === 'approve' || a.verb === 'keep' || a.verb === 'escalate' ? btnPrimary : btn}
                   disabled={!!busy || off || (a.verb === 'approve' && !protectionOn)}
                   title={off ? 'Your role can read everything but change nothing.' : a.verb === 'approve' && !protectionOn ? 'Protection is off: turn it on to apply anything.' : a.hint}
-                  onClick={() => void act(a)}>{busy === a.verb ? 'Working…' : a.label}{many ? ` (all ${r.ids.length})` : ''}</button>))}
+                  onClick={() => void act(a)}>{busy === a.verb ? 'Working…' : a.label}{many && a.verb !== 'escalate' ? ` (all ${r.ids.length})` : ''}</button>))}
             </div>)}
         </section>
         {err && <p role="alert" className="text-sm text-bad">{err}</p>}
