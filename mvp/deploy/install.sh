@@ -56,6 +56,8 @@
 #   /etc/systemd/system/sentrai*.service and sentrai.target
 #   /usr/local/bin/sentrai-scout      runs Scout as the service account (no terminal needed)
 #   /usr/local/bin/sentrai-admin      shows or resets the dashboard sign-in (sudo sentrai-admin --reset)
+#   /usr/local/bin/sentrai            the SentrAI team's command line: settings, presets, limits, routing,
+#                                     integrations, machines, jobs, incidents, team (sudo sentrai --help)
 #   /usr/local/sbin/sentrai-dashboard-firewall   the dashboard's firewall rule (run by its service)
 #   /usr/local/sbin/sentrai-update    updates SentrAI in place (sudo sentrai-update), plus a daily timer
 #                                     (sentrai-update-check.timer) that only checks for a newer version
@@ -444,6 +446,20 @@ set -a; . $ENV_FILE; set +a
 exec runuser -u $SVC_USER -- env HOME=$STATE $MVP/lab/.venv/bin/python $MVP/sentrai_config.py admin "\$@"
 EOF
 chmod 0755 /usr/local/bin/sentrai-admin
+
+# --- the team's command line ---------------------------------------------------
+cat > /usr/local/bin/sentrai <<EOF
+#!/usr/bin/env bash
+# The SentrAI team's command line (the web panel is for the business owner). Runs as $SVC_USER with the
+# service settings, so it finds the core and its API token by itself. Every change lands in the audit log.
+#   sudo sentrai status        sudo sentrai settings show        sudo sentrai --help
+set -euo pipefail
+[ "\$(id -u)" = 0 ] || { echo "run with sudo" >&2; exit 1; }
+set -a; . $ENV_FILE; set +a
+export SENTRAI_OPERATOR="\${SUDO_USER:-root}"
+exec runuser -u $SVC_USER -- env HOME=$STATE $MVP/lab/.venv/bin/python $MVP/sentrai_cli.py "\$@"
+EOF
+chmod 0755 /usr/local/bin/sentrai
 admin_args=()
 if [ -n "$ADMIN_EMAIL" ]; then admin_args+=(--email "$ADMIN_EMAIL"); fi
 if [ "$RESET_PW" = 1 ]; then admin_args+=(--reset); fi
@@ -698,6 +714,7 @@ else
 fi
 printf '%s\n' "$SIGN_IN" | sed 's/^/  /'
 echo "  People:     invite them on the dashboard's Team page. Locked out: sudo sentrai-admin --reset"
+echo "  Team CLI:   sudo sentrai status · sudo sentrai settings show · sudo sentrai --help"
 if [ -n "$ADMIN_IPS_NOW" ]; then
     echo "  Your sign-ins: sudo from $ADMIN_IPS_NOW is recorded as your own work (ADMIN_IPS in $ENV_FILE);"
     echo "              root work from anywhere else asks \"was this you?\"."

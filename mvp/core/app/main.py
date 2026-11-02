@@ -1139,7 +1139,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         account = getattr(request.state, "account", None)
         if account and not acc.can(account.get("role"), "configure"):
             raise HTTPException(403, "Only an Owner or Admin can rename a machine.")
-        operator = (account or {}).get("email") or "dashboard"
+        operator = (account or {}).get("email") or str(body.get("operator") or "dashboard")[:64]
         try:
             out = machines.rename(host, str(body.get("name") or ""), operator)
         except fleet.FleetError as exc:
@@ -1148,13 +1148,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {**out, "message": f"{host} is now shown as {out['name']}."}
 
     @app.post("/ui/machines/{host}/delete")
-    def post_remove_machine(host: str, request: Request) -> dict[str, Any]:
+    def post_remove_machine(host: str, request: Request, body: Optional[dict] = Body(None)) -> dict[str, Any]:
         """The Machines list's Delete: Owner and Admin only. Revokes its agent's key, cancels its queued jobs and
         hides it from the list. Its incidents and audit records stay."""
         account = getattr(request.state, "account", None)
         if account and not acc.can(account.get("role"), "configure"):
             raise HTTPException(403, "Only an Owner or Admin can delete a machine.")
-        operator = (account or {}).get("email") or "dashboard"
+        operator = (account or {}).get("email") or str((body or {}).get("operator") or "dashboard")[:64]
         out = machines.remove_host(host, operator)
         core.scribe.record(core.name, "machine_removed", {"host": host, "revoked": out["revoked"], "operator": operator})
         dropped = machine_jobs.drop_host(host, operator)

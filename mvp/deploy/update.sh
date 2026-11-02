@@ -181,7 +181,7 @@ start_all() {
     return 0
 }
 SYSTEM_FILES=(etc/sentrai etc/systemd/system/sentrai.target etc/systemd/system/sentrai-update-check.timer
-              usr/local/bin/sentrai-scout usr/local/bin/sentrai-admin usr/local/sbin/sentrai-dashboard-firewall
+              usr/local/bin/sentrai-scout usr/local/bin/sentrai-admin usr/local/bin/sentrai usr/local/sbin/sentrai-dashboard-firewall
               usr/local/sbin/sentrai-update)
 make_backup() {  # DIR
     local dir="$1" files=() f

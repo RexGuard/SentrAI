@@ -20,6 +20,7 @@ a server that keeps watch around the clock.
 | See which logs SentrAI reads (Windows, Suricata, databases) | [Log sources](log-sources.html) | |
 | Sign in, invite your team, or reset a sign-in | [Signing in](sign-in.html) | |
 | Change thresholds, alerts or protected IPs, or tell SentrAI who your administrators are | [Settings](settings.html) | |
+| Run setup, tuning and control from the server, as the SentrAI team | [Team command line](cli.html) | |
 | Fix a port clash, a missing package or a blocked dashboard | [Troubleshooting](troubleshooting.html) | |
 | Call SentrAI from your own scripts and tools | [API reference](api/index.html) | |
 
