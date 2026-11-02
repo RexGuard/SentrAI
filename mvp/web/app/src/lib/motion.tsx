@@ -24,15 +24,18 @@ export function transition(update: () => void, slide?: Slide) {
     root.style.setProperty('--slide-steps', String(Math.min(slide.steps, 4)))
   }
   const vt = d.startViewTransition(async () => {
-    flushSync(update)
-    // Let the new page's first effects run, then give any data it asked to wait for (holdTransition) a moment
-    // to arrive, so the page slides in already filled instead of sliding in empty and then popping its content.
-    await tick()
-    const waits = held.splice(0)
-    if (waits.length) {
-      await Promise.race([Promise.allSettled(waits), new Promise((r) => setTimeout(r, 450))])
-      await tick(); await tick()
-    }
+    updating = true
+    try {
+      flushSync(update)
+      // Let the new page's first effects run, then give any data it asked to wait for (holdTransition) a moment
+      // to arrive, so the page slides in already filled instead of sliding in empty and then popping its content.
+      await tick()
+      const waits = held.splice(0)
+      if (waits.length) {
+        await Promise.race([Promise.allSettled(waits), new Promise((r) => setTimeout(r, 450))])
+        await tick(); await tick()
+      }
+    } finally { updating = false }
   })
   if (slide) void vt.finished.finally(() => { delete root.dataset.slide; root.style.removeProperty('--slide-steps') })
 }
@@ -40,8 +43,11 @@ export function transition(update: () => void, slide?: Slide) {
 const held: Promise<unknown>[] = []
 const tick = () => new Promise((r) => setTimeout(r, 0))
 
-/** Called by a page while it loads what it shows first: a page change in progress waits (briefly) for it. */
-export function holdTransition<T>(p: Promise<T>): Promise<T> { held.push(p); return p }
+let updating = false
+
+/** Called by a page while it loads what it shows first: a page change in progress waits (briefly) for it. Outside a
+ *  page change it does nothing. */
+export function holdTransition<T>(p: Promise<T>): Promise<T> { if (updating) held.push(p); return p }
 
 /** A CSS-safe view-transition-name for an id such as "RSK-2026-085". */
 export const vtName = (prefix: string, id: string) => `${prefix}-${id.replace(/[^a-zA-Z0-9_-]/g, '_')}`
