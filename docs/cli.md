@@ -98,6 +98,22 @@ sudo sentrai auto-mode off --reason "maintenance window"
 sudo sentrai protection off --reason "migration tonight"     # watch only
 ```
 
+## Contact Us messages
+
+What the business sends with the panel's Contact Us form (name, email or company, and the question, feedback or bug
+report). They stay on the panel until you mark them handled. To have each one emailed as well (through the SMTP
+server in Notifications; Reply goes to the sender when they gave an email):
+
+```bash
+sudo sentrai settings set SENTRAI_FEEDBACK_EMAIL=support@example.com
+```
+
+```bash
+sudo sentrai feedback list             # open ones; --all for handled ones too
+sudo sentrai feedback done FB-1a2b3c4d
+sudo sentrai feedback open FB-1a2b3c4d # back to open
+```
+
 ## People who may sign in
 
 The core lets only signed-in people manage accounts, so this one works on the panel server itself, on

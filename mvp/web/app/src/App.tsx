@@ -43,6 +43,7 @@ const Tuning = page(() => import('./pages/Tuning'))
 const Privacy = page(() => import('./pages/Privacy'))
 const Overview = page(() => import('./pages/Overview'))
 const Report = page(() => import('./pages/Report'))
+const Contact = page(() => import('./pages/Contact'))
 const Reports = page(() => import('./pages/Reports'))
 const Routing = page(() => import('./pages/Routing'))
 page(() => import('./pages/Review'))  // drawn in the Command center's tabs; fetched early with the rest
@@ -95,6 +96,7 @@ function Gate() {
         <Route path="/team" element={<Team />} />
         <Route path="/staff" element={<Staff />} />
         <Route path="/report" element={<Report />} />
+        <Route path="/contact" element={<Contact />} />
         <Route path="/routing" element={<Routing />} />
         <Route path="/overview" element={<Overview />} />
         <Route path="/config" element={<Settings />} />
