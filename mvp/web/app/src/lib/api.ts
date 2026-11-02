@@ -5,7 +5,7 @@ export class ApiError extends Error {
   constructor(message: string, status: number) { super(message); this.status = status }
 }
 
-import { DEMO, DEMO_READ_ONLY, demoGet } from './demo'
+import { DEMO, DEMO_READ_ONLY, demoGetLive, demoWrite } from './demo'
 
 // The last answer to each GET and its ETag, in memory only (gone on reload or sign-out). A page that refreshes
 // every few seconds sends If-None-Match, and when nothing changed the server answers 304 with no body.
@@ -15,8 +15,12 @@ export function forgetCache() { lastGet.clear() }
 export async function api<T = unknown>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
   const method = init.method ?? (init.body === undefined ? 'GET' : 'POST')
   if (DEMO) {
-    if (method !== 'GET') throw new ApiError(DEMO_READ_ONLY, 403)
-    const body = await demoGet(path)
+    if (method !== 'GET') {
+      const done = demoWrite(path, init.body)  // only the manager's answer to the live demo attack
+      if (done) return done as T
+      throw new ApiError(DEMO_READ_ONLY, 403)
+    }
+    const body = await demoGetLive(path)
     if (body === null) throw new ApiError('Not part of this demo copy.', 404)
     return body as T
   }

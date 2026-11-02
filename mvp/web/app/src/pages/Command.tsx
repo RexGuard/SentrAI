@@ -5,6 +5,7 @@ import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { X } from 'lucide-react'
 import { api, ApiError } from '../lib/api'
+import { onDemoChange } from '../lib/demo'
 import { SeverityBubbles, type Risks } from '../lib/Risks'
 
 const TABS = [
@@ -22,7 +23,7 @@ export default function Command() {
     try { setRisks(await api<Risks>('/ui/risks')); setError('') }
     catch (e) { setError(e instanceof ApiError ? e.message : 'Could not reach SentrAI.') }
   }, [])
-  useEffect(() => { void load(); const t = setInterval(() => void load(), 10000); return () => clearInterval(t) }, [load])
+  useEffect(() => { void load(); const t = setInterval(() => void load(), 10000); const off = onDemoChange(() => void load()); return () => { clearInterval(t); off() } }, [load])
 
   return (
     <section className="space-y-8">
