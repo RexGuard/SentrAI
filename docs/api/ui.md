@@ -136,7 +136,7 @@ For registered users only, like every other endpoint (a sign-in, or the API toke
 
 ### `POST /ui/feedback`
 
-The panel's Contact Us form, for the SentrAI team. Anyone signed in may send one. It is kept on the panel (`feedback.json`) and the audit record notes who sent it (not what it says).
+The panel's Contact Us form, for the SentrAI team. Anyone signed in may send one. It is kept on the panel (`feedback.json`) and the audit record notes who sent it (not what it says). With `SENTRAI_FEEDBACK_EMAIL` set it is also emailed there in the background (the row then has `emailed` or `email_error`).
 
 **Body** `{"name": "...", "contact": "email or company", "message": "question, feedback or bug report"}`, all three needed (at most 120, 200 and 5000 characters). **Returns** `{"id": "FB-...", "message": "..."}`. `400` for a missing or too-long field, `429` past 20 messages an hour from one person.
 

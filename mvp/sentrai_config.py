@@ -211,6 +211,8 @@ SECTIONS = (
         Field("ALERT_EMAIL_TO", "Email: recipients (comma-separated)"),
         Field("SENTRAI_EMAIL_MODE", "Email: send when the alert extension (Telegram) fails, or always", "backup",
               choices=("backup", "always")),
+        Field("SENTRAI_FEEDBACK_EMAIL", "Email: where the panel's Contact Us messages go (comma-separated; uses the "
+              "SMTP server above)", advanced=True),
     )),
     Section("ai", "5. AI model", "Cyanide and Scout. Pick a provider and paste its key; "
             "leave the key blank to run on fixed playbooks.", (

@@ -26,3 +26,23 @@ def test_long_messages_and_floods_are_refused(client, tmp_path):
         raise AssertionError("the 21st message in an hour should be refused")
     except OverflowError:
         pass
+
+
+def test_a_message_is_emailed_when_an_address_is_set(tmp_path, monkeypatch):
+    box = ui_feedback.Inbox(tmp_path / "fb.json")
+    row = box.add("Ana", "ana@shop.test", "Hello\nsecond line", "owner@example.com")
+    settings = {"SMTP_HOST": "mail.test", "SENTRAI_FEEDBACK_EMAIL": "team@sentrai.test", "SMTP_USER": "bot@sentrai.test"}
+    monkeypatch.setattr(ui_feedback, "mail_settings", lambda: dict(settings))
+    sent = []
+    ui_feedback.forward(box, row, lambda msg, e: sent.append(msg))
+    assert sent and sent[0]["To"] == "team@sentrai.test" and sent[0]["Reply-To"] == "ana@shop.test"
+    assert "second line" in sent[0].get_content() and row["id"] in sent[0]["Subject"]
+    assert box.all()[0]["emailed"] == "team@sentrai.test"
+
+    def broken(msg, e):
+        raise OSError("connection refused")
+    ui_feedback.forward(box, row, broken)
+    assert "refused" in box.all()[0]["email_error"]
+
+    settings.pop("SENTRAI_FEEDBACK_EMAIL")
+    assert ui_feedback.build_mail(row, settings) is None  # no address: kept on the panel only
