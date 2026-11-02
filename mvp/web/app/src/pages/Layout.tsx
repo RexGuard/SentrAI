@@ -1,8 +1,8 @@
 import { Suspense, useEffect, useRef, useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import {
-  Boxes, Briefcase, Eye, Gavel, LayoutDashboard, Library, DatabaseBackup, FileText, Flag, Link2, Lock, LogOut, Moon, Network,
-  ScrollText, Search, Server, Settings2, ShieldCheck, Siren, Sparkles, SlidersHorizontal, Sun, UserRound, Users, Workflow, Bell as BellIcon, PanelLeftClose, PanelLeftOpen, type LucideIcon,
+  Briefcase, Eye, Gavel, LayoutDashboard, Library, DatabaseBackup, FileText, Flag, Link2, Lock, LogOut, Moon,
+  ScrollText, Search, Server, Settings2, Siren, Sparkles, Sun, UserRound, Users, Bell as BellIcon, PanelLeftClose, PanelLeftOpen, type LucideIcon,
 } from 'lucide-react'
 import { api } from '../lib/api'
 import { useSession } from '../lib/session'
@@ -21,14 +21,6 @@ export const MENU: Group[] = [
   { group: 'Respond', icon: Gavel, items: [
     { to: '/command', label: 'Command Center', icon: LayoutDashboard },
     { to: '/staff', label: 'Staff Reports', icon: Flag },
-  ] },
-  { group: 'How It Works', icon: Workflow, items: [
-    { to: '/overview', label: 'Overview', icon: Network },
-    { to: '/collector', label: 'Log Reading', icon: Workflow },
-    { to: '/classifier', label: 'Threat Detection', icon: Boxes },
-    { to: '/responder', label: 'Automatic Responses', icon: ShieldCheck },
-    { to: '/guardrails', label: 'Safety Limits', icon: Settings2 },
-    { to: '/tuning', label: 'Fewer False Alarms', icon: SlidersHorizontal },
   ] },
   { group: 'Monitoring', icon: Eye, items: [
     { to: '/machines', label: 'Computers', icon: Server },
