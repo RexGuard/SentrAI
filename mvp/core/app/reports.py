@@ -169,7 +169,7 @@ def build_report(core: "Saguaro", iid: str) -> dict[str, Any]:
 
 
 CHANNEL_WORDS = {"telegram-direct": "directly in Telegram", "telegram": "in the team Telegram group",
-                 "email": "by email", "console": "on the console"}
+                 "email": "by email", "console": "on the control panel"}
 
 
 def _reached(n: dict[str, Any]) -> list[str]:

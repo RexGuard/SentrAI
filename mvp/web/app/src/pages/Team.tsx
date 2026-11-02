@@ -54,7 +54,7 @@ export default function Team() {
     <section className="space-y-4">
       <header>
         <h1 className="text-2xl font-semibold">People and Access</h1>
-        <p className="text-sm text-muted">Who may sign in to this console, and what each role may do</p>
+        <p className="text-sm text-muted">Who may sign in to this control panel, and what each role may do</p>
       </header>
       {error && <p role="alert" className="rounded-md border border-line bg-surface p-3 text-bad">{error}</p>}
       {note && <p role="status" className="rounded-md border border-line bg-surface p-3">{note}</p>}

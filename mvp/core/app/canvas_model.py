@@ -601,7 +601,7 @@ def clean_canvas_doc(raw: Any) -> dict:
 def extension_removal_note(kind: Any, title: str) -> str:
     """What turning an extension off will do, said before the person confirms (Extensions page and canvas)."""
     what = {"Blocking": f"Blocks it added at {title} are taken out there again; SentrAI's own blocks stay.",
-            "Alerts": f"Alerts stop going to {title} within 15 seconds; the console and email still get them.",
+            "Alerts": f"Alerts stop going to {title} within 15 seconds; the control panel and email still get them.",
             "Classifier": f"Events are classified by the rules and the keyword fallback, without {title}.",
             "Lookups": f"New incidents get no {title} lookups; what earlier ones show stays."}.get(kind, "")
     return f"{what} Its settings are kept, so adding it back restores it.".strip()

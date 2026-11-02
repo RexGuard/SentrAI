@@ -239,7 +239,7 @@ export default function Layout() {
       <header className="console-top">
         <VLink to="/" className="console-logo" aria-label="SentrAI home">
           <img src={import.meta.env.BASE_URL + "mark.svg"} alt="" width={52} height={52} className="console-brand-mark" />
-          <span className="leading-tight"><span className="console-brand block">SentrAI</span><span className="block text-[0.8125rem] text-soft">Cybersecurity Console</span></span>
+          <span className="leading-tight"><span className="console-brand block">SentrAI</span><span className="block text-[0.8125rem] text-soft">Cybersecurity Control Panel</span></span>
         </VLink>
         <nav aria-label={current.group} className={'console-topnav' + (items(current).length > 4 ? ' is-many' : '')}>
           {!onSentry && !onContact && items(current).map(({ to, label, icon: Icon }, i) => (
