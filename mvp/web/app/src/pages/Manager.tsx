@@ -14,6 +14,7 @@ import { useSession } from '../lib/session'
 import { useSimple } from '../lib/simple'
 import AutoMode from './AutoMode'
 import { Blocks, CopyButton, Text } from '../lib/Rich'
+import { backToQuestion, turns } from '../lib/turns'
 import { MemoryPanel, ShareDialog, SharedView, type ShareInfo } from '../lib/CyanideTeam'
 import { INCIDENT_FIELDS, SuggestionCard, type Incident, type Message } from './Chat'
 
@@ -323,7 +324,7 @@ export default function Manager() {
         <main className="mx-auto flex flex-1 w-full max-w-3xl flex-col px-4">
           <h1 className="mgr-print-title hidden pt-4 text-xl font-semibold">{convo?.title ?? 'Conversation'} · {assistant} · {convo ? when(convo.at) : ''}</h1>
           <div className="flex-1 space-y-6 py-6" role="log" aria-live="polite" aria-label="Conversation">
-            {shown.map((m, n) => m.role === 'operator' ? (
+            {turns(shown).map((t) => <div key={key(t[0].m)} data-turn className="space-y-6">{t.map(({ m, n }) => m.role === 'operator' ? (
               editing === key(m) ? (
                 <form key={m.id} className="ml-auto w-full max-w-[85%] space-y-2" onSubmit={(e) => { e.preventDefault(); setEditing(null); void ask(draft) }}>
                   <label className="sr-only" htmlFor={`${inputId}-edit`}>Edit your question</label>
@@ -335,7 +336,8 @@ export default function Manager() {
                   </div>
                 </form>
               ) : (
-                <div key={m.id} className="group ml-auto flex w-fit max-w-[85%] items-start gap-1">
+                <div key={m.id} className="chat-stick" title="Back to where you asked this" onClick={backToQuestion}>
+                <div className="group ml-auto flex w-fit max-w-[85%] items-start gap-1">
                   <span className="mgr-noprint flex opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
                     <CopyButton text={m.text} label="Copy question" />
                     <button type="button" className="rich-tool" title="Edit and send again" aria-label="Edit and send again" disabled={asking}
@@ -345,7 +347,7 @@ export default function Manager() {
                     {(m.attachments?.length ?? 0) > 0 && <Files list={m.attachments!} />}
                     <p className="whitespace-pre-wrap rounded-2xl bg-surface-3 px-4 py-2.5">{m.text}</p>
                   </div>
-                </div>)
+                </div></div>)
             ) : (
               <div key={m.id} className="space-y-3">
                 <p className="text-xs text-muted">{assistant}{m.incident ? ` · about ${m.incident}` : ''}</p>
@@ -386,14 +388,14 @@ export default function Manager() {
                   <div className="mgr-noprint flex flex-wrap gap-2">
                     {m.followups!.map((q) => <button key={q} className="mgr-chip" onClick={() => void ask(q)}>{q}</button>)}
                   </div>)}
-              </div>))}
+              </div>))}</div>)}
             {gone && <p className="text-sm text-muted">These messages are no longer on the server (the chat was cleared or is older than it keeps). Ask again to continue.</p>}
             {live && (
-              <>
-                <div className="ml-auto w-fit max-w-[85%] space-y-2">
+              <div data-turn className="space-y-6">
+                <div className="chat-stick" title="Back to where you asked this" onClick={backToQuestion}><div className="ml-auto w-fit max-w-[85%] space-y-2">
                   {live.files.length > 0 && <Files list={live.files} />}
                   <p className="whitespace-pre-wrap rounded-2xl bg-surface-3 px-4 py-2.5">{live.question}</p>
-                </div>
+                </div></div>
                 <div className="space-y-3" aria-busy="true">
                   <p className="text-xs text-muted">{assistant}</p>
                   {!live.text && (
@@ -403,7 +405,7 @@ export default function Manager() {
                     </ul>)}
                   {live.text && <Text md={live.text + ' ▍'} />}
                 </div>
-              </>)}
+              </div>)}
             {note && <p role="status" className="text-sm text-soft">{note}</p>}
             <div ref={end} />
           </div>

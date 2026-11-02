@@ -4,6 +4,7 @@ import { Lightbulb, Send, Trash2 } from 'lucide-react'
 import { api, ApiError } from '../lib/api'
 import { btn, btnPrimary } from '../lib/ui'
 import { useSession } from '../lib/session'
+import { backToQuestion, turns } from '../lib/turns'
 import { SetupBanner, SetupConversation, type Setup } from './SetupChat'
 
 export type Suggestion = {
@@ -148,17 +149,17 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
             <p className="min-w-0 flex-1 text-xs text-muted">{compact ? 'It suggests, you decide' : `${assistant} · ${hist.model || 'model unknown'} · read-only: every action still needs your click and goes through the normal approval checks`}</p>
             <button className={btn} disabled={!messages.length || !can('act')} onClick={() => void clear()} aria-label="Clear chat"><Trash2 size={14} aria-hidden />{compact ? '' : ' Clear chat'}</button>
           </div>
-          <div className={(compact ? 'min-h-0 flex-1 ' : 'h-[28rem] ') + 'space-y-4 overflow-y-auto rounded-lg border border-line bg-surface p-4'} role="log" aria-live="polite" aria-label="Conversation" tabIndex={0}>
+          <div className={(compact ? 'min-h-0 flex-1 ' : 'h-[28rem] ') + 'chat-log space-y-4 overflow-y-auto rounded-lg border border-line bg-surface p-4'} role="log" aria-live="polite" aria-label="Conversation" tabIndex={0}>
             {!messages.length && (
               <div className="space-y-2">
                 <p>Hi, I'm {assistant}. Ask me about incidents, why I acted, or what to do next. Or pick one of these to start:</p>
                 <div className="flex flex-wrap gap-2">{STARTERS.map((q) => <button key={q} className={chip} onClick={() => void ask(q)}>{q}</button>)}</div>
               </div>
             )}
-            {messages.map((m, n) => {
+            {turns(messages).map((t) => <div key={t[0].m.id} data-turn className="space-y-4">{t.map(({ m, n }) => {
               const mine = m.role === 'operator'
-              return (
-                <div key={m.id} className={(compact ? 'max-w-[92%]' : 'max-w-[85%]') + ' space-y-1 rounded-lg p-3 ' + (mine ? 'ml-auto bg-surface-3' : 'bg-surface-2')}>
+              const bubble = (
+                <div className={(compact ? 'max-w-[92%]' : 'max-w-[85%]') + ' space-y-1 rounded-lg p-3 ' + (mine ? 'ml-auto bg-surface-3' : 'bg-surface-2')}>
                   <p className="text-xs text-muted">{mine ? m.operator || me?.email : assistant} · {time(m.ts)}{m.incident ? ` · about ${m.incident}` : ''}{!mine && m.source === 'fallback' ? ' · core explanation (no AI)' : ''}</p>
                   {mine ? <p className="whitespace-pre-wrap">{m.text}</p> : <><Text md={m.text} /><Blocks blocks={m.blocks} onOpen={(id) => void ask(`Explain ${id} in plain words`)} /></>}
                   {m.looked_at?.length ? <p className="text-xs text-muted">Looked at: {[...new Set(m.looked_at)].join(', ')}</p> : null}
@@ -168,7 +169,8 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
                   )}
                 </div>
               )
-            })}
+              return mine ? <div key={m.id} className="chat-stick" title="Back to where you asked this" onClick={backToQuestion}>{bubble}</div> : <div key={m.id}>{bubble}</div>
+            })}</div>)}
             {asking && <p className="text-muted" role="status">{assistant} is looking into it…</p>}
             <div ref={end} />
           </div>

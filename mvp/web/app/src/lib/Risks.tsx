@@ -9,6 +9,7 @@ import { btn, btnPrimary } from './ui'
 import { useSession } from './session'
 import { ask } from './notice'
 import { Text } from './Rich'
+import { backToQuestion } from './turns'
 import { SuggestionCard, type Message } from '../pages/Chat'
 
 export type Level = 'critical' | 'high' | 'medium' | 'low'
@@ -88,6 +89,7 @@ export function RiskDetail({ r, protectionOn, onClose, onDone }: { r: Risk; prot
   const [closing, setClosing] = useState('')
   const [asking, setAsking] = useState(false)
   const [reply, setReply] = useState<Message | null>(null)
+  const [asked, setAsked] = useState('')
   const box = useRef<HTMLDivElement>(null)
   const t = LEVEL_TEXT[r.severity]
   const off = !can('act')
@@ -135,7 +137,7 @@ export function RiskDetail({ r, protectionOn, onClose, onDone }: { r: Risk; prot
     setAsking(true); setErr('')
     try {
       setReply(await api<Message>('/chat', { body: { operator: me?.email ?? 'dashboard', message: `My fix for ${r.incident}: ${text}`, incident: r.incident } }))
-      setIdea('')
+      setAsked(text); setIdea('')
     } catch (e) { setErr(e instanceof ApiError ? `Sentry could not answer: ${e.message}` : 'Sentry could not answer.') }
     setAsking(false)
   }
@@ -197,7 +199,9 @@ export function RiskDetail({ r, protectionOn, onClose, onDone }: { r: Risk; prot
           </form>
           {asking && <p className="text-sm text-muted" role="status">Sentry is weighing your idea…</p>}
           {reply && (
-            <div className="space-y-1 rounded-2xl bg-surface-2 p-4" aria-live="polite">
+            <div className="space-y-1 rounded-2xl bg-surface-2 p-4" aria-live="polite" data-turn>
+              {asked && <div className="chat-stick" style={{ '--stick-bg': 'var(--surface-2)' } as React.CSSProperties} title="Back to your idea" onClick={backToQuestion}>
+                <p className="ml-auto w-fit max-w-[90%] whitespace-pre-wrap rounded-2xl bg-surface-3 px-3 py-2 text-sm"><span className="text-muted">Your idea: </span>{asked}</p></div>}
               <p className="text-xs text-muted">Sentry{reply.source === 'fallback' ? ' · core explanation (no AI)' : ''}</p>
               <Text md={reply.text} />
               {(reply.suggestions ?? []).map((s, k) => <SuggestionCard key={k} s={s} inc={r.inc} onDone={onDone} />)}
