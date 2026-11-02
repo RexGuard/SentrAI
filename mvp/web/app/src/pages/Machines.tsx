@@ -13,9 +13,8 @@ type Machine = {
   threshold: number; monitor_only: boolean; open: number; contained: number; blocked: number; last_seen: string
   services: string[]; hardware: { cpu: number | null; memory: number | null; disk: number | null }; sessions: number | null
 }
-type Joined = { host: string; agent_id: string; joined_at: string; invited_by: string; last_seen: string; status: string }
 type Page = {
-  panel: boolean; machines: Machine[]; joined: Joined[]; panel_info: { panel_url: string; pin: string }
+  panel: boolean; machines: Machine[]; panel_info: { panel_url: string; pin: string }
   stats: { machines: number; online: number; offline: number; need_a_look: number; blocks: number }
   band_words: Record<string, string>
 }
@@ -29,11 +28,7 @@ const FILTERS: Filter<Machine>[] = [
   { key: 'risk', label: 'Risk', get: (m) => riskOf(m.index).word },
   { key: 'place', label: 'Kind', get: (m) => m.place }, { key: 'services', label: 'Service', get: (m) => m.services },
 ]
-const JOINED: Filter<Joined>[] = [
-  { key: 'status', label: 'Status', get: (a) => a.status }, { key: 'invited_by', label: 'Invited by', get: (a) => a.invited_by },
-  { key: 'joined_at', label: 'Joined', get: (a) => a.joined_at, kind: 'date' },
-]
-const NO_M: Machine[] = [], NO_J: Joined[] = []
+const NO_M: Machine[] = []
 
 /** Risk level in words: under 30 Low, 30-59 Medium, 60-79 High, 80-100 Critical. */
 export function riskOf(index: number | null): { word: string; tone: string } {
@@ -160,7 +155,6 @@ export default function Machines() {
     catch (e) { setNote(e instanceof ApiError ? e.message : 'The machine could not be deleted.') }
   }
   const list = useFilters(page?.machines ?? NO_M, FILTERS, (m) => [m.name, m.host, m.place, m.services], 'machines')
-  const joined = useFilters(page?.joined ?? NO_J, JOINED, (a) => [a.host, a.agent_id, a.invited_by, a.status], 'joined machines')
   return (
     <section className="space-y-4">
       <header>
@@ -207,30 +201,6 @@ export default function Machines() {
               ))}
             </ul>
           </div>
-          {page.panel && (
-            <div className="space-y-3 rounded-lg border border-line bg-surface p-4">
-              <h2 className="font-semibold">Joined Machines <span className="font-normal text-muted">· each has its own key; revoking one never touches the others</span></h2>
-              {joined.bar}
-              {page.joined.length === 0 ? <p className="text-soft">No machine has joined yet. Make a join code above.</p> : (
-                <div className="overflow-x-auto" role="region" aria-label="Joined machines" tabIndex={0}>
-                  <table className="w-full text-left text-sm">
-                    <thead className="border-b border-line text-xs uppercase tracking-wide text-muted">
-                      <tr>{['Machine', 'Id', 'Joined', 'Invited by', 'Last seen', 'Status'].map((h) => <th key={h} className="p-2 font-medium">{h}</th>)}</tr>
-                    </thead>
-                    <tbody>
-                      {joined.rows.map((a) => (
-                        <tr key={a.agent_id} className="border-b border-line-soft last:border-0">
-                          <td className="p-2"><Link to={`/machines/${encodeURIComponent(a.host)}`} className="underline-offset-2 hover:underline">{a.host}</Link></td><td className="p-2 font-mono text-xs">{a.agent_id}</td>
-                          <td className="p-2">{a.joined_at ? new Date(a.joined_at).toLocaleString() : '-'}</td><td className="p-2">{a.invited_by}</td>
-                          <td className="p-2">{a.last_seen ? new Date(a.last_seen).toLocaleTimeString() : 'never'}</td><td className="p-2">{a.status}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          )}
         </>
       )}
     </section>

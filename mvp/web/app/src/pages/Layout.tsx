@@ -184,7 +184,7 @@ function Bell() {
   const pop = usePresence(open)
   useEffect(() => {
     const load = async () => {
-      try { setRows((await api<{ rows: Note[] }>('/ui/risks?severity=all')).rows) } catch { /* the pages show core errors */ }
+      try { setRows((await api<{ rows?: Note[] }>('/ui/risks?severity=all')).rows ?? []) } catch { /* the pages show core errors */ }
     }
     void load(); const t = setInterval(() => void load(), 30000); return () => clearInterval(t)
   }, [])
