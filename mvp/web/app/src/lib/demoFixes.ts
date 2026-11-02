@@ -9,7 +9,7 @@ export const DEMO_FIXES: Record<string, string> = {
     'SentrAI already blocked the IP address mentioned above for 2 hours, so that they cannot take any more customer ' +
     'data while you check. Keep the block. Only bait records were read, so no real customer data was taken.',
   brute_force:
-    'SentrAI already blocked the IP address mentioned above and slowed down sign-ins for 2 hours, so that they cannot ' +
+    'SentrAI already blocked the IP address mentioned above and stopped sign-ins from that IP address for 2 hours, so that they cannot ' +
     'keep guessing passwords. Keep the block, and ask the account owner to change their password.',
   sql_injection:
     'SentrAI already blocked the IP address mentioned above for 2 hours and switched on a website filter for this ' +
