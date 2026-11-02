@@ -134,6 +134,13 @@ For registered users only, like every other endpoint (a sign-in, or the API toke
 
 ## Audit trail
 
+### `GET /ui/contacts`
+
+The top bar's Contact Us button. The team's contacts from the `SENTRAI_CONTACTS` setting (Setup, under Contact us):
+entries separated by `;`, each `Name | Role | email | phone`, email and phone optional. At most 20.
+
+**Returns** `{"contacts": [{"name": "...", "role": "...", "email": "...", "phone": "..."}]}`.
+
 ### `GET /ui/audit`
 
 The newest audit records in plain words, whether the chain checks out, and who did what.

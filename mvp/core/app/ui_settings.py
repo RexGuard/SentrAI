@@ -21,7 +21,25 @@ def field_row(f: Any, current: dict[str, str]) -> dict[str, Any]:
             "value": "" if hidden else value, "is_set": bool(value), "default": "" if hidden else f.default}
 
 
+def contacts(text: str) -> list[dict[str, str]]:
+    """SENTRAI_CONTACTS ("Name | Role | email | phone; ...") as rows. Blank parts stay blank."""
+    out = []
+    for item in str(text or "").split(";"):
+        parts = [p.strip() for p in item.split("|")][:4]
+        if parts and parts[0]:
+            parts += [""] * (4 - len(parts))
+            out.append(dict(zip(("name", "role", "email", "phone"), parts)))
+    return out[:20]
+
+
 def install(app: FastAPI, reload_after_save: Callable[[], Any]) -> None:
+    @app.get("/ui/contacts")
+    def get_contacts() -> dict[str, Any]:
+        """The Contact Us button: the team's contacts from the SENTRAI_CONTACTS setting."""
+        f = cfg.FIELDS.get("SENTRAI_CONTACTS")
+        saved = cfg.read().get("SENTRAI_CONTACTS")
+        return {"contacts": contacts(saved if saved is not None else (f.default if f else ""))}
+
     @app.get("/ui/settings")
     def get_settings() -> dict[str, Any]:
         current = {f.env: f.default for f in cfg.FIELDS.values()} | cfg.read()
