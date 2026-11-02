@@ -1,5 +1,5 @@
 // The ? button at the bottom right of every page. It opens a panel docked on the right with two tabs:
-// chat with Cyanide, and report something suspicious. The page beside it stays usable.
+// chat with Sentry, and report something suspicious. The page beside it stays usable.
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { CircleHelp, Maximize2, MessageSquare, MessageSquareWarning, X } from 'lucide-react'
@@ -39,14 +39,14 @@ export default function HelpDock({ dock }: { dock: ReturnType<typeof useDock> })
 
   if (!dock.open) {
     return (
-      <button onClick={() => dock.show(dock.tab)} aria-label="Help: chat with Cyanide or report something" title="Chat with Cyanide or report something"
+      <button onClick={() => dock.show(dock.tab)} aria-label="Help: chat with Sentry or report something" title="Chat with Sentry or report something"
         className="fixed bottom-5 right-5 z-40 flex h-12 w-12 items-center justify-center rounded-full border border-line bg-ink text-bg shadow-lg hover:opacity-90">
         <CircleHelp size={22} aria-hidden />
       </button>
     )
   }
 
-  const tabs: [DockTab, string, typeof MessageSquare][] = [['chat', 'Chat with Cyanide', MessageSquare], ['report', 'Report something', MessageSquareWarning]]
+  const tabs: [DockTab, string, typeof MessageSquare][] = [['chat', 'Chat with Sentry', MessageSquare], ['report', 'Report something', MessageSquareWarning]]
   return (
     <aside aria-label="Help panel" className="fixed inset-y-0 right-0 z-40 flex w-full flex-col gap-3 border-l border-line bg-bg p-3 shadow-xl sm:w-[26rem]">
       <div className="flex items-center gap-1">

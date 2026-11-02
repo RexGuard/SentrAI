@@ -83,7 +83,7 @@ export function SuggestionCard({ s, inc, onDone }: { s: Suggestion; inc?: Incide
   )
 }
 
-/** The conversation with Cyanide. `compact` fits it into the side panel the ? button opens. */
+/** The conversation with Sentry. `compact` fits it into the side panel the ? button opens. */
 export default function Chat({ compact = false }: { compact?: boolean }) {
   const inputId = useId()
   const { me, can } = useSession()
@@ -117,7 +117,7 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
   }
   const clear = async () => { await api('/chat/clear', { body: {} }); await load() }
 
-  const assistant = hist?.assistant || 'Cyanide'
+  const assistant = hist?.assistant || 'Sentry'
   const messages = hist?.messages ?? []
   const byId = Object.fromEntries(incidents.map((i) => [i.id, i]))
   const asked = new Set(messages.filter((m) => m.role === 'operator').map((m) => m.text.trim().toLowerCase()))

@@ -17,11 +17,11 @@ For development, `npm run dev` in `app/` does the same with live reload.
 
 | Pages on the web console |
 | --- |
-| Command center (what needs a person as Critical / High / Medium bubbles that open a page of risk bubbles, each explained in plain words with a suggested fix, quick actions and a box to talk your own fix through with Cyanide; risk over time and machines (Cyanide is under the ? button); the landing page). Approvals, Incidents and Review are no longer in the menu: they open as the Command center's "Full lists" tabs (`/command?tab=approvals|incidents|review`; the old addresses redirect there), Sign-in, Approvals, Incidents, Who gets what, Staff reports, Report something suspicious, Chat (with the guided setup) |
+| Command center (what needs a person as Critical / High / Medium bubbles that open a page of risk bubbles, each explained in plain words with a suggested fix, quick actions and a box to talk your own fix through with Sentry; risk over time and machines (Sentry is under the ? button); the landing page). Approvals, Incidents and Review are no longer in the menu: they open as the Command center's "Full lists" tabs (`/command?tab=approvals|incidents|review`; the old addresses redirect there), Sign-in, Approvals, Incidents, Who gets what, Staff reports, Report something suspicious, Chat (with the guided setup) |
 | Overview canvas, Collector (with Scout's proposals and the process, threat and package scans), Classifier, Action taker, Automation guardrails (with the limits map) |
 | Machines, one machine (all its tabs, incl. signed in, services, packages) |
 | Review, Reports, Audit trail, Backups, Team, Extensions, Configuration |
-| On every page: the **Auto mode** switch at the top (Owner/Admin), and the **?** button at the bottom right opens a docked panel with Chat with Cyanide and Report something (both also full pages at `/chat` and `/report`) |
+| On every page: the **Auto mode** switch at the top (Owner/Admin), and the **?** button at the bottom right opens a docked panel with Chat with Sentry and Report something (both also full pages at `/chat` and `/report`) |
 
 Every table has a filter bar (`src/lib/Filters.tsx`): a search box, a pick list for each column with repeating values, and a date range where rows carry a time.
 

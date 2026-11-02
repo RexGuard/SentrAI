@@ -1,4 +1,4 @@
-// Guided setup on the Chat page: Cyanide asks the setup questions one at a time (core ui_setup.py / setup_chat.py).
+// Guided setup on the Chat page: Sentry asks the setup questions one at a time (core ui_setup.py / setup_chat.py).
 // The conversation lives on the core for the signed-in person, never in the chat history: some answers are secrets.
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { MessagesSquare, Send, X } from 'lucide-react'

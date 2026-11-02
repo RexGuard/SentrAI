@@ -1,12 +1,12 @@
 ---
 title: Chat and AI
 nav: api
-description: Ask Cyanide about incidents in plain words, drive the guided setup, and check, reload or test the AI model.
+description: Ask Sentry about incidents in plain words, drive the guided setup, and check, reload or test the AI model.
 ---
 
 # Chat and AI
 
-Cyanide is SentrAI's assistant. In the chat it answers questions about incidents, addresses and
+Sentry is SentrAI's assistant. In the chat it answers questions about incidents, addresses and
 machines by looking things up in the core. It never acts on its own: when it thinks something should
 be done, it offers a button the operator can press. Without an AI model it still answers, from the
 core's own explanations.
@@ -30,7 +30,7 @@ so it starts empty after a restart. Every question and answer is also written to
 
 ```json
 {
-  "assistant": "Cyanide",
+  "assistant": "Sentry",
   "model": "online (anthropic:claude-opus-5)",
   "messages": [
     {"id": 1, "role": "operator", "text": "Which incident should I deal with first?", "ts": "2026-10-27T02:45:11+00:00",
@@ -45,7 +45,7 @@ so it starts empty after a restart. Every question and answer is also written to
 
 ### `POST /chat`
 
-Asks Cyanide a question and waits for the answer. Written to the audit trail (`operator_chat`).
+Asks Sentry a question and waits for the answer. Written to the audit trail (`operator_chat`).
 
 **Body**
 
@@ -59,7 +59,7 @@ Asks Cyanide a question and waits for the answer. Written to the audit trail (`o
 {"operator": "erick", "message": "Which incident should I deal with first?"}
 ```
 
-**Returns** Cyanide's answer.
+**Returns** Sentry's answer.
 
 ```json
 {
@@ -77,7 +77,7 @@ Asks Cyanide a question and waits for the answer. Written to the audit trail (`o
 | Field | Meaning |
 | --- | --- |
 | `source` | `ai` when the model answered, `fallback` when the core's explanations did (no model, or it failed) |
-| `looked_at` | what Cyanide looked up to answer |
+| `looked_at` | what Sentry looked up to answer |
 | `suggestions` | buttons to show the operator; nothing happens unless they press one |
 | `blocks` | tables, charts and figures to draw under the text (below); the text is Markdown |
 | `followups` | up to three short questions the operator may ask next, shown as chips |
@@ -92,7 +92,7 @@ Each block has a `type`:
 | `"type": "chart"` | `title`, `kind` (`bar` or `line`), `labels`, `series` (up to 3 `{name, values}` on one scale), `unit` |
 | `"type": "stats"` | `items`: `{label, value, tone}`, tone being a risk band (`green`, `amber`, `red`, `critical`) |
 
-With an AI model, Cyanide makes tables, charts and follow-ups with its `show_table`, `show_chart` and
+With an AI model, Sentry makes tables, charts and follow-ups with its `show_table`, `show_chart` and
 `suggest_followups` tools. Without one, the overview answer carries the risk figures, a table of active incidents
 and the risk over time, and a question about the week carries incidents per day and per kind.
 
@@ -109,7 +109,7 @@ Each suggestion has a `label` and a `reason`, plus what pressing it does:
 
 ### `POST /chat/stream`
 
-Same body as `POST /chat`, but the answer arrives while Cyanide works, as newline-delimited JSON
+Same body as `POST /chat`, but the answer arrives while Sentry works, as newline-delimited JSON
 (`application/x-ndjson`), one object per line:
 
 | Line | Meaning |
@@ -133,13 +133,13 @@ already sent, marked `"stopped": true` and without buttons, tables or charts.
 | a log or other text file | `{"name": "auth.log", "kind": "text", "text": "..."}`, kept up to 200,000 characters |
 | a screenshot | `{"name": "shot.png", "kind": "image", "media_type": "image/png", "data": "<base64>"}`, PNG, JPEG, WebP or GIF up to 4 MB |
 
-The model reads text files (as untrusted data) and pictures. Without a model, Cyanide reads a log with simple rules
+The model reads text files (as untrusted data) and pictures. Without a model, Sentry reads a log with simple rules
 (addresses, failed or refused lines) and says it cannot read pictures. The chat stores only each file's name, kind
 and size (`attachments` on the question), never its content.
 
 ### `POST /chat/{message_id}/feedback`
 
-Thumbs up or down on one of Cyanide's answers. Kept on the message and written to the audit trail
+Thumbs up or down on one of Sentry's answers. Kept on the message and written to the audit trail
 (`chat_feedback`); the Tuning page counts them.
 
 **Body**: `{"vote": "up" | "down" | null, "note": "optional, what was wrong"}`. `null` takes the vote back.
@@ -150,7 +150,7 @@ Thumbs up or down on one of Cyanide's answers. Kept on the message and written t
 
 ## Memory
 
-What the team taught Cyanide: standing instructions and remembered facts. Cyanide reads both before every answer.
+What the team taught Sentry: standing instructions and remembered facts. Sentry reads both before every answer.
 A question starting with "Remember that ..." saves a fact (the model does it with its `remember` tool); "What do you
 remember?" lists them. Every change is on the audit trail (`chat_memory_changed`, `chat_memory_added`,
 `chat_memory_forgot`).
@@ -240,7 +240,7 @@ the user to press a button.
 
 ## The AI model
 
-Cyanide can use Anthropic (Claude), OpenAI, DeepSeek, Command Code or any OpenAI-compatible service.
+Sentry can use Anthropic (Claude), OpenAI, DeepSeek, Command Code or any OpenAI-compatible service.
 It is set in the dashboard's Configuration page, section AI, or with the setup wizard.
 
 ### `GET /ai`
@@ -251,7 +251,7 @@ Which AI model the running core uses, or why it uses none.
 
 ```json
 {
-  "engine": "Cyanide",
+  "engine": "Sentry",
   "planner": "off (CYANIDE_ENABLED=0 turns the AI model off); playbooks only",
   "chat": "offline (CYANIDE_ENABLED=0 turns the AI model off): answers from the core's explanations",
   "online": false,
@@ -280,8 +280,8 @@ Configuration page calls it after saving.
 
 ### `POST /ai/test`
 
-Makes one small real request to the model, through the same call Cyanide plans with, so a pass means
-Cyanide can plan. It never changes what the core uses.
+Makes one small real request to the model, through the same call Sentry plans with, so a pass means
+Sentry can plan. It never changes what the core uses.
 
 **Body** (optional). Without a body it tests the model the core uses now. With one it tests these
 settings, which may not be saved yet (the Configuration form's **Test connection**):

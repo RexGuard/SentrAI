@@ -1,8 +1,8 @@
-// Manager view: one page and nothing else. A greeting, one big box to ask Cyanide, a few suggested questions, and
+// Manager view: one page and nothing else. A greeting, one big box to ask Sentry, a few suggested questions, and
 // the answers in a single column under a soft glow. No other pages: a manager asks in plain words
-// ("are we safe?") and Cyanide answers from the same live data the dashboard uses. Auto mode, the full dashboard
+// ("are we safe?") and Sentry answers from the same live data the dashboard uses. Auto mode, the full dashboard
 // and sign out stay in the top corner. Past conversations sit on the left, kept in this browser; the glow
-// drifts slowly and turns warmer as the safety status worsens. Any action Cyanide suggests still needs a click and the usual checks.
+// drifts slowly and turns warmer as the safety status worsens. Any action Sentry suggests still needs a click and the usual checks.
 import type React from 'react'
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -93,7 +93,7 @@ export default function Manager() {
       const next = Array.isArray(h) ? { messages: h } : h
       setHist(next); setIncidents(i)
       return next
-    } catch (e) { setNote(e instanceof ApiError ? `Cyanide is not available: ${e.message}` : 'Could not reach SentrAI.') }
+    } catch (e) { setNote(e instanceof ApiError ? `Sentry is not available: ${e.message}` : 'Could not reach SentrAI.') }
   }, [])
   useEffect(() => { void load() }, [load])
   const loadShares = useCallback(() => api<{ shares: ShareInfo[] }>('/chat/shares').then((r) => setShares(r.shares)).catch(() => {}), [])
@@ -170,7 +170,7 @@ export default function Manager() {
     try { await api(`/chat/${m.id}/feedback`, { body: { vote, note } }); await load() }
     catch (e) { setNote(e instanceof ApiError ? `Could not save that: ${e.message}` : 'Could not save that.') }
   }
-  const assistant = hist?.assistant || 'Cyanide'
+  const assistant = hist?.assistant || 'Sentry'
   const convo = convos.find((c) => c.id === current)
   const ids = new Set(convo?.ids ?? [])
   const shown = convo ? (hist?.messages ?? []).filter((m) => ids.has(key(m))) : []

@@ -61,6 +61,27 @@ main tbody tr { transition: background-color .12s ease-out; }
 .prompt-send:disabled { background: var(--surface-3); color: var(--ink-muted); cursor: not-allowed; }
 @media (prefers-reduced-motion: reduce) { .stat, main tbody tr, .prompt { transition: none; } }
 
+/* Command center severity cards: glass with a glow in the level's colour (--c), over soft coloured waves. */
+.risk-stage { position: relative; isolation: isolate; overflow: hidden; }
+.risk-stage::before, .risk-stage::after { content: ''; position: absolute; z-index: -1; pointer-events: none; width: 75%; height: 70%;
+  border-radius: 50%; filter: blur(60px); opacity: .22; }
+.risk-stage::before { left: -20%; bottom: -35%; background: radial-gradient(closest-side, var(--critical), transparent); }
+.risk-stage::after { right: -20%; top: -35%; background: radial-gradient(closest-side, #14b8a6, transparent); }
+:root[data-theme='light'] .risk-stage::before, :root[data-theme='light'] .risk-stage::after { opacity: .12; }
+.sev-card { position: relative; border-radius: 1.25rem; border: 1.5px solid color-mix(in oklab, var(--c) 75%, transparent);
+  background: linear-gradient(135deg, color-mix(in oklab, var(--c) 24%, transparent), color-mix(in oklab, var(--c) 5%, transparent) 65%), var(--surface);
+  box-shadow: 0 0 28px -8px color-mix(in oklab, var(--c) 70%, transparent), inset 0 1px 0 rgba(255, 255, 255, .06);
+  transition: transform .15s ease-out, box-shadow .15s ease-out; }
+.sev-card:hover { transform: translateY(-2px); box-shadow: 0 0 40px -6px color-mix(in oklab, var(--c) 85%, transparent), inset 0 1px 0 rgba(255, 255, 255, .08); }
+.sev-card:focus-visible { outline: 2px solid var(--c); outline-offset: 3px; }
+.sev-icon, .sev-name { color: var(--c); }
+.sev-icon { filter: drop-shadow(0 0 10px color-mix(in oklab, var(--c) 60%, transparent)); }
+.sev-zero { opacity: .65; box-shadow: none; }
+/* The top bar's tabs (the pages of the group picked in the sidebar). */
+.topnav-on { background: linear-gradient(180deg, color-mix(in oklab, #6d5dfc 30%, var(--surface-2)), var(--surface-2));
+  box-shadow: 0 0 0 1px color-mix(in oklab, #7c6cff 55%, transparent), 0 6px 22px -10px #6d5dfc; }
+@media (prefers-reduced-motion: reduce) { .sev-card { transition: none; } }
+
 /* Manager view: one page, one chat box under a soft glow. */
 .mgr { position: relative; min-height: 100vh; background: var(--bg); color: var(--ink); overflow-x: clip; }
 @property --glow-a { syntax: '<color>'; inherits: true; initial-value: rgba(37, 99, 235, .45); }

@@ -193,7 +193,7 @@ class SetupChat:
         return None
 
 
-ASSISTANT = "Cyanide"
+ASSISTANT = "Sentry"
 
 
 # ------------------------------------------------------------------ answers

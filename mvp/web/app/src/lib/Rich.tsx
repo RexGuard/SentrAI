@@ -1,4 +1,4 @@
-// Rich chat answers: Cyanide's text as Markdown, then the tables, charts and figures the core attached as `blocks`.
+// Rich chat answers: Sentry's text as Markdown, then the tables, charts and figures the core attached as `blocks`.
 // Everything here only shows data; a button that changes something is a SuggestionCard, which goes through the usual
 // decision endpoints. Table cells and chart labels are plain text (they can hold attacker-chosen strings), and the
 // Markdown renderer never runs HTML.
