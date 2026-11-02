@@ -41,6 +41,8 @@ DECISION_TEXT = {"ack": "Acknowledge", "approve": "Approve & patch", "reject": "
                  "rollback": "Roll back", "make_permanent": "Make permanent"}
 BACKUP_WORDS = re.compile(r"(?i)\b(back ?ups?|backed up|restore|restoring)\b")
 SCAN_WORDS = re.compile(r"(?i)\b(scan|processes|log (files|folders|sources)|what (should|to) (i )?(monitor|watch))\b")
+# The name people see for the chat assistant. The core agent behind it keeps its own name in the audit log.
+ASSISTANT = os.getenv("SENTRAI_ASSISTANT_NAME", "Sentry").strip() or "Sentry"
 INCIDENT_ID = re.compile(r"\b[A-Z]{2,5}-\d{4}-\d{2,4}\b")
 
 # "My fix for RSK-2026-884: block them for good" from a risk bubble on the Command center (ui_risks.py).
@@ -306,7 +308,7 @@ class OperatorChat:
     # --------------------------------------------------------------- public
     def messages(self, limit: int = 100) -> dict[str, Any]:
         with self.lock:
-            return {"assistant": self.core.name, "model": self.status,
+            return {"assistant": ASSISTANT, "model": self.status,
                     "messages": [dict(m) for m in self.history[-limit:]] if limit else []}
 
     def feedback(self, operator: str, message_id: int, vote: str | None, note: str = "") -> dict[str, Any]:
@@ -406,7 +408,7 @@ class OperatorChat:
                                                    "reply": {"type": "string"}},
                   "required": ["choice", "reply"], "additionalProperties": False}
         try:
-            out = self.provider.complete_json(SETUP_SYSTEM.format(name=self.core.name), (
+            out = self.provider.complete_json(SETUP_SYSTEM.format(name=ASSISTANT), (
                 f"Question: {question[:800]}\nOptions:\n{listing}\nUser's answer: {answer[:MAX_QUESTION_CHARS]}"),
                 schema)
         except sentrai_llm.LLMError as e:
@@ -420,7 +422,7 @@ class OperatorChat:
                    looked_at: list[str], suggestions: list[dict[str, str]],
                    rich: dict[str, list[Any]] | None = None, files: list[dict[str, Any]] | None = None,
                    stop: threading.Event | None = None) -> str:
-        system = SYSTEM.format(name=self.core.name)
+        system = SYSTEM.format(name=ASSISTANT)
         if self.memory is not None and (known := self.memory.prompt()):
             system += "\n\n" + known
         convo = self.provider.conversation(system, TOOLS)
@@ -456,7 +458,7 @@ class OperatorChat:
         if earlier:
             lines.append("Earlier in this chat:")
             for m in earlier:
-                who = "Operator" if m["role"] == "operator" else self.core.name
+                who = "Operator" if m["role"] == "operator" else ASSISTANT
                 lines.append(f"{who}: {m['text'][:600]}")
             lines.append("")
         if incident:
@@ -620,10 +622,10 @@ class OperatorChat:
             who = str(rich.get("by") or "dashboard")
             fact = self.memory.add(said.group("fact"), who)
             self.core.scribe.record(self.core.name, "chat_memory_added", {
-                "operator": who, "fact": fact, "via": "chat", "summary": f"{who} taught {self.core.name}: {fact['text'][:60]}"})
+                "operator": who, "fact": fact, "via": "chat", "summary": f"{who} taught {ASSISTANT}: {fact['text'][:60]}"})
             rich["followups"][:] = ["What do you remember?", "Are we safe right now?"]
             return (f"Got it. I'll remember: **{fact['text']}**\n\nEveryone's chats will know this. You can see or "
-                    f"remove what I remember under \"What {self.core.name} remembers\", below the chat list.")
+                    f"remove what I remember under \"What {ASSISTANT} remembers\", below the chat list.")
         if self.memory is not None and RECALL.search(text):
             facts = self.memory.load()["facts"]
             if not facts:

@@ -134,7 +134,7 @@ def install(app: FastAPI, core: Any, machines: fleet.Fleet, health: Any) -> None
         found = [{**m, "hardware": health.latest(m["host"])} for m in core.machines()
                  if not still_removed(gone.get(m["host"]), m.get("last_seen"))] if panel else []
         agents = machines.agents()
-        rows = build(found, agents, risk, panel, getattr(core, "name", "this computer"), now)
+        rows = build(found, agents, risk, panel, "This computer", now)  # not the core agent's name: people read it
         online = sum(1 for r in rows if r["online"])
         return {
             "panel": panel, "machines": rows, "joined": agent_rows(agents) if panel else [],

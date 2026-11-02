@@ -1,6 +1,6 @@
 // Command center: what needs a person as one bubble per severity (Critical / High / Medium), the risk over time,
 // and the machines, so a non-IT person sees at a glance where to start. A bubble opens that severity's risks
-// (pages/RiskList.tsx); the full Approvals, Incidents and Review lists open as tabs here. Cyanide is under the ? button.
+// (pages/RiskList.tsx); the full Approvals, Incidents and Review lists open as tabs here. Sentry is under the ? button.
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { ChevronRight, ClipboardCheck, Gauge, Siren, X } from 'lucide-react'
@@ -63,7 +63,7 @@ export default function Command() {
       {error && <p role="alert" className="rounded-md border border-line bg-surface p-3 text-bad">{error}</p>}
       <div className="grid gap-4">
         <div className="min-w-0 space-y-4">
-          <div className="space-y-3 rounded-lg border border-line bg-surface p-4">
+          <div className="risk-stage space-y-4 rounded-2xl border border-line bg-surface p-5">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <h2 className="font-semibold">{risks?.headline ?? 'Looking…'}</h2>
               <p className="text-sm text-muted">

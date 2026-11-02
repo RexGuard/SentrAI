@@ -1,4 +1,4 @@
-// Cyanide's memory and shared chats, for the Manager view. Memory: standing instructions (Owner, Admin) and facts
+// Sentry's memory and shared chats, for the Manager view. Memory: standing instructions (Owner, Admin) and facts
 // the team taught it, read before every answer. Shared chats: read-only copies sent to teammates or everyone.
 import { useCallback, useEffect, useId, useState, type ReactNode } from 'react'
 import { Brain, Share2, Trash2, Users, X } from 'lucide-react'

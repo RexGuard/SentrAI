@@ -1,14 +1,15 @@
 // Risk bubbles (GET /ui/risks): what needs a person, grouped Critical / High / Medium / Low. The Command center
 // shows one bubble per severity; the severity page shows one bubble per risk, and opening one explains it in plain
-// words, suggests a fix, offers the quick actions and lets the person talk their own fix through with Cyanide.
+// words, suggests a fix, offers the quick actions and lets the person talk their own fix through with Sentry.
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { AlertTriangle, Clock, Send, User, X } from 'lucide-react'
+import { AlertTriangle, Bell, ChevronRight, Clock, Send, ShieldAlert, ShieldCheck, TriangleAlert, User, X, type LucideIcon } from 'lucide-react'
 import { api, ApiError } from './api'
 import { btn, btnPrimary } from './ui'
 import { useSession } from './session'
 import { ask } from './notice'
 import { Text } from './Rich'
+import { backToQuestion } from './turns'
 import { SuggestionCard, type Message } from '../pages/Chat'
 
 export type Level = 'critical' | 'high' | 'medium' | 'low'
@@ -29,23 +30,32 @@ export const LEVEL_TEXT: Record<Level, { name: string; color: string; tint: stri
   low: { name: 'Low', color: 'var(--green)', tint: 'color-mix(in oklab, var(--green) 10%, transparent)', blurb: 'for the record' },
 }
 
-/** The Command center's grouped buttons: one round bubble per severity with its count. Low only shows when it has some. */
+// The cards' own colours, from Erick's reference picture (the rest of the console keeps the theme colours).
+const CARD_COLOR: Record<Level, string> = { critical: '#ff2d6b', high: '#ff7a1a', medium: '#ffd60a', low: '#d6e2f0' }
+
+const LEVEL_ICON: Record<Level, LucideIcon> = { critical: ShieldAlert, high: TriangleAlert, medium: Bell, low: ShieldCheck }
+
+/** The Command center's grouped buttons: a glowing card per severity (Critical, High, Medium, Low) with its count. */
 export function SeverityBubbles({ data }: { data: Risks | null }) {
   if (!data) return <p className="text-muted" role="status">Loading…</p>
-  const levels = data.levels.filter((l) => l.severity !== 'low' || l.count > 0)
   return (
-    <ul className={'mx-auto grid max-w-4xl gap-4 ' + (levels.length > 3 ? 'grid-cols-2 lg:grid-cols-4' : 'grid-cols-1 sm:grid-cols-3')}>
-      {levels.map((l) => {
+    <ul className="grid gap-5 sm:grid-cols-2">
+      {data.levels.map((l) => {
         const t = LEVEL_TEXT[l.severity]
+        const Icon = LEVEL_ICON[l.severity]
         return (
           <li key={l.severity}>
             <Link to={`/risks/${l.severity}`} aria-label={`${t.name}: ${l.count} risk${l.count === 1 ? '' : 's'}. Open the list.`}
-              className="sev-bubble group flex aspect-[5/3] w-full flex-col items-center justify-center gap-1 rounded-[999px] border-2 p-4 text-center transition hover:-translate-y-0.5"
-              style={{ borderColor: l.count ? t.color : 'var(--line)', background: l.count ? t.tint : undefined }}>
-              <span className="text-sm font-semibold uppercase tracking-wide" style={{ color: l.count ? t.color : undefined }}>{t.name}</span>
-              <span className="text-4xl font-semibold tabular-nums">{l.count}</span>
-              <span className="text-xs text-muted">
-                {l.count === 0 ? 'nothing here' : l.overdue ? `${l.overdue} overdue · oldest ${l.oldest}` : `${t.blurb} · oldest ${l.oldest}`}
+              className={'sev-card flex items-center gap-5 px-6 py-6 sm:px-8' + (l.count ? '' : ' sev-zero')} style={{ '--c': CARD_COLOR[l.severity] } as React.CSSProperties}>
+              <Icon className="sev-icon shrink-0" size={56} strokeWidth={1.75} aria-hidden />
+              <span className="min-w-0 space-y-1">
+                <span className="sev-name block text-xl font-bold uppercase tracking-wide">{t.name}</span>
+                <span className="block text-5xl font-bold tabular-nums leading-none text-ink">{l.count.toLocaleString()}</span>
+                <span className="flex items-center gap-1 pt-1 text-sm text-soft">
+                  {l.count === 0 ? 'Nothing needs you here' : `${l.count === 1 ? 'Risk requires' : 'Risks require'} your attention`}
+                  <ChevronRight size={16} aria-hidden />
+                </span>
+                {l.count > 0 && <span className="block text-xs text-muted">{l.overdue ? `${l.overdue} overdue · ` : ''}oldest {l.oldest}</span>}
               </span>
             </Link>
           </li>)
@@ -73,7 +83,7 @@ export function RiskBubble({ r, onOpen }: { r: Risk; onOpen: () => void }) {
   )
 }
 
-/** The opened risk: what happened, what it means, the suggested fix, quick actions, and the person's own fix with Cyanide. */
+/** The opened risk: what happened, what it means, the suggested fix, quick actions, and the person's own fix with Sentry. */
 export function RiskDetail({ r, protectionOn, onClose, onDone }: { r: Risk; protectionOn: boolean; onClose: () => void; onDone: (note: string) => void }) {
   const { me, can } = useSession()
   const [busy, setBusy] = useState('')
@@ -82,6 +92,7 @@ export function RiskDetail({ r, protectionOn, onClose, onDone }: { r: Risk; prot
   const [closing, setClosing] = useState('')
   const [asking, setAsking] = useState(false)
   const [reply, setReply] = useState<Message | null>(null)
+  const [asked, setAsked] = useState('')
   const box = useRef<HTMLDivElement>(null)
   const t = LEVEL_TEXT[r.severity]
   const off = !can('act')
@@ -129,8 +140,8 @@ export function RiskDetail({ r, protectionOn, onClose, onDone }: { r: Risk; prot
     setAsking(true); setErr('')
     try {
       setReply(await api<Message>('/chat', { body: { operator: me?.email ?? 'dashboard', message: `My fix for ${r.incident}: ${text}`, incident: r.incident } }))
-      setIdea('')
-    } catch (e) { setErr(e instanceof ApiError ? `Cyanide could not answer: ${e.message}` : 'Cyanide could not answer.') }
+      setAsked(text); setIdea('')
+    } catch (e) { setErr(e instanceof ApiError ? `Sentry could not answer: ${e.message}` : 'Sentry could not answer.') }
     setAsking(false)
   }
 
@@ -179,20 +190,22 @@ export function RiskDetail({ r, protectionOn, onClose, onDone }: { r: Risk; prot
         </section>
 
         <section className="space-y-2">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-muted">Your own fix? Talk to Cyanide</h3>
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-muted">Your own fix? Talk to Sentry</h3>
           <form onSubmit={(e) => { e.preventDefault(); void talk() }}>
             <label className="sr-only" htmlFor="risk-idea">Your idea for {r.title}</label>
             <div className="prompt">
               <textarea id="risk-idea" rows={1} value={idea} disabled={asking} placeholder="e.g. block that address for good, or: this is our own backup job"
                 onChange={(e) => setIdea(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void talk() } }} />
-              <button className="prompt-send" disabled={asking || !idea.trim()} aria-label="Send to Cyanide"><Send size={16} aria-hidden /></button>
+              <button className="prompt-send" disabled={asking || !idea.trim()} aria-label="Send to Sentry"><Send size={16} aria-hidden /></button>
             </div>
           </form>
-          {asking && <p className="text-sm text-muted" role="status">Cyanide is weighing your idea…</p>}
+          {asking && <p className="text-sm text-muted" role="status">Sentry is weighing your idea…</p>}
           {reply && (
-            <div className="space-y-1 rounded-2xl bg-surface-2 p-4" aria-live="polite">
-              <p className="text-xs text-muted">Cyanide{reply.source === 'fallback' ? ' · core explanation (no AI)' : ''}</p>
+            <div className="space-y-1 rounded-2xl bg-surface-2 p-4" aria-live="polite" data-turn>
+              {asked && <div className="chat-stick" style={{ '--stick-bg': 'var(--surface-2)' } as React.CSSProperties} title="Back to your idea" onClick={backToQuestion}>
+                <p className="ml-auto w-fit max-w-[90%] whitespace-pre-wrap rounded-2xl bg-surface-3 px-3 py-2 text-sm"><span className="text-muted">Your idea: </span>{asked}</p></div>}
+              <p className="text-xs text-muted">Sentry{reply.source === 'fallback' ? ' · core explanation (no AI)' : ''}</p>
               <Text md={reply.text} />
               {(reply.suggestions ?? []).map((s, k) => <SuggestionCard key={k} s={s} inc={r.inc} onDone={onDone} />)}
               {many && (reply.suggestions ?? []).length > 0 && <p className="text-xs text-muted">That button acts on {r.incident} only. The buttons under Suggested fix act on all {r.ids.length}.</p>}

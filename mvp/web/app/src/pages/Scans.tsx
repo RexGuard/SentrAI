@@ -87,7 +87,7 @@ export default function Scans() {
       <div className="grid gap-4 lg:grid-cols-2">
         <Card title="Find logs on this computer" note="read-only scan of running programs · nothing is watched until you press Watch">
           <button className={btn} disabled={!act || busy === 'proc'} title={why} onClick={() => void run('proc', () => api('/system/scan', { body: { operator: op } }), 'Scan finished', [loadProc])}><Radar size={14} aria-hidden /> {busy === 'proc' ? 'Scanning…' : 'Scan running programs'}</button>
-          {!proc.scanned_at ? <p className="text-sm text-muted">No scan yet. Cyanide can also run one when you ask it in Chat.</p> : (
+          {!proc.scanned_at ? <p className="text-sm text-muted">No scan yet. Sentry can also run one when you ask it in Chat.</p> : (
             <div className="space-y-1">
               <p className="text-sm text-muted">Last scan {dt(proc.scanned_at)}: {proc.scanned ?? 0} processes, {proc.recognised ?? 0} recognised, {proc.skipped_protected ?? 0} protected ones skipped.</p>
               {proc.error && <p className="text-sm text-warn">The scan hit a problem: {proc.error}</p>}
@@ -101,7 +101,7 @@ export default function Scans() {
           <button className={btn} disabled={!act || busy === 'threat'} title={why} onClick={() => void run('threat', () => api('/threats/scan', { body: { operator: op } }), 'Threat scan finished', [loadThreat, loadHeld])}><ShieldAlert size={14} aria-hidden /> {busy === 'threat' ? 'Checking…' : 'Scan for threats'}</button>
           {threatErr && <p className="text-sm text-muted">Threat scanning is not available on this core.</p>}
           {threat.note && <p className="text-sm text-muted">{threat.note}</p>}
-          {!threat.scanned_at ? <p className="text-sm text-muted">No threat scan yet. Set the folders under threat_scan.paths in the system profile (or SENTRAI_THREAT_PATHS); Cyanide can also run one when you ask in Chat.</p> : (
+          {!threat.scanned_at ? <p className="text-sm text-muted">No threat scan yet. Set the folders under threat_scan.paths in the system profile (or SENTRAI_THREAT_PATHS); Sentry can also run one when you ask in Chat.</p> : (
             <div className="space-y-1">
               <p className="text-sm text-muted">Last scan {dt(threat.scanned_at)}: {threat.files_checked ?? 0} files in {(threat.roots ?? []).join(', ')} · {c.critical ?? 0} critical, {c.high ?? 0} high, {c.medium ?? 0} worth a look</p>
               {threat.missing?.length ? <p className="text-sm text-warn">Folders not found: {threat.missing.join(', ')}</p> : null}

@@ -128,7 +128,7 @@ def test_earlier_messages_are_passed_to_the_model(client):
     chat.ask("erick", "hello")
     chat.ask("erick", "and again?")
     prompt = provider.convos[1].sent[0]
-    assert "Operator: hello" in prompt and f"{client.core.name}: first" in prompt
+    assert "Operator: hello" in prompt and "Sentry: first" in prompt
 
 
 class SetupProvider(sentrai_llm.Provider):
