@@ -19,7 +19,7 @@ On the panel (installed as /usr/local/bin/sentrai, runs as the service account):
     sudo sentrai deps show | scan
     sudo sentrai incidents list [--all] | show ID | approve ID... | reject ID... --why W | rollback ID... | keep ID...
                            | resolve ID --note N
-    sudo sentrai auto-mode on|off [--reason R]           sudo sentrai protection on|off [--reason R]
+    sudo sentrai protection on|off [--reason R]
     sudo sentrai team list | invite EMAIL [--role admin] | role EMAIL ROLE | remove EMAIL | reset EMAIL | withdraw EMAIL
     sudo sentrai api GET|POST PATH [JSON]                 any other core endpoint (docs/api/)
 
@@ -119,7 +119,7 @@ def cmd_status(call: Call, a: argparse.Namespace) -> Any:
     s = machines.get("stats", {})
     levels = ", ".join(f"{lv['severity']} {lv['count']}" for lv in risks.get("levels", []))
     return "\n".join([
-        f"Protection: {prot.get('protection')}   Auto mode: {'on' if prot.get('auto_mode') else 'off'}"
+        f"Protection: {prot.get('protection')}"
         f"   Active blocks: {len(prot.get('active_actions') or [])}",
         f"Machines:   {s.get('machines', 0)} ({s.get('online', 0)} online, {s.get('offline', 0)} offline,"
         f" {s.get('need_a_look', 0)} need a look)",
@@ -514,8 +514,7 @@ def parser() -> argparse.ArgumentParser:
     fb.add_argument("action", choices=["list", "done", "open"])
     fb.add_argument("ids", nargs="*")
     fb.add_argument("--all", action="store_true", help="list: handled ones too")
-    for name, path, what in (("auto-mode", "/ui/auto-mode", "Auto mode: act on its own within the limits"),
-                             ("protection", "/protection", "protection on, or watch only")):
+    for name, path, what in (("protection", "/protection", "protection on, or watch only"),):
         sw = add(name, cmd_switch(path), what)
         sw.add_argument("state", choices=["on", "off"])
         sw.add_argument("--reason")

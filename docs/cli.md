@@ -94,7 +94,6 @@ sudo sentrai incidents reject RSK-2026-083 --why "our own load test"
 sudo sentrai incidents rollback RSK-2026-081
 sudo sentrai incidents keep RSK-2026-081
 sudo sentrai incidents resolve RSK-2026-081 --note "password changed, address blocked at the router"
-sudo sentrai auto-mode off --reason "maintenance window"
 sudo sentrai protection off --reason "migration tonight"     # watch only
 ```
 
