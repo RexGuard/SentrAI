@@ -24,7 +24,8 @@ export async function demoGet(path: string): Promise<unknown> {
 // The attacker window of the one-button demo (RexGuard/SentrAI-demo, demo-site/attack.html) sends "launch" over a
 // BroadcastChannel (with a localStorage fallback) in the same browser. The demo copy then plays a password-guessing
 // attack on aegis-web: a Critical "Brute Force" risk appears that SentrAI does NOT block on its own, so the manager
-// can press "Do the suggested fix" themselves. Nothing leaves the browser; addresses are documentation-only.
+// can press "Do the suggested fix" themselves. Addresses are documentation-only. The pages also talk through a small
+// public relay (see relaySend) so the attacker can be on another device.
 export const LIVE_ID = 'RSK-2026-099'
 const ATTACKER = '203.0.113.45'
 const WORDS = ['password', 'admin123', 'letmein', 'qwerty', 'P@ssw0rd', 'welcome1', 'aegis2024', 'changeme', 'root', '12345678', 'student', 'admin']
@@ -45,10 +46,42 @@ export function onDemoChange(fn: () => void): () => void {
 }
 const changed = () => listeners.forEach((fn) => fn())
 
+// Cross-device relay: the attacker page and this panel can be on different devices. Both subscribe to the same
+// public ntfy.sh topic, named by a room code (?room=... on either page, default below). Only a handful of small
+// state messages go over it per run (no attempts: the attacker page plays those itself), so the free rate limits hold.
+const RELAY = 'https://ntfy.sh/'
+const DEFAULT_ROOM = 'solid10'
+function roomCode(): string {
+  const pick = (q: string) => new URLSearchParams(q).get('room')
+  const fromUrl = pick(window.location.search) ?? pick(window.location.hash.split('?')[1] ?? '')
+  const clean = (v: string | null) => (v ?? '').toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 32)
+  if (clean(fromUrl)) { try { localStorage.setItem('sentrai-demo-room', clean(fromUrl)) } catch { /* private window */ } return clean(fromUrl) }
+  try { return clean(localStorage.getItem('sentrai-demo-room')) || DEFAULT_ROOM } catch { return DEFAULT_ROOM }
+}
+let topic = ''
+function relaySend(m: Record<string, unknown>) {
+  if (!topic || m.type === 'attempt') return
+  fetch(RELAY + topic, { method: 'POST', body: JSON.stringify(m) }).catch(() => { /* offline: same-browser path still works */ })
+}
+function relayListen() {
+  if (typeof EventSource === 'undefined') return
+  try {
+    const es = new EventSource(`${RELAY}${topic}/sse`)
+    es.onmessage = (e) => {
+      try {
+        const n = JSON.parse(e.data) as { event?: string; message?: string }
+        if (n.event === 'message' && n.message) onMsg(JSON.parse(n.message))
+      } catch { /* not ours */ }
+    }
+  } catch { /* blocked */ }
+}
+
 function send(msg: Record<string, unknown>) {
   const m = { ...msg, id: `${Date.now()}-${Math.random()}` }
+  seen.add(m.id)
   try { bc?.postMessage(m) } catch { /* closed */ }
   try { localStorage.setItem('sentrai-demo-msg', JSON.stringify(m)) } catch { /* private window */ }
+  relaySend(m)
 }
 function stopTimers() { timers.forEach(clearTimeout); timers = [] }
 function after(ms: number, fn: () => void) { timers.push(setTimeout(fn, ms)) }
@@ -80,6 +113,8 @@ if (DEMO && typeof window !== 'undefined') {
     if (e.key !== 'sentrai-demo-msg' || !e.newValue) return
     try { onMsg(JSON.parse(e.newValue)) } catch { /* not ours */ }
   })
+  topic = `sentrai-demo-${roomCode()}`
+  relayListen()
 }
 
 function liveRisk() {
@@ -101,22 +136,31 @@ function liveRisk() {
   }
 }
 export const isLiveRisk = (id: string) => id === LIVE_ID
+/** Where the live attack is, for Sentry's pregenerated answers (lib/demoChat.ts). */
+export const liveState = () => ({ phase, tries, minutes: openedAt ? Math.max(1, Math.round((Date.now() - openedAt) / 60000)) : 0 })
 
 type Lvl = { severity: string; count: number; bubbles: number; overdue: number; oldest: string }
-/** Adds the live risk (while it is open) to a recorded /ui/risks answer. */
+/** The risk lists as the live demo shows them: the recorded active risks are left out (every card starts at 0, as
+ *  Erick asked, so only the live attack shows up), and the live risk is added while it is open. Risks SentrAI
+ *  already handled stay under "Already handled". */
 function withLive(path: string, body: unknown): unknown {
-  if (phase !== 'open' || !body || typeof body !== 'object' || !bare(path).startsWith('/ui/risks')) return body
+  if (!body || typeof body !== 'object' || !bare(path).startsWith('/ui/risks')) return body
   const b = body as { levels?: Lvl[]; rows?: unknown[]; headline?: string }
   const sev = new URLSearchParams(path.split('?')[1] ?? '').get('severity')
-  const levels = (b.levels ?? []).map((l) => l.severity === 'critical'
-    ? { ...l, count: l.count + 1, bubbles: l.bubbles + 1, oldest: l.oldest || 'just now' } : l)
-  const total = levels.reduce((n, l) => n + l.count, 0)
-  const out: Record<string, unknown> = { ...b, levels, headline: `${total} thing${total === 1 ? ' needs' : 's need'} a person. Start with Critical.` }
-  if (sev === 'critical' || sev === 'all') out.rows = [liveRisk(), ...((b.rows as unknown[]) ?? [])]
+  const on = phase === 'open'
+  const levels = (b.levels ?? []).map((l) => (on && l.severity === 'critical'
+    ? { ...l, count: 1, bubbles: 1, overdue: 0, oldest: 'just now' } : { ...l, count: 0, bubbles: 0, overdue: 0, oldest: '' }))
+  const out: Record<string, unknown> = { ...b, levels, headline: on ? '1 thing needs a person. Start with Critical.' : 'Nothing needs a person right now.' }
+  if ('rows' in b || sev) out.rows = on && (sev === 'critical' || sev === 'all') ? [liveRisk()] : []
   return out
 }
 export async function demoGetLive(path: string): Promise<unknown> {
-  return withLive(path, await demoGet(path))
+  const body = await demoGet(path)
+  if (bare(path) === '/chat' && body && typeof body === 'object') {  // Sentry's answers come from lib/demoChat.ts
+    const { demoChatLog } = await import('./demoChat')
+    return { ...(body as object), model: 'demo answers (pregenerated)', messages: demoChatLog() }
+  }
+  return withLive(path, body)
 }
 
 /** The only writes the demo copy accepts: the manager's answer to the live risk. Anything else stays read-only. */
