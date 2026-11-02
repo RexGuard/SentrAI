@@ -1,13 +1,15 @@
 import { Suspense, useEffect, useRef, useState } from 'react'
-import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { Outlet, useLocation } from 'react-router-dom'
 import {
   BarChart3, Boxes, Briefcase, Eye, Gavel, LayoutDashboard, Library, DatabaseBackup, FileText, Flag, Link2, Lock, LogOut, Moon, Network,
-  Puzzle, ScrollText, Search, Server, Settings2, ShieldCheck, Siren, SlidersHorizontal, Sun, UserRound, Users, Workflow, Bell as BellIcon, type LucideIcon,
+  Puzzle, ScrollText, Search, Server, Settings2, ShieldCheck, Siren, Sparkles, SlidersHorizontal, Sun, UserRound, Users, Workflow, Bell as BellIcon, type LucideIcon,
 } from 'lucide-react'
 import { api } from '../lib/api'
 import { useSession } from '../lib/session'
 import { useTheme } from '../lib/theme'
 import Waves from '../lib/Waves'
+import { transition, usePresence, useGo, VLink, VNavLink } from '../lib/motion'
+import { ask } from '../lib/notice'
 import { useSimple } from '../lib/simple'
 import HelpDock, { useDock } from './HelpDock'
 import AutoMode from './AutoMode'
@@ -17,7 +19,6 @@ type Group = { group: string; icon: LucideIcon; items: Item[] }
 
 export const MENU: Group[] = [
   { group: 'Respond', icon: Gavel, items: [
-    { to: '/manager', label: 'Sentry', icon: Briefcase },
     { to: '/command', label: 'Command Center', icon: LayoutDashboard },
     { to: '/staff', label: 'Staff Reports', icon: Flag },
   ] },
@@ -47,7 +48,6 @@ export const MENU: Group[] = [
 // Simple view: the pages a non-technical person needs, in everyday words. Same pages, same permissions.
 export const SIMPLE_MENU: Group[] = [
   { group: 'At a Glance', icon: Briefcase, items: [
-    { to: '/manager', label: 'Sentry', icon: Briefcase },
     { to: '/command', label: 'What Needs Me', icon: Siren },
   ] },
   { group: 'Records', icon: Library, items: [
@@ -81,23 +81,29 @@ function Account({ simple, toggleSimple }: { simple: boolean; toggleSimple: () =
     document.addEventListener('mousedown', off); document.addEventListener('keydown', esc)
     return () => { document.removeEventListener('mousedown', off); document.removeEventListener('keydown', esc) }
   }, [open])
+  const pop = usePresence(open)
+  const out = async () => {
+    setOpen(false)
+    const ok = await ask({ title: 'Sign out?', body: 'Are you sure you want to sign out? You will need your password and authenticator code to come back in.', confirm: 'Sign Out', danger: true })
+    if (ok !== null) void signOut()
+  }
   const row = 'flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm text-soft hover:bg-surface-3 hover:text-ink'
   return (
     <div ref={box} className="relative">
       <button className="console-avatar" aria-haspopup="menu" aria-expanded={open} aria-label={`Account: ${me?.name || me?.email || 'you'}`} onClick={() => setOpen(!open)}>
         <UserRound size={22} aria-hidden />
       </button>
-      {open && (
-        <div role="menu" className="console-pop right-0 w-64">
+      {pop.mounted && (
+        <div role="menu" data-state={pop.state} className="console-pop right-0 w-64">
           <p className="truncate px-3 pb-2 pt-1 font-medium">{me?.name || me?.email}<span className="block text-xs font-normal text-muted">{me?.role_label}</span></p>
           <button role="menuitem" className={row} onClick={() => { toggleSimple(); setOpen(false) }}
             title={simple ? 'Show every page, with the technical names' : 'Fewer pages, everyday words: for people who are not in IT'}>
             <Eye size={16} aria-hidden /> {simple ? 'Full View' : 'Simple View'}
           </button>
-          <button role="menuitem" className={row} onClick={() => toggle()}>
+          <button role="menuitem" className={row} onClick={() => transition(() => toggle())}>
             {theme === 'dark' ? <Sun size={16} aria-hidden /> : <Moon size={16} aria-hidden />} {theme === 'dark' ? 'White Theme' : 'Black Theme'}
           </button>
-          <button role="menuitem" className={row} onClick={() => void signOut()}><LogOut size={16} aria-hidden /> Sign Out</button>
+          <button role="menuitem" className={row} onClick={() => void out()}><LogOut size={16} aria-hidden /> Sign Out</button>
         </div>)}
     </div>
   )
@@ -107,7 +113,7 @@ function Account({ simple, toggleSimple }: { simple: boolean; toggleSimple: () =
 function Find({ menu }: { menu: Group[] }) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
-  const go = useNavigate()
+  const go = useGo()
   const box = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!open) return
@@ -115,14 +121,15 @@ function Find({ menu }: { menu: Group[] }) {
     document.addEventListener('mousedown', off)
     return () => document.removeEventListener('mousedown', off)
   }, [open])
-  const all = menu.flatMap((g) => g.items.map((i) => ({ ...i, group: g.group })))
+  const pop = usePresence(open)
+  const all = [{ to: '/manager', label: 'Sentry', icon: Sparkles, group: 'Sentry' }, ...menu.flatMap((g) => g.items.map((i) => ({ ...i, group: g.group })))]
   const hits = all.filter((i) => (i.label + ' ' + i.group).toLowerCase().includes(q.trim().toLowerCase())).slice(0, 8)
   const pick = (to: string) => { setOpen(false); setQ(''); go(to) }
   return (
     <div ref={box} className="relative">
       <button className="console-icon" aria-label="Find a page" aria-expanded={open} onClick={() => setOpen(!open)}><Search size={22} aria-hidden /></button>
-      {open && (
-        <div className="console-pop right-0 w-72">
+      {pop.mounted && (
+        <div data-state={pop.state} className="console-pop right-0 w-72">
           <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a page…" aria-label="Find a page"
             onKeyDown={(e) => { if (e.key === 'Enter' && hits[0]) pick(hits[0].to); if (e.key === 'Escape') setOpen(false) }}
             className="mb-1 w-full rounded-xl border border-line bg-surface-2 px-3 py-2 text-sm outline-none focus:border-[var(--accent-2)]" />
@@ -149,7 +156,8 @@ function Bell() {
   const [seen, setSeen] = useState<Set<string>>(readSeen)
   const [open, setOpen] = useState(false)
   const box = useRef<HTMLDivElement>(null)
-  const go = useNavigate()
+  const go = useGo()
+  const pop = usePresence(open)
   useEffect(() => {
     const load = async () => {
       try { setRows((await api<{ rows: Note[] }>('/ui/risks?severity=all')).rows) } catch { /* the pages show core errors */ }
@@ -177,8 +185,8 @@ function Bell() {
         aria-label={unread ? `Notifications: ${unread} unread` : 'Notifications'} onClick={() => setOpen(!open)}>
         <BellIcon size={22} aria-hidden />{unread > 0 && <span className="console-badge" aria-hidden>{unread > 9 ? '9+' : unread}</span>}
       </button>
-      {open && (
-        <div className="console-pop right-0 w-[23rem] max-w-[calc(100vw-2rem)] p-0">
+      {pop.mounted && (
+        <div data-state={pop.state} className="console-pop right-0 w-[23rem] max-w-[calc(100vw-2rem)] p-0">
           <div className="flex items-center justify-between gap-2 border-b border-line px-4 py-3">
             <p className="font-semibold">Notifications</p>
             <button className="text-sm text-[var(--accent-2)] hover:underline disabled:opacity-40 disabled:no-underline" disabled={!unread}
@@ -211,12 +219,23 @@ function Bell() {
   )
 }
 
+/** Shown while a page's code loads: the shape of a page, gently shimmering. */
+function PageSkeleton() {
+  return (
+    <div role="status" aria-label="Loading" className="space-y-6">
+      <div className="skeleton h-10 w-72 rounded-xl" />
+      <div className="skeleton h-5 w-[28rem] max-w-full rounded-lg" />
+      <div className="grid max-w-[64rem] gap-8 sm:grid-cols-2">{[0, 1, 2, 3].map((i) => <div key={i} className="skeleton h-40 rounded-[1.25rem]" />)}</div>
+    </div>
+  )
+}
+
 export default function Layout() {
   const { can } = useSession()
   const dock = useDock()
   const { simple, toggle: toggleSimple } = useSimple()
   const { pathname } = useLocation()
-  const go = useNavigate()
+  const go = useGo()
   const menu = simple ? SIMPLE_MENU : MENU
   const items = (g: Group) => g.items.filter((i) => !i.needs || can(i.needs))
   // A page outside every group (Chat, Report) keeps the last group picked on top.
@@ -227,16 +246,16 @@ export default function Layout() {
     <Waves />
     <div className="console-shell min-h-screen">
       <header className="console-top">
-        <Link to="/" className="console-logo" aria-label="SentrAI home">
+        <VLink to="/" className="console-logo" aria-label="SentrAI home">
           <img src={import.meta.env.BASE_URL + "mark.svg"} alt="" width={52} height={52} className="console-brand-mark" />
           <span className="leading-tight"><span className="console-brand block">SentrAI</span><span className="block text-[0.8125rem] text-soft">Cybersecurity Console</span></span>
-        </Link>
+        </VLink>
         <nav aria-label={current.group} className={'console-topnav' + (items(current).length > 4 ? ' is-many' : '')}>
           {items(current).map(({ to, label, icon: Icon }) => (
-            <NavLink key={to} to={to}
+            <VNavLink key={to} to={to}
               className={({ isActive }) => 'topnav flex shrink-0 items-center gap-2.5 rounded-2xl px-5 py-2.5 text-base font-medium ' + (isActive || groupOf([{ ...current, items: [{ to, label, icon: Icon }] }], pathname) ? 'topnav-on' : 'text-soft hover:text-ink')}>
               <Icon size={20} aria-hidden /> {label}
-            </NavLink>))}
+            </VNavLink>))}
         </nav>
         <div className="flex shrink-0 items-center gap-4 pr-2">
           <Find menu={menu} />
@@ -247,6 +266,9 @@ export default function Layout() {
       <div className="flex">
         <aside className="console-side">
           <nav aria-label="Sections" className="flex flex-col gap-3">
+            <VNavLink to="/manager" className={({ isActive }) => 'flex items-center gap-3.5 rounded-2xl px-4 py-3 text-left text-[0.9375rem] font-medium ' + (isActive ? 'side-on' : 'text-soft hover:text-ink')}>
+              <Sparkles size={20} aria-hidden /> Sentry
+            </VNavLink>
             {menu.map((g) => {
               const on = g.group === current?.group
               return (
@@ -259,7 +281,8 @@ export default function Layout() {
           <div className="console-auto"><AutoMode /></div>
         </aside>
         <main className={'console-main min-w-0 flex-1' + (dock.open ? ' lg:mr-[26rem]' : '')}>
-          <Suspense fallback={<p className="text-muted" role="status">Loading…</p>}><Outlet /></Suspense>
+          {/* A new page rises in; keyed by path so it plays on every page change. */}
+          <div key={pathname} className="page-in"><Suspense fallback={<PageSkeleton />}><Outlet /></Suspense></div>
         </main>
       </div>
       <HelpDock dock={dock} />

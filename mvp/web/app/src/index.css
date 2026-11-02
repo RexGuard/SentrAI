@@ -260,3 +260,34 @@ main tbody tr { transition: background-color .12s ease-out; }
   .mgr .min-h-screen { min-height: 0; }
   .mgr-print-title { display: block !important; }
 }
+
+/* Motion. Page changes, the severity card growing into its page, a risk bubble growing into its dialog, the ? button
+   growing into the help panel and the theme switch run as view transitions (lib/motion.ts). Popovers open from
+   their button and close back into it. Everything stops for people who ask for reduced motion. */
+::view-transition-group(*) { animation-duration: .42s; animation-timing-function: cubic-bezier(.22, .8, .24, 1); }
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: .22s; }
+::view-transition-old(*.notice) { animation: .16s ease-in both vt-pop-out; }
+::view-transition-new(*.notice) { animation: .24s cubic-bezier(.22, .8, .24, 1) both vt-pop-in; }
+@keyframes vt-fade-out { to { opacity: 0; } }
+@keyframes vt-rise-in { from { opacity: 0; transform: translateY(10px); } }
+@keyframes vt-pop-in { from { opacity: 0; transform: translateY(-8px) scale(.96); } }
+@keyframes vt-pop-out { to { opacity: 0; transform: translateY(-8px) scale(.96); } }
+.console-pop { transform-origin: top right; }
+.console-pop[data-state='open'] { animation: pop-open .2s cubic-bezier(.22, .8, .24, 1) both; }
+.console-pop[data-state='closed'] { animation: pop-close .16s ease-in both; pointer-events: none; }
+@keyframes pop-open { from { opacity: 0; transform: translateY(-6px) scale(.94); } }
+@keyframes pop-close { to { opacity: 0; transform: translateY(-6px) scale(.94); } }
+.page-in { animation: vt-rise-in .32s cubic-bezier(.22, .8, .24, 1) both; }
+.notice { animation: vt-pop-in .24s cubic-bezier(.22, .8, .24, 1) both; }
+.risk-backdrop { animation: backdrop-in .25s ease-out both; }
+@keyframes backdrop-in { from { background-color: transparent; } }
+.skeleton { position: relative; overflow: hidden; background: color-mix(in srgb, var(--surface-3) 70%, transparent); }
+.skeleton::after { content: ''; position: absolute; inset: 0; transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--ink) 8%, transparent), transparent); animation: shimmer 1.3s ease-in-out infinite; }
+@keyframes shimmer { to { transform: translateX(100%); } }
+.console-icon, .console-avatar, .side-on, .topnav, .console-side a, .console-side button { transition: background-color .2s, color .2s, box-shadow .25s, transform .2s; }
+.console-avatar:active, .console-icon:active { transform: scale(.94); }
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
+  .console-pop, .notice, .risk-backdrop, .skeleton::after, .page-in { animation: none !important; }
+}

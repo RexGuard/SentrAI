@@ -2,7 +2,8 @@
 // shows one bubble per severity; the severity page shows one bubble per risk, and opening one explains it in plain
 // words, suggests a fix, offers the quick actions and lets the person talk their own fix through with Sentry.
 import { useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { createPortal } from 'react-dom'
+import { vtName, VLink } from './motion'
 import { AlertTriangle, Bell, ChevronRight, Clock, Send, ShieldAlert, ShieldCheck, TriangleAlert, User, X, type LucideIcon } from 'lucide-react'
 import { api, ApiError } from './api'
 import { btn, btnPrimary } from './ui'
@@ -38,7 +39,10 @@ const LEVEL_ICON: Record<Level, LucideIcon> = { critical: ShieldAlert, high: Tri
 
 /** The Command center's grouped buttons: a glowing card per severity (Critical, High, Medium, Low) with its count. */
 export function SeverityBubbles({ data }: { data: Risks | null }) {
-  if (!data) return <p className="text-muted" role="status">Loading…</p>
+  if (!data) return (
+    <ul role="status" aria-label="Loading" className="grid max-w-[64rem] gap-8 sm:grid-cols-2">
+      {[0, 1, 2, 3].map((i) => <li key={i} className="skeleton h-[10.75rem] rounded-[1.25rem]" />)}
+    </ul>)
   return (
     <ul className="grid max-w-[64rem] gap-8 sm:grid-cols-2">
       {data.levels.map((l) => {
@@ -46,8 +50,8 @@ export function SeverityBubbles({ data }: { data: Risks | null }) {
         const Icon = LEVEL_ICON[l.severity]
         return (
           <li key={l.severity}>
-            <Link to={`/risks/${l.severity}`} aria-label={`${t.name}: ${l.count} risk${l.count === 1 ? '' : 's'}. Open the list.`}
-              className={'sev-card flex min-h-[10.75rem] items-center gap-12 px-8 py-6 sm:px-11' + (l.count ? '' : ' sev-zero')} style={{ '--c': CARD_COLOR[l.severity] } as React.CSSProperties}>
+            <VLink to={`/risks/${l.severity}`} aria-label={`${t.name}: ${l.count} risk${l.count === 1 ? '' : 's'}. Open the list.`}
+              className={'sev-card flex min-h-[10.75rem] items-center gap-12 px-8 py-6 sm:px-11' + (l.count ? '' : ' sev-zero')} style={{ '--c': CARD_COLOR[l.severity], viewTransitionName: `sev-${l.severity}` } as React.CSSProperties}>
               <Icon className="sev-icon shrink-0" size={72} strokeWidth={1.6} aria-hidden />
               <span className="min-w-0 space-y-1">
                 <span className="sev-name block text-[1.375rem] font-bold uppercase">{t.name}</span>
@@ -58,7 +62,7 @@ export function SeverityBubbles({ data }: { data: Risks | null }) {
                 </span>
                 {l.count > 0 && <span className="block text-xs text-muted">{l.overdue ? `${l.overdue} overdue · oldest` : 'Oldest'} {l.oldest}</span>}
               </span>
-            </Link>
+            </VLink>
           </li>)
       })}
     </ul>
@@ -66,12 +70,12 @@ export function SeverityBubbles({ data }: { data: Risks | null }) {
 }
 
 /** One risk on the severity page: title, who has it and how long it has been open, as in Erick's sketch. */
-export function RiskBubble({ r, onOpen }: { r: Risk; onOpen: () => void }) {
+export function RiskBubble({ r, onOpen, named = false }: { r: Risk; onOpen: () => void; named?: boolean }) {
   const t = LEVEL_TEXT[r.severity]
   return (
-    <button onClick={onOpen} aria-haspopup="dialog"
-      className="flex h-full min-h-40 w-full flex-col items-start gap-2 rounded-[2rem] border-2 bg-surface p-5 text-left transition hover:-translate-y-0.5 hover:bg-surface-2"
-      style={{ borderColor: t.color }}>
+    // The bubble and its dialog share a transition name, so the bubble grows into the dialog and back.
+    <button onClick={onOpen} aria-haspopup="dialog" style={{ borderColor: t.color, viewTransitionName: named ? vtName('risk', r.id) : undefined }}
+      className="flex h-full min-h-40 w-full flex-col items-start gap-2 rounded-[2rem] border-2 bg-surface p-5 text-left transition hover:-translate-y-0.5 hover:bg-surface-2">
       <span className="text-lg font-semibold leading-snug">{r.title}{r.ids.length > 1 && <span className="ml-1 text-sm font-normal text-muted">×{r.ids.length}</span>}</span>
       <span className="flex items-center gap-1.5 text-sm text-soft"><User size={14} aria-hidden />{r.owner}</span>
       <span className="flex items-center gap-1.5 text-sm text-soft"><Clock size={14} aria-hidden />open for {r.open_for}</span>
@@ -146,10 +150,11 @@ export function RiskDetail({ r, protectionOn, onClose, onDone }: { r: Risk; prot
     setAsking(false)
   }
 
-  return (
-    <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:items-center" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
+  // On <body>, so no transformed or transition-named parent can trap the backdrop or put the top bar over it.
+  return createPortal(
+    <div className="risk-backdrop fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:items-center" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
       <div ref={box} role="dialog" aria-modal="true" aria-labelledby="risk-title" tabIndex={-1}
-        className="relative w-full max-w-2xl space-y-4 rounded-[2rem] border-2 bg-surface p-6 shadow-2xl outline-none" style={{ borderColor: t.color }}>
+        className="relative w-full max-w-2xl space-y-4 rounded-[2rem] border-2 bg-surface p-6 shadow-2xl outline-none" style={{ borderColor: t.color, viewTransitionName: vtName('risk', r.id) }}>
         <button className="absolute right-4 top-4 text-muted hover:text-ink" aria-label="Close" onClick={onClose}><X size={18} aria-hidden /></button>
         <header className="space-y-1 pr-8">
           <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: t.color }}>{t.name}{r.overdue ? ' · overdue' : ''}</p>
@@ -215,6 +220,7 @@ export function RiskDetail({ r, protectionOn, onClose, onDone }: { r: Risk; prot
         {err && <p role="alert" className="text-sm text-bad">{err}</p>}
         <p className="text-xs text-muted">{many ? `${r.ids.length} incidents: ${r.ids.slice(0, 4).join(', ')}${r.ids.length > 4 ? ' …' : ''}` : r.incident} · every step is written to the audit log</p>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
