@@ -21,8 +21,27 @@ Sentry follows these rules unless your team says otherwise:
 - **No internal names.** It never names the parts inside SentrAI (agents, engines, the record keeper).
   It just says "SentrAI".
 - **Calm.** It says first what SentrAI already did, then what is left for you.
-- **It only suggests.** Approve, undo, back up and quarantine are always buttons you press. Chat never
-  changes anything by itself.
+- **Only what it looked up.** Every fact comes from SentrAI's own records. When the records don't show
+  something (for example exactly which data a download held), it says so and offers SentrAI's team to
+  check, instead of guessing. An open incident's fix is described as a suggestion until you approve it.
+- **No raw details.** Internet addresses, server and account names stay out unless you ask.
+- **It only suggests.** Approve, undo, back up and quarantine are always buttons you press, shown below the
+  answer. Chat never changes anything by itself.
+
+## How it is tested
+
+`mvp/eval/sentry_sim.py` has Claude play business owners and managers with no IT team (a bakery owner,
+a clinic manager, a cafe owner who wants to "hack them back", ...) chatting with Sentry about realistic
+situations, each on a throw-away copy of the core, and grades every answer on seven points: answer first,
+plain words, length, accuracy, safety, next step and tone. It runs on the panel with the panel's own AI
+key and touches no real data:
+
+```
+sudo /opt/sentrai/mvp/core/.venv/bin/python /opt/sentrai/mvp/eval/sentry_sim.py --convos 24 --budget 15
+```
+
+`--prompt FILE` tries new instructions before they go into `chat.py`. Results (report.md, summary.json,
+transcripts) go to `/var/lib/sentrai/sentry-sim/`.
 
 Without an AI key, Sentry still answers with SentrAI's own facts, written in the same plain style, and
 adds a short note that a fuller answer needs the AI helper.

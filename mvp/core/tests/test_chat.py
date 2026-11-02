@@ -142,6 +142,23 @@ def test_default_prompt_is_written_for_business_owners():
     assert "not an IT person" in SETUP_SYSTEM.format(name="Sentry")
 
 
+def test_words_before_a_lookup_are_not_part_of_the_answer(client):
+    brute_force(client)
+    provider = FakeProvider([
+        sentrai_llm.Turn(texts=["Let me check that."], tool_calls=[call("get_incident", incident=INC)], stop="tool_use"),
+        sentrai_llm.Turn(texts=["You're safe. Someone tried to guess passwords."]),
+    ])
+    reply = OperatorChat(client.core, provider).ask("erick", "am I safe?")
+    assert reply["text"] == "You're safe. Someone tried to guess passwords."
+
+
+def test_prompt_keeps_sentry_to_looked_up_facts_and_real_buttons():
+    from app.chat import SYSTEM
+    prompt = SYSTEM.format(name="Sentry")
+    assert "Only say what you looked up" in prompt and "only a proposal" in prompt
+    assert "BELOW your answer" in prompt and "Never invent buttons" in prompt
+
+
 def test_earlier_messages_are_passed_to_the_model(client):
     provider = FakeProvider([sentrai_llm.Turn(texts=["first"]), sentrai_llm.Turn(texts=["second"])])
     chat = OperatorChat(client.core, provider)
