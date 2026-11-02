@@ -30,6 +30,9 @@ export const LEVEL_TEXT: Record<Level, { name: string; color: string; tint: stri
   low: { name: 'Low', color: 'var(--green)', tint: 'color-mix(in oklab, var(--green) 10%, transparent)', blurb: 'for the record' },
 }
 
+// The cards' own colours, from Erick's reference picture (the rest of the console keeps the theme colours).
+const CARD_COLOR: Record<Level, string> = { critical: '#ff2d6b', high: '#ff7a1a', medium: '#ffd60a', low: '#d6e2f0' }
+
 const LEVEL_ICON: Record<Level, LucideIcon> = { critical: ShieldAlert, high: TriangleAlert, medium: Bell, low: ShieldCheck }
 
 /** The Command center's grouped buttons: a glowing card per severity (Critical, High, Medium, Low) with its count. */
@@ -43,7 +46,7 @@ export function SeverityBubbles({ data }: { data: Risks | null }) {
         return (
           <li key={l.severity}>
             <Link to={`/risks/${l.severity}`} aria-label={`${t.name}: ${l.count} risk${l.count === 1 ? '' : 's'}. Open the list.`}
-              className={'sev-card flex items-center gap-5 px-6 py-6 sm:px-8' + (l.count ? '' : ' sev-zero')} style={{ '--c': t.color } as React.CSSProperties}>
+              className={'sev-card flex items-center gap-5 px-6 py-6 sm:px-8' + (l.count ? '' : ' sev-zero')} style={{ '--c': CARD_COLOR[l.severity] } as React.CSSProperties}>
               <Icon className="sev-icon shrink-0" size={56} strokeWidth={1.75} aria-hidden />
               <span className="min-w-0 space-y-1">
                 <span className="sev-name block text-xl font-bold uppercase tracking-wide">{t.name}</span>
