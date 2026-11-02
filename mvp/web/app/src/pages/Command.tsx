@@ -1,26 +1,18 @@
-// Command center: the main things on one page (risk, what waits for a decision, incidents that need a person,
-// machines and Cyanide), so a demo or a busy shift never has to hop between pages. The full pages stay.
+// Command center: what needs a person as one bubble per severity (Critical / High / Medium), the risk over time,
+// the machines and Cyanide, so a non-IT person sees at a glance where to start. A bubble opens that severity's risks
+// (pages/RiskList.tsx); the full Approvals and Incidents pages stay.
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Check, ChevronRight, X } from 'lucide-react'
+import { ChevronRight } from 'lucide-react'
 import { api, ApiError } from '../lib/api'
-import { btn } from '../lib/ui'
-import { useSession } from '../lib/session'
-import Stat from '../lib/Stat'
 import Chat from './Chat'
 import { Chart, type Point } from './Review'
-import { ask } from '../lib/notice'
+import { SeverityBubbles, type Risks } from '../lib/Risks'
 
 type Risk = { risk_index?: number; band?: string; threshold?: number; history?: Point[] }
-type ApprovalRow = { id: string; what: string; host: string; severity: string; status: string; target: string; needs: string[]; can: { decide: boolean } }
-type Approvals = { headline: string; total: number; rows: ApprovalRow[]; rows_total?: number; protection_on: boolean }
-type IncRow = { id: string; what: string; host: string; severity: string; owner: string; open_for: string; needs: string }
-type Incidents = { counts: { open: number; attention: number; overdue: number }; todo: IncRow[]; todo_total?: number }
 type MachineRow = { name: string; host: string; online: boolean; waiting: boolean; index: number | null; band: string; open: number }
 
 const bandColor: Record<string, string> = { green: 'var(--green)', amber: 'var(--amber)', red: 'var(--red)', critical: 'var(--critical)' }
-const sevColor: Record<string, string> = { critical: 'text-crit', high: 'text-bad', medium: 'text-warn', low: 'text-ok' }
-const SHOW = 8
 
 function Card({ title, to, more, children }: { title: string; to: string; more?: string; children: React.ReactNode }) {
   return (
@@ -35,88 +27,44 @@ function Card({ title, to, more, children }: { title: string; to: string; more?:
 }
 
 export default function Command() {
-  const { can } = useSession()
   const [risk, setRisk] = useState<Risk | null>(null)
-  const [appr, setAppr] = useState<Approvals | null>(null)
-  const [incs, setIncs] = useState<Incidents | null>(null)
+  const [risks, setRisks] = useState<Risks | null>(null)
   const [machines, setMachines] = useState<MachineRow[]>([])
   const [error, setError] = useState('')
-  const [note, setNote] = useState('')
   const load = useCallback(async () => {
     try {
-      const [r, a, i, m] = await Promise.all([api<Risk>('/risk'), api<Approvals>(`/ui/approvals?brief=${SHOW}`), api<Incidents>(`/ui/incidents?brief=${SHOW}`),
-        api<{ machines: MachineRow[] }>('/ui/machines')])
-      setRisk(r); setAppr(a); setIncs(i); setMachines(m.machines); setError('')
+      const [r, k, m] = await Promise.all([api<Risk>('/risk'), api<Risks>('/ui/risks'), api<{ machines: MachineRow[] }>('/ui/machines')])
+      setRisk(r); setRisks(k); setMachines(m.machines); setError('')
     } catch (e) { setError(e instanceof ApiError ? e.message : 'Could not reach SentrAI.') }
   }, [])
   useEffect(() => { void load(); const t = setInterval(() => void load(), 10000); return () => clearInterval(t) }, [load])
 
-  const decide = async (verb: 'approve' | 'reject', r: ApprovalRow) => {
-    let justification = ''
-    if (verb === 'reject') {
-      justification = (await ask({ title: `Reject ${r.id}?`, confirm: 'Reject', danger: true,
-        input: { label: 'Why? (written to the audit log)', required: true } })) ?? ''
-      if (!justification.trim()) return
-    }
-    try { setNote((await api<{ message: string }>('/ui/approvals/bulk', { body: { verb, ids: [r.id], justification } })).message); await load() }
-    catch (e) { setNote(e instanceof ApiError ? e.message : 'That did not go through.') }
-  }
-
   const threshold = Number(risk?.threshold ?? 80)
   const hist = (risk?.history ?? []).filter((p) => typeof p.risk_index === 'number')
   const online = machines.filter((m) => m.online).length
-  const off = !can('act')
   return (
     <section className="space-y-4">
       <header>
         <h1 className="text-2xl font-semibold">Command center</h1>
-        <p className="text-sm text-muted">risk, decisions, incidents, machines and Cyanide on one page</p>
+        <p className="text-sm text-muted">what needs a person, by how serious it is</p>
       </header>
       {error && <p role="alert" className="rounded-md border border-line bg-surface p-3 text-bad">{error}</p>}
-      {note && <p role="status" className="rounded-md border border-line bg-surface p-3">{note}</p>}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Risk now" value={risk?.risk_index != null ? Math.round(risk.risk_index) : '-'} note={`acts on its own at ${threshold}`} hot={(risk?.risk_index ?? 0) >= threshold} />
-        <Stat label="Waiting on you" value={appr?.total ?? '-'} note="requests to approve or reject" hot={!!appr?.total} />
-        <Stat label="Incidents open" value={incs?.counts.open ?? '-'} note={`${incs?.counts.attention ?? 0} need a person · ${incs?.counts.overdue ?? 0} overdue`} hot={!!incs?.counts.overdue} />
-        <Stat label="Machines online" value={machines.length ? `${online} of ${machines.length}` : '-'} note="reporting to this panel" hot={online < machines.length} />
-      </div>
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_26rem]">
         <div className="min-w-0 space-y-4">
+          <div className="space-y-3 rounded-lg border border-line bg-surface p-4">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h2 className="font-semibold">{risks?.headline ?? 'Looking…'}</h2>
+              <p className="text-sm text-muted">
+                Risk now <b className={(risk?.risk_index ?? 0) >= threshold ? 'text-bad' : 'text-ink'}>{risk?.risk_index != null ? Math.round(risk.risk_index) : '-'}</b> of 100
+                · acts on its own at {threshold}{machines.length ? ` · ${online} of ${machines.length} machines online` : ''}
+              </p>
+            </div>
+            <SeverityBubbles data={risks} />
+            <p className="text-xs text-muted">Each bubble joins what waits for a decision and what needs a person. Full lists: <Link to="/approvals" className="underline">Approvals</Link> · <Link to="/incidents" className="underline">Incidents</Link></p>
+          </div>
           <Card title="Risk over time" to="/review" more="Review">
             {hist.length < 2 ? <p className="text-soft">No history yet. The core adds a point on every risk change.</p> : <Chart points={hist} threshold={threshold} />}
           </Card>
-          <div className="grid gap-4 lg:grid-cols-2">
-            <Card title={`Waiting for a decision${appr?.total ? ` (${appr.total})` : ''}`} to="/approvals" more="All approvals">
-              {!appr ? <p className="text-muted" role="status">Loading…</p> : appr.rows.length === 0 ? <p className="text-ok">Nothing waiting. All quiet at the gate.</p> : (
-                <ul className="divide-y divide-line-soft">
-                  {appr.rows.slice(0, SHOW).map((r) => (
-                    <li key={r.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 py-2 text-sm">
-                      <div className="min-w-0">
-                        <p className="truncate"><span className="font-mono text-xs">{r.id}</span> · {r.what}</p>
-                        <p className="truncate text-xs text-muted"><span className={'capitalize ' + (sevColor[r.severity] ?? '')}>{r.severity}</span> · {r.host}{r.target ? ` · ${r.target}` : ''}</p>
-                      </div>
-                      {r.can.decide && (
-                        <div className="flex gap-1">
-                          <button className={btn} disabled={off || !appr.protection_on} aria-label={`Approve ${r.id}`}
-                            title={off ? 'Your role can read everything but change nothing.' : !appr.protection_on ? 'Protection is off: turn it on to apply anything.' : 'Approve'} onClick={() => void decide('approve', r)}><Check size={14} aria-hidden /></button>
-                          <button className={btn} disabled={off} aria-label={`Reject ${r.id}`} title="Reject (asks why)" onClick={() => void decide('reject', r)}><X size={14} aria-hidden /></button>
-                        </div>)}
-                    </li>))}
-                </ul>)}
-              {appr && (appr.rows_total ?? appr.rows.length) > SHOW && <p className="text-xs text-muted">… and {(appr.rows_total ?? appr.rows.length) - SHOW} more on Approvals.</p>}
-            </Card>
-            <Card title="Needs a person" to="/incidents" more="All incidents">
-              {!incs ? <p className="text-muted" role="status">Loading…</p> : incs.todo.length === 0 ? <p className="text-ok">Every open incident is in hand.</p> : (
-                <ul className="divide-y divide-line-soft">
-                  {incs.todo.slice(0, SHOW).map((r) => (
-                    <li key={r.id} className="py-2 text-sm">
-                      <p className="truncate"><span className="font-mono text-xs">{r.id}</span> · {r.what} <span className={'capitalize ' + (sevColor[r.severity] ?? '')}>· {r.severity}</span></p>
-                      <p className="truncate text-xs text-muted">{r.host} · {r.owner} · {r.open_for} · {r.needs}</p>
-                    </li>))}
-                </ul>)}
-              {incs && (incs.todo_total ?? incs.todo.length) > SHOW && <p className="text-xs text-muted">… and {(incs.todo_total ?? incs.todo.length) - SHOW} more on Incidents.</p>}
-            </Card>
-          </div>
           <Card title="Machines" to="/machines" more="All machines">
             {machines.length === 0 ? <p className="text-soft">No machines yet.</p> : (
               <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
