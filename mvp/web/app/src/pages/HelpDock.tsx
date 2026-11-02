@@ -40,7 +40,7 @@ export default function HelpDock({ dock }: { dock: ReturnType<typeof useDock> })
   if (!dock.open) {
     return (
       <button onClick={() => dock.show(dock.tab)} aria-label="Help: chat with Sentry or report something" title="Chat with Sentry or report something"
-        className="fixed bottom-5 right-5 z-40 flex h-12 w-12 items-center justify-center rounded-full border border-line bg-ink text-bg shadow-lg hover:opacity-90">
+        className="fixed bottom-5 right-5 z-40 flex h-12 w-12 items-center justify-center rounded-full border border-accent bg-accent text-on-accent shadow-lg hover:opacity-90">
         <CircleHelp size={22} aria-hidden />
       </button>
     )

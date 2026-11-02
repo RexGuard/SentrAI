@@ -31,7 +31,8 @@ export const LEVEL_TEXT: Record<Level, { name: string; color: string; tint: stri
 }
 
 // The cards' own colours, from Erick's reference picture (the rest of the console keeps the theme colours).
-const CARD_COLOR: Record<Level, string> = { critical: '#ff2d6b', high: '#ff7a1a', medium: '#ffd60a', low: '#d6e2f0' }
+// Per theme in index.css (--card-*), taken from the reference console.
+const CARD_COLOR: Record<Level, string> = { critical: 'var(--card-critical)', high: 'var(--card-high)', medium: 'var(--card-medium)', low: 'var(--card-low)' }
 
 const LEVEL_ICON: Record<Level, LucideIcon> = { critical: ShieldAlert, high: TriangleAlert, medium: Bell, low: ShieldCheck }
 
@@ -39,19 +40,19 @@ const LEVEL_ICON: Record<Level, LucideIcon> = { critical: ShieldAlert, high: Tri
 export function SeverityBubbles({ data }: { data: Risks | null }) {
   if (!data) return <p className="text-muted" role="status">Loading…</p>
   return (
-    <ul className="grid gap-5 sm:grid-cols-2">
+    <ul className="grid max-w-[64rem] gap-8 sm:grid-cols-2">
       {data.levels.map((l) => {
         const t = LEVEL_TEXT[l.severity]
         const Icon = LEVEL_ICON[l.severity]
         return (
           <li key={l.severity}>
             <Link to={`/risks/${l.severity}`} aria-label={`${t.name}: ${l.count} risk${l.count === 1 ? '' : 's'}. Open the list.`}
-              className={'sev-card flex items-center gap-5 px-6 py-6 sm:px-8' + (l.count ? '' : ' sev-zero')} style={{ '--c': CARD_COLOR[l.severity] } as React.CSSProperties}>
-              <Icon className="sev-icon shrink-0" size={56} strokeWidth={1.75} aria-hidden />
+              className={'sev-card flex min-h-[10.75rem] items-center gap-12 px-8 py-6 sm:px-11' + (l.count ? '' : ' sev-zero')} style={{ '--c': CARD_COLOR[l.severity] } as React.CSSProperties}>
+              <Icon className="sev-icon shrink-0" size={72} strokeWidth={1.6} aria-hidden />
               <span className="min-w-0 space-y-1">
-                <span className="sev-name block text-xl font-bold uppercase tracking-wide">{t.name}</span>
-                <span className="block text-5xl font-bold tabular-nums leading-none text-ink">{l.count.toLocaleString()}</span>
-                <span className="flex items-center gap-1 pt-1 text-sm text-soft">
+                <span className="sev-name block text-[1.375rem] font-bold uppercase">{t.name}</span>
+                <span className="block text-[2.75rem] font-bold tabular-nums leading-none text-ink">{l.count.toLocaleString()}</span>
+                <span className="flex items-center gap-1 pt-1.5 text-[1.0625rem] text-soft">
                   {l.count === 0 ? 'Nothing needs you here' : `${l.count === 1 ? 'Risk requires' : 'Risks require'} your attention`}
                   <ChevronRight size={16} aria-hidden />
                 </span>

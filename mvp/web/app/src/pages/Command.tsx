@@ -55,22 +55,19 @@ export default function Command() {
   const hist = (risk?.history ?? []).filter((p) => typeof p.risk_index === 'number')
   const online = machines.filter((m) => m.online).length
   return (
-    <section className="space-y-4">
+    <section className="space-y-8">
       <header>
-        <h1 className="text-2xl font-semibold">Command center</h1>
-        <p className="text-sm text-muted">what needs a person, by how serious it is</p>
+        <h1>Command center</h1>
+        <p>{risks?.headline ?? 'What needs a person, by how serious it is.'}</p>
+        <p className="mt-1 text-sm text-muted">
+          Risk now <b className={(risk?.risk_index ?? 0) >= threshold ? 'text-bad' : 'text-ink'}>{risk?.risk_index != null ? Math.round(risk.risk_index) : '-'}</b> of 100
+          · acts on its own at {threshold}{machines.length ? ` · ${online} of ${machines.length} machines online` : ''}
+        </p>
       </header>
       {error && <p role="alert" className="rounded-md border border-line bg-surface p-3 text-bad">{error}</p>}
       <div className="grid gap-4">
-        <div className="min-w-0 space-y-4">
-          <div className="risk-stage space-y-4 rounded-2xl border border-line bg-surface p-5">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h2 className="font-semibold">{risks?.headline ?? 'Looking…'}</h2>
-              <p className="text-sm text-muted">
-                Risk now <b className={(risk?.risk_index ?? 0) >= threshold ? 'text-bad' : 'text-ink'}>{risk?.risk_index != null ? Math.round(risk.risk_index) : '-'}</b> of 100
-                · acts on its own at {threshold}{machines.length ? ` · ${online} of ${machines.length} machines online` : ''}
-              </p>
-            </div>
+        <div className="min-w-0 space-y-6">
+          <div className="space-y-6">
             <SeverityBubbles data={risks} />
             <div role="tablist" aria-label="Full lists" className="flex flex-wrap items-center gap-2 border-t border-line-soft pt-3">
               <span className="text-xs text-muted">Full lists:</span>
