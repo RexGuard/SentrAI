@@ -41,7 +41,7 @@ STOP = frozenset("the and for from with this that was were has have not but are 
 # The usual steps for each type, used when there is little history and as the base of every playbook.
 BASELINE: dict[str, dict[str, list[str]]] = {
     "brute_force": {
-        "steps": ["Block the guessing address for a few hours (Approvals, or Auto Mode within its limits)",
+        "steps": ["Block the guessing address for a few hours (Approvals, or SentrAI on its own within its limits)",
                   "Check whether any sign-in from that address succeeded; if one did, reset that account's password",
                   "Make sure the account locks after a few wrong passwords"],
         "prevent": ["Turn on a second sign-in step (authenticator) for admin accounts",

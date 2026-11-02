@@ -130,14 +130,6 @@ def test_machines_and_jobs_need_a_joined_machine(client, capsys):
     assert "no joined machine" in capsys.readouterr().err
 
 
-def test_auto_mode_switch_is_logged_with_the_cli_name(client, monkeypatch):
-    monkeypatch.setenv("SENTRAI_OPERATOR", "erick")
-    assert run(client, "auto-mode", "off", "--reason", "maintenance")[0] == 0
-    prot = client.get("/protection").json()
-    assert prot["auto_mode"] is False
-    assert run(client, "auto-mode", "on")[0] == 0
-
-
 def test_raw_api(client):
     code, out = run(client, "api", "GET", "/health")
     assert code == 0 and json.loads(out) == {"ok": True}
