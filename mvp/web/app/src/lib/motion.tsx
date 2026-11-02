@@ -10,12 +10,11 @@ export const reducedMotion = () => typeof matchMedia === 'function' && matchMedi
 
 type VT = { startViewTransition?: (cb: () => void) => { finished: Promise<void> } }
 
-/** Which way the page slides when moving through the menus: sidebar sections go up/down, top tabs left/right. */
+/** Which way the page moves through the menus: sidebar "stack" (up = new page rises from below, down = from above), top tabs "push" (left = new page comes from the right). */
 export type Slide = { dir: 'up' | 'down' | 'left' | 'right'; steps: number }
 
 /** Run a state change inside a view transition when the browser has them. With `slide`, the content panel
- *  (named "page" only for the length of the transition) slides in that direction, further the more menu steps
- *  it crosses, so a long jump moves faster than a short one in the same time. */
+ *  (named "page" only for the length of the transition) moves that way; steps 0 (the same place) means no slide. */
 export function transition(update: () => void, slide?: Slide) {
   const d = document as Document & VT
   if (!d.startViewTransition || reducedMotion()) { update(); return }
