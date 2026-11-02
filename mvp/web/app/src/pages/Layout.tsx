@@ -16,46 +16,46 @@ type Item = { to: string; label: string; icon: LucideIcon; needs?: string }
 type Group = { group: string; icon: LucideIcon; items: Item[] }
 
 export const MENU: Group[] = [
-  { group: 'Decide', icon: Gavel, items: [
-    { to: '/manager', label: 'Manager view', icon: Briefcase },
-    { to: '/command', label: 'Command center', icon: LayoutDashboard },
-    { to: '/staff', label: 'Staff reports', icon: Flag },
+  { group: 'Respond', icon: Gavel, items: [
+    { to: '/manager', label: 'Sentry', icon: Briefcase },
+    { to: '/command', label: 'Command Center', icon: LayoutDashboard },
+    { to: '/staff', label: 'Staff Reports', icon: Flag },
   ] },
-  { group: 'Pipeline', icon: Workflow, items: [
+  { group: 'How It Works', icon: Workflow, items: [
     { to: '/overview', label: 'Overview', icon: Network },
-    { to: '/collector', label: 'Collector', icon: Workflow },
-    { to: '/classifier', label: 'Classifier', icon: Boxes },
-    { to: '/responder', label: 'Action taker', icon: ShieldCheck },
-    { to: '/guardrails', label: 'Automation guardrails', icon: Settings2 },
-    { to: '/tuning', label: 'Tuning', icon: SlidersHorizontal },
+    { to: '/collector', label: 'Log Reading', icon: Workflow },
+    { to: '/classifier', label: 'Threat Detection', icon: Boxes },
+    { to: '/responder', label: 'Automatic Responses', icon: ShieldCheck },
+    { to: '/guardrails', label: 'Safety Limits', icon: Settings2 },
+    { to: '/tuning', label: 'Fewer False Alarms', icon: SlidersHorizontal },
   ] },
-  { group: 'Oversight', icon: Eye, items: [
-    { to: '/machines', label: 'Machines', icon: Server },
-    { to: '/analytics', label: 'Analytics', icon: BarChart3 },
+  { group: 'Monitoring', icon: Eye, items: [
+    { to: '/machines', label: 'Computers', icon: Server },
+    { to: '/analytics', label: 'Trends', icon: BarChart3 },
     { to: '/reports', label: 'Reports', icon: FileText },
-    { to: '/audit', label: 'Audit trail', icon: Link2 },
+    { to: '/audit', label: 'Activity Log', icon: Link2 },
     { to: '/backups', label: 'Backups', icon: DatabaseBackup },
-    { to: '/privacy', label: 'Privacy and data', icon: Lock },
-    { to: '/team', label: 'Team', icon: Users, needs: 'people' },
+    { to: '/privacy', label: 'Privacy and Data', icon: Lock },
+    { to: '/team', label: 'People and Access', icon: Users, needs: 'people' },
   ] },
   { group: 'Settings', icon: Settings2, items: [
-    { to: '/extensions', label: 'Extensions', icon: Puzzle },
-    { to: '/config', label: 'Configuration', icon: ScrollText },
+    { to: '/extensions', label: 'Add-ons', icon: Puzzle },
+    { to: '/config', label: 'Setup', icon: ScrollText },
   ] },
 ]
 
 // Simple view: the pages a non-technical person needs, in everyday words. Same pages, same permissions.
 export const SIMPLE_MENU: Group[] = [
-  { group: 'At a glance', icon: Briefcase, items: [
-    { to: '/manager', label: 'Are we safe?', icon: Briefcase },
-    { to: '/command', label: 'What needs me', icon: Siren },
+  { group: 'At a Glance', icon: Briefcase, items: [
+    { to: '/manager', label: 'Sentry', icon: Briefcase },
+    { to: '/command', label: 'What Needs Me', icon: Siren },
   ] },
   { group: 'Records', icon: Library, items: [
-    { to: '/machines', label: 'Our computers', icon: Server },
-    { to: '/reports', label: 'Reports to share', icon: FileText },
+    { to: '/machines', label: 'Our Computers', icon: Server },
+    { to: '/reports', label: 'Reports to Share', icon: FileText },
     { to: '/backups', label: 'Backups', icon: DatabaseBackup },
-    { to: '/privacy', label: 'Privacy and staff data', icon: Lock },
-    { to: '/team', label: 'Who has access', icon: Users, needs: 'people' },
+    { to: '/privacy', label: 'Privacy and Staff Data', icon: Lock },
+    { to: '/team', label: 'Who Has Access', icon: Users, needs: 'people' },
   ] },
 ]
 
@@ -92,12 +92,12 @@ function Account({ simple, toggleSimple }: { simple: boolean; toggleSimple: () =
           <p className="truncate px-3 pb-2 pt-1 font-medium">{me?.name || me?.email}<span className="block text-xs font-normal text-muted">{me?.role_label}</span></p>
           <button role="menuitem" className={row} onClick={() => { toggleSimple(); setOpen(false) }}
             title={simple ? 'Show every page, with the technical names' : 'Fewer pages, everyday words: for people who are not in IT'}>
-            <Eye size={16} aria-hidden /> {simple ? 'Full view' : 'Simple view'}
+            <Eye size={16} aria-hidden /> {simple ? 'Full View' : 'Simple View'}
           </button>
           <button role="menuitem" className={row} onClick={() => toggle()}>
-            {theme === 'dark' ? <Sun size={16} aria-hidden /> : <Moon size={16} aria-hidden />} {theme === 'dark' ? 'White theme' : 'Black theme'}
+            {theme === 'dark' ? <Sun size={16} aria-hidden /> : <Moon size={16} aria-hidden />} {theme === 'dark' ? 'White Theme' : 'Black Theme'}
           </button>
-          <button role="menuitem" className={row} onClick={() => void signOut()}><LogOut size={16} aria-hidden /> Sign out</button>
+          <button role="menuitem" className={row} onClick={() => void signOut()}><LogOut size={16} aria-hidden /> Sign Out</button>
         </div>)}
     </div>
   )
@@ -135,22 +135,79 @@ function Find({ menu }: { menu: Group[] }) {
   )
 }
 
-// The bell (top right): opens the Command center; the dot means something Critical or High needs a person.
+// The bell (top right): a notification list like any website's. Every risk waiting on a person, newest first, with
+// its severity and age; unread ones have a dot. "Read" is remembered in this browser only.
+type Note = { id: string; incident: string; title: string; severity: 'critical' | 'high' | 'medium' | 'low'; host: string; open_for: string; overdue: boolean }
+const SEEN_KEY = 'sentrai-seen-risks'
+const SEV_COLOR = { critical: 'var(--card-critical)', high: 'var(--card-high)', medium: 'var(--card-medium)', low: 'var(--card-low)' }
+const SEV_NAME = { critical: 'Critical', high: 'High', medium: 'Medium', low: 'Low' }
+function readSeen(): Set<string> {
+  try { return new Set(JSON.parse(localStorage.getItem(SEEN_KEY) || '[]') as string[]) } catch { return new Set() }
+}
 function Bell() {
-  const [hot, setHot] = useState(0)
+  const [rows, setRows] = useState<Note[]>([])
+  const [seen, setSeen] = useState<Set<string>>(readSeen)
+  const [open, setOpen] = useState(false)
+  const box = useRef<HTMLDivElement>(null)
+  const go = useNavigate()
   useEffect(() => {
     const load = async () => {
-      try {
-        const r = await api<{ levels: { severity: string; count: number }[] }>('/ui/risks')
-        setHot(r.levels.filter((l) => l.severity === 'critical' || l.severity === 'high').reduce((n, l) => n + l.count, 0))
-      } catch { /* the pages show core errors */ }
+      try { setRows((await api<{ rows: Note[] }>('/ui/risks?severity=all')).rows) } catch { /* the pages show core errors */ }
     }
     void load(); const t = setInterval(() => void load(), 30000); return () => clearInterval(t)
   }, [])
+  useEffect(() => {
+    if (!open) return
+    const off = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false) }
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', off); document.addEventListener('keydown', esc)
+    return () => { document.removeEventListener('mousedown', off); document.removeEventListener('keydown', esc) }
+  }, [open])
+  const save = (next: Set<string>) => {
+    // Keep only ids still on the list, so the stored set never grows without end.
+    const keep = new Set([...next].filter((id) => rows.some((r) => r.id === id)))
+    setSeen(keep)
+    try { localStorage.setItem(SEEN_KEY, JSON.stringify([...keep])) } catch { /* private window */ }
+  }
+  const unread = rows.filter((r) => !seen.has(r.id)).length
+  const openOne = (r: Note) => { save(new Set([...seen, r.id])); setOpen(false); go(`/risks/${r.severity}?open=${encodeURIComponent(r.id)}`) }
   return (
-    <Link to="/command" className="console-icon relative" aria-label={hot ? `${hot} critical or high risks need a person` : 'Nothing urgent'}>
-      <BellIcon size={22} aria-hidden />{hot > 0 && <span className="console-dot" aria-hidden />}
-    </Link>
+    <div ref={box} className="relative">
+      <button className="console-icon relative" aria-haspopup="true" aria-expanded={open}
+        aria-label={unread ? `Notifications: ${unread} unread` : 'Notifications'} onClick={() => setOpen(!open)}>
+        <BellIcon size={22} aria-hidden />{unread > 0 && <span className="console-badge" aria-hidden>{unread > 9 ? '9+' : unread}</span>}
+      </button>
+      {open && (
+        <div className="console-pop right-0 w-[23rem] max-w-[calc(100vw-2rem)] p-0">
+          <div className="flex items-center justify-between gap-2 border-b border-line px-4 py-3">
+            <p className="font-semibold">Notifications</p>
+            <button className="text-sm text-[var(--accent-2)] hover:underline disabled:opacity-40 disabled:no-underline" disabled={!unread}
+              onClick={() => save(new Set([...seen, ...rows.map((r) => r.id)]))}>Mark all as read</button>
+          </div>
+          {rows.length === 0 ? <p className="px-4 py-6 text-center text-sm text-muted">Nothing needs you right now.</p> : (
+            <ul className="max-h-[26rem] overflow-y-auto p-1.5">
+              {rows.slice(0, 30).map((r) => {
+                const isNew = !seen.has(r.id)
+                return (
+                  <li key={r.id}>
+                    <button onClick={() => openOne(r)} className={'flex w-full items-start gap-3 rounded-xl px-3 py-2.5 text-left hover:bg-surface-3' + (isNew ? '' : ' opacity-70')}>
+                      <span className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: SEV_COLOR[r.severity], boxShadow: `0 0 8px ${SEV_COLOR[r.severity]}` }} aria-hidden />
+                      <span className="min-w-0 flex-1">
+                        <span className={'block truncate text-sm ' + (isNew ? 'font-semibold' : '')}>{r.title} on {r.host}</span>
+                        <span className="block text-xs text-muted">
+                          <span style={{ color: SEV_COLOR[r.severity] }}>{SEV_NAME[r.severity]}</span> · {r.overdue ? 'overdue · ' : ''}{r.open_for} ago
+                        </span>
+                      </span>
+                      {isNew && <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-[var(--accent-2)]" aria-label="Unread" />}
+                    </button>
+                  </li>)
+              })}
+            </ul>)}
+          <button className="block w-full border-t border-line px-4 py-2.5 text-center text-sm text-soft hover:text-ink" onClick={() => { setOpen(false); go('/command') }}>
+            Open Command Center
+          </button>
+        </div>)}
+    </div>
   )
 }
 

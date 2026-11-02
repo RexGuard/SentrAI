@@ -35,9 +35,15 @@ export default function RiskList() {
   return (
     <section className="space-y-4">
       <header className="space-y-2">
-        <Link to="/command" className="inline-flex items-center gap-0.5 text-sm text-soft hover:text-ink"><ChevronLeft size={14} aria-hidden /> Command center</Link>
-        <h1 className="text-2xl font-semibold"><span style={{ color: t.color }}>{t.name}</span> risks <span className="font-normal text-muted">({count})</span></h1>
+        <Link to="/command" className="inline-flex items-center gap-0.5 text-sm text-soft hover:text-ink"><ChevronLeft size={14} aria-hidden /> Command Center</Link>
+        <h1 className="text-2xl font-semibold"><span style={{ color: t.color }}>{t.name}</span> Risks <span className="font-normal text-muted">({count})</span></h1>
         <p className="text-sm text-muted">Open a bubble to see what happened, what it means and what to do.</p>
+        <p className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
+          <span className="text-muted">Full lists:</span>
+          <Link to="/command?tab=approvals" className="text-soft underline-offset-2 hover:text-ink hover:underline">Approve many at once</Link>
+          <Link to="/command?tab=incidents" className="text-soft underline-offset-2 hover:text-ink hover:underline">All incidents</Link>
+          <Link to="/command?tab=review" className="text-soft underline-offset-2 hover:text-ink hover:underline">Risk review</Link>
+        </p>
         <div role="tablist" aria-label="Severity" className="flex flex-wrap gap-2">
           {LEVELS.map((l) => {
             const n = data?.levels.find((x) => x.severity === l)?.count ?? 0

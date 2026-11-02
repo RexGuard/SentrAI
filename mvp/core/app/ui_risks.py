@@ -7,6 +7,7 @@ means in plain words, the suggested fix and the one-click actions that are possi
 
 GET /ui/risks            the counts per severity (the bubbles on the Command center)
 GET /ui/risks?severity=x those counts plus the bubbles of that severity, most urgent first
+GET /ui/risks?severity=all  every bubble, newest first (the bell in the top bar)
 The actions themselves go through POST /ui/approvals/bulk, so the guardrails and the audit log are the same.
 """
 from __future__ import annotations
@@ -152,13 +153,15 @@ def install(app: FastAPI, core: Any) -> None:
     @app.get("/ui/risks")
     def get_risks(severity: str | None = Query(None)) -> dict[str, Any]:
         """The Command center's severity bubbles; with `severity`, that level's risk bubbles too."""
-        if severity is not None and severity not in LEVELS:
-            raise HTTPException(400, f"severity is one of {', '.join(LEVELS)}")
+        if severity is not None and severity not in LEVELS and severity != "all":
+            raise HTTPException(400, f"severity is one of {', '.join(LEVELS)} or all")
         incidents = [i for i in core.list_incidents(host=None) if needs_person(i)]
         rows = bubbles(incidents)
         levels = summary(rows, incidents)
         out: dict[str, Any] = {"levels": levels, "headline": headline(levels),
                                "protection_on": not core.protection().get("monitor_only", False)}
-        if severity:
+        if severity == "all":
+            out["rows"] = sorted(rows, key=lambda b: b["hours"])
+        elif severity:
             out["rows"] = [b for b in rows if b["severity"] == severity]
         return out

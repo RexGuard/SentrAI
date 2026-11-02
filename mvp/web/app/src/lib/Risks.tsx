@@ -56,7 +56,7 @@ export function SeverityBubbles({ data }: { data: Risks | null }) {
                   {l.count === 0 ? 'Nothing needs you here' : `${l.count === 1 ? 'Risk requires' : 'Risks require'} your attention`}
                   <ChevronRight size={16} aria-hidden />
                 </span>
-                {l.count > 0 && <span className="block text-xs text-muted">{l.overdue ? `${l.overdue} overdue · ` : ''}oldest {l.oldest}</span>}
+                {l.count > 0 && <span className="block text-xs text-muted">{l.overdue ? `${l.overdue} overdue · oldest` : 'Oldest'} {l.oldest}</span>}
               </span>
             </Link>
           </li>)

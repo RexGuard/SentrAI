@@ -23,7 +23,7 @@ export default function AutoMode() {
   const flip = async () => {
     const turnOn = !on
     const reason = await ask(turnOn
-      ? { title: 'Turn Auto mode on?', confirm: 'Turn on', body: 'SentrAI will contain incidents over the risk threshold by itself, within the Automation guardrails (which actions, how long, how many per hour). Everything it does is in the audit trail and can be rolled back.' }
+      ? { title: 'Turn Auto mode on?', confirm: 'Turn on', body: 'SentrAI will contain incidents over the risk threshold by itself, within the Safety Limits (which actions, how long, how many per hour). Everything it does is in the activity log and can be rolled back.' }
       : { title: 'Turn Auto mode off?', confirm: 'Turn off', danger: true,
           body: 'SentrAI keeps watching and scoring, but nothing is contained on its own: every protective action waits for a person on Approvals. Actions already in force stay until they expire or are rolled back.',
           input: { label: 'Why? (written to the audit log, optional)' } })
@@ -45,7 +45,7 @@ export default function AutoMode() {
       <button role="switch" aria-checked={on} onClick={() => void flip()} disabled={busy || !allowed}
         title={allowed ? undefined : 'Only an Owner or Admin can change Auto mode.'}
         className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-2 py-1 disabled:opacity-60">
-        <span className="font-medium">Auto mode</span>
+        <span className="font-medium">Auto Mode</span>
         <span className={'relative h-5 w-9 rounded-full transition-colors ' + (on ? 'bg-ok' : 'bg-surface-3')} aria-hidden>
           <span className={'absolute top-0.5 h-4 w-4 rounded-full bg-bg shadow transition-all ' + (on ? 'left-[1.125rem]' : 'left-0.5')} />
         </span>

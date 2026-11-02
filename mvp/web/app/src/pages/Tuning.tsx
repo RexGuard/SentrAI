@@ -24,8 +24,8 @@ export default function Tuning() {
   return (
     <section className="space-y-4">
       <header>
-        <h1 className="text-2xl font-semibold">Tuning</h1>
-        <p className="text-sm text-muted">where this week's alerts come from, and how to quiet the noise without hiding real attacks</p>
+        <h1 className="text-2xl font-semibold">Fewer False Alarms</h1>
+        <p className="text-sm text-muted">Where this week's alerts come from, and how to quiet the noise without hiding real attacks</p>
       </header>
       {error && <p role="alert" className="rounded-md border border-line bg-surface p-3 text-bad">{error}</p>}
       {!page ? !error && <p className="text-muted" role="status">Loading…</p> : (

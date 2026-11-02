@@ -90,7 +90,7 @@ export default function Extensions() {
   return (
     <section className="space-y-4">
       <header>
-        <h1 className="text-2xl font-semibold">Extensions</h1>
+        <h1 className="text-2xl font-semibold">Add-ons</h1>
         <p className="text-sm text-muted">Outside services SentrAI works with · add or remove each one while SentrAI runs</p>
       </header>
       {error && <p role="alert" className="rounded-md border border-line bg-surface p-3 text-bad">{error}</p>}

@@ -1,109 +1,42 @@
-// Command center: what needs a person as one bubble per severity (Critical / High / Medium), the risk over time,
-// and the machines, so a non-IT person sees at a glance where to start. A bubble opens that severity's risks
-// (pages/RiskList.tsx); the full Approvals, Incidents and Review lists open as tabs here. Sentry is under the ? button.
+// Command Center: only the four severity cards (Critical, High, Medium, Low). A card opens that severity's risks
+// (pages/RiskList.tsx). The old Approvals, Incidents and Review addresses still land here (?tab=...) and show that
+// full list under the cards, so old links and bookmarks keep working.
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
-import { ChevronRight, ClipboardCheck, Gauge, Siren, X } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
+import { X } from 'lucide-react'
 import { api, ApiError } from '../lib/api'
-import { Chart, type Point } from './Review'
 import { SeverityBubbles, type Risks } from '../lib/Risks'
 
-// The full lists that used to be their own menu entries, folded in here and drawn only when picked.
-const Approvals = lazy(() => import('./Approvals'))
-const Incidents = lazy(() => import('./Incidents'))
-const Review = lazy(() => import('./Review'))
 const TABS = [
-  { key: 'approvals', label: 'Approve many at once', note: 'pick several, group them, approve or reject together', icon: ClipboardCheck, Page: Approvals },
-  { key: 'incidents', label: 'All incidents', note: 'owners, assign, close with a note, waves, closed ones', icon: Siren, Page: Incidents },
-  { key: 'review', label: 'Risk review', note: 'how close SentrAI is to acting on its own, and why', icon: Gauge, Page: Review },
+  { key: 'approvals', label: 'Approve Many at Once', Page: lazy(() => import('./Approvals')) },
+  { key: 'incidents', label: 'All Incidents', Page: lazy(() => import('./Incidents')) },
+  { key: 'review', label: 'Risk Review', Page: lazy(() => import('./Review')) },
 ] as const
 
-type Risk = { risk_index?: number; band?: string; threshold?: number; history?: Point[] }
-type MachineRow = { name: string; host: string; online: boolean; waiting: boolean; index: number | null; band: string; open: number }
-
-const bandColor: Record<string, string> = { green: 'var(--green)', amber: 'var(--amber)', red: 'var(--red)', critical: 'var(--critical)' }
-
-function Card({ title, to, more, children }: { title: string; to: string; more?: string; children: React.ReactNode }) {
-  return (
-    <div className="min-w-0 space-y-2 rounded-lg border border-line bg-surface p-4">
-      <div className="flex items-center justify-between gap-2">
-        <h2 className="font-semibold">{title}</h2>
-        <Link to={to} className="inline-flex items-center gap-0.5 text-sm text-soft hover:text-ink">{more ?? 'Open page'} <ChevronRight size={14} aria-hidden /></Link>
-      </div>
-      {children}
-    </div>
-  )
-}
-
 export default function Command() {
-  const [risk, setRisk] = useState<Risk | null>(null)
   const [risks, setRisks] = useState<Risks | null>(null)
-  const [machines, setMachines] = useState<MachineRow[]>([])
   const [error, setError] = useState('')
   const [params, setParams] = useSearchParams()
   const tab = TABS.find((t) => t.key === params.get('tab'))
-  const pick = (key: string | null) => setParams(key ? { tab: key } : {}, { replace: true })
   const load = useCallback(async () => {
-    try {
-      const [r, k, m] = await Promise.all([api<Risk>('/risk'), api<Risks>('/ui/risks'), api<{ machines: MachineRow[] }>('/ui/machines')])
-      setRisk(r); setRisks(k); setMachines(m.machines); setError('')
-    } catch (e) { setError(e instanceof ApiError ? e.message : 'Could not reach SentrAI.') }
+    try { setRisks(await api<Risks>('/ui/risks')); setError('') }
+    catch (e) { setError(e instanceof ApiError ? e.message : 'Could not reach SentrAI.') }
   }, [])
   useEffect(() => { void load(); const t = setInterval(() => void load(), 10000); return () => clearInterval(t) }, [load])
 
-  const threshold = Number(risk?.threshold ?? 80)
-  const hist = (risk?.history ?? []).filter((p) => typeof p.risk_index === 'number')
-  const online = machines.filter((m) => m.online).length
   return (
     <section className="space-y-8">
-      <header>
-        <h1>Command center</h1>
-        <p>{risks?.headline ?? 'What needs a person, by how serious it is.'}</p>
-        <p className="mt-1 text-sm text-muted">
-          Risk now <b className={(risk?.risk_index ?? 0) >= threshold ? 'text-bad' : 'text-ink'}>{risk?.risk_index != null ? Math.round(risk.risk_index) : '-'}</b> of 100
-          · acts on its own at {threshold}{machines.length ? ` · ${online} of ${machines.length} machines online` : ''}
-        </p>
-      </header>
+      <h1>Command Center</h1>
       {error && <p role="alert" className="rounded-md border border-line bg-surface p-3 text-bad">{error}</p>}
-      <div className="grid gap-4">
-        <div className="min-w-0 space-y-6">
-          <div className="space-y-6">
-            <SeverityBubbles data={risks} />
-            <div role="tablist" aria-label="Full lists" className="flex flex-wrap items-center gap-2 border-t border-line-soft pt-3">
-              <span className="text-xs text-muted">Full lists:</span>
-              {TABS.map((t) => (
-                <button key={t.key} role="tab" aria-selected={tab?.key === t.key} title={t.note} onClick={() => pick(tab?.key === t.key ? null : t.key)}
-                  className={'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm ' + (tab?.key === t.key ? 'border-ink bg-surface-3 text-ink' : 'border-line text-soft hover:bg-surface-2')}>
-                  <t.icon size={14} aria-hidden />{t.label}</button>))}
-            </div>
+      <SeverityBubbles data={risks} />
+      {tab && (
+        <div role="region" aria-label={tab.label} className="min-w-0 space-y-3 rounded-2xl border border-line bg-surface p-4">
+          <div className="flex items-start justify-between gap-2">
+            <h2 className="font-semibold">{tab.label}</h2>
+            <button className="text-muted hover:text-ink" aria-label="Close this list" onClick={() => setParams({}, { replace: true })}><X size={16} aria-hidden /></button>
           </div>
-          {tab && (
-            <div role="tabpanel" aria-label={tab.label} className="min-w-0 space-y-3 rounded-lg border border-line bg-surface p-4">
-              <div className="flex items-start justify-between gap-2">
-                <div><h2 className="font-semibold">{tab.label}</h2><p className="text-xs text-muted">{tab.note}</p></div>
-                <button className="text-muted hover:text-ink" aria-label="Close this list" onClick={() => pick(null)}><X size={16} aria-hidden /></button>
-              </div>
-              <Suspense fallback={<p className="text-muted" role="status">Loading…</p>}><tab.Page embedded /></Suspense>
-            </div>)}
-          <Card title="Risk over time" to="/command?tab=review" more="Risk review">
-            {hist.length < 2 ? <p className="text-soft">No history yet. The core adds a point on every risk change.</p> : <Chart points={hist} threshold={threshold} />}
-          </Card>
-          <Card title="Machines" to="/machines" more="All machines">
-            {machines.length === 0 ? <p className="text-soft">No machines yet.</p> : (
-              <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
-                {machines.map((m) => {
-                  const body = (
-                    <>
-                      <span className="min-w-0 truncate">{m.name}<span className="ml-2 text-xs text-muted">{m.waiting ? 'waiting' : !m.online ? 'offline' : m.open ? `${m.open} open` : 'calm'}</span></span>
-                      <b className="text-lg" style={{ color: m.online && !m.waiting ? bandColor[m.band] : undefined }}>{m.online && !m.waiting && m.index != null ? Math.round(m.index) : '-'}</b>
-                    </>)
-                  const cls = 'flex items-center justify-between gap-2 rounded-md border border-line-soft px-3 py-1.5 text-sm'
-                  return <li key={m.name}>{m.host ? <Link to={`/machines/${encodeURIComponent(m.host)}`} className={cls + ' hover:bg-surface-2'}>{body}</Link> : <div className={cls}>{body}</div>}</li>
-                })}
-              </ul>)}
-          </Card>
-        </div>
-      </div>
+          <Suspense fallback={<p className="text-muted" role="status">Loading…</p>}><tab.Page embedded /></Suspense>
+        </div>)}
     </section>
   )
 }

@@ -112,7 +112,7 @@ function Offenders({ rows }: { rows: Row[] }) {
   }, [rows])
   return (
     <div className="rounded-lg border border-line bg-surface p-4">
-      <h2 className="font-semibold">Repeat offenders <span className="font-normal text-muted">· sources behind more than one incident</span></h2>
+      <h2 className="font-semibold">Repeat Offenders <span className="font-normal text-muted">· sources behind more than one incident</span></h2>
       {list.length === 0 ? <p className="mt-2 text-sm text-soft">No source came back more than once.</p> : (
         <div className="mt-2 overflow-x-auto" role="region" aria-label="Repeat offenders" tabIndex={0}>
           <table className="w-full text-left text-sm">
@@ -162,8 +162,8 @@ export default function Analytics() {
   return (
     <section className="space-y-4">
       <header>
-        <h1 className="text-2xl font-semibold">Analytics</h1>
-        <p className="text-sm text-muted">how incidents add up over time, who keeps coming back, and fixes learned from similar ones</p>
+        <h1 className="text-2xl font-semibold">Trends</h1>
+        <p className="text-sm text-muted">How incidents add up over time, who keeps coming back, and fixes learned from similar ones</p>
       </header>
       {error && <p role="alert" className="rounded-md border border-line bg-surface p-3 text-bad">{error}</p>}
       {!page && !error && <p className="text-muted" role="status">Loading…</p>}

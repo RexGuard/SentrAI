@@ -30,7 +30,7 @@ export default function Report({ compact = false }: { compact?: boolean }) {
 
   return (
     <section className={compact ? 'space-y-3' : 'max-w-xl space-y-4'}>
-      {!compact && <h1 className="text-2xl font-semibold">Report something suspicious</h1>}
+      {!compact && <h1 className="text-2xl font-semibold">Report Something Suspicious</h1>}
       {info && !info.on ? <p className="rounded-md border border-line bg-surface p-4">Reporting from this page is turned off. Please tell your IT contact directly.</p>
         : sent ? (
           <div className="space-y-3 rounded-lg border border-line bg-surface p-4">

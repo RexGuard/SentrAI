@@ -53,7 +53,7 @@ export default function Team() {
   return (
     <section className="space-y-4">
       <header>
-        <h1 className="text-2xl font-semibold">Team</h1>
+        <h1 className="text-2xl font-semibold">People and Access</h1>
         <p className="text-sm text-muted">Who may sign in to this console, and what each role may do</p>
       </header>
       {error && <p role="alert" className="rounded-md border border-line bg-surface p-3 text-bad">{error}</p>}
@@ -94,7 +94,7 @@ export default function Team() {
 
           {others.length > 0 && person && (
             <div className="space-y-3 rounded-lg border border-line bg-surface p-4">
-              <h2 className="font-semibold">Change someone's access</h2>
+              <h2 className="font-semibold">Change Someone's Access</h2>
               <div className="flex flex-wrap items-end gap-3">
                 <label className="text-sm text-soft">Person
                   <select className={field} value={who} onChange={(e) => { setWho(e.target.value); setRole(others.find((p) => p.email === e.target.value)?.role ?? '') }}>
@@ -114,7 +114,7 @@ export default function Team() {
           )}
 
           <div className="space-y-3 rounded-lg border border-line bg-surface p-4">
-            <h2 className="font-semibold">Invite someone <span className="font-normal text-muted">· they set their own password and authenticator</span></h2>
+            <h2 className="font-semibold">Invite Someone <span className="font-normal text-muted">· they set their own password and authenticator</span></h2>
             <form className="flex flex-wrap items-end gap-3" onSubmit={(e) => { e.preventDefault(); void act('/ui/team/invite', { email: inviteEmail, role: inviteRole }).then(() => setInviteEmail('')) }}>
               <label className="text-sm text-soft">Their email
                 <input type="email" required className={field + ' w-72 max-w-full'} value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} /></label>

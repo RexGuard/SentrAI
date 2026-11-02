@@ -31,15 +31,15 @@ export default function Audit() {
   return (
     <section className="space-y-4">
       <header>
-        <h1 className="text-2xl font-semibold">Audit trail</h1>
-        <p className="text-sm text-muted">every step by every agent and person, hash-chained</p>
+        <h1 className="text-2xl font-semibold">Activity Log</h1>
+        <p className="text-sm text-muted">Every step by every agent and person, hash-chained</p>
       </header>
       {error && <p role="alert" className="rounded-md border border-line bg-surface p-3 text-bad">{error}</p>}
       {page && (
         <div className="grid gap-4 lg:grid-cols-[7fr_5fr]">
           <div className="min-w-0 space-y-3 rounded-lg border border-line bg-surface p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="font-semibold">Agent activity <span className="font-normal text-muted">· latest {page.feed.length} of {page.count} records</span></h2>
+              <h2 className="font-semibold">Agent Activity <span className="font-normal text-muted">· latest {page.feed.length} of {page.count} records</span></h2>
               {page.chain_valid === false
                 ? <span className="inline-flex items-center gap-1 text-crit"><ShieldAlert size={16} aria-hidden /> Chain broken at #{page.first_invalid_seq}</span>
                 : <span className="inline-flex items-center gap-1 text-ok"><CheckCircle2 size={16} aria-hidden /> Chain intact</span>}

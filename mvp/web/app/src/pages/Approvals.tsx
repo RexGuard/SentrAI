@@ -175,7 +175,7 @@ export default function Approvals({ embedded = false }: { embedded?: boolean }) 
       {!embedded && (
       <header>
         <h1 className="text-2xl font-semibold">Approvals</h1>
-        <p className="text-sm text-muted">requests waiting on a person · nothing permanent happens without one</p>
+        <p className="text-sm text-muted">Requests waiting on a person · nothing permanent happens without one</p>
       </header>
       )}
       {error && <p role="alert" className="rounded-md border border-line bg-surface p-3 text-bad">{error}</p>}
