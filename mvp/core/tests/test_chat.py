@@ -1,9 +1,13 @@
 """Operator chat: read-only answers, suggestions as buttons, never a state change by itself."""
 
+import pytest
 import sentrai_llm
 from app.chat import OperatorChat
+from app.config import Settings
+from app.main import create_app
+from fastapi.testclient import TestClient
 
-from .conftest import brute_force, ev
+from .conftest import AUTH, brute_force, ev
 
 INC = "RSK-2026-081"
 
@@ -351,3 +355,105 @@ def test_share_a_chat(client):
     assert client.post("/chat/shares", json={"message_ids": [9999]}).status_code == 400
     assert client.delete(f"/chat/shares/{share['id']}").json()["ok"]
     assert client.get(f"/chat/shares/{share['id']}").status_code == 404
+
+
+@pytest.fixture
+def panel(tmp_path):
+    """Each machine scored on its own, so two attacks on two machines stay open."""
+    settings = Settings(db_path=tmp_path / "sentrai.db", background=False, demo_speed=60.0, risk_scope="host")
+    app = create_app(settings)
+    with TestClient(app, headers=AUTH) as c:
+        c.core = app.state.core  # type: ignore[attr-defined]
+        yield c
+
+
+def two_machines(client):
+    """An overdue password-guessing risk on web-01 and a fresh one on db-01."""
+    brute_force(client)
+    client.core.advance(3)  # past the 2 h time limit with nobody looking: overdue
+    for i in range(5):
+        client.post("/events", json=ev(20 + i, "POST /login 401 user=admin", ip="198.51.100.9", host="db-01"))
+    incs = {i["host"]: i["id"] for i in client.get("/incidents").json()}
+    return incs["web-01"], incs["db-01"]
+
+
+def test_machine_scope_without_a_model_cleans_up_only_that_machine(panel):
+    web, db = two_machines(panel)
+    reply = panel.post("/chat", json={"operator": "erick", "message": "Clean up the overdue risks",
+                                       "machine": "web-01"}).json()
+    assert reply["machine"] == "web-01" and "overdue" in reply["text"] and "web-01" in reply["text"]
+    [s] = reply["suggestions"]
+    assert s["kind"] == "bulk" and s["decision"] == "ack" and s["incidents"] == [web]
+    assert panel.get(f"/incidents/{web}").json()["acked"] is False  # still only a button
+
+
+def test_machine_named_by_its_given_name_in_the_question(panel):
+    web, _ = two_machines(panel)
+    chat = OperatorChat(panel.core)
+    chat.names = lambda: {"web-01": "RexGuard Machine"}
+    reply = chat.ask("erick", "Clean up the overdue risks for RexGuard Machine")
+    assert "RexGuard Machine" in reply["text"] and reply["suggestions"][0]["incidents"] == [web]
+    assert chat.ask("erick", "how is it going?", machine="RexGuard Machine")["machine"] == "web-01"
+
+
+def test_unknown_machine_is_refused(client):
+    r = client.post("/chat", json={"operator": "erick", "message": "hi", "machine": "nope"})
+    assert r.status_code == 404
+
+
+def test_model_sees_the_selected_machine_and_can_offer_one_button_for_many(panel):
+    web, db = two_machines(panel)
+    provider = FakeProvider([
+        sentrai_llm.Turn(tool_calls=[call("get_machine", machine="web-01")], stop="tool_use"),
+        sentrai_llm.Turn(tool_calls=[call("suggest_bulk_action", incidents=[web, db, "RSK-9999-999"], decision="ack",
+                                         label="Acknowledge 2 overdue risks", reason="Looked at in chat")],
+                         stop="tool_use"),
+        sentrai_llm.Turn(texts=["Two risks are overdue on this computer."]),
+    ])
+    chat = OperatorChat(panel.core, provider)
+    reply = chat.ask("erick", "clean up", machine="web-01")
+    assert "host web-01" in provider.convos[0].sent[0] and web in provider.convos[0].sent[0]
+    assert '"overdue": true' in provider.convos[0].results[0][0][1]
+    [s] = reply["suggestions"]
+    assert s["kind"] == "bulk" and s["incidents"] == [web, db]  # the unknown one is left out
+    assert "RSK-9999-999 not found" in provider.convos[0].results[1][0][1]
+
+
+def test_no_button_for_a_decision_that_is_no_longer_possible(client):
+    brute_force(client)
+    client.post(f"/incidents/{INC}/ack", json={"operator": "erick"})
+    provider = FakeProvider([
+        sentrai_llm.Turn(tool_calls=[call("suggest_action", incident=INC, decision="ack", reason="x")], stop="tool_use"),
+        sentrai_llm.Turn(texts=["Someone already looked at it."]),
+    ])
+    reply = OperatorChat(client.core, provider).ask("erick", "acknowledge it")
+    assert reply["suggestions"] == []
+    out, err = provider.convos[0].results[0][0][1:]
+    assert err is True and "no longer possible" in out
+
+
+def test_buttons_without_words_never_show_no_answer(client):
+    brute_force(client)
+    provider = FakeProvider([
+        sentrai_llm.Turn(tool_calls=[call("suggest_action", incident=INC, decision="approve", reason="x")],
+                         stop="tool_use"),
+        sentrai_llm.Turn(texts=[]),
+    ])
+    reply = OperatorChat(client.core, provider).ask("erick", "what now?")
+    assert reply["text"] != "(no answer)" and f"Approve & patch {INC}" in reply["text"]
+
+
+def test_nothing_at_all_from_the_model_falls_back(client):
+    brute_force(client)
+    reply = OperatorChat(client.core, FakeProvider([sentrai_llm.Turn(texts=[])])).ask("erick", "what's going on?")
+    assert reply["source"] == "fallback" and "a quick look from you" in reply["text"]
+
+
+def test_answer_written_before_a_last_lookup_is_kept(client):
+    brute_force(client)
+    long = "Someone tried to guess the admin password on your website many times, and SentrAI is watching it closely."
+    provider = FakeProvider([
+        sentrai_llm.Turn(texts=[long], tool_calls=[call("get_incident", incident=INC)], stop="tool_use"),
+        sentrai_llm.Turn(texts=[]),
+    ])
+    assert OperatorChat(client.core, provider).ask("erick", "what now?")["text"] == long

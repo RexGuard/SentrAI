@@ -54,6 +54,7 @@ Asks Sentry a question and waits for the answer. Written to the audit trail (`op
 | `operator` | string, required | who is asking |
 | `message` | string, required | the question; cut at 2000 characters |
 | `incident` | string | the incident the question is about, such as `RSK-2026-084` |
+| `machine` | string | keeps the chat to one computer: its host, or the name people gave it on the Computers page. Sentry then talks only about that computer's incidents. Ignored when `incident` is set |
 
 ```json
 {"operator": "erick", "message": "Which incident should I deal with first?"}
@@ -104,8 +105,14 @@ Each suggestion has a `label` and a `reason`, plus what pressing it does:
 | `"kind": "watch_log"` | `file_id`, `layer` | [`POST /log-sources`](events.html#post-log-sources) |
 | `"kind": "quarantine_file"` | `finding_id` | [`POST /threats/{finding_id}/quarantine`](scans.html#post-threatsfinding_idquarantine) |
 | `"kind": "backup_now"` | | [`POST /backups`](scans.html#post-backups) |
+| `"kind": "bulk"` | `incidents`, `decision` | the same decision on each incident still open for it, one by one (for example "Acknowledge 4 overdue risks") |
 
-**Errors**: `400` `empty message`.
+Sentry only offers a decision that is still possible: no button to acknowledge a risk that is already resolved or
+acknowledged. When the model answers with buttons but no words, the answer lists the buttons; when it gives
+nothing at all, the core's own explanation answers instead, so the chat never shows an empty answer. Without a
+model, "clean up the overdue risks (on <computer>)" lists the overdue risks and offers one button for all of them.
+
+**Errors**: `400` `empty message`; `404` when `machine` names no known computer.
 
 ### `POST /chat/stream`
 
