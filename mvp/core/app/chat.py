@@ -336,8 +336,17 @@ def default_chat_provider() -> sentrai_llm.Provider | None:
         log.warning("Chat answers without an AI model: %s", e)
         return None
     if provider is not None:
-        provider.model = os.getenv("CYANIDE_MODEL") or provider.model
+        provider.model = chat_model(provider)
     return provider
+
+
+CHAT_DEFAULT_MODEL = "claude-sonnet-5-5"  # chat is the biggest AI cost; Sonnet is about half Opus's price per token
+
+
+def chat_model(provider: sentrai_llm.Provider) -> str:
+    """SENTRAI_CHAT_MODEL, then CYANIDE_MODEL, then (Anthropic only) Sonnet 5.5; other providers keep their model."""
+    return (os.getenv("SENTRAI_CHAT_MODEL") or os.getenv("CYANIDE_MODEL")
+            or (CHAT_DEFAULT_MODEL if provider.name == "anthropic" else provider.model))
 
 
 class OperatorChat:

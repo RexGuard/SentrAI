@@ -278,8 +278,13 @@ class _AnthropicConversation(Conversation):
         self.p, self.system, self.tools, self.messages = p, system, tools, []
 
     def _step(self) -> Turn:
-        r = self.p._create(system=self.system, tools=self.tools, messages=self.messages,
-                           output_config={"effort": self.p.effort})
+        # Prompt caching: tools + system are the same on every step and every question, so they are marked once
+        # (read back at ~10% of the price); the top-level marker also caches the growing conversation, so each
+        # lookup step only pays full price for what is new since the last step.
+        r = self.p._create(system=[{"type": "text", "text": self.system, "cache_control": {"type": "ephemeral"}}],
+                           tools=self.tools, messages=self.messages, output_config={"effort": self.p.effort},
+                           # extra_body: older installed SDK 1.x releases lack the top-level argument.
+                           extra_body={"cache_control": {"type": "ephemeral"}})
         self.messages.append({"role": "assistant", "content": r.content})  # keep thinking blocks unchanged
         turn = Turn(stop="tool_use" if r.stop_reason == "tool_use" else
                     "end" if r.stop_reason in ("end_turn", "stop_sequence") else str(r.stop_reason))

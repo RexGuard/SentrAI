@@ -189,6 +189,7 @@ pass it with `--db`.
 | `SENTRAI_LLM_PROVIDER` | `auto` | `anthropic`, `openai`, `deepseek`, `commandcode` (also set `SENTRAI_LLM_MODEL`), or `compatible` (any OpenAI-compatible API: also set `SENTRAI_LLM_BASE_URL` and `SENTRAI_LLM_MODEL`). `auto` uses the first provider-specific key set. The dashboard's Configuration page has a Fetch models button that lists the models your key can use. |
 | `CYANIDE_PROFILE` | unset | Path to the system profile JSON, e.g. `profiles\tuition_centre.json`. |
 | `CYANIDE_MODEL` / `CYANIDE_EFFORT` / `CYANIDE_TIMEOUT_S` | provider default / `low` / `20` | Model, effort level (Anthropic only) and per-call timeout for planning. Defaults: `claude-opus-5`, `gpt-5`, `deepseek-chat`. |
+| `SENTRAI_CHAT_MODEL` | `claude-sonnet-5-5` (Anthropic) | Model for the Sentry chat only. Chat is the biggest AI cost, so on Anthropic it uses Sonnet 5.5 rather than the planner's model. `CYANIDE_MODEL` also applies when this is unset; other providers keep their own model. Chat requests use prompt caching. |
 | `CYANIDE_ENABLED` | `1` | Set to `0` to switch the planner off without removing the key (tests do this). |
 | `SENTRAI_BACKGROUND` | `1` | Set to `0` to turn off the 1 s background tick (tests do this). |
 
