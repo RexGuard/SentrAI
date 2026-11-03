@@ -35,8 +35,9 @@ and many settings.
 
 **AI selects an allowed action. The program executes it after approval.**
 
-**Before the reveal.** SentrAI could already block an address in the host firewall and lock an account, and an
-"Auto mode" switch let it do so above the limit. The AI only explained incidents.
+**Before the reveal.** SentrAI could already block an address in the host firewall and lock an account, and the
+AI responder could propose a fix from the allowlist. The proposal sat in a technical Approvals table, and the
+demo did not show the attacker being stopped.
 
 **After the reveal.**
 - **The AI selects.** For each risk, Sentry (Claude) picks the fix from a fixed list of allowed actions (block
@@ -44,7 +45,7 @@ and many settings.
   against the allowlist and the protected addresses and accounts, and rejects anything else. How long a block
   lasts comes from settings, never from the AI.
 - **A person approves.** The risk card shows the selected fix in plain words with one press: **Do the suggested
-  fix** or **Not a threat** (#197, #201). The Auto mode switch was removed so this is the one path (#199).
+  fix** or **Not a threat** (#197, #201).
 - **The program executes it.** On approval SentrAI applies the fix for real: the address is blocked in the
   firewall through the agent on that machine, or the account is locked. In the live demo the attacker's own
   window then shows its sign-ins refused for 2 hours and the attack giving up (SentrAI #202, #203, #205;
