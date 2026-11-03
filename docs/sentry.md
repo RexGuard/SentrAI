@@ -61,3 +61,20 @@ Standing instructions are added on top of the defaults before every answer, and 
 2000 characters. Use them for things that only apply to one client, for example "Our managers read
 this on their phones; keep it to two sentences" or "Call the website the shop".
 Every change goes on the audit trail. See the [chat API](api/chat.html#memory).
+
+## When Sentry can't do it yet
+
+When someone asks Sentry for something SentrAI can't do yet ("Email me a report every Monday", "Export the
+incidents to Excel"), Sentry says so plainly, helps with what it can do now, and passes the request
+to SentrAI's team as a **feature idea**. Questions it can answer, and decisions it already offers buttons for, are
+not noted.
+
+The same idea asked again is grouped and counted, so the most wanted ones rise to the top. Only the person's own
+words are kept, cleaned of addresses, emails, links, file paths and anything that looks like a password or key;
+attached files and log lines never go in. Ideas live on the panel in `feature-ideas.json`.
+
+SentrAI's team reviews them from the command line:
+
+    sudo sentrai ideas list            # most asked first
+    sudo sentrai ideas planned FI-1a2b3c --note "next release"
+    sudo sentrai ideas done FI-1a2b3c  # or: dismiss, open

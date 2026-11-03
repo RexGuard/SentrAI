@@ -141,6 +141,18 @@ Mark messages handled, or open again.
 
 **Body** `{"ids": ["FB-..."], "done": true}` **Returns** `{"changed": n, "message": "..."}`. `403` for an Auditor.
 
+### `GET /ui/feature-ideas`
+
+Feature ideas: things people asked Sentry (the chat) for that SentrAI can't do yet, grouped so the same idea asked again counts up. Most asked first; only `new` and `planned` ones unless `?all=true`. Only the person's own words are kept, with addresses, emails, links, file paths and anything that looks like a password or key taken out; never attached files or log lines. For the SentrAI team: `sudo sentrai ideas`.
+
+**Returns** `{"ideas": [{"id": "FI-...", "title", "why", "status", "count", "asked_by", "people", "examples", "first_at", "last_at"}], "count": n}`.
+
+### `POST /ui/feature-ideas/status`
+
+Mark ideas `planned`, `done`, `dismissed`, or `new` again. A dismissed idea that someone asks for again goes back to `new`.
+
+**Body** `{"ids": ["FI-..."], "status": "planned", "note": "optional"}` **Returns** `{"changed": n, "message": "..."}`. `403` unless Owner or Admin.
+
 ## Audit trail
 
 ### `GET /ui/audit`
