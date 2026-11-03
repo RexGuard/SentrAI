@@ -20,6 +20,7 @@ On the panel (installed as /usr/local/bin/sentrai, runs as the service account):
     sudo sentrai backups list | now | copies | key | unlock HOST BACKUP_ID
     sudo sentrai incidents list [--all] | show ID | approve ID... | reject ID... --why W | rollback ID... | keep ID...
                            | resolve ID --note N
+    sudo sentrai ideas list [--all] | planned ID... | done ID... | dismiss ID... | open ID...  [--note N]
     sudo sentrai protection on|off [--reason R]
     sudo sentrai team list | invite EMAIL [--role admin] | role EMAIL ROLE | remove EMAIL | reset EMAIL | withdraw EMAIL
     sudo sentrai api GET|POST PATH [JSON]                 any other core endpoint (docs/api/)
@@ -445,6 +446,33 @@ def cmd_feedback(call: Call, a: argparse.Namespace) -> Any:
     return out if a.json else out.get("message", out)
 
 
+def cmd_ideas(call: Call, a: argparse.Namespace) -> Any:
+    """Feature ideas: what people asked Sentry for that SentrAI can't do yet, most asked first."""
+    if a.action == "list":
+        out = call("GET", "/ui/feature-ideas" + ("?all=true" if a.all else ""))
+        if a.json:
+            return out
+        rows = out.get("ideas", [])
+        if not rows:
+            return "No feature ideas waiting." if not a.all else "No feature ideas yet."
+        blocks = []
+        for r in rows:
+            head = (f"{r.get('id')}  asked {r.get('count')}x by {r.get('asked_by')} "
+                    f"{'person' if r.get('asked_by') == 1 else 'people'}  last {str(r.get('last_at') or '')[:10]}"
+                    + (f"  [{r.get('status')}]" if r.get("status") != "new" else ""))
+            body = [f"    {r.get('title')}"] + [f"      \"{x}\"" for x in (r.get("examples") or [])
+                                               if x.strip().lower() != str(r.get("title") or "").strip().lower()]
+            blocks.append("\n".join([head] + body))
+        return ("\n\n".join(blocks) + f"\n\n{len(rows)} idea{'s' if len(rows) != 1 else ''}. "
+                "Mark them: sentrai ideas planned|done|dismiss ID ...")
+    if not a.ids:
+        raise CliError(f"which idea? sentrai ideas {a.action} ID ... (sentrai ideas list)")
+    status = {"planned": "planned", "done": "done", "dismiss": "dismissed", "open": "new"}[a.action]
+    out = call("POST", "/ui/feature-ideas/status", {"ids": a.ids, "status": status, "operator": operator_name(),
+                                                    "note": a.note or ""})
+    return out if a.json else out.get("message", out)
+
+
 def cmd_switch(path: str) -> Callable[[Call, argparse.Namespace], Any]:
     def run(call: Call, a: argparse.Namespace) -> Any:
         out = call("POST", path, {"on": a.state == "on", "operator": operator_name(), "reason": a.reason or ""})
@@ -572,6 +600,11 @@ def parser() -> argparse.ArgumentParser:
     fb.add_argument("action", choices=["list", "done", "open"])
     fb.add_argument("ids", nargs="*")
     fb.add_argument("--all", action="store_true", help="list: handled ones too")
+    ide = add("ideas", cmd_ideas, "feature ideas: what people asked Sentry for that SentrAI can't do yet")
+    ide.add_argument("action", choices=["list", "planned", "done", "dismiss", "open"])
+    ide.add_argument("ids", nargs="*")
+    ide.add_argument("--all", action="store_true", help="list: done and dismissed ones too")
+    ide.add_argument("--note", help="planned/done/dismiss: a short note kept with the idea")
     for name, path, what in (("protection", "/protection", "protection on, or watch only"),):
         sw = add(name, cmd_switch(path), what)
         sw.add_argument("state", choices=["on", "off"])

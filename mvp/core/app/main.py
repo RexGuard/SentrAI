@@ -25,7 +25,7 @@ from .reports import build_report, render_markdown, render_pdf
 from . import summary as client_summary
 from . import auth as auth_cookie
 from . import ui_analytics, ui_approvals, ui_tuning, ui_audit, ui_incidents, ui_limits, ui_machine, ui_machines, ui_overview, ui_report, ui_routing, ui_settings, ui_setup, ui_team, ui_recovery, ui_privacy, ui_risks, ui_feedback
-from . import ai, anchor, apidocs, backup_copies, chat_memory, depscan, fleet, hardware, integrations, jobs, procscan, webhook
+from . import ai, anchor, apidocs, backup_copies, chat_memory, depscan, feature_ideas, fleet, hardware, integrations, jobs, procscan, webhook
 from .extensions import ExtensionError
 from . import chat as chat_mod
 from .chat import OperatorChat, default_chat_provider
@@ -523,6 +523,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ui_setup.install(app, lambda q, o, a: chat.interpret_setup(q, o, a), lambda: (ai.reload(core, chat), core.extensions.reload()))
     ui_report.install(app, core, staff)
     app.state.core = core
+    feature_ideas.install(app, core, chat, feature_ideas.Ideas(
+        sentrai_paths.path("core.feature_ideas", core.settings.db_path.parent, migrate=False)))
     app.state.chat = chat
     app.state.discovery = discovery
     app.state.threats = threats
