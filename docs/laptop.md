@@ -42,8 +42,8 @@ window. Watch a part as it works with `tail -f .run_logs/core.log`, and stop eve
 
 ## Give it logs to watch
 
-SentrAI only reads the logs you approve. On the dashboard, open **Collector** and run a process
-scan, or ask Scout to find them. You can also approve the usual logs in one step: nginx, SSH,
+SentrAI only reads the logs you approve. On the classic dashboard (`http://127.0.0.1:8501`),
+open **Collector** and run a process scan, or ask Scout to find them. You can also approve the usual logs in one step: nginx, SSH,
 Suricata and database logs on Linux, or the Windows Event Log on Windows (run it as an
 administrator there; see [Log sources](log-sources.html)):
 
@@ -63,6 +63,9 @@ The web dashboard is the main console. With SentrAI running, start it from the `
 ```
 
 Then open `http://127.0.0.1:5173` and sign in with the same account. It needs [Node.js](https://nodejs.org) 20 or newer. The classic dashboard on port 8501 keeps running next to it and works as a fallback.
+
+To see SentrAI react without waiting for a real attack, start the
+[demo lab](demo.html#run-the-live-attack-lab) instead: it brings its own fake portal and test attacks.
 
 ## Options
 
