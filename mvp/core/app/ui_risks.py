@@ -8,6 +8,8 @@ means in plain words, the suggested fix and the one-click actions that are possi
 GET /ui/risks            the counts per severity (the bubbles on the Command center)
 GET /ui/risks?severity=x those counts plus the bubbles of that severity, most urgent first
 GET /ui/risks?severity=all  every bubble, newest first (the bell in the top bar)
+Every answer also has `groups`: the same risks counted by type and by computer, with how many SentrAI already
+blocked, for the table under the severity cards.
 The actions themselves go through POST /ui/approvals/bulk, so the guardrails and the audit log are the same.
 """
 from __future__ import annotations
@@ -253,6 +255,31 @@ def summary(rows: list[dict[str, Any]], incidents: list[dict]) -> list[dict[str,
     return out
 
 
+def groups(open_incidents: list[dict], done: list[dict]) -> dict[str, list[dict[str, Any]]]:
+    """The table under the Command center cards: open and already-blocked risks counted by type and by computer.
+
+    `done` is the share of a group SentrAI already blocked on its own, out of everything in it, so a full bar means
+    nothing in that group is waiting for a person."""
+    def by(key) -> list[dict[str, Any]]:
+        rows: dict[str, dict[str, Any]] = {}
+        for inc, is_open in [*((i, True) for i in open_incidents), *((i, False) for i in done)]:
+            name = key(inc)
+            g = rows.setdefault(name, {"name": name, "open": 0, "overdue": 0, "handled": 0, "worst": ""})
+            if is_open:
+                g["open"] += 1
+                g["overdue"] += 1 if inc.get("sla_breached") and not inc.get("acked") else 0
+                lv = level(inc)
+                if not g["worst"] or SEVERITY_RANK.get(lv, 9) < SEVERITY_RANK.get(g["worst"], 9):
+                    g["worst"] = lv
+            else:
+                g["handled"] += 1
+        for g in rows.values():
+            g["done"] = round(100 * g["handled"] / (g["open"] + g["handled"]))
+        return sorted(rows.values(), key=lambda g: (-g["open"], SEVERITY_RANK.get(g["worst"], 9), -g["handled"], g["name"]))
+    return {"type": by(lambda i: title_case(category_label(i.get("category")))),
+            "machine": by(lambda i: str(i.get("host") or "Unknown computer"))}
+
+
 def headline(levels: list[dict[str, Any]]) -> str:
     total = sum(lv["count"] for lv in levels)
     if not total:
@@ -275,7 +302,7 @@ def install(app: FastAPI, core: Any) -> None:
         levels = summary(rows, incidents)
         out: dict[str, Any] = {"levels": levels, "headline": headline(levels),
                                "protection_on": not core.protection().get("monitor_only", False),
-                               "handled_count": len(done)}
+                               "handled_count": len(done), "groups": groups(incidents, done)}
         if severity == "all":
             out["rows"] = sorted(rows, key=lambda b: b["hours"])
         elif severity:
