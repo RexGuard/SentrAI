@@ -152,6 +152,19 @@ def test_words_before_a_lookup_are_not_part_of_the_answer(client):
     assert reply["text"] == "You're safe. Someone tried to guess passwords."
 
 
+def test_answer_written_next_to_a_button_is_kept(client):
+    brute_force(client)
+    provider = FakeProvider([
+        sentrai_llm.Turn(tool_calls=[call("get_incident", incident=INC)], stop="tool_use"),
+        sentrai_llm.Turn(texts=["You're safe. SentrAI suggests blocking that address."],
+                         tool_calls=[call("suggest_action", incident=INC, decision="approve", reason="x")],
+                         stop="tool_use"),
+        sentrai_llm.Turn(texts=["The button is below."]),
+    ])
+    reply = OperatorChat(client.core, provider).ask("erick", "am I safe?")
+    assert reply["text"].startswith("You're safe. SentrAI suggests blocking")
+
+
 def test_prompt_keeps_sentry_to_looked_up_facts_and_real_buttons():
     from app.chat import SYSTEM
     prompt = SYSTEM.format(name="Sentry")
