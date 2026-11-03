@@ -64,6 +64,12 @@ def _set(name: str, default: str) -> set[str]:
     return {x.strip() for x in os.getenv(name, default).split(",") if x.strip()}
 
 
+def _review_mode(value: str) -> str:
+    v = (value or "").strip().lower()
+    v = {"1": "on", "true": "on", "yes": "on", "0": "off", "false": "off", "no": "off"}.get(v, v)
+    return v if v in ("off", "keep", "on") else "off"
+
+
 def _busy() -> bool:
     return os.getenv("BUSY_SERVER", "off").strip().lower() not in protect.OFF
 
@@ -215,6 +221,10 @@ class Settings:
     # A failed undo is retried this often (real seconds), up to this many times, then left to a person.
     undo_retry_s: float = field(default_factory=lambda: _f("UNDO_RETRY_S", 60.0))
     undo_retries: int = field(default_factory=lambda: _i("UNDO_RETRIES", 3))
+    # The AI reviews each block once its after-action check is in, with no person: off, keep (it may keep a
+    # block for good) or on (keep, or undo a false alarm). Needs an AI key. At most AI_REVIEW_PER_HOUR changes an hour.
+    ai_auto_review: str = field(default_factory=lambda: _review_mode(os.getenv("AI_AUTO_REVIEW", "off")))
+    ai_review_per_hour: int = field(default_factory=lambda: _i("AI_REVIEW_PER_HOUR", 10))
 
     def ttl_for(self, action_type: str) -> float:
         """Hours a temporary action of this type lasts, within the business limit."""
