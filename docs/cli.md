@@ -151,5 +151,8 @@ sudo sentrai api GET /summary/week
 sudo sentrai api POST /backups '{"operator": "cli:me"}'
 ```
 
+To let your own Claude list blocks and keep or undo them, see [Keep or undo blocks from Claude](claude.html)
+(`sudo sentrai mcp`).
+
 From another computer, run `python mvp/sentrai_cli.py` with `SENTRAI_CORE_URL` and `SENTRAI_API_TOKEN`
 set. Keep the token secret: it can change anything. `team` only works on the panel server.

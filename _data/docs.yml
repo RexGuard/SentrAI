@@ -17,6 +17,8 @@
   url: /docs/settings.html
 - title: Team command line
   url: /docs/cli.html
+- title: Keep or undo from Claude
+  url: /docs/claude.html
 - title: Extensions
   url: /docs/extensions.html
 - title: Responsible AI
