@@ -165,3 +165,105 @@ def test_reset_discards_late_plans(make):
     core._pool.shutdown(wait=True)
     assert all(i.get("planned_by") == "Cyanide" for i in core.list_incidents())
     assert len(core.list_incidents()) == 1
+
+
+# ------------------------------------------------------------------ AI auto review (AI_AUTO_REVIEW)
+
+class Reviewer(FakePlanner):
+    """A planner that also reviews contained incidents with a canned answer."""
+
+    def __init__(self, review, **kw):
+        super().__init__(default=block_only(), **kw)
+        self.answer = review
+        self.reviewed = []
+
+    def review(self, context):
+        self.reviewed.append(context)
+        return self.answer
+
+
+def reviewed_core(make, mode, answer, **settings):
+    core = make(Reviewer(answer))
+    core.settings.ai_auto_review = mode
+    for k, v in settings.items():
+        setattr(core.settings, k, v)
+    attack(core)
+    assert core.get_incident("RSK-2026-081")["status"] == "contained"
+    return core
+
+
+def after_check(core):
+    """Run the after-action check now (as if CHECK_AFTER_MIN had passed), which then triggers the review."""
+    with core.lock:
+        for a in core.actions:
+            a["_check_ts"] = core.clock.now() - 1
+        core._evaluate(core.clock.now())
+    return core.get_incident("RSK-2026-081")
+
+
+def test_review_is_off_by_default(make):
+    core = make(Reviewer({"decision": "undo", "confidence": 0.99, "reason": "x"}))
+    attack(core)
+    inc = after_check(core)
+    assert inc["status"] == "contained" and "ai_review" not in inc and core.planner.reviewed == []
+
+
+def test_ai_keeps_a_real_attack_for_good(make):
+    core = reviewed_core(make, "keep", {"decision": "keep", "confidence": 0.9, "reason": "A stranger kept guessing."})
+    inc = after_check(core)
+    assert inc["status"] == "resolved" and {a["status"] for a in inc["actions"]} == {"permanent"}
+    assert inc["ai_review"]["applied"] and inc["decisions"][-1]["operator"] == "Sentry (AI)"
+    ctx = core.planner.reviewed[0]
+    assert ctx["blocks"][0]["after_action_check"] is not None and "log_lines_untrusted" in ctx
+    assert any(r["type"] == "ai_review" for r in core.audit.records())
+    # Each incident is reviewed once: later steps do not ask again.
+    asked = len(core.planner.reviewed)
+    after_check(core)
+    assert len(core.planner.reviewed) == asked
+
+
+def test_ai_undoes_a_false_alarm_only_when_allowed(make):
+    answer = {"decision": "undo", "confidence": 0.95, "reason": "That was the office's own address."}
+    core = reviewed_core(make, "keep", answer)
+    inc = after_check(core)
+    assert inc["status"] == "contained" and not inc["ai_review"]["applied"]
+    assert "not undo" in inc["ai_review"]["held"]
+
+    core = reviewed_core(make, "on", answer)
+    inc = after_check(core)
+    assert inc["status"] == "acknowledged" and inc["ai_review"]["applied"]
+    assert all(a["status"] == "rolled_back" for a in inc["actions"]) and core.blocklist()["ips"] == []
+    assert inc["decisions"][-1]["decision"] == "rollback"
+
+
+def test_unsure_or_weak_answers_leave_it_to_a_person(make):
+    for answer, held in (({"decision": "wait", "confidence": 0.9, "reason": "?"}, "not sure"),
+                         ({"decision": "undo", "confidence": 0.7, "reason": "maybe"}, "needed to undo"),
+                         ({"decision": "keep", "confidence": 0.3, "reason": "maybe"}, "under"),
+                         ({"decision": "nuke", "confidence": 1, "reason": "x"}, "not sure")):
+        inc = after_check(reviewed_core(make, "on", answer))
+        assert inc["status"] == "contained" and held in inc["ai_review"]["held"], answer
+
+
+def test_critical_attacks_are_not_undone_unless_the_block_hurt(make):
+    core = reviewed_core(make, "on", {"decision": "undo", "confidence": 0.99, "reason": "x"})
+    core.incidents["RSK-2026-081"]["severity"] = "critical"
+    inc = after_check(core)
+    assert inc["status"] == "contained" and "hurt the business" in inc["ai_review"]["held"]
+
+
+def test_hourly_cap(make):
+    core = reviewed_core(make, "on", {"decision": "keep", "confidence": 0.9, "reason": "x"}, ai_review_per_hour=0)
+    inc = after_check(core)
+    assert inc["status"] == "contained" and "this hour" in inc["ai_review"]["held"]
+
+
+def test_no_answer_is_tried_again_later(make):
+    core = reviewed_core(make, "on", None)
+    inc = after_check(core)
+    asked = len(core.planner.reviewed)
+    assert "ai_review" not in inc and asked >= 1
+    core.planner.answer = {"decision": "keep", "confidence": 0.9, "reason": "x"}
+    assert after_check(core)["status"] == "contained" and len(core.planner.reviewed) == asked  # waits a while
+    core.incidents["RSK-2026-081"]["_ai_review_next"] = 0.0
+    assert after_check(core)["status"] == "resolved"
