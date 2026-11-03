@@ -175,6 +175,11 @@ SECTIONS = (
               "block_ip,rate_limit,waf_rule"),
         Field("MAX_TTL_HOURS", "Longest any temporary action may last, in hours", "24", float),
         Field("MAX_AUTO_ACTIONS_PER_HOUR", "Most automatic actions in one hour (then a person decides)", "10", int),
+        Field("AI_AUTO_REVIEW", "Let the AI keep or undo blocks with no person, once each block's check is in "
+              "(off; keep: only keep for good; on: keep, or undo a false alarm). Needs an AI key", "off",
+              choices=("off", "keep", "on"), advanced=True),
+        Field("AI_REVIEW_PER_HOUR", "Most blocks the AI may keep or undo in one hour (then a person decides)", "10",
+              int, advanced=True),
         Field("SENTRAI_HEALTH_URL", "A page that must keep working while SentrAI blocks (checked after each action)"),
         Field("PROTECTED_IPS", "IPs or networks never to block (comma-separated)", "127.0.0.1,::1,localhost"),
         Field("PROTECTED_USERS", "More accounts never to lock (admin and service accounts always are)"),

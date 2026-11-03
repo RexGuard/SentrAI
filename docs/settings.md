@@ -185,6 +185,33 @@ These settings set the limits:
 About 10 minutes after each action, SentrAI checks that it worked and that it did not break the
 page above. A failed undo is tried again a few times, then handed to a person.
 
+### Let the AI keep or undo blocks
+
+With an AI key set, the AI can also decide what happens to a block once its 10-minute check is in, so
+nobody has to press Keep or Undo:
+
+| Setting | Default | What it does |
+|---|---|---|
+| `AI_AUTO_REVIEW` | `off` | `keep`: the AI may keep a block for good and close the incident. `on`: it may also undo a block it judges a false alarm, or one that hurt the business. `off`: a person decides |
+| `AI_REVIEW_PER_HOUR` | `10` | at most this many blocks kept or undone by the AI in any hour; after that a person decides |
+
+```bash
+sudo sentrai settings set AI_AUTO_REVIEW=on
+sudo systemctl restart sentrai.target
+```
+
+The AI looks at each incident once. What it may do on its own is fixed in code, not up to the AI:
+
+- It keeps a block only when it is at least as sure as `NEEDLE_MIN_CONFIDENCE` (0.6).
+- It undoes a block only when it is at least 80% sure, and never undoes a critical attack unless the
+  check showed the block hurting the business.
+- When it is unsure, or a limit stops it, the incident stays for a person, with the AI's suggestion on
+  its timeline.
+
+Every change is in the activity log under **Sentry (AI)** with the AI's reason, and the on-duty person
+gets an alert. The SentrAI team can reverse any of them with `sentrai incidents rollback` or by approving
+the block again.
+
 ## Busy servers
 
 A public game server or a big network is scanned and password-guessed by hundreds of addresses a
