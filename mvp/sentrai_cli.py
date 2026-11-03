@@ -13,7 +13,7 @@ On the panel (installed as /usr/local/bin/sentrai, runs as the service account):
     sudo sentrai tuning                                   sudo sentrai limits show | set NAME=VALUE ...
     sudo sentrai routing export > routing.json            sudo sentrai routing import - < routing.json
     sudo sentrai integrations list | on NAME | off NAME | test NAME | reload
-    sudo sentrai machines list | rename HOST NAME | delete HOST | join-code [--name N] | agents | revoke AGENT_ID
+    sudo sentrai machines list | rename HOST NAME | delete HOST | restore HOST | join-code [--name N] | agents | revoke AGENT_ID
     sudo sentrai jobs list [--host H] | scan HOST | backup HOST | deps HOST | packages HOST
                       | update HOST FINDING | undo HOST UPDATE | cancel JOB
     sudo sentrai deps show | scan
@@ -291,7 +291,12 @@ def cmd_machines(call: Call, a: argparse.Namespace) -> Any:
         rows = [[r.get("name"), r.get("host"), "online" if r.get("online") else ("waiting" if r.get("waiting") else "offline"),
                  "off" if r.get("monitor_only") else "on", f"{r.get('index', 0):.0f} {words.get(r.get('band'), '')}",
                  r.get("open"), r.get("blocked"), r.get("last_seen") or ""] for r in m.get("machines", [])]
-        return table(rows, ["Name", "Host", "State", "Protection", "Risk", "Open", "Blocks", "Last seen"])
+        out = table(rows, ["Name", "Host", "State", "Protection", "Risk", "Open", "Blocks", "Last seen"])
+        gone = m.get("removed") or []
+        if gone:
+            out += "\n\nDeleted (hidden): " + ", ".join(str(g.get("host")) for g in gone) \
+                   + "\nBring one back with: sentrai machines restore HOST"
+        return out
     if a.action == "agents":
         rows = call("GET", "/fleet/agents")
         return rows if a.json else table([[r.get("agent_id"), r.get("host"), r.get("joined_at") or r.get("enrolled_at"),
@@ -301,6 +306,8 @@ def cmd_machines(call: Call, a: argparse.Namespace) -> Any:
         out = call("POST", f"/ui/machines/{a.host}/rename", {"name": a.name or "", "operator": op})
     elif a.action == "delete":
         out = call("POST", f"/ui/machines/{a.host}/delete", {"operator": op})
+    elif a.action == "restore":
+        out = call("POST", f"/ui/machines/{a.host}/restore", {"operator": op})
     elif a.action == "revoke":
         out = call("POST", f"/fleet/agents/{a.host}/revoke", {"operator": op})
         return out if a.json else f"Key revoked for {out.get('host')}."
@@ -574,7 +581,7 @@ def parser() -> argparse.ArgumentParser:
     i.add_argument("action", choices=["list", "on", "off", "test", "reload"])
     i.add_argument("name", nargs="?")
     m = add("machines", cmd_machines, "joined computers")
-    m.add_argument("action", choices=["list", "agents", "rename", "delete", "revoke", "join-code"])
+    m.add_argument("action", choices=["list", "agents", "rename", "delete", "restore", "revoke", "join-code"])
     m.add_argument("host", nargs="?", help="host name (revoke: agent id)")
     m.add_argument("name", nargs="?", help="rename: the new name (blank goes back to the host name)")
     m.add_argument("--name", dest="name_opt", help="join-code: fix the new machine's name")
@@ -641,7 +648,7 @@ def normalise(a: argparse.Namespace) -> argparse.Namespace:
     elif a.cmd == "machines":
         if a.action == "join-code":
             a.name = a.name_opt or a.host
-        elif a.action in ("rename", "delete", "revoke") and not a.host:
+        elif a.action in ("rename", "delete", "restore", "revoke") and not a.host:
             raise CliError(f"which machine? sentrai machines {a.action} HOST")
     elif a.cmd == "jobs":
         if a.action == "list":

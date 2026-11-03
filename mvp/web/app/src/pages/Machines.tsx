@@ -148,7 +148,7 @@ export default function Machines() {
     const ok = await ask({ title: `Delete ${m.name} from the panel?`, confirm: 'Delete', danger: true, body: [
       "Its agent's key is revoked, so it stops reporting and its queued jobs are cancelled. The agent stays installed on that computer until you uninstall it there.",
       "Its incidents and audit records are kept: the audit trail can't be edited, and they still show on All Incidents and Activity Log.",
-      'It comes back on this list if it reports again, or if you join it again with a new code.',
+      'It stays off this list until you join it again with a new code.',
       'This is written to the audit log under your name.'] })
     if (ok === null) return
     try { setNote((await api<{ message: string }>(`/ui/machines/${encodeURIComponent(m.host)}/delete`, { body: {} })).message); await load() }

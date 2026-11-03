@@ -59,10 +59,20 @@ A one-time join code, valid 24 hours, with the commands to paste on the new mach
 ### `POST /ui/machines/{host}/delete`
 
 The Machines list's Delete. Owner and Admin only (`403` for an Auditor). Revokes the machine's agent key, cancels its
-queued jobs and hides it from the machine list. Its incidents and audit records are kept. It shows again if it reports
-after being deleted, or when it joins again with a new code. Recorded in the audit log as `machine_removed`.
+queued jobs and hides it from the machine list. Its incidents and audit records are kept. It stays hidden even if logs
+that name it keep arriving (for example from a collector using the panel token); it shows again only when it joins
+again with a new code or is restored (below). Recorded in the audit log as `machine_removed`. `GET /ui/machines` lists
+deleted machines under `removed`.
 
 **Returns** `{"host": "...", "revoked": ["<agent id>"], "removed_at": "...", "jobs_cancelled": 0, "message": "..."}`.
+
+### `POST /ui/machines/{host}/restore`
+
+Undoes a Delete: the machine is listed again. Owner and Admin only (`403` for an Auditor); `404` if it was not deleted.
+Its old agent key stays revoked, so to manage it again join it with a new code. Recorded in the audit log as
+`machine_restored`. CLI: `sentrai machines restore HOST`.
+
+**Returns** `{"host": "...", "restored_by": "...", "was_removed_at": "...", "message": "..."}`.
 
 ### `POST /ui/machines/{host}/rename`
 

@@ -181,8 +181,9 @@ class Fleet:
     def remove_host(self, host: str, by: str) -> dict[str, Any]:
         """Take a machine off the panel: revoke its agent's key and hide it from the machine list.
 
-        Its incidents and audit records stay. If it reports again later it shows up again, and it can join
-        again with a new code."""
+        Its incidents and audit records stay. It stays off the list even if logs that name it keep arriving (from a
+        collector or script using the panel token): it comes back only when it joins again with a new code, or
+        when someone restores it (restore_host)."""
         now = self.clock()
         with self.lock:
             revoked = []
@@ -193,6 +194,15 @@ class Fleet:
             self._data.setdefault("removed", {})[host] = {"at": _iso(now), "by": by}
             self._save()
         return {"host": host, "revoked": revoked, "removed_at": _iso(now)}
+
+    def restore_host(self, host: str, by: str) -> dict[str, Any]:
+        """Put a removed machine back on the list. Its old agent key stays revoked: to manage it again, join it again."""
+        with self.lock:
+            entry = (self._data.get("removed") or {}).pop(host, None)
+            if entry is None:
+                raise FleetError(f"{host} was not removed from the panel", 404)
+            self._save()
+        return {"host": host, "restored_by": by, "was_removed_at": entry.get("at")}
 
     def removed(self) -> dict[str, dict[str, Any]]:
         """Hosts taken off the panel: {host: {"at": iso, "by": who}}."""
