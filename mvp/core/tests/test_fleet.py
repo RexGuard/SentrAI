@@ -251,12 +251,26 @@ def test_delete_machine_from_the_panel(panel):
     assert "web-01" in names()
 
 
-def test_still_removed_until_heard_from_again():
+def test_deleted_machine_stays_gone_while_its_logs_keep_coming(panel):
+    a = join(panel, "web-01")
+    panel.post("/fleet/services", json={"services": [{"name": "nginx", "port": 443}]}, headers=as_agent(a["key"]))
+    names = lambda: [m["host"] for m in panel.get("/ui/machines").json()["machines"]]  # noqa: E731
+    panel.post("/ui/machines/web-01/delete")
+    # a collector or script with the panel token still sends lines that name it: it must not come back
+    panel.post("/events", json={"layer": "web", "source": "nginx", "raw": "GET / 200", "host": "web-01"})
+    page = panel.get("/ui/machines").json()
+    assert "web-01" not in names() and [g["host"] for g in page["removed"]] == ["web-01"]
+    out = panel.post("/ui/machines/web-01/restore")
+    assert out.status_code == 200 and "web-01" in names() and panel.get("/ui/machines").json()["removed"] == []
+    assert panel.get("/fleet/me", headers=as_agent(a["key"])).status_code == 401  # restoring does not bring the key back
+    assert any(r.get("type") == "machine_restored" for r in panel.core.audit.records())
+    assert panel.post("/ui/machines/web-01/restore").status_code == 404  # nothing to restore
+
+
+def test_still_removed_does_not_expire():
     from app.ui_machines import still_removed
-    gone = {"at": "2026-11-01T08:00:00+00:00", "by": "erick"}
-    assert not still_removed(None, "2026-11-01T07:00:00+00:00")
-    assert still_removed(gone, "2026-11-01T07:59:00+00:00") and still_removed(gone, None)
-    assert not still_removed(gone, "2026-11-01T08:05:00+00:00")
+    assert not still_removed(None)
+    assert still_removed({"at": "2026-11-01T08:00:00+00:00", "by": "erick"})
 
 
 def test_rename_machine_keeps_its_host(panel, tmp_path):

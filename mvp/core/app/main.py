@@ -1245,7 +1245,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         dropped = machine_jobs.drop_host(host, operator)
         machine_health.forget(host)
         return {**out, "jobs_cancelled": dropped,
-                "message": f"{host} was deleted from the panel" + (" and its agent's key was revoked" if out["revoked"] else "")}
+                "message": f"{host} was deleted from the panel" + (" and its agent's key was revoked" if out["revoked"] else "")
+                           + ". It stays off the list until it joins again with a new code."}
+
+    @app.post("/ui/machines/{host}/restore")
+    def post_restore_machine(host: str, request: Request, body: Optional[dict] = Body(None)) -> dict[str, Any]:
+        """Undo a Delete: the machine is listed again. Owner and Admin only. Its old agent key stays revoked."""
+        account = getattr(request.state, "account", None)
+        if account and not acc.can(account.get("role"), "configure"):
+            raise HTTPException(403, "Only an Owner or Admin can restore a machine.")
+        operator = (account or {}).get("email") or str((body or {}).get("operator") or "dashboard")[:64]
+        try:
+            out = machines.restore_host(host, operator)
+        except fleet.FleetError as exc:
+            raise fleet_error(exc)
+        core.scribe.record(core.name, "machine_restored", {"host": host, "operator": operator})
+        return {**out, "message": f"{host} is back on the panel. To manage it again, join it with a new code."}
 
     @app.post("/fleet/services")
     def post_services(request: Request, body: ServicesIn, host: Optional[str] = Query(None)) -> dict[str, Any]:

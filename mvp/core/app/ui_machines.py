@@ -113,18 +113,10 @@ def agent_rows(agents: list[dict]) -> list[dict]:
     return rows
 
 
-def still_removed(removed: dict | None, last_seen: Any) -> bool:
-    """A removed machine stays hidden until it is heard from again after it was removed."""
-    if not removed:
-        return False
-    at, seen = parse_ts(removed.get("at")), parse_ts(last_seen)
-    if at is None or seen is None:
-        return True
-    if seen.tzinfo is None:
-        seen = seen.replace(tzinfo=timezone.utc)
-    if at.tzinfo is None:
-        at = at.replace(tzinfo=timezone.utc)
-    return seen <= at
+def still_removed(removed: dict | None) -> bool:
+    """A removed machine stays hidden, even while logs that name it keep arriving. Only joining again (a new
+    code) or `sentrai machines restore HOST` brings it back: both clear its "removed" entry."""
+    return bool(removed)
 
 
 def install(app: FastAPI, core: Any, machines: fleet.Fleet, health: Any) -> None:
@@ -135,7 +127,7 @@ def install(app: FastAPI, core: Any, machines: fleet.Fleet, health: Any) -> None
         now = datetime.now(timezone.utc)
         gone = machines.removed()
         found = [{**m, "hardware": health.latest(m["host"])} for m in core.machines()
-                 if not still_removed(gone.get(m["host"]), m.get("last_seen"))] if panel else []
+                 if not still_removed(gone.get(m["host"]))] if panel else []
         agents = machines.agents()
         rows = build(found, agents, risk, panel, "This computer", now, machines.names())  # not the core agent's name: people read it
         online = sum(1 for r in rows if r["online"])
@@ -145,6 +137,7 @@ def install(app: FastAPI, core: Any, machines: fleet.Fleet, health: Any) -> None
                       "need_a_look": sum(1 for r in rows if r["open"] or r["band"] in ("red", "critical")),
                       "blocks": sum(r["blocked"] for r in rows)},
             "panel_info": fleet.panel_info(), "band_words": BAND_WORD,
+            "removed": [{"host": h, "at": v.get("at"), "by": v.get("by")} for h, v in sorted(gone.items())] if panel else [],
         }
 
     @app.post("/ui/machines/join-code")
