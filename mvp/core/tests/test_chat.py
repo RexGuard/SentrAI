@@ -1,4 +1,5 @@
 """Operator chat: read-only answers, suggestions as buttons, never a state change by itself."""
+import json
 
 import pytest
 import sentrai_llm
@@ -413,7 +414,7 @@ def test_model_sees_the_selected_machine_and_can_offer_one_button_for_many(panel
     chat = OperatorChat(panel.core, provider)
     reply = chat.ask("erick", "clean up", machine="web-01")
     assert "host web-01" in provider.convos[0].sent[0] and web in provider.convos[0].sent[0]
-    assert '"overdue": true' in provider.convos[0].results[0][0][1]
+    assert '"overdue":true' in provider.convos[0].results[0][0][1]
     [s] = reply["suggestions"]
     assert s["kind"] == "bulk" and s["incidents"] == [web, db]  # the unknown one is left out
     assert "RSK-9999-999 not found" in provider.convos[0].results[1][0][1]
@@ -457,3 +458,22 @@ def test_answer_written_before_a_last_lookup_is_kept(client):
         sentrai_llm.Turn(texts=[]),
     ])
     assert OperatorChat(client.core, provider).ask("erick", "what now?")["text"] == long
+
+
+def test_overview_for_the_model_counts_everything_and_lists_only_the_urgent(client):
+    for n in range(20):
+        brute_force(client, ip=f"198.51.100.{n + 1}", start=n * 5)
+    chat = OperatorChat(client.core, None)
+    out = json.loads(chat._dispatch("get_overview", {"status": "", "severity": "", "computer": "", "category": "",
+                                                     "limit": 0}, [], [], None))
+    assert out["counts"]["total"] == 20 and out["matching"] == out["counts"]["still_open"]
+    assert len(out["incidents"]) == 15 and out["not_listed"] == out["matching"] - 15
+    assert "acked" not in out["incidents"][0]  # false fields are left out
+    none = json.loads(chat._dispatch("get_overview", {"status": "", "severity": "low", "computer": "", "category": "",
+                                                      "limit": 5}, [], [], None))
+    assert none["matching"] == 0 and "incidents" not in none and none["counts"]["total"] == 20
+
+
+def test_incident_lookup_folds_repeated_lines():
+    from app.chat import lean
+    assert lean({"a": None, "b": False, "c": [], "d": 0, "snapshot_hash": "x", "e": {"f": ""}}) == {"d": 0}

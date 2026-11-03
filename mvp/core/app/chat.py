@@ -52,6 +52,37 @@ CLEANUP_WORDS = re.compile(r"(?i)\b(clean ?up|clear (?:out|up)|overdue|late|tidy
 MAX_BULK = 50               # incidents one "do this to all of them" button may cover
 ACTIVE = ("open", "acknowledged")
 STILL_OPEN = ("open", "acknowledged", "contained")  # ui_incidents.OPEN_STATUSES
+SEVERITY_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+OVERVIEW_LIST = 15          # incidents get_overview lists unless the model asks for more
+OVERVIEW_MAX = 50
+TIMELINE_IN_LOOKUP = 12     # newest timeline entries get_incident returns
+# Bookkeeping fields that never help answer a person's question; leaving them out of lookups saves tokens.
+NOISE = frozenset({"snapshot_hash", "demo_hours", "owner_id", "backup_id", "notifications", "event_ids",
+                   "raw_sha256", "raw_len", "check_at", "ack_channel", "inaction_penalty", "contribution",
+                   "base_points", "time_unaddressed_hours", "assigned_at"})
+
+
+def lean(obj: Any) -> Any:
+    """A lookup result without bookkeeping fields and without empty, null or false values (the prompt says absent
+    means no)."""
+    if isinstance(obj, dict):
+        out = {}
+        for k, v in obj.items():
+            if k in NOISE:
+                continue
+            v = lean(v)
+            if v is None or v is False or v == "" or v == [] or v == {}:
+                continue
+            out[k] = v
+        return out
+    if isinstance(obj, (list, tuple)):
+        return [lean(v) for v in obj]
+    return obj
+
+
+def lean_json(obj: Any) -> str:
+    """Compact JSON for the model: no spaces, no bookkeeping, no empty fields."""
+    return json.dumps(lean(obj), default=str, separators=(",", ":"), ensure_ascii=False)
 
 
 def possible(inc: dict[str, Any], decision: str) -> tuple[bool, str]:
@@ -212,6 +243,9 @@ keys, network rules), do not walk them through it: say "SentrAI's team can set t
 Only say what you looked up:
 - Use your tools before you answer. Every fact you state (what happened, when, how much, which file, which \
 account) must come from a lookup in this chat. Never guess or round up numbers, times or names.
+- Lookups leave out fields that are empty, null or false: a missing "acked" or "overdue" means no. \
+get_overview gives counts and the most urgent incidents; filter it (status, severity, computer, category) or \
+open one incident with get_incident instead of asking for everything.
 - Say plainly what is not known. When the records do not show what data was taken, say so ("SentrAI can see \
 that a large download happened, but not yet exactly what was in it; SentrAI's team can check"). Do not \
 conclude it was their customer list, or that it was not, because they fear it.
@@ -285,8 +319,17 @@ anything outside the listed options."""
 
 
 TOOLS: list[dict[str, Any]] = [
-    {"name": "get_overview", "description": "Current risk index, threshold, and a one-line summary of every incident.",
-     "input_schema": {"type": "object", "properties": {}, "required": [], "additionalProperties": False}},
+    {"name": "get_overview", "description": "Current risk index and threshold, incident counts (by status, severity, "
+                                            "category and computer), and one line per matching incident, most urgent "
+                                            "first. Filters narrow the list; use \"\" for any filter you don't need.",
+     "input_schema": {"type": "object", "properties": {
+         "status": {"type": "string", "enum": ["", "open", "closed", "all"],
+                    "description": "open (default: still needs attention), closed, or all"},
+         "severity": {"type": "string", "enum": ["", "critical", "high", "medium", "low"]},
+         "computer": {"type": "string", "description": "a computer's name or host"},
+         "category": {"type": "string", "description": "e.g. brute_force"},
+         "limit": {"type": "integer", "description": f"incidents to list, default {OVERVIEW_LIST}, max {OVERVIEW_MAX}"}},
+         "required": ["status", "severity", "computer", "category", "limit"], "additionalProperties": False}},
     {"name": "get_incident", "description": "Full detail of one incident: status, evidence, actions, timeline, decisions.",
      "input_schema": {"type": "object", "properties": {"incident": {"type": "string"}},
                       "required": ["incident"], "additionalProperties": False}},
@@ -622,7 +665,7 @@ class OperatorChat:
         if machine:
             name = self.names().get(machine) or machine
             lines.append(f"The operator has one computer selected: {name} (host {machine}). Answer only about this "
-                         f"computer. Its incidents right now:\n{json.dumps(self._machine(machine)['incidents'], default=str)}")
+                         f"computer. Its incidents right now:\n{lean_json(self._machine(machine)['incidents'])}")
         lines.append(f"Operator: {text}")
         return "\n".join(lines)
 
@@ -665,15 +708,25 @@ class OperatorChat:
             return "Shown as chips."
         if name == "get_overview":
             looked_at.append("risk overview")
-            return json.dumps(self._overview(), default=str)
+            return lean_json(self._overview_for_model(a))
         if name == "get_incident":
             iid = str(a["incident"]).strip()
             inc = c.get_incident(iid)
             looked_at.append(f"incident {iid}")
-            events = [{"src_ip": e.get("src_ip"), "user": e.get("user"), "host": e.get("host"),
+            events: list[dict[str, Any]] = []
+            for e in (c.events.get(x, {}) for x in inc.get("event_ids", [])[-8:]):
+                one = {"src_ip": e.get("src_ip"), "user": e.get("user"), "host": e.get("host"),
                        "raw_untrusted": str(e.get("raw") or "")[:200]}
-                      for e in (c.events.get(x, {}) for x in inc.get("event_ids", [])[-8:])]
-            return json.dumps({**inc, "event_ids": None, "latest_events": events}, default=str)
+                same = next((x for x in events if {k: v for k, v in x.items() if k != "times"} == one), None)
+                if same is None:
+                    events.append(one)
+                else:  # the same line again: count it instead of repeating it
+                    same["times"] = same.get("times", 1) + 1
+            timeline = inc.get("timeline") or []
+            out = {**inc, "latest_events": events, "timeline": timeline[-TIMELINE_IN_LOOKUP:]}
+            if len(timeline) > TIMELINE_IN_LOOKUP:
+                out["older_timeline_entries"] = len(timeline) - TIMELINE_IN_LOOKUP
+            return lean_json(out)
         if name == "explain":
             target = str(a["target"]).strip()
             looked_at.append(f"explanation for {target}")
@@ -684,8 +737,8 @@ class OperatorChat:
             if iid:
                 recs = [r for r in recs if r["data"].get("incident") == iid]
             looked_at.append(f"audit trail{' for ' + iid if iid else ''}")
-            return json.dumps([{"seq": r["seq"], "ts": r["ts"], "type": r["type"], "data": r["data"]}
-                               for r in recs[-limit:]], default=str)
+            return lean_json([{"seq": r["seq"], "ts": r["ts"], "type": r["type"], "data": r["data"]}
+                              for r in recs[-limit:]])
         if name == "get_blocklist":
             looked_at.append("blocklist")
             return json.dumps(c.blocklist())
@@ -749,7 +802,7 @@ class OperatorChat:
         if name == "get_machine":
             host = self._host_of(str(a.get("machine") or ""))
             looked_at.append(f"computer {self.names().get(host) or host}")
-            return json.dumps(self._machine(host), default=str)
+            return lean_json(self._machine(host))
         if name == "suggest_bulk_action":
             decision = str(a["decision"]).strip()
             if decision not in DECISIONS:
@@ -798,6 +851,50 @@ class OperatorChat:
                                                          "user", "recommended_action", "sla_breached", "host")},
                                "computer": names.get(str(i.get("host"))) or i.get("host"), "overdue": overdue(i)}
                               for i in self.core.list_incidents(host=host)]}
+
+    def _overview_for_model(self, a: dict[str, Any]) -> dict[str, Any]:
+        """get_overview for the model: counts for everything, then only the incidents that match, most urgent first.
+        Listing every incident made this the biggest lookup by far, and past MAX_TOOL_CHARS it was cut mid-list."""
+        r = self.core.risk(history=0)
+        names = self.names()
+        host = self._host_of(str(a["computer"])) if str(a.get("computer") or "").strip() else None
+        everything = self.core.list_incidents()
+        status = str(a.get("status") or "open")
+        severity, category = str(a.get("severity") or ""), str(a.get("category") or "").strip().lower()
+        try:
+            limit = max(1, min(int(a.get("limit") or OVERVIEW_LIST), OVERVIEW_MAX))
+        except (TypeError, ValueError):
+            limit = OVERVIEW_LIST
+
+        still = [i for i in everything if i.get("status") in STILL_OPEN]
+
+        def tally(key: Any, among: list[dict[str, Any]]) -> dict[str, int]:
+            out: dict[str, int] = {}
+            for i in among:
+                out[str(key(i))] = out.get(str(key(i)), 0) + 1
+            return dict(sorted(out.items(), key=lambda kv: -kv[1]))
+        match = [i for i in everything
+                 if (status == "all" or (i.get("status") in STILL_OPEN) == (status != "closed"))
+                 and (not severity or i.get("severity") == severity)
+                 and (not category or str(i.get("category") or "").lower() == category)
+                 and (host is None or str(i.get("host")) == host)]
+        # Most urgent first (overdue, then severity), newest first within the same urgency (sort is stable).
+        match.sort(key=lambda i: str(i.get("opened_at") or ""), reverse=True)
+        match.sort(key=lambda i: (not overdue(i), SEVERITY_RANK.get(str(i.get("severity")), 9)))
+        return {"risk_index": r["risk_index"], "band": r["band"], "threshold": r["threshold"],
+                "monitor_only": r.get("monitor_only", False),
+                "counts": {"total": len(everything), "still_open": len(still),
+                           "overdue": sum(1 for i in still if overdue(i)),
+                           "by_status": tally(lambda i: i.get("status"), everything),
+                           "open_by_severity": tally(lambda i: i.get("severity"), still),
+                           "open_by_category": tally(lambda i: i.get("category"), still),
+                           "open_by_computer": tally(lambda i: names.get(str(i.get("host"))) or i.get("host"), still)},
+                "matching": len(match),
+                "incidents": [{**{k: i.get(k) for k in ("id", "category", "severity", "status", "acked", "src_ip",
+                                                         "user")},
+                               "computer": names.get(str(i.get("host"))) or i.get("host"), "overdue": overdue(i)}
+                              for i in match[:limit]],
+                **({"not_listed": len(match) - limit} if len(match) > limit else {})}
 
     def _host_of(self, said: str) -> str:
         """A computer the operator named, by host or by the name people gave it, as its host. KeyError if unknown."""
