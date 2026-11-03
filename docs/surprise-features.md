@@ -33,19 +33,24 @@ and many settings.
 
 ## Feature 5: Make it act
 
+**AI selects an allowed action. The program executes it after approval.**
+
 **Before the reveal.** SentrAI could already block an address in the host firewall and lock an account, and an
-"Auto mode" switch let it do so above the limit.
+"Auto mode" switch let it do so above the limit. The AI only explained incidents.
 
 **After the reveal.**
-- The Auto mode switch was removed: **SentrAI always acts on its own within the owner's limits**, and asks a
-  person below them (#199).
-- **The fix visibly works end to end.** In the live demo, pressing *Do the suggested fix* blocks the attacker:
-  the attacker's own window shows its sign-ins refused for 2 hours and the attack giving up (SentrAI #202,
-  #203, #205; SentrAI-demo #3 to #10).
-- The attacker page can run on **another device** (for example a phone) and attack the panel through a small
-  relay, so judges can launch the attack themselves (SentrAI-demo #9).
-- Handled risks leave the active lists and move to *Already handled by SentrAI*, where each block can be
-  undone (#201).
+- **The AI selects.** For each risk, Sentry (Claude) picks the fix from a fixed list of allowed actions (block
+  an address, lock an account, and others) for a target that appears in the incident. Code checks the choice
+  against the allowlist and the protected addresses and accounts, and rejects anything else. How long a block
+  lasts comes from settings, never from the AI.
+- **A person approves.** The risk card shows the selected fix in plain words with one press: **Do the suggested
+  fix** or **Not a threat** (#197, #201). The Auto mode switch was removed so this is the one path (#199).
+- **The program executes it.** On approval SentrAI applies the fix for real: the address is blocked in the
+  firewall through the agent on that machine, or the account is locked. In the live demo the attacker's own
+  window then shows its sign-ins refused for 2 hours and the attack giving up (SentrAI #202, #203, #205;
+  SentrAI-demo #3 to #10). The attacker page can run on another device, such as a phone (SentrAI-demo #9).
+- Every executed fix goes into the Activity Log and can be undone with one press. Handled risks move to
+  *Already handled by SentrAI* (#201).
 
 ## Third-party parts
 
