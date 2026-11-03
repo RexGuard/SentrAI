@@ -115,3 +115,14 @@ def test_connection_test_without_a_body_tests_what_cyanide_uses(client):
     client.core.planner = type("P", (), {"provider": PingProvider(), "status": "online"})()
     r = client.post("/ai/test").json()
     assert r["ok"] is True and (r["provider"], r["model"]) == ("anthropic", "claude-test")
+
+
+def test_chat_defaults_to_sonnet_on_anthropic(monkeypatch):
+    from app.chat import CHAT_DEFAULT_MODEL, chat_model
+    monkeypatch.delenv("SENTRAI_CHAT_MODEL", raising=False)
+    assert chat_model(PingProvider("anthropic", "claude-opus-5")) == CHAT_DEFAULT_MODEL == "claude-sonnet-5-5"
+    assert chat_model(PingProvider("openai", "gpt-5")) == "gpt-5"
+    monkeypatch.setenv("CYANIDE_MODEL", "claude-opus-5-5")
+    assert chat_model(PingProvider("anthropic", "claude-opus-5")) == "claude-opus-5-5"
+    monkeypatch.setenv("SENTRAI_CHAT_MODEL", "claude-haiku-5-5")
+    assert chat_model(PingProvider("anthropic", "claude-opus-5")) == "claude-haiku-5-5"

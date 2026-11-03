@@ -225,3 +225,18 @@ def test_list_models_explains_what_went_wrong(models_api):
         sentrai_llm.list_models("openai", "")
     with pytest.raises(sentrai_llm.LLMError, match="could not reach"):
         sentrai_llm.list_models("openai", "k", "http://127.0.0.1:9")
+
+
+def test_anthropic_conversation_uses_prompt_caching():
+    class FakeAnthropic:
+        def __init__(self):
+            self.calls, self.messages = [], self
+
+        def create(self, **kw):
+            self.calls.append(kw)
+            return NS(stop_reason="end_turn", content=[NS(type="text", text="ok")])
+    fa = FakeAnthropic()
+    AnthropicProvider(client=fa).conversation("sys", TOOLS).send_user("hi")
+    kw = fa.calls[0]
+    assert kw["system"] == [{"type": "text", "text": "sys", "cache_control": {"type": "ephemeral"}}]
+    assert kw["extra_body"] == {"cache_control": {"type": "ephemeral"}}

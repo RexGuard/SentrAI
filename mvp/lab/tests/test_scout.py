@@ -93,7 +93,7 @@ def test_scout_browses_asks_and_proposes(box, tmp_path):
     msgs = fake.calls[-1]["messages"]  # user, then (assistant, tool results) per turn
     assert msgs[6]["content"][0]["content"].startswith("Proposed") and msgs[6]["content"][1]["is_error"]
     assert msgs[4]["content"][1]["content"] == "yes"
-    assert "(no trails recorded yet)" in fake.calls[0]["system"]
+    assert "(no trails recorded yet)" in fake.calls[0]["system"][0]["text"]
     assert [s["action"] for s in scout.steps] == ["ls", "peek", "note"]
 
 
