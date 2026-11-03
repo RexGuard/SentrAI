@@ -390,7 +390,7 @@ def title_card():
     fig.text(0.07, 0.44, "A sentry doesn't chase you.\nIt just guards the gate.", fontsize=28,
              color=MUTED, style="italic", va="top", linespacing=1.4)
     accent_bar(fig, y=0.25, x0=0.07, w=0.08)
-    fig.text(0.07, 0.19, "Cybersecurity + AI  ·  Hackathon 2026", fontsize=22, color=TEXT)
+    fig.text(0.07, 0.19, "SentrAI Cybersecurity Control Panel", fontsize=22, color=TEXT)
     fig.text(0.07, 0.13, "Erick Sientaro · Ishmail · Hozen", fontsize=20, color=MUTED)
     save(fig, "title_card.png")
 
@@ -411,7 +411,7 @@ def end_card():
         fig.text(x + 0.025, 0.305, name, fontsize=30, weight="bold", color=TEXT, va="center")
         fig.text(x + 0.025, 0.245, role, fontsize=22, color=MUTED, va="center")
     fig.text(0.07, 0.1, "github.com/RexGuard/SentrAI", fontsize=28, family=MONO, color=BLUE, va="center")
-    fig.text(0.93, 0.1, "Cybersecurity + AI · Hackathon 2026", fontsize=20, color=MUTED, ha="right", va="center")
+    fig.text(0.93, 0.1, "SentrAI Cybersecurity Control Panel", fontsize=20, color=MUTED, ha="right", va="center")
     save(fig, "end_card.png")
 
 

@@ -4,7 +4,7 @@ title: SentrAI Roadmap
 
 # SentrAI Roadmap
 
-From the working hackathon MVP (27 Sep 2026) to a product a Singapore SME or private school can run in production.
+From the working MVP (27 Sep 2026) to a product a Singapore SME or private school can run in production.
 
 [← Home](./) · [Full plan](https://rexguard.github.io/SentrAI/Cybersecurity%20+%20AI.html) · [MVP code](https://github.com/RexGuard/SentrAI/tree/main/mvp)
 
@@ -31,7 +31,7 @@ From the working hackathon MVP (27 Sep 2026) to a product a Singapore SME or pri
 
 | Phase | Name | Effort (dev-days) | Target window |
 | --- | --- | --- | --- |
-| 0 | Finish the hackathon | 2 | 28–29 Sep 2026 |
+| 0 | Working prototype (done) | 2 | 28–29 Sep 2026 |
 | 1 | Harden the core | 10 | Oct wk 1–2 |
 | 2 | Real data collection on every layer | 18 | Oct wk 2 – Nov wk 1 |
 | 3 | AI classification that can be trusted | 10 | Oct wk 3 – Nov wk 1 |
@@ -59,20 +59,12 @@ P0 ■
 
 ---
 
-## Phase 0 · Finish the hackathon (28–29 Sep)
+## Phase 0 · Working prototype (done, 28–29 Sep)
 
-**Goal:** submit a strong video. No new product features.
+**Goal:** a prototype that shows the whole loop end to end: read logs, score the risk, alert a person, apply a
+temporary fix, and write the evidence report.
 
-| Task | Owner |
-| --- | --- |
-| Build the PowerPoint deck from `mvp/pitch/SLIDES.md` (scripts in `mvp/deck/`) | Hozen, Erick |
-| Generate video title cards and charts (`mvp/assets/make_assets.py`) | Erick |
-| Add a "Why SentrAI" competitor slide (Darktrace/Defender, PagerDuty, Vanta vs SentrAI) | Ishmail |
-| Reframe the "Negligence Dossier" as a **Security Evidence Report** in the pitch | Ishmail |
-| Record the demo with `run_demo.ps1 -DemoSpeed 600` and `scenario.py --pause 40`; keep a replay take as backup | Erick |
-| Optional: try Jev live with a TypeSafe key and Telegram live with a bot token | Erick |
-
-**Done when:** video submitted; deck and repo links on the submission.
+**Done when:** one script starts everything on a laptop and the demo attack is caught, blocked and reported.
 
 ---
 
@@ -263,7 +255,7 @@ P0 ■
 | Member | Owns |
 | --- | --- |
 | **Erick Sientaro** (Developer) | Phases 1–7 build, 8.1–8.4 |
-| **Ishmail** (CEO) | Pilot, pricing, partner and customer conversations, competitor slide |
+| **Ishmail** (CEO) | Pilot, pricing, partner and customer conversations, competitor comparison |
 | **Hozen** (Notetaker) | Docs site, compliance mapping, meeting notes, keeping this roadmap current |
 
 *Last updated: 28 Sep 2026.*

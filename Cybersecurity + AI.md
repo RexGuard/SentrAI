@@ -11,7 +11,7 @@ All factual claims were verified on 27 Sep 2026; sources are in `mvp/research/SO
 **How this document is organized**
 - **Sections 1 to 3:** the problem, our principles and the team.
 - **Part A, Final product (sections 4 to 14):** the full design we are building toward.
-- **Part B, MVP product (sections 15 and 16):** what we built for the 29 Sep pitch and what the demo shows.
+- **Part B, MVP product (sections 15 and 16):** the first working prototype (27 to 28 Sep 2026) and what its demo shows.
 
 ---
 
@@ -32,7 +32,7 @@ All factual claims were verified on 27 Sep 2026; sources are in `mvp/research/SO
 - Alert fatigue: SOC teams receive ~4,484 alerts a day and ignore 67% of them (Vectra AI, 2023 State of Threat Detection, vendor survey of 2,000 SOC analysts). https://www.vectra.ai/resources/2023-state-of-threat-detection
 
 **Customer hypothesis (not yet validated)**
-> We have not tested this positioning with a real customer. Treat it as a working assumption for the pitch, not a validated finding.
+> We have not tested this positioning with a real customer. Treat it as a working assumption until we have spoken to real prospects, not a validated finding.
 
 - **Initial wedge:** small Singapore tuition and private education businesses with limited IT support. Other Singapore SMEs remain future customers once the wedge is proven.
 - **Everyday user:** the IT administrator or outsourced IT provider who watches the alerts.
@@ -61,7 +61,7 @@ To minimize the risk of human error, our team has formulated a plan that can be 
 
 ## 3. Team Members & Roles
 
-| Member | Role | Owns | Deliverable for the 29th |
+| Member | Role | Owns | First deliverable (29 Sep) |
 | --- | --- | --- | --- |
 | **Erick Sientaro** | Developer | Demo lab, collectors, risk engine, Jev integration, hotpatch playbooks, dashboard, Telegram bot | Working demo |
 | **Ishmail** | CEO | Problem story, business case, pitch narration, final call on scope | Pitch script and video narration |
@@ -404,7 +404,7 @@ Roadmap: production collectors rewritten in Go or Rust for a small single-binary
 
 # Part B: MVP Product
 
-What we built for the 29 Sep pitch and what the demo video shows. The code is in `mvp/` of the repo; `mvp/README.md` has the full run instructions.
+What the first working prototype (27 to 28 Sep 2026) did and what its demo shows. The product has moved on since; the README and install guide describe what it does today. The code is in `mvp/` of the repo; `mvp/README.md` has the full run instructions.
 
 ## 15. System Workflow & Minimum Viable Prototype
 
@@ -427,7 +427,7 @@ SentrAI is a pipeline of three parts. Each is one small base class with one job,
 | 2. Classifier | Decides what each event is; the first classifier that answers wins | `Classifier` | `RulesClassifier` → `JevClassifier` → `FallbackClassifier` |
 | 3. Action taker (responder) | Applies a temporary fix and undoes it on expiry or rollback | `Responder` | `BlocklistResponder` (block IP, lock account), `SimulatedResponder` (the rest) |
 
-Between parts 2 and 3 sit the risk engine and Countersign: an action only reaches a responder after an operator approves it, or after Countersign approves it once risk crosses the threshold. This also prepares us for the surprise features at the 2 to 3 Nov hackathon, which can slot in as a new source, classifier or responder.
+Between parts 2 and 3 sit the risk engine and Countersign: an action only reaches a responder after an operator approves it, or after Countersign approves it once risk crosses the threshold. New features slot in the same way, as a new source, classifier or responder.
 
 **First-run setup wizard**
 
@@ -465,11 +465,8 @@ A sidebar menu, opening on Configuration:
 
 ---
 
-## 16. Plan Until the 29th
+## 16. Next Steps
 
-1. ~~**Erick:** lab + collector + risk engine + auto-block (the demo spine).~~ Done 27 Sep.
-2. ~~**Erick:** three pluggable parts, setup wizard, sidebar dashboard.~~ Done 28 Sep.
-3. **Erick:** live Jev test once the TypeSafe API key arrives; real Telegram alerts once a bot token is set. Neither is needed for the video.
-4. **Ishmail:** pitch script and narration, built around section 1 and the demo.
-5. **Hozen:** finalize slides from `mvp/pitch/SLIDES.md` (sources in `mvp/research/SOURCES.md`): problem, sentry ethics, 0 to 100 index, architecture and the three parts, demo, roadmap.
-6. **All:** record the demo, with the replay script as backup.
+The prototype plan (lab, collector, risk engine, auto-block, the three pluggable parts, setup wizard and dashboard)
+was finished on 27 and 28 Sep 2026. What comes next, from the prototype to paying customers, is in
+[ROADMAP.md](ROADMAP.md).
