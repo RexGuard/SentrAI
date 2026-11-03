@@ -23,6 +23,7 @@ On the panel (installed as /usr/local/bin/sentrai, runs as the service account):
     sudo sentrai protection on|off [--reason R]
     sudo sentrai team list | invite EMAIL [--role admin] | role EMAIL ROLE | remove EMAIL | reset EMAIL | withdraw EMAIL
     sudo sentrai api GET|POST PATH [JSON]                 any other core endpoint (docs/api/)
+    sudo sentrai mcp                                      lets your own Claude keep or undo blocks (docs/claude.md)
 
 From another computer: SENTRAI_CORE_URL=https://panel:8443 SENTRAI_API_TOKEN=... python sentrai_cli.py status
 (`team` only works on the panel machine itself). Add --json to any command for the raw answer.
@@ -463,6 +464,19 @@ def cmd_api(call: Call, a: argparse.Namespace) -> Any:
 
 # ------------------------------------------------------------------ team (local accounts file)
 
+def cmd_mcp(call: Call, _a: argparse.Namespace) -> None:
+    """Serve SentrAI's blocks to your own Claude over MCP on stdin/stdout (sentrai_mcp.py, docs/claude.md)."""
+    import sentrai_mcp
+
+    def tool_call(method: str, path: str, body: Any = None) -> Any:
+        try:
+            return call(method, path, body)
+        except CliError as e:
+            raise sentrai_mcp.ToolError(str(e)) from None
+
+    sentrai_mcp.serve(tool_call, operator_name().replace("cli:", "claude:", 1))
+
+
 def cmd_team(_call: Call, a: argparse.Namespace) -> Any:
     import sentrai_accounts as acc  # only here: it reads the accounts file, which only the panel machine has
     people = acc.people()
@@ -562,6 +576,7 @@ def parser() -> argparse.ArgumentParser:
         sw = add(name, cmd_switch(path), what)
         sw.add_argument("state", choices=["on", "off"])
         sw.add_argument("--reason")
+    add("mcp", cmd_mcp, "let your own Claude see, keep or undo blocks (MCP over stdin/stdout; docs/claude.md)")
     t = add("team", cmd_team, "people who may sign in to the web panel (panel machine only)")
     t.add_argument("action", choices=["list", "invite", "role", "remove", "reset", "withdraw"])
     t.add_argument("email", nargs="?")
