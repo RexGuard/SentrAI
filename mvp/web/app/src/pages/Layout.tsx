@@ -209,7 +209,7 @@ function PageSkeleton() {
     <div role="status" aria-label="Loading" className="space-y-6">
       <div className="skeleton h-10 w-72 rounded-xl" />
       <div className="skeleton h-5 w-[28rem] max-w-full rounded-lg" />
-      <div className="grid max-w-[64rem] gap-8 sm:grid-cols-2">{[0, 1, 2, 3].map((i) => <div key={i} className="skeleton h-40 rounded-[1.25rem]" />)}</div>
+      <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">{[0, 1, 2, 3].map((i) => <div key={i} className="skeleton h-40 rounded-[1.25rem]" />)}</div>
     </div>
   )
 }
