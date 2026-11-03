@@ -199,7 +199,7 @@ All of it: [Team command line](https://rexguard.github.io/SentrAI/docs/cli.html)
 
 ## How it works
 
-![SentrAI architecture](mvp/pitch/architecture.svg)
+![SentrAI architecture](assets/diagrams/architecture.svg)
 
 1. **Collect.** The collector (or an agent on each machine) reads only the log files you approve: web
    server, SSH, Windows Event Log, databases, Suricata.
@@ -235,7 +235,6 @@ mvp/                    the product
   sentrai_cli.py        the team's `sentrai` command
   extensions/           optional add-ons: Cloudflare, AbuseIPDB, Slack, Telegram, TypeSafe
   eval/                 detection accuracy and Sentry answer checks
-  pitch/, deck/         video script, slides, judge Q&A
 docs/                   the install guide and API reference (the website)
 demo-copy/              the browser-only copy of the panel used by the live demo
 Cybersecurity + AI.md   the full project plan
@@ -253,13 +252,12 @@ Tests: after a first `./run.sh`, run `cd core && .venv/bin/python -m pytest -q` 
 - 🛠️ **[MVP README](https://github.com/RexGuard/SentrAI/blob/main/mvp/README.md)** and **[server README](https://github.com/RexGuard/SentrAI/blob/main/mvp/deploy/README.md)**: every variable and file.
 - 📄 **[Full project plan](https://rexguard.github.io/SentrAI/Cybersecurity%20+%20AI.html)**: problem, data per layer, risk formula, Jev pipeline, fix workflow, reports, ethics and stack ([Markdown source](https://github.com/RexGuard/SentrAI/blob/main/Cybersecurity%20%2B%20AI.md)).
 - 🛡️ **[Responsible AI and risk statement](https://rexguard.github.io/SentrAI/docs/responsible-ai.html)**: which AI is used, what data it sees, known risks, and every AI tool, model and asset used to build SentrAI.
-- 🎁 **[Surprise features](https://rexguard.github.io/SentrAI/docs/surprise-features.html)**: hackathon features 2 (human must decide) and 5 (make it act), before and after the reveal.
 - 🗺️ **[Roadmap](https://rexguard.github.io/SentrAI/ROADMAP.html)**: 9 phases from the MVP to a pilot.
-- 🎬 [Video script](https://github.com/RexGuard/SentrAI/blob/main/mvp/pitch/VIDEO_SCRIPT.md), [slide outline](https://github.com/RexGuard/SentrAI/blob/main/mvp/pitch/SLIDES.md), [judge Q&A](https://github.com/RexGuard/SentrAI/blob/main/mvp/pitch/QA_PREP.md) and [sources](https://github.com/RexGuard/SentrAI/blob/main/mvp/research/SOURCES.md).
+- 📚 [Sources](https://github.com/RexGuard/SentrAI/blob/main/mvp/research/SOURCES.md) for the facts and figures we quote.
 
 ## Team
 
-Team **SOLID**, Kaplan "AI For Impact" hackathon, 2 to 3 Nov 2026.
+The people building SentrAI:
 
 | Member | Role |
 | --- | --- |

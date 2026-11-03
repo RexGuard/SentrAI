@@ -6,7 +6,7 @@
   `hook_championtutor.png`, `risk_formula.png`, `risk_timeline.png`, `sentry_ethics.png`,
   `evidence_report_mock.png`, `title_card.png`, `end_card.png`.
   Green, amber and red appear only as risk colours; blue is the brand.
-- Facts come only from `mvp/research/SOURCES.md`; timeline numbers from `mvp/pitch/SLIDES.md` slide 7
+- Facts come only from `mvp/research/SOURCES.md`; timeline numbers from the risk formula
   (script asserts the formula reproduces 44/69/80/90 and 51..70, 88).
 - 29 Sep 2026: cactus drawing replaced with the SentrAI mark; `cactus_ethics.png` renamed `sentry_ethics.png`.
   PNGs were rendered on Linux (DejaVu Sans); on Windows the script uses Segoe UI, so re-check for overflow there.

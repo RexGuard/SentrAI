@@ -6,8 +6,6 @@ description: Which AI SentrAI uses, what data it sees, what it can and cannot do
 
 # Responsible AI and risk statement
 
-Team **SOLID** (#10), Kaplan "AI For Impact" hackathon, 2 to 3 Nov 2026. Track: IT and Computer Science.
-
 ## 1. Where AI is used in the product
 
 | Part | AI used | What it decides | What it can never do |
@@ -16,8 +14,8 @@ Team **SOLID** (#10), Kaplan "AI For Impact" hackathon, 2 to 3 Nov 2026. Track: 
 | **Jev** (threat labeller) | TypeSafe System One | Puts a label on log lines the rules did not recognise | Act on its own: its label only feeds the risk score |
 
 **SentrAI works with no AI at all.** Detection rules, the risk score and blocking all run without a key. AI adds
-plain-language answers and labels for lines the rules miss. During the hackathon Jev was not run live (no
-TypeSafe key), so the rules and keyword fallback did the labelling.
+plain-language answers and labels for lines the rules miss. Jev is off until a TypeSafe key is set; without
+it the rules and keyword fallback do the labelling.
 
 ## 2. People stay in control
 
@@ -83,4 +81,4 @@ Screens of the panel are real screenshots of the prototype with made-up demo dat
 - **Back end:** FastAPI, Streamlit and other Python packages listed in each part's `requirements.txt`.
 - **Demo data:** made up. Attacker addresses come from documentation-only ranges such as 203.0.113.x. No real
   people's data is used.
-- **Sources** for facts in the pitch are in [mvp/research/SOURCES.md](https://github.com/RexGuard/SentrAI/blob/main/mvp/research/SOURCES.md).
+- **Sources** for the facts we quote are in [mvp/research/SOURCES.md](https://github.com/RexGuard/SentrAI/blob/main/mvp/research/SOURCES.md).

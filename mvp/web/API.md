@@ -72,4 +72,4 @@ Separate folder `mvp/web/` on its own branch. Streamlit is not touched until the
 | 7 | Overview canvas + routing editor | `GET /ui/overview`, `GET/POST /ui/routing`, `GET /routing`, `GET /extensions`, `GET /log-sources` |
 | later | Incidents, Staff reports, Reports | `GET /ui/incidents`, `/incidents/{iid}`, `POST /incidents/{iid}/resolve|rollback|permanent`, `/staff-reports*`, `/reports/{iid}(.md|.pdf)`, `/summary/{period}(.md|.pdf)` |
 
-Cut-off: whatever is not green by the evening stays on Streamlit for the 2-3 Nov demo.
+Pages not yet ported stay on the classic Streamlit dashboard until they are.
