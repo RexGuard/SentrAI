@@ -143,15 +143,27 @@ type Lvl = { severity: string; count: number; bubbles: number; overdue: number; 
 /** The risk lists as the live demo shows them: the recorded active risks are left out (every card starts at 0, as
  *  Erick asked, so only the live attack shows up), and the live risk is added while it is open. Risks SentrAI
  *  already handled stay under "Already handled". */
+type Group = { name: string; open: number; overdue: number; handled: number; done: number; worst: string }
+/** The table under the cards: the recorded open risks are left out like everywhere else, the live one is added. */
+function liveGroups(rec: Group[] | undefined, name: string, on: boolean): Group[] {
+  const out = (rec ?? []).filter((g) => g.handled || g.name === name).map((g) => ({ ...g, open: 0, overdue: 0, worst: '', done: g.handled ? 100 : 0 }))
+  if (on) {
+    const g = out.find((x) => x.name === name)
+    if (g) Object.assign(g, { open: 1, worst: 'critical', done: Math.round((100 * g.handled) / (g.handled + 1)) })
+    else out.unshift({ name, open: 1, overdue: 0, handled: 0, done: 0, worst: 'critical' })
+  }
+  return out.filter((g) => g.open || g.handled).sort((a, z) => z.open - a.open || z.handled - a.handled)
+}
 function withLive(path: string, body: unknown): unknown {
   if (!body || typeof body !== 'object' || !bare(path).startsWith('/ui/risks')) return body
-  const b = body as { levels?: Lvl[]; rows?: unknown[]; headline?: string }
+  const b = body as { levels?: Lvl[]; rows?: unknown[]; headline?: string; groups?: { type?: Group[]; machine?: Group[] } }
   const sev = new URLSearchParams(path.split('?')[1] ?? '').get('severity')
   const on = phase === 'open'
   const levels = (b.levels ?? []).map((l) => (on && l.severity === 'critical'
     ? { ...l, count: 1, bubbles: 1, overdue: 0, oldest: 'just now' } : { ...l, count: 0, bubbles: 0, overdue: 0, oldest: '' }))
   const out: Record<string, unknown> = { ...b, levels, headline: on ? '1 thing needs a person. Start with Critical.' : 'Nothing needs a person right now.' }
   if ('rows' in b || sev) out.rows = on && (sev === 'critical' || sev === 'all') ? [liveRisk()] : []
+  out.groups = { type: liveGroups(b.groups?.type, 'Brute Force', on), machine: liveGroups(b.groups?.machine, 'aegis-web', on) }
   return out
 }
 export async function demoGetLive(path: string): Promise<unknown> {

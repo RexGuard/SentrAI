@@ -22,7 +22,10 @@ export type Risk = {
   actions: RiskAction[]; inc: { id: string; status: string; category: string; acked: boolean; actions: { status?: string }[] }
 }
 // handled: what SentrAI already blocked on its own at that level (off the active list, still undoable).
-export type Risks = { levels: LevelCount[]; headline: string; protection_on: boolean; rows?: Risk[]; handled?: Risk[]; handled_count?: number }
+// groups: the same risks counted by type and by computer (the table under the cards); done = % SentrAI blocked.
+export type RiskGroup = { name: string; open: number; overdue: number; handled: number; done: number; worst: Level | '' }
+export type Risks = { levels: LevelCount[]; headline: string; protection_on: boolean; rows?: Risk[]; handled?: Risk[]; handled_count?: number
+  groups?: { type: RiskGroup[]; machine: RiskGroup[] } }
 
 export const LEVEL_TEXT: Record<Level, { name: string; color: string; tint: string; blurb: string }> = {
   critical: { name: 'Critical', color: 'var(--critical)', tint: 'color-mix(in oklab, var(--critical) 12%, transparent)', blurb: 'act now' },
@@ -66,6 +69,69 @@ export function SeverityBubbles({ data }: { data: Risks | null }) {
           </li>)
       })}
     </ul>
+  )
+}
+
+const GROUP_TABS = [{ key: 'type', label: 'By Type of Risk', col: 'Risk' }, { key: 'machine', label: 'By Computer', col: 'Computer' }] as const
+
+/** Under the cards: the same risks as a table, by type or by computer, with how much SentrAI already blocked. */
+export function RiskTable({ data }: { data: Risks | null }) {
+  const [tab, setTab] = useState<'type' | 'machine'>('type')
+  if (!data?.groups) return null
+  const t = GROUP_TABS.find((g) => g.key === tab)!
+  const rows = data.groups[tab]
+  return (
+    <section aria-labelledby="risk-table-title" className="risk-table max-w-[64rem] rounded-[1.25rem] border border-line">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 pt-4 pb-3">
+        <h2 id="risk-table-title" className="text-lg font-semibold">Where Your Risks Are</h2>
+        <div role="tablist" aria-label="Group the risks" className="flex flex-wrap gap-1">
+          {GROUP_TABS.map((g) => (
+            <button key={g.key} role="tab" aria-selected={tab === g.key} onClick={() => setTab(g.key)}
+              className={'rounded-md px-3 py-1.5 text-sm ' + (tab === g.key ? 'bg-surface-3 text-ink' : 'text-soft hover:bg-surface-2')}>{g.label}</button>))}
+        </div>
+      </div>
+      {rows.length === 0
+        ? <p className="px-5 py-6 text-soft">Nothing to show yet. Risks appear here once SentrAI sees one.</p>
+        : (
+          <div role="tabpanel" className="overflow-x-auto">
+            <table className="w-full min-w-[36rem] text-left text-sm">
+              <thead className="text-xs uppercase tracking-wide text-muted">
+                <tr>
+                  <th scope="col" className="px-5 py-2.5 font-semibold">{t.col}</th>
+                  <th scope="col" className="px-3 py-2.5 text-right font-semibold">Waiting for You</th>
+                  <th scope="col" className="px-3 py-2.5 text-right font-semibold">Overdue</th>
+                  <th scope="col" className="px-3 py-2.5 text-right font-semibold">Blocked by SentrAI</th>
+                  <th scope="col" className="w-[30%] px-5 py-2.5 font-semibold">Taken Care Of</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.name} className="border-t border-line-soft">
+                    <th scope="row" className="px-5 py-3 font-medium">
+                      <span className="flex items-center gap-2">
+                        <span className="stat-dot" style={{ background: r.worst ? CARD_COLOR[r.worst] : 'var(--green)' }}
+                          title={r.worst ? `Worst open risk: ${LEVEL_TEXT[r.worst].name}` : 'Nothing open'} aria-hidden />
+                        {tab === 'machine' && r.name !== 'Unknown computer' && r.name !== '-'
+                          ? <VLink to={`/machines/${encodeURIComponent(r.name)}`} className="hover:underline">{r.name}</VLink> : r.name}
+                        {r.worst && <span className="sr-only"> (worst open risk: {LEVEL_TEXT[r.worst].name})</span>}
+                      </span>
+                    </th>
+                    <td className="px-3 py-3 text-right tabular-nums">{r.open ? r.open.toLocaleString() : <span className="text-muted">0</span>}</td>
+                    <td className="px-3 py-3 text-right tabular-nums">{r.overdue ? <span className="font-medium text-bad">{r.overdue}</span> : <span className="text-muted">0</span>}</td>
+                    <td className="px-3 py-3 text-right tabular-nums">{r.handled ? r.handled.toLocaleString() : <span className="text-muted">0</span>}</td>
+                    <td className="px-5 py-3">
+                      <span className="flex items-center gap-3">
+                        <span className="risk-bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={r.done}
+                          aria-label={`${r.done}% taken care of`}><span style={{ width: `${r.done}%` }} /></span>
+                        <span className="w-10 text-right tabular-nums text-soft">{r.done}%</span>
+                      </span>
+                    </td>
+                  </tr>))}
+              </tbody>
+            </table>
+          </div>)}
+      <p className="border-t border-line px-5 py-3 text-xs text-muted">"Taken care of" is the share SentrAI already blocked on its own. A full bar means nothing there is waiting for you.</p>
+    </section>
   )
 }
 

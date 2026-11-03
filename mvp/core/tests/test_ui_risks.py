@@ -121,3 +121,25 @@ def test_what_still_needs_a_person_after_an_automatic_block():
     assert not handled({**base, "actions": [{**block, "check": {"worked": True, "disruption": True}}]})  # hurting users
     assert handled({**base, "actions": [{**block, "check": {"worked": True, "disruption": False}}]})
     assert not handled({**base, "status": "open"})
+
+
+def test_groups_count_open_and_blocked_by_type_and_computer(client):
+    brute_force(client)
+    page = client.get("/ui/risks").json()
+    assert set(page["groups"]) == {"type", "machine"}
+    row = next(g for g in page["groups"]["type"] if g["name"] == "Brute Force")
+    assert row["open"] >= 1 and 0 <= row["done"] <= 100 and row["worst"] in ui.LEVELS
+    assert sum(g["open"] for g in page["groups"]["machine"]) == sum(lv["count"] for lv in page["levels"])
+
+
+def test_groups_share_blocked():
+    open_ = [{"id": "a", "status": "open", "severity": "high", "category": "port_scan", "host": "web-01",
+              "sla_breached": True}]
+    done = [{"id": "b", "status": "contained", "severity": "low", "category": "port_scan", "host": "web-01"},
+            {"id": "c", "status": "contained", "severity": "low", "category": "brute_force", "host": "db-01"}]
+    g = ui.groups(open_, done)
+    scan = g["type"][0]
+    assert scan["name"] == "Port or Web Scan" and scan == {**scan, "open": 1, "overdue": 1, "handled": 1, "done": 50,
+                                                          "worst": "high"}
+    assert g["type"][1]["done"] == 100 and g["type"][1]["worst"] == ""
+    assert [m["name"] for m in g["machine"]] == ["web-01", "db-01"]

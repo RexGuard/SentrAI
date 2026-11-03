@@ -1,12 +1,12 @@
-// Command Center: only the four severity cards (Critical, High, Medium, Low). A card opens that severity's risks
-// (pages/RiskList.tsx). The old Approvals, Incidents and Review addresses still land here (?tab=...) and show that
+// Command Center: the four severity cards (Critical, High, Medium, Low) and, under them, the same risks as a table by
+// type or by computer (RiskTable). A card opens that severity's risks (pages/RiskList.tsx). The old Approvals, Incidents and Review addresses still land here (?tab=...) and show that
 // full list under the cards, so old links and bookmarks keep working.
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { X } from 'lucide-react'
 import { api, ApiError } from '../lib/api'
 import { onDemoChange } from '../lib/demo'
-import { SeverityBubbles, type Risks } from '../lib/Risks'
+import { RiskTable, SeverityBubbles, type Risks } from '../lib/Risks'
 
 const TABS = [
   { key: 'approvals', label: 'Approve Many at Once', Page: lazy(() => import('./Approvals')) },
@@ -32,6 +32,7 @@ export default function Command() {
       <SeverityBubbles data={risks} />
       {!!risks?.handled_count && (
         <p className="text-sm text-soft">SentrAI already blocked {risks.handled_count} risk{risks.handled_count === 1 ? '' : 's'} on its own, so {risks.handled_count === 1 ? 'it is' : 'they are'} not counted above. Each list shows them under "Already handled", where you can undo one if it was a false alarm.</p>)}
+      <RiskTable data={risks} />
       {tab && (
         <div role="region" aria-label={tab.label} className="min-w-0 space-y-3 rounded-2xl border border-line bg-surface p-4">
           <div className="flex items-start justify-between gap-2">
