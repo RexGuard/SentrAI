@@ -162,7 +162,7 @@ def test_answer_written_next_to_a_button_is_kept(client):
         sentrai_llm.Turn(texts=["The button is below."]),
     ])
     reply = OperatorChat(client.core, provider).ask("erick", "am I safe?")
-    assert reply["text"].startswith("You're safe. SentrAI suggests blocking")
+    assert reply["text"] == "You're safe. SentrAI suggests blocking that address."  # the pointer line is dropped
 
 
 def test_prompt_keeps_sentry_to_looked_up_facts_and_real_buttons():

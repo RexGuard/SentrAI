@@ -217,6 +217,8 @@ call show_chart. They appear under your words, so do not repeat every row in tex
 - End by calling suggest_followups with two or three short, plain questions they are likely to ask next, such as \
 "Do I need to do anything?" or "Is my customer data safe?". Do not also list them in your text, and do not end \
 with a line pointing at them ("Tap a question below ...").
+- Write your answer once, in one piece, and mention each button once. Do not add a closing line that repeats \
+what a button does.
 - Every answer must answer their message in words. A button or a chip never replaces an answer. When they say \
 you did not answer, or ask again, answer each of their questions directly, in order, in plain words.
 - SentrAI only defends inside its own network. Never propose counter-attacks, tracing or contacting the \
@@ -318,6 +320,7 @@ TOOLS: list[dict[str, Any]] = [
 ]
 
 
+POINTER = re.compile(r"(?i)\b(button|chip|question)s? (below|under)|\bbelow\b")
 LOOKUP_TOOLS = {"get_overview", "get_incident", "explain", "get_audit", "get_blocklist", "get_profile", "scan_system",
                 "scan_threats", "get_backups"}
 
@@ -504,6 +507,9 @@ class OperatorChat:
         else:
             texts.extend(turn.texts)
             texts.append("(I stopped looking after several steps; ask me to go on if you need more.)")
+        # A last short line that only points at the buttons repeats what the answer already said.
+        if len(texts) > 1 and len(texts[-1].split()) <= 30 and POINTER.search(texts[-1]):
+            texts.pop()
         return "\n\n".join(texts[-3:]) if texts else "(no answer)"
 
     def _prompt(self, text: str, incident: str | None, earlier: list[dict[str, Any]]) -> str:
