@@ -165,6 +165,16 @@ def get(email: str) -> dict | None:
     return _public(a) if a else None
 
 
+def session_stamp(email: str) -> str | None:
+    """A short fingerprint of the account's password hash and authenticator secret, or None if there is no
+    such account. A saved sign-in keeps the stamp it was made with: a new password or authenticator ends it."""
+    with _lock:
+        a = _find(_read(), email)
+    if not a:
+        return None
+    return hashlib.sha256(f"{a['hash']}\n{a['totp']}".encode()).hexdigest()[:24]
+
+
 def has_accounts() -> bool:
     with _lock:
         return bool(_read()["accounts"])

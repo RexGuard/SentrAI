@@ -8,8 +8,13 @@ const Ctx = createContext<Session | null>(null)
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [me, setMe] = useState<Me | null>(null)
   const [loading, setLoading] = useState(true)
-  const refresh = useCallback(async () => {
-    try { setMe(await api<Me>('/auth/me')) } catch (e) { if (e instanceof ApiError) setMe(null) }
+  const refresh = useCallback(async function ask(): Promise<void> {
+    try { setMe(await api<Me>('/auth/me')) } catch (e) {
+      // Only a 401 means signed out. While the panel restarts (an update) the core answers 502/503 or not at
+      // all: keep the session and ask again shortly, instead of showing the sign-in screen.
+      if (e instanceof ApiError && e.status === 401) setMe(null)
+      else { setTimeout(() => { void ask() }, 3000); return }
+    }
     setLoading(false)
   }, [])
   useEffect(() => { void refresh() }, [refresh])
