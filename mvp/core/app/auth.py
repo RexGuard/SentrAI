@@ -3,17 +3,27 @@
 The accounts, roles and one-time codes are sentrai_accounts' (the same ones the Streamlit console uses).
 This module adds what a browser needs on top of the shared API token, which a page must never hold:
 a short-lived "pending" cookie between the two steps, a session cookie after them, and the
-same 5-tries-per-5-minutes limit per address. Sessions live in memory: a core restart signs everyone out.
+same 5-tries-per-5-minutes limit per address.
+
+Sessions are kept in web-sessions.json in the core's folder ("core.web_sessions"), so a restart or an update
+(`sentrai-update`) does not sign anyone out. The file holds only a SHA-256 of each cookie, never the cookie
+itself, plus a fingerprint of the password and authenticator (sentrai_accounts.session_stamp): a new password,
+an authenticator reset or a removed account ends that person's sessions.
+It is written readable by the service user only. Half-finished sign-ins (the pending cookie) stay in memory.
 
 A request with a session cookie is treated as that person: reads need a signed-in role, writes need
 "act" (Owner/Admin), and a write must carry `X-SentrAI-Web: 1`, which another site cannot add to a request.
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
+import os
 import secrets
 import threading
 import time
+from pathlib import Path
 from typing import Any
 
 from fastapi import Body, FastAPI, HTTPException, Request, Response
@@ -31,9 +41,63 @@ OPEN_PATHS = frozenset({"/auth/login", "/auth/totp", "/auth/register-owner", "/a
                         "/auth/state"})
 
 _lock = threading.Lock()
-_sessions: dict[str, dict[str, Any]] = {}
+_sessions: dict[str, dict[str, Any]] = {}  # SHA-256 of the cookie -> {"email", "expires", "pw": stamp}
+_store: Path | None = None  # where _sessions is saved; None keeps them in memory only
 _pending: dict[str, dict[str, Any]] = {}
 _fails: dict[str, list[float]] = {}
+
+
+def _key(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def _save() -> None:
+    """Write the sessions to the store. Call with _lock held. Best effort: a failed write only means a
+    restart would sign people out, as before."""
+    if _store is None:
+        return
+    try:
+        _store.parent.mkdir(parents=True, exist_ok=True)
+        tmp = _store.with_name(_store.name + ".tmp")
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump({"sessions": _sessions}, f)
+        try:
+            os.chmod(tmp, 0o600)
+        except OSError:
+            pass
+        os.replace(tmp, _store)
+    except OSError:
+        pass
+
+
+def _load(store: Path | None) -> None:
+    """Use `store` for sessions from now on, and bring back the unexpired ones saved there."""
+    global _store
+    now = time.time()
+    kept: dict[str, dict[str, Any]] = {}
+    if store is not None:
+        try:
+            data = json.loads(store.read_text(encoding="utf-8"))
+            saved = data.get("sessions") if isinstance(data, dict) else None
+        except (OSError, ValueError):
+            saved = None
+        for key, s in (saved or {}).items():
+            if (isinstance(s, dict) and isinstance(s.get("email"), str) and isinstance(s.get("pw"), str)
+                    and isinstance(s.get("expires"), (int, float)) and s["expires"] > now):
+                kept[key] = {"email": s["email"], "expires": float(s["expires"]), "pw": s["pw"]}
+    with _lock:
+        _store = store
+        _sessions.clear()
+        _sessions.update(kept)
+        if store is not None:
+            _save()  # drops the expired ones from the file too
+
+
+def _drop(key: str) -> None:
+    with _lock:
+        if _sessions.pop(key, None) is not None:
+            _save()
 
 
 def _address(request: Request) -> str:
@@ -81,17 +145,20 @@ def _public(account: dict) -> dict:
 def session_for(request: Request) -> dict | None:
     """The signed-in account for this request's cookie, or None. Expired sessions are dropped."""
     token = request.cookies.get(SESSION_COOKIE, "")
+    if not token:
+        return None
+    key = _key(token)
     with _lock:
-        s = _sessions.get(token)
-        if s and s["expires"] < time.time():
-            del _sessions[token]
-            s = None
+        s = _sessions.get(key)
     if not s:
         return None
-    account = acc.get(s["email"])  # removed or reset since signing in: the session ends
-    if not account or not account["authenticator"]:
-        with _lock:
-            _sessions.pop(token, None)
+    if s["expires"] < time.time():
+        _drop(key)
+        return None
+    account = acc.get(s["email"])  # removed, reset or a new password since signing in: the session ends
+    stamp = acc.session_stamp(s["email"]) or ""
+    if not account or not account["authenticator"] or not hmac.compare_digest(stamp, s["pw"]):
+        _drop(key)
         return None
     return account
 
@@ -118,7 +185,8 @@ def _start_session(response: Response, request: Request, email: str) -> dict:
         _fails.pop(ip, None)
     token = secrets.token_urlsafe(32)
     with _lock:
-        _sessions[token] = {"email": email, "expires": time.time() + SESSION_S}
+        _sessions[_key(token)] = {"email": email, "expires": time.time() + SESSION_S, "pw": acc.session_stamp(email) or ""}
+        _save()
     _set(response, request, SESSION_COOKIE, token, SESSION_S)
     response.delete_cookie(PENDING_COOKIE, path="/")
     return {"last_sign_in": before, "last_address": where}
@@ -136,8 +204,11 @@ def _pending_email(request: Request) -> str:
     return p["email"]
 
 
-def install(app: FastAPI, core_notify=None) -> None:
-    """core_notify(email, role_label, address): tells the core who signed in (its admins.py), best effort."""
+def install(app: FastAPI, core_notify=None, store: Path | None = None) -> None:
+    """core_notify(email, role_label, address): tells the core who signed in (its admins.py), best effort.
+    store: the file that keeps sessions across restarts (None: in memory only)."""
+    _load(store)
+
     def signed(response: Response, request: Request, email: str) -> dict:
         info = _start_session(response, request, email)
         me = acc.get(email) or {}
@@ -247,8 +318,9 @@ def install(app: FastAPI, core_notify=None) -> None:
 
     @app.post("/auth/logout")
     def logout(request: Request, response: Response) -> dict:
-        with _lock:
-            _sessions.pop(request.cookies.get(SESSION_COOKIE, ""), None)
+        token = request.cookies.get(SESSION_COOKIE, "")
+        if token:
+            _drop(_key(token))
         response.delete_cookie(SESSION_COOKIE, path="/")
         return {"ok": True}
 

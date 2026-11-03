@@ -495,7 +495,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         response.headers.setdefault("Referrer-Policy", "no-referrer")
         return response
 
-    auth_cookie.install(app, core.admin_signed_in)
+    auth_cookie.install(app, core.admin_signed_in,
+                        sentrai_paths.path("core.web_sessions", core.settings.db_path.parent, migrate=False))
     ui_approvals.install(app, core)
     ui_audit.install(app, core)
     ui_incidents.install(app, core)

@@ -1,4 +1,6 @@
 """The web dashboard's sign-in: password, authenticator code, session cookie, roles."""
+import time
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -77,3 +79,54 @@ def test_the_signed_in_person_is_the_operator(web):
     assert r.status_code == 200
     asked = [m for m in web.get("/chat").json()["messages"] if m.get("role") == "operator"]
     assert asked and asked[-1]["operator"] == "owner@example.com"
+
+
+def restart(tmp_path):
+    """A new core on the same folder, as after `sentrai-update`: nothing kept in memory."""
+    auth._fails.clear(), auth._sessions.clear(), auth._pending.clear()
+    return TestClient(create_app(Settings(db_path=tmp_path / "sentrai.db", background=False, demo_speed=60.0)))
+
+
+def test_sign_in_survives_a_restart(web, tmp_path):
+    sign_in(web, "owner@example.com")
+    cookie = web.cookies.get(auth.SESSION_COOKIE)
+    stored = (tmp_path / "people" / "web-sessions.json").read_text()
+    assert cookie and cookie not in stored  # only a hash of the cookie is saved
+    with restart(tmp_path) as again:
+        again.cookies.set(auth.SESSION_COOKIE, cookie)
+        assert again.get("/auth/me").json()["email"] == "owner@example.com"
+        assert again.get("/incidents").status_code == 200
+
+
+def test_sign_out_and_new_password_end_saved_sessions(web, tmp_path):
+    secret = sign_in(web, "owner@example.com")
+    cookie = web.cookies.get(auth.SESSION_COOKIE)
+    web.post("/auth/logout")
+    with restart(tmp_path) as again:
+        again.cookies.set(auth.SESSION_COOKIE, cookie)
+        assert again.get("/auth/me").status_code == 401
+
+    web.cookies.clear()
+    r = web.post("/auth/login", json={"email": "owner@example.com", "password": PASSWORD})
+    assert r.json()["next"] == "code"
+    assert web.post("/auth/totp", json={"code": acc.totp_code(secret, time.time() + 30)}).status_code == 200
+    cookie = web.cookies.get(auth.SESSION_COOKIE)
+    data = acc._read()
+    data["accounts"][0]["hash"] = acc.cfg.hash_password("a brand new password")
+    acc._write(data)
+    with restart(tmp_path) as again:
+        again.cookies.set(auth.SESSION_COOKIE, cookie)
+        assert again.get("/auth/me").status_code == 401
+
+
+def test_expired_saved_sessions_are_dropped(web, tmp_path):
+    sign_in(web, "owner@example.com")
+    cookie = web.cookies.get(auth.SESSION_COOKIE)
+    for s in auth._sessions.values():
+        s["expires"] = 1.0
+    with auth._lock:
+        auth._save()
+    with restart(tmp_path) as again:
+        again.cookies.set(auth.SESSION_COOKIE, cookie)
+        assert again.get("/auth/me").status_code == 401
+    assert "owner@example.com" not in (tmp_path / "people" / "web-sessions.json").read_text()

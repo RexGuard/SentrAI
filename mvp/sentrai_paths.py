@@ -160,6 +160,8 @@ ENTRIES: dict[str, Entry] = {e.key: e for e in (
           "Notifier", "SENTRAI_TELEGRAM_LINKS", old=("part:telegram_links.json",)),
     Entry("core.staff_reports", "core", "people/staff_reports.json", "what staff reported (/report, the report page)",
           "HelpDesk", "SENTRAI_STAFF_REPORTS", old=("part:staff_reports.json",)),
+    Entry("core.web_sessions", "core", "people/web-sessions.json", "who is signed in to the web dashboard (a hash "
+          "of each sign-in cookie), so an update does not sign people out", "Dashboard", optional=True),
     Entry("core.admins", "core", "people/admins.json", "the administrators: their accounts, sign-in addresses and "
           "SSH keys (taught or learned), and who is signed in now", "Warden", "SENTRAI_ADMINS", optional=True),
     Entry("core.fleet", "core", "machines/fleet.json", "machines that joined the panel: hashed keys and join codes",
