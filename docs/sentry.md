@@ -64,8 +64,8 @@ Every change goes on the audit trail. See the [chat API](api/chat.html#memory).
 
 ## When Sentry can't do it yet
 
-When someone asks Sentry for something SentrAI can't do yet ("Clean up the overdue risks for the shop laptop",
-"Email me a report every Monday"), Sentry says so plainly, helps with what it can do now, and passes the request
+When someone asks Sentry for something SentrAI can't do yet ("Email me a report every Monday", "Export the
+incidents to Excel"), Sentry says so plainly, helps with what it can do now, and passes the request
 to SentrAI's team as a **feature idea**. Questions it can answer, and decisions it already offers buttons for, are
 not noted.
 

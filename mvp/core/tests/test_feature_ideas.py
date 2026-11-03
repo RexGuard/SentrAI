@@ -35,14 +35,14 @@ def test_done_ideas_are_hidden_and_dismissed_ones_come_back_when_asked_again(tmp
 
 def test_chat_without_a_key_notes_a_request_it_cannot_do(client):
     brute_force(client)
-    r = client.post("/chat", json={"operator": "erick", "message": "Clean up the overdue risks for RexGuard Machine"})
+    r = client.post("/chat", json={"operator": "erick", "message": "Email me a report of the risks every Monday"})
     reply = r.json()
     assert reply["text"] != "(no answer)" and "can't do that yet" in reply["text"]
     assert reply["feature_idea"]["count"] == 1
     assert reply["suggestions"]  # still offers what it can: buttons for what is waiting
     ideas = client.get("/ui/feature-ideas").json()["ideas"]
-    assert len(ideas) == 1 and ideas[0]["examples"] == ["Clean up the overdue risks for RexGuard Machine"]
-    client.post("/chat", json={"operator": "ana", "message": "can you clean up the overdue risks for RexGuard?"})
+    assert len(ideas) == 1 and ideas[0]["examples"] == ["Email me a report of the risks every Monday"]
+    client.post("/chat", json={"operator": "ana", "message": "can you email me a report of the risks each Monday?"})
     assert client.get("/ui/feature-ideas").json()["ideas"][0]["count"] == 2
     assert any(x["type"] == "feature_idea_noted" for x in client.get("/audit").json()["records"])
 
@@ -50,7 +50,8 @@ def test_chat_without_a_key_notes_a_request_it_cannot_do(client):
 def test_questions_sentry_can_answer_are_not_noted(client):
     brute_force(client)
     for q in ("Are we safe right now?", "Do I need to do anything?", "Summarise this week for me",
-              "why is RSK-2026-081 open?", "remember that rexguard is our game server", "Are our backups OK?"):
+              "why is RSK-2026-081 open?", "remember that rexguard is our game server", "Are our backups OK?",
+              "Clean up the overdue risks for RexGuard Machine"):
         assert "feature_idea" not in client.post("/chat", json={"operator": "erick", "message": q}).json()
     assert client.get("/ui/feature-ideas").json()["ideas"] == []
 

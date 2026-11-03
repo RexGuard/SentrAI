@@ -1,7 +1,7 @@
 """Feature ideas: what people asked Sentry for that SentrAI cannot do yet, for the SentrAI team.
 
-When someone asks the chat for something no tool or button covers ("Clean up the overdue risks for the shop
-laptop", "email me a report every Monday"), Sentry says plainly that SentrAI cannot do that yet and notes it here
+When someone asks the chat for something no tool or button covers ("Email me a report every Monday", "export the
+incidents to Excel"), Sentry says plainly that SentrAI cannot do that yet and notes it here
 as a feature idea. With an AI model, the model decides (its `suggest_feature` tool); without one, a request that
 none of the fixed answers understood is noted (chat.py `_fallback`).
 

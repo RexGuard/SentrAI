@@ -9,36 +9,66 @@ import { SetupBanner, SetupConversation, type Setup } from './SetupChat'
 
 export type Suggestion = {
   kind?: string; incident?: string; decision?: string; label?: string; reason?: string; file_id?: string; finding_id?: string
+  incidents?: string[] // kind 'bulk': the same decision on each of these
 }
 export type Message = {
-  id: string | number; role: string; text: string; ts?: string; operator?: string; incident?: string; source?: string
+  id: string | number; role: string; text: string; ts?: string; operator?: string; incident?: string; machine?: string; source?: string
   looked_at?: string[]; suggestions?: Suggestion[]; blocks?: Block[]; followups?: string[]; question?: string
   feedback?: { vote: 'up' | 'down'; note?: string; by?: string } | null
   attachments?: { name: string; kind: string; size: number }[]; stopped?: boolean
 }
 type History = { assistant?: string; model?: string; messages: Message[] }
-export type Incident = { id: string; status: string; category?: string; acked?: boolean; actions?: { status?: string }[] }
-/** Only what the suggestion buttons need, not every incident's whole timeline. */
-export const INCIDENT_FIELDS = 'status,category,acked,actions'
+export type Incident = { id: string; status: string; category?: string; acked?: boolean; host?: string; actions?: { status?: string }[] }
+/** Only what the suggestion buttons and the "Talk about" list need, not every incident's whole timeline. */
+export const INCIDENT_FIELDS = 'status,category,acked,actions,host'
 
 const STARTERS = ['What is happening right now?', 'Which incident should I deal with first?', 'Why did you block the last IP address?']
 const FOLLOW_UPS = [...STARTERS, 'Is anything waiting for my approval?', 'What changed in the last hour?', 'Is any machine offline?']
 const NEEDS: Record<string, 'decide' | 'ack' | 'mine' | 'contain'> = { approve: 'decide', reject: 'decide', ack: 'ack', mine: 'mine', rollback: 'contain', keep: 'contain', permanent: 'contain', make_permanent: 'contain' }
 
-function canDo(inc: Incident | undefined, decision: string): [boolean, string] {
+/** The computers Sentry can be kept to (GET /ui/machines): only the ones with a host, not "This computer" alone. */
+export type ChatMachine = { host: string; name: string }
+export const loadMachines = () => api<{ machines: { host?: string; name: string }[] }>('/ui/machines')
+  .then((r) => r.machines.filter((m) => m.host).map((m) => ({ host: m.host!, name: m.name })))
+  .catch(() => [] as ChatMachine[])
+
+// Same rule as the core's chat.possible(): a button for a decision that can no longer be made is not offered.
+export function canDo(inc: Incident | undefined, decision: string): [boolean, string] {
   if (!inc) return [false, 'incident not found']
   const need = NEEDS[decision]
   if (!need) return [false, `unknown decision ${decision}`]
   const active = inc.status === 'open' || inc.status === 'acknowledged'
-  const ok = need === 'decide' ? active : need === 'ack' ? inc.status === 'open' && !inc.acked
+  const ok = need === 'decide' ? active : need === 'ack' ? (active || inc.status === 'contained') && !inc.acked
     : need === 'mine' ? active && inc.category === 'unauthorised_admin'
     : inc.status === 'contained' || !!inc.actions?.some((a) => a.status === 'active')
-  return ok ? [true, ''] : [false, `no longer possible: incident is ${inc.status}`]
+  return ok ? [true, ''] : [false, `no longer possible: ${need === 'ack' && inc.acked ? 'already acknowledged' : `incident is ${inc.status}`}`]
+}
+
+/** Whether a suggestion's button can still do anything; a bulk one while at least one of its incidents can. */
+export function suggestionOpen(s: Suggestion, byId: Record<string, Incident>): [boolean, string] {
+  if (s.kind === 'bulk') {
+    const left = (s.incidents ?? []).filter((id) => canDo(byId[id], s.decision ?? '')[0]).length
+    return left ? [true, ''] : [false, 'nothing left to do: all of them are already handled']
+  }
+  if (s.kind && ['watch_log', 'quarantine_file', 'backup_now'].includes(s.kind)) return [true, '']
+  return canDo(byId[String(s.incident)], s.decision ?? '')
+}
+
+/** One decision on one incident, through the normal endpoints (and their checks). */
+async function decide(decision: string, incident: string, inc: Incident | undefined, op: string, why: string) {
+  const id = encodeURIComponent(incident)
+  if (decision === 'approve' || decision === 'reject') {
+    if (inc?.status === 'open' && !inc.acked) await api(`/incidents/${id}/ack`, { body: { operator: op } }).catch(() => {})
+    await api(`/incidents/${id}/decision`, { body: { operator: op, decision, justification: why } })
+  } else if (decision === 'ack') await api(`/incidents/${id}/ack`, { body: { operator: op } })
+  else if (decision === 'mine') await api(`/incidents/${id}/mine`, { body: { operator: op } })
+  else if (decision === 'rollback') await api(`/incidents/${id}/rollback`, { body: { operator: op, justification: why || 'Rolled back by operator after chat' } })
+  else await api(`/incidents/${id}/permanent`, { body: { operator: op, justification: why || 'Made permanent by operator after chat' } })
 }
 
 const time = (ts?: string) => (ts ? new Date(ts).toLocaleTimeString() : '')
 
-export function SuggestionCard({ s, inc, onDone }: { s: Suggestion; inc?: Incident; onDone: (note: string) => void }) {
+export function SuggestionCard({ s, byId, onDone }: { s: Suggestion; byId: Record<string, Incident>; onDone: (note: string) => void }) {
   const { me, can } = useSession()
   const op = me?.email ?? 'dashboard'
   const label = s.label || `${s.decision} ${s.incident}`
@@ -46,25 +76,26 @@ export function SuggestionCard({ s, inc, onDone }: { s: Suggestion; inc?: Incide
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const decision = s.decision ?? ''
+  const inc = byId[String(s.incident)]
   const isIncident = !s.kind || !['watch_log', 'quarantine_file', 'backup_now'].includes(s.kind)
-  const [ok, whyNot] = isIncident ? canDo(inc, decision) : [true, '']
+  const [ok, whyNot] = suggestionOpen(s, byId)
+  const todo = s.kind === 'bulk' ? (s.incidents ?? []).filter((id) => canDo(byId[id], decision)[0]) : []
   if (!ok) return <p className="text-sm text-muted"><Lightbulb size={14} className="mr-1 inline" aria-hidden />Suggested: {label} · {whyNot}</p>
 
   const run = async () => {
     if (decision === 'reject' && !why.trim()) return setErr('Rejecting requires a written justification.')
     setBusy(true); setErr('')
-    const id = encodeURIComponent(s.incident ?? '')
     try {
+      if (s.kind === 'bulk') {
+        const failed: string[] = []
+        for (const iid of todo) { try { await decide(decision, iid, byId[iid], op, why.trim()) } catch { failed.push(iid) } }
+        if (failed.length) { setErr(`${todo.length - failed.length} done; these did not go through: ${failed.join(', ')}`); setBusy(false); return }
+        onDone(`Done: ${label} (${todo.length})`); setBusy(false); return
+      }
       if (s.kind === 'watch_log') await api('/log-sources', { body: { file_id: s.file_id, operator: op } })
       else if (s.kind === 'quarantine_file') await api(`/threats/${encodeURIComponent(s.finding_id ?? '')}/quarantine`, { body: { operator: op, reason: s.reason ?? '' } })
       else if (s.kind === 'backup_now') await api('/backups', { body: { operator: op } })
-      else if (decision === 'approve' || decision === 'reject') {
-        if (inc?.status === 'open' && !inc.acked) await api(`/incidents/${id}/ack`, { body: { operator: op } }).catch(() => {})
-        await api(`/incidents/${id}/decision`, { body: { operator: op, decision, justification: why.trim() } })
-      } else if (decision === 'ack') await api(`/incidents/${id}/ack`, { body: { operator: op } })
-      else if (decision === 'mine') await api(`/incidents/${id}/mine`, { body: { operator: op } })
-      else if (decision === 'rollback') await api(`/incidents/${id}/rollback`, { body: { operator: op, justification: why.trim() || 'Rolled back by operator after chat' } })
-      else await api(`/incidents/${id}/permanent`, { body: { operator: op, justification: why.trim() || 'Made permanent by operator after chat' } })
+      else await decide(decision, s.incident ?? '', inc, op, why.trim())
       onDone(`Done: ${label}`)
     } catch (e) { setErr(e instanceof ApiError ? e.message : 'That did not go through.') }
     setBusy(false)
@@ -72,6 +103,7 @@ export function SuggestionCard({ s, inc, onDone }: { s: Suggestion; inc?: Incide
   return (
     <form className="mt-2 space-y-2 rounded-lg border border-line bg-surface-2 p-3" onSubmit={(e: FormEvent) => { e.preventDefault(); void run() }}>
       <p className="font-medium"><Lightbulb size={14} className="mr-1 inline" aria-hidden />Suggested: {label}</p>
+      {s.kind === 'bulk' && <p className="text-sm text-soft">Covers {todo.join(', ')}{todo.length < (s.incidents?.length ?? 0) ? ` (${(s.incidents?.length ?? 0) - todo.length} already handled)` : ''}</p>}
       {isIncident
         ? <label className="block text-sm text-soft">Justification (written to the audit log)
             <input value={why} onChange={(e) => setWhy(e.target.value)} className="mt-1 block w-full rounded-md border border-line bg-surface px-3 py-1.5 text-ink" /></label>
@@ -90,6 +122,7 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
   const { me, can } = useSession()
   const [hist, setHist] = useState<History | null>(null)
   const [incidents, setIncidents] = useState<Incident[]>([])
+  const [machines, setMachines] = useState<ChatMachine[]>([])
   const [error, setError] = useState('')
   const [note, setNote] = useState('')
   const [about, setAbout] = useState('')
@@ -105,14 +138,15 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
       setHist(Array.isArray(h) ? { messages: h } : h); setIncidents(i); setError('')
     } catch (e) { setError(e instanceof ApiError ? `Chat is not available on this core: ${e.message}` : 'Could not load chat.') }
   }, [])
-  useEffect(() => { void load() }, [load])
+  useEffect(() => { void load(); void loadMachines().then(setMachines) }, [load])
   useEffect(() => { api<Setup>('/ui/setup').then(setSetup).catch(() => setSetup(null)) }, [])
   useEffect(() => { end.current?.scrollIntoView({ block: 'end' }) }, [hist?.messages.length, asking])
 
   const ask = async (message: string) => {
     if (!message.trim() || asking) return
     setAsking(true); setNote(''); setText('')
-    try { await api('/chat', { body: { operator: me?.email ?? 'dashboard', message, incident: about || null } }) }
+    const [kind, value] = about.startsWith('m:') ? ['machine', about.slice(2)] : ['incident', about]
+    try { await api('/chat', { body: { operator: me?.email ?? 'dashboard', message, [kind]: value || null } }) }
     catch (e) { setNote(e instanceof ApiError ? `Chat failed: ${e.message}` : 'Chat failed.') }
     await load(); setAsking(false)
   }
@@ -143,7 +177,8 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
             <label className="text-sm text-soft">Talk about
               <select value={about} onChange={(e) => setAbout(e.target.value)} className="mt-1 block rounded-md border border-line bg-surface-2 px-2 py-1.5 text-ink">
                 <option value="">The whole operation</option>
-                {[...incidents].sort((a, b) => b.id.localeCompare(a.id)).map((i) => <option key={i.id} value={i.id}>{i.id} · {(i.category ?? '').replace(/_/g, ' ')}</option>)}
+                {machines.length > 0 && <optgroup label="A computer">{machines.map((m) => <option key={m.host} value={`m:${m.host}`}>{m.name}</option>)}</optgroup>}
+                <optgroup label="One risk">{[...incidents].sort((a, b) => b.id.localeCompare(a.id)).map((i) => <option key={i.id} value={i.id}>{i.id} · {(i.category ?? '').replace(/_/g, ' ')}</option>)}</optgroup>
               </select>
             </label>
             <p className="min-w-0 flex-1 text-xs text-muted">{compact ? 'It suggests, you decide' : `${assistant} · ${hist.model || 'model unknown'} · read-only: every action still needs your click and goes through the normal approval checks`}</p>
@@ -160,10 +195,10 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
               const mine = m.role === 'operator'
               const bubble = (
                 <div className={(compact ? 'max-w-[92%]' : 'max-w-[85%]') + ' space-y-1 rounded-lg p-3 ' + (mine ? 'ml-auto bg-surface-3' : 'bg-surface-2')}>
-                  <p className="text-xs text-muted">{mine ? m.operator || me?.email : assistant} · {time(m.ts)}{m.incident ? ` · about ${m.incident}` : ''}{!mine && m.source === 'fallback' ? ' · core explanation (no AI)' : ''}</p>
+                  <p className="text-xs text-muted">{mine ? m.operator || me?.email : assistant} · {time(m.ts)}{m.incident ? ` · about ${m.incident}` : m.machine ? ` · about ${machines.find((x) => x.host === m.machine)?.name ?? m.machine}` : ''}{!mine && m.source === 'fallback' ? ' · core explanation (no AI)' : ''}</p>
                   {mine ? <p className="whitespace-pre-wrap">{m.text}</p> : <><Text md={m.text} /><Blocks blocks={m.blocks} onOpen={(id) => void ask(`Explain ${id} in plain words`)} /></>}
                   {m.looked_at?.length ? <p className="text-xs text-muted">Looked at: {[...new Set(m.looked_at)].join(', ')}</p> : null}
-                  {(m.suggestions ?? []).map((s, k) => <SuggestionCard key={k} s={s} inc={byId[String(s.incident)]} onDone={(t) => { setNote(t); void load() }} />)}
+                  {(m.suggestions ?? []).map((s, k) => <SuggestionCard key={k} s={s} byId={byId} onDone={(t) => { setNote(t); void load() }} />)}
                   {n === lastReply && followUps.length > 0 && (
                     <div className="flex flex-wrap gap-2 pt-1">{followUps.map((q) => <button key={q} className={chip} disabled={asking} onClick={() => void ask(q)}>{q}</button>)}</div>
                   )}

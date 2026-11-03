@@ -13,7 +13,7 @@ import { useSession } from '../lib/session'
 import { Blocks, CopyButton, Text } from '../lib/Rich'
 import { backToQuestion, turns } from '../lib/turns'
 import { MemoryPanel, ShareDialog, SharedView, type ShareInfo } from '../lib/CyanideTeam'
-import { INCIDENT_FIELDS, SuggestionCard, type Incident, type Message } from './Chat'
+import { INCIDENT_FIELDS, SuggestionCard, loadMachines, suggestionOpen, type ChatMachine, type Incident, type Message } from './Chat'
 
 type History = { assistant?: string; model?: string; messages: Message[] }
 
@@ -58,6 +58,7 @@ export default function Manager() {
   const { me } = useSession()
   const [hist, setHist] = useState<History | null>(null)
   const [incidents, setIncidents] = useState<Incident[]>([])
+  const [machines, setMachines] = useState<ChatMachine[]>([])
   const [convos, setConvos] = useState<Convo[]>(loadConvos)
   const [current, setCurrent] = useState<string | null>(null)
   const [side, setSide] = useState(true)
@@ -68,7 +69,7 @@ export default function Manager() {
   const [draft, setDraft] = useState('')
   const [act, setAct] = useState<string | null>(null) // the suggested action whose confirm card is open
   const [why, setWhy] = useState<{ id: string | number; note: string } | null>(null) // thumbs down: what was wrong
-  const [about, setAbout] = useState('')
+  const [about, setAbout] = useState('') // '' everything, 'm:<host>' one computer, else one risk's id
   const [text, setText] = useState('')
   const [asking, setAsking] = useState(false)
   const [note, setNote] = useState('')
@@ -91,7 +92,7 @@ export default function Manager() {
       return next
     } catch (e) { setNote(e instanceof ApiError ? `Sentry is not available: ${e.message}` : 'Could not reach SentrAI.') }
   }, [])
-  useEffect(() => { void load() }, [load])
+  useEffect(() => { void load(); void loadMachines().then(setMachines) }, [load])
   const loadShares = useCallback(() => api<{ shares: ShareInfo[] }>('/chat/shares').then((r) => setShares(r.shares)).catch(() => {}), [])
   useEffect(() => { void loadShares(); const t = setInterval(loadShares, 60000); return () => clearInterval(t) }, [loadShares])
   useEffect(() => { saveConvos(convos) }, [convos])
@@ -139,7 +140,9 @@ export default function Manager() {
     const ctl = new AbortController(); abort.current = ctl
     let stopped = false
     try {
-      await stream('/chat/stream', { operator: me?.email ?? 'dashboard', message, incident: (incident ?? about) || null,
+      const scope = incident ?? about
+      await stream('/chat/stream', { operator: me?.email ?? 'dashboard', message,
+        ...(scope.startsWith('m:') ? { machine: scope.slice(2) } : { incident: scope || null }),
         attachments: sending.length ? sending.map(({ name, kind, text, media_type, data }) => ({ name, kind, text, media_type, data })) : undefined },
       (e) => {
         if (e.type === 'step') setLive((l) => l && { ...l, steps: [...l.steps, String(e.text)] })
@@ -194,6 +197,7 @@ export default function Manager() {
   const chatting = shown.length > 0 || asking || gone
   const byId = Object.fromEntries(incidents.map((i) => [i.id, i]))
   const first = (me?.name || '').split(' ')[0]
+  const machineName = (host: string) => machines.find((m) => m.host === host)?.name ?? host
   const openIncidents = incidents.filter((i) => i.status === 'open' || i.status === 'acknowledged').sort((a, b) => b.id.localeCompare(a.id))
 
   const box = (
@@ -224,8 +228,13 @@ export default function Manager() {
             <span className="sr-only">Talk about</span>
             <select value={about} onChange={(e) => setAbout(e.target.value)}>
               <option value="">{assistant} · everything</option>
-              {about && !openIncidents.some((i) => i.id === about) && <option value={about}>{assistant} · {about}</option>}
-              {openIncidents.map((i) => <option key={i.id} value={i.id}>{assistant} · {i.id}</option>)}
+              {machines.length > 0 && <optgroup label="A computer">
+                {machines.map((m) => <option key={m.host} value={`m:${m.host}`}>{assistant} · {m.name}</option>)}
+              </optgroup>}
+              <optgroup label="One risk">
+                {about && !about.startsWith('m:') && !openIncidents.some((i) => i.id === about) && <option value={about}>{about}</option>}
+                {openIncidents.map((i) => <option key={i.id} value={i.id}>{i.id} · {(i.category ?? '').replace(/_/g, ' ')}{machines.length > 1 && i.host ? ` · ${machineName(i.host)}` : ''}</option>)}
+              </optgroup>
             </select>
             <ChevronDown size={14} aria-hidden />
           </label>
@@ -357,7 +366,7 @@ export default function Manager() {
                 </div></div>)
             ) : (
               <div key={m.id} className="space-y-3">
-                <p className="text-xs text-muted">{assistant}{m.incident ? ` · about ${m.incident}` : ''}</p>
+                <p className="text-xs text-muted">{assistant}{m.incident ? ` · about ${m.incident}` : m.machine ? ` · about ${machineName(m.machine)}` : ''}</p>
                 <Text md={m.text} />
                 <Blocks blocks={m.blocks} onOpen={(id) => void ask(`Explain ${id} in plain words`)} />
                 {(m.suggestions?.length ?? 0) > 0 && (
@@ -365,12 +374,16 @@ export default function Manager() {
                     <div className="flex flex-wrap gap-2" role="group" aria-label="Suggested actions">
                       {m.suggestions!.map((s, k) => {
                         const id = `${key(m)}#${k}`
+                        const [open, whyNot] = suggestionOpen(s, byId)
+                        const label = s.label || `${s.decision} ${s.incident}`
+                        // A decision that can no longer be made (already resolved or acknowledged) shows as done, not as a button.
+                        if (!open) return <span key={k} className="mgr-act opacity-60" title={whyNot}><Check size={13} aria-hidden /> {label} · done</span>
                         return <button key={k} type="button" className={'mgr-act' + (act === id ? ' is-on' : '')} aria-expanded={act === id}
-                          onClick={() => setAct(act === id ? null : id)}><Zap size={13} aria-hidden /> {s.label || `${s.decision} ${s.incident}`}</button>
+                          onClick={() => setAct(act === id ? null : id)}><Zap size={13} aria-hidden /> {label}</button>
                       })}
                     </div>
                     {m.suggestions!.map((s, k) => act === `${key(m)}#${k}` && (
-                      <SuggestionCard key={k} s={s} inc={byId[String(s.incident)]} onDone={(t) => { setAct(null); setNote(t); void load() }} />))}
+                      <SuggestionCard key={k} s={s} byId={byId} onDone={(t) => { setAct(null); setNote(t); void load() }} />))}
                   </div>)}
                 <div className="mgr-noprint flex items-center gap-0.5 text-muted">
                   <CopyButton text={m.text} label="Copy answer" />

@@ -130,6 +130,7 @@ class ChatIn(BaseModel):
     operator: str
     message: str = ""
     incident: Optional[str] = None
+    machine: Optional[str] = None  # a host or the name people gave it: keeps the chat to one computer
     attachments: Optional[list[dict[str, Any]]] = None  # [{name, kind: text|image, text | media_type + data}]
 
 
@@ -418,6 +419,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     chat.off_reason = core.ai_off_reason = ai.why_off()
     core_dir = Path(core.settings.db_path).parent  # machines/fleet.json and machines/jobs.json sit next to the database
     machines = fleet.Fleet(sentrai_paths.path("core.fleet", core_dir))
+    chat.names = machines.names  # Sentry knows computers by the names people gave them
     machine_jobs = jobs.Jobs(sentrai_paths.path("core.jobs", core_dir))
 
     def copy_hosts() -> list[str]:
@@ -831,7 +833,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/chat")
     def post_chat(body: ChatIn) -> dict[str, Any]:
         try:
-            return chat.ask(body.operator, body.message, body.incident, body.attachments)
+            return chat.ask(body.operator, body.message, body.incident, body.attachments, machine=body.machine)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc).strip("'\""))
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
@@ -861,8 +865,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         def work() -> None:
             try:
                 put({"type": "done", "message": chat.ask(body.operator, body.message, body.incident, body.attachments,
-                                                         progress=put, stop=stop, deliver=deliver)})
-            except ValueError as exc:
+                                                         progress=put, stop=stop, deliver=deliver,
+                                                         machine=body.machine)})
+            except (KeyError, ValueError) as exc:
                 put({"type": "error", "detail": str(exc)})
             except Exception:  # noqa: BLE001 - the stream must end with a line the page understands
                 log.exception("chat stream failed")

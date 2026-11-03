@@ -27,6 +27,7 @@ from typing import Any, Callable
 from .config import Settings  # noqa: F401  (puts mvp/ on sys.path, for sentrai_llm)
 from .saguaro import Saguaro
 from .summary import PLAIN_ACTIONS, plain_names, plain_title
+from .ui_approvals import handled
 
 import sentrai_llm  # noqa: E402
 
@@ -47,6 +48,29 @@ ASSISTANT = os.getenv("SENTRAI_ASSISTANT_NAME", "Sentry").strip() or "Sentry"
 NO_AI_NOTE = ("_(The AI helper is off on this server, so this is a short answer. SentrAI's team can turn it on "
               "for fuller answers.)_")
 INCIDENT_ID = re.compile(r"\b[A-Z]{2,5}-\d{4}-\d{2,4}\b")
+CLEANUP_WORDS = re.compile(r"(?i)\b(clean ?up|clear (?:out|up)|overdue|late|tidy)\b")
+MAX_BULK = 50               # incidents one "do this to all of them" button may cover
+ACTIVE = ("open", "acknowledged")
+STILL_OPEN = ("open", "acknowledged", "contained")  # ui_incidents.OPEN_STATUSES
+
+
+def possible(inc: dict[str, Any], decision: str) -> tuple[bool, str]:
+    """Whether a decision can still be made on an incident, the same rule the dashboard's buttons use (Chat.tsx
+    canDo). A button for a decision that is no longer possible only confuses people, so none is offered."""
+    status = str(inc.get("status"))
+    if decision in ("approve", "reject"):
+        ok = status in ACTIVE
+    elif decision == "ack":
+        ok = status in STILL_OPEN and not inc.get("acked")
+    else:  # rollback, make_permanent: only while a block is in place
+        ok = status == "contained" or any(a.get("status") == "active" for a in inc.get("actions") or [])
+    return ok, "" if ok else f"{inc.get('id')} is {status}{' and already acknowledged' if decision == 'ack' and inc.get('acked') else ''}"
+
+
+def overdue(inc: dict[str, Any]) -> bool:
+    """Past its time limit with nobody having looked at it yet (the Command center's Overdue tag, ui_risks.py)."""
+    return (bool(inc.get("sla_breached")) and not inc.get("acked") and str(inc.get("status")) in STILL_OPEN
+            and not handled(inc))
 
 # "My fix for RSK-2026-884: block them for good" from a risk bubble on the Command center (ui_risks.py).
 MY_FIX = re.compile(r"(?is)^\s*my (?:fix|idea) for (?P<id>[A-Z]{2,5}-\d{4}-\d{2,4})\s*[:,-]\s*(?P<idea>\S.*)$")
@@ -207,6 +231,11 @@ BELOW your answer; say "the button below". Never say "above".
 ("the button below closes the public link for 2 hours"). Never invent buttons such as "This was me". Offer one \
 button per open incident that needs their decision, using the decision that matches what you recommend. Never \
 claim an action was taken; nothing happens until they press it, and the normal approval rules still apply.
+- When several incidents need the same decision (for example "clean up the overdue risks on this computer"), \
+call suggest_bulk_action once with all of them instead of one button each. Overdue means past its time limit \
+with nobody having looked yet; acknowledging ("ack") clears that. Only offer decisions that are still possible: \
+an incident that is resolved or already acknowledged needs no button.
+- When the operator has one computer selected, talk only about that computer and its incidents (get_machine).
 - A message starting "My fix for <incident>:" is their own idea for that incident. Look the incident up, \
 say in two or three sentences whether the idea is safe and enough, what it misses, and call suggest_action with \
 the decision closest to it (or a better one, saying why). Steps SentrAI cannot do, such as a password reset, \
@@ -235,8 +264,8 @@ what a button does.
 you did not answer, or ask again, answer each of their questions directly, in order, in plain words.
 - SentrAI only defends inside its own network. Never propose counter-attacks, tracing or contacting the \
 attacker, or anything aimed outside it; if asked, say kindly that SentrAI guards the door and does not chase.
-- When they ask SentrAI to do something that none of your tools or buttons can do (for example "clean up all \
-the old alerts", "email me a report every Monday", "block a website for my staff"), call suggest_feature once \
+- When they ask SentrAI to do something that none of your tools or buttons can do (for example "email me a \
+report every Monday", "block a website for my staff", "export the incidents to Excel"), call suggest_feature once \
 with a short, plain name for what they want. Then say plainly that SentrAI can't do that yet, that you passed \
 their idea to SentrAI's team, and help with what you can do now (often a button or a short answer). Do not call \
 it when a tool, a button, or SentrAI's team setting something up already covers it, for plain questions, or for \
@@ -332,10 +361,23 @@ TOOLS: list[dict[str, Any]] = [
                                                "for that SentrAI cannot do yet with any tool or button. Same ideas are "
                                                "grouped and counted. Only for real requests SentrAI cannot meet.",
      "input_schema": {"type": "object", "properties": {
-         "title": {"type": "string", "description": "A short, plain name for the missing feature, e.g. 'Clear all "
-                                                    "overdue alerts for one computer at once'."},
+         "title": {"type": "string", "description": "A short, plain name for the missing feature, e.g. 'Email a "
+                                                    "weekly report every Monday'."},
          "need": {"type": "string", "description": "One sentence: what they wanted to get done and why."}},
          "required": ["title", "need"], "additionalProperties": False}},
+    {"name": "get_machine", "description": "One computer and its incidents: status, whether each is overdue, and "
+                                           "whether someone has looked at it. Pass the computer's name or host.",
+     "input_schema": {"type": "object", "properties": {"machine": {"type": "string"}},
+                      "required": ["machine"], "additionalProperties": False}},
+    {"name": "suggest_bulk_action", "description": "Offer the operator one button that makes the same decision on "
+         "several incidents at once (for example acknowledge every overdue risk on one computer). Incidents where "
+         "the decision is no longer possible are left out. It does nothing until the operator presses it.",
+     "input_schema": {"type": "object", "properties": {
+         "incidents": {"type": "array", "items": {"type": "string"}},
+         "decision": {"type": "string", "enum": list(DECISIONS)},
+         "label": {"type": "string", "description": "Short button text, e.g. 'Acknowledge 4 overdue risks'."},
+         "reason": {"type": "string", "description": "One sentence; prefilled as the operator's justification."}},
+         "required": ["incidents", "decision", "label", "reason"], "additionalProperties": False}},
     {"name": "suggest_action", "description": "Offer the operator a button for a decision on an incident. "
                                               "It does nothing until the operator presses it.",
      "input_schema": {"type": "object", "properties": {
@@ -347,7 +389,7 @@ TOOLS: list[dict[str, Any]] = [
 
 
 POINTER = re.compile(r"(?i)\b(button|chip|question)s? (below|under)|\bbelow\b")
-LOOKUP_TOOLS = {"get_overview", "get_incident", "explain", "get_audit", "get_blocklist", "get_profile", "scan_system",
+LOOKUP_TOOLS = {"get_overview", "get_incident", "get_machine", "explain", "get_audit", "get_blocklist", "get_profile", "scan_system",
                 "scan_threats", "get_backups"}
 
 
@@ -380,6 +422,7 @@ class OperatorChat:
                  threats: Any = None, backups: Any = None) -> None:
         self.core, self.provider, self.discovery, self.threats = core, provider, discovery, threats
         self.backups = backups
+        self.names: Callable[[], dict[str, str]] = dict  # host -> the name people gave it (fleet.Fleet.names)
         self.memory: Any = None  # chat_memory.Memory, set by chat_memory.install
         self.ideas: Any = None  # feature_ideas.Ideas, set by feature_ideas.install
         self.off_reason: str | None = None  # why there is no model (set by main.py and /ai/reload)
@@ -424,10 +467,11 @@ class OperatorChat:
 
     def ask(self, operator: str, text: str, incident: str | None = None, attachments: list[dict[str, Any]] | None = None,
             progress: Callable[[dict[str, Any]], None] | None = None, stop: threading.Event | None = None,
-            deliver: Callable[[str], str] | None = None) -> dict[str, Any]:
+            deliver: Callable[[str], str] | None = None, machine: str | None = None) -> dict[str, Any]:
         """Answer one question. For the streaming endpoint: `progress` hears each lookup as it starts, `stop` ends the
         work between steps, and `deliver` sends the answer out piece by piece and returns what was sent before the
-        operator pressed Stop (that part is what the chat keeps)."""
+        operator pressed Stop (that part is what the chat keeps). `machine` (a host) keeps the chat to one computer;
+        `incident` to one risk."""
         text = (text or "").strip()[:MAX_QUESTION_CHARS]
         files = check_attachments(attachments)
         if not text and files:
@@ -435,9 +479,11 @@ class OperatorChat:
         if not text:
             raise ValueError("empty message")
         incident = (incident or "").strip() or None
+        machine = (self._host_of(machine) if machine and machine.strip() else None) if not incident else None
+        scope = {"incident": incident, **({"machine": machine} if machine else {})}
         with self.lock:
             earlier = list(self.history[-HISTORY_IN_PROMPT:])
-            self._append("operator", text, operator=operator, incident=incident,
+            self._append("operator", text, operator=operator, **scope,
                          **({"attachments": [{k: f[k] for k in ("name", "kind", "size")} for f in files]} if files else {}))
         looked_at: list[str] = _Steps(progress)
         suggestions: list[dict[str, str]] = []
@@ -450,18 +496,23 @@ class OperatorChat:
                 raise Stopped()
             if self.provider:
                 try:
-                    answer = self._ask_model(text, incident, earlier, looked_at, suggestions, rich, files, stop)
-                    if not answer.strip():  # the model only pressed tools and wrote nothing: never "(no answer)"
-                        source = "fallback"
-                        answer = self._fallback(text, incident, looked_at, suggestions, rich, files)
+                    answer = self._ask_model(text, incident, earlier, looked_at, suggestions, rich, files, stop, machine)
                 except sentrai_llm.LLMError as e:
                     log.warning("chat model failed: %s", e)
                     source = "fallback"
+                    suggestions.clear(); rich["blocks"].clear(); rich["followups"].clear()
                     answer = "_(The AI helper is not answering right now, so here is the short version.)_\n\n"
-                    answer += self._fallback(text, incident, looked_at, suggestions, rich, files)
+                    answer += self._fallback(text, incident, looked_at, suggestions, rich, files, machine)
+                if source == "ai" and not answer.strip():
+                    # The model only pressed tools and wrote nothing: never show an empty "(no answer)".
+                    answer = self._words_for(suggestions)
+                    if not answer:
+                        source = "fallback"
+                        rich["blocks"].clear(); rich["followups"].clear()
+                        answer = self._fallback(text, incident, looked_at, suggestions, rich, files, machine)
             else:
                 source = "fallback"
-                answer = self._fallback(text, incident, looked_at, suggestions, rich, files)
+                answer = self._fallback(text, incident, looked_at, suggestions, rich, files, machine)
         except Stopped:
             stopped, answer = True, ""
             suggestions.clear(); rich["blocks"].clear(); rich["followups"].clear()
@@ -473,13 +524,13 @@ class OperatorChat:
         if stopped:
             answer = (answer.rstrip() + "\n\n" if answer.strip() else "") + "_(Stopped.)_"
         with self.lock:
-            reply = self._append("assistant", answer or "(no answer)", incident=incident, source=source,
+            reply = self._append("assistant", answer or "(no answer)", **scope, source=source,
                                  looked_at=looked_at, suggestions=suggestions, question=text,
                                  blocks=rich["blocks"][:MAX_BLOCKS], followups=rich["followups"][:3],
                                  **({"stopped": True} if stopped else {}),
                                  **({"feature_idea": rich["idea"]} if rich.get("idea") and not stopped else {}))
         self.core.scribe.record(self.core.name, "operator_chat", {
-            "operator": operator, "incident": incident, "question": text, "answer": reply["text"][:1500],
+            "operator": operator, **scope, "question": text, "answer": reply["text"][:1500],
             "suggestions": suggestions, "source": source,
             "summary": f"{operator} asked: {text[:80]}"})
         return reply
@@ -514,12 +565,12 @@ class OperatorChat:
     def _ask_model(self, text: str, incident: str | None, earlier: list[dict[str, Any]],
                    looked_at: list[str], suggestions: list[dict[str, str]],
                    rich: dict[str, list[Any]] | None = None, files: list[dict[str, Any]] | None = None,
-                   stop: threading.Event | None = None) -> str:
+                   stop: threading.Event | None = None, machine: str | None = None) -> str:
         system = SYSTEM.format(name=ASSISTANT)
         if self.memory is not None and (known := self.memory.prompt()):
             system += "\n\n" + known
         convo = self.provider.conversation(system, TOOLS)
-        prompt = self._prompt(text, incident, earlier)
+        prompt = self._prompt(text, incident, earlier, machine)
         for f in files or []:
             if f["kind"] == "text":
                 looked_at.append(f"attached file {f['name']}")
@@ -534,11 +585,14 @@ class OperatorChat:
             raise Stopped()
         turn = convo.send_user(prompt, images=images) if images else convo.send_user(prompt)
         texts: list[str] = []
+        aside: list[str] = []  # words written next to a lookup, kept in case the model writes nothing else
         for _ in range(MAX_STEPS):
             # Words written alongside a lookup ("Let me check...") are not the answer; words written alongside a
             # button or chips (suggest_*, show_*) usually are.
             if not any(c.name in LOOKUP_TOOLS for c in turn.tool_calls):
                 texts.extend(turn.texts)
+            else:
+                aside.extend(t for t in turn.texts if t.strip())
             if turn.stop != "tool_use":
                 break
             if stop is not None and stop.is_set():
@@ -550,9 +604,12 @@ class OperatorChat:
         # A last short line that only points at the buttons repeats what the answer already said.
         if len(texts) > 1 and len(texts[-1].split()) <= 30 and POINTER.search(texts[-1]):
             texts.pop()
-        return "\n\n".join(t for t in texts[-3:] if t.strip())
+        texts = [t for t in texts if t.strip()]
+        if not texts and aside and len(aside[-1].split()) > 12:  # a real answer written before a last lookup
+            texts = aside[-1:]
+        return "\n\n".join(texts[-3:])
 
-    def _prompt(self, text: str, incident: str | None, earlier: list[dict[str, Any]]) -> str:
+    def _prompt(self, text: str, incident: str | None, earlier: list[dict[str, Any]], machine: str | None = None) -> str:
         lines = []
         if earlier:
             lines.append("Earlier in this chat:")
@@ -562,6 +619,10 @@ class OperatorChat:
             lines.append("")
         if incident:
             lines.append(f"The operator has incident {incident} selected.")
+        if machine:
+            name = self.names().get(machine) or machine
+            lines.append(f"The operator has one computer selected: {name} (host {machine}). Answer only about this "
+                         f"computer. Its incidents right now:\n{json.dumps(self._machine(machine)['incidents'], default=str)}")
         lines.append(f"Operator: {text}")
         return "\n".join(lines)
 
@@ -685,25 +746,91 @@ class OperatorChat:
                 suggestions.append({"kind": "backup_now", "label": "Back up now",
                                     "reason": str(a.get("reason") or "").strip()[:300]})
             return "Button shown to the operator. A backup is taken only if they press it."
+        if name == "get_machine":
+            host = self._host_of(str(a.get("machine") or ""))
+            looked_at.append(f"computer {self.names().get(host) or host}")
+            return json.dumps(self._machine(host), default=str)
+        if name == "suggest_bulk_action":
+            decision = str(a["decision"]).strip()
+            if decision not in DECISIONS:
+                raise ValueError(f"decision must be one of {', '.join(DECISIONS)}")
+            ids = list(dict.fromkeys(str(x).strip() for x in a.get("incidents") or [] if str(x).strip()))
+            ok, skipped = [], []
+            for iid in ids:
+                try:
+                    inc = c.get_incident(iid)
+                except KeyError:
+                    skipped.append(f"{iid} not found"); continue
+                can, why = possible(inc, decision)
+                (ok.append(iid) if can else skipped.append(why))
+            ok = ok[:MAX_BULK]
+            if not ok:
+                raise ValueError("no button shown: the decision is not possible on any of them ("
+                                 + "; ".join(skipped[:10]) + "). Tell the operator nothing is left to do there.")
+            label = str(a.get("label") or "").strip()[:80] or f"{DECISION_TEXT[decision]} {len(ok)} risks"
+            if len(ok) == 1:
+                label = f"{DECISION_TEXT[decision]} {ok[0]}"
+            suggestions.append({"kind": "bulk", "incidents": ok, "decision": decision, "label": label,
+                                "reason": str(a.get("reason") or "").strip()[:300]})
+            return (f"One button shown for {len(ok)} incident(s). Nothing happens unless they press it."
+                    + (f" Left out, not possible: {'; '.join(skipped[:10])}." if skipped else ""))
         if name == "suggest_action":
             iid, decision = str(a["incident"]).strip(), str(a["decision"]).strip()
             if decision not in DECISIONS:
                 raise ValueError(f"decision must be one of {', '.join(DECISIONS)}")
             inc = c.get_incident(iid)  # KeyError if unknown
+            can, why = possible(inc, decision)
+            if not can:
+                raise ValueError(f"no button shown: {DECISION_TEXT[decision].lower()} is no longer possible ({why}).")
             s = {"incident": iid, "decision": decision, "label": f"{DECISION_TEXT[decision]} {iid}",
                  "reason": str(a.get("reason") or "").strip()[:300], "status": str(inc.get("status"))}
-            if not any(x["incident"] == iid and x["decision"] == decision for x in suggestions):
+            if not any(x.get("incident") == iid and x["decision"] == decision for x in suggestions):
                 suggestions.append(s)
             return "Button shown to the operator. Nothing happens unless they press it."
         raise ValueError(f"unknown tool {name}")
 
-    def _overview(self) -> dict[str, Any]:
+    def _overview(self, host: str | None = None) -> dict[str, Any]:
         r = self.core.risk(history=0)
+        names = self.names()
         return {"risk_index": r["risk_index"], "band": r["band"], "threshold": r["threshold"],
                 "monitor_only": r.get("monitor_only", False),
-                "incidents": [{k: i.get(k) for k in ("id", "category", "severity", "status", "acked", "src_ip",
-                                                      "user", "recommended_action", "sla_breached")}
-                              for i in self.core.list_incidents()]}
+                "incidents": [{**{k: i.get(k) for k in ("id", "category", "severity", "status", "acked", "src_ip",
+                                                         "user", "recommended_action", "sla_breached", "host")},
+                               "computer": names.get(str(i.get("host"))) or i.get("host"), "overdue": overdue(i)}
+                              for i in self.core.list_incidents(host=host)]}
+
+    def _host_of(self, said: str) -> str:
+        """A computer the operator named, by host or by the name people gave it, as its host. KeyError if unknown."""
+        said = said.strip()
+        hosts = {str(m.get("host")) for m in self.core.machines() if m.get("host")} | set(self.names())
+        hosts |= {str(i.get("host")) for i in self.core.list_incidents() if i.get("host")}
+        if said in hosts:
+            return said
+        low = said.lower()
+        for host, name in self.names().items():
+            if name.lower() == low:
+                return host
+        for host in hosts:
+            if host.lower() == low:
+                return host
+        raise KeyError(f"no computer called {said!r}")
+
+    def _machine(self, host: str) -> dict[str, Any]:
+        incs = self.core.list_incidents(host=host)
+        return {"host": host, "name": self.names().get(host) or host,
+                "incidents": [{**{k: i.get(k) for k in ("id", "category", "severity", "status", "acked",
+                                                         "recommended_action")}, "overdue": overdue(i)}
+                              for i in incs if i.get("status") in STILL_OPEN][:60],
+                "closed": sum(1 for i in incs if i.get("status") not in STILL_OPEN)}
+
+    @staticmethod
+    def _words_for(suggestions: list[dict[str, Any]]) -> str:
+        """A plain sentence for buttons the model offered without writing anything."""
+        if not suggestions:
+            return ""
+        labels = [str(s.get("label") or "") for s in suggestions if s.get("label")]
+        return ("Here is what you can do; nothing happens until you press a button below:\n"
+                + "\n".join(f"- {x}" for x in labels[:5]))
 
     def _explain(self, target: str) -> str:
         try:
@@ -714,8 +841,8 @@ class OperatorChat:
     # ------------------------------------------------------------ fallback
     def _fallback(self, text: str, incident: str | None, looked_at: list[str],
                   suggestions: list[dict[str, str]], rich: dict[str, list[Any]] | None = None,
-                  files: list[dict[str, Any]] | None = None) -> str:
-        """No model: answer from the core's own deterministic explanations."""
+                  files: list[dict[str, Any]] | None = None, machine: str | None = None) -> str:
+        """No model: answer from the core's own deterministic explanations. `machine` keeps it to one computer."""
         rich = rich if rich is not None else {"blocks": [], "followups": []}
         if files:
             return self._fallback_files(files, looked_at, rich)
@@ -746,6 +873,8 @@ class OperatorChat:
             return self._fallback_backups(looked_at, suggestions)
         if self.discovery is not None and SCAN_WORDS.search(text):
             return self._fallback_scan(looked_at, suggestions)
+        if CLEANUP_WORDS.search(text) and not INCIDENT_ID.search(text) and not incident:
+            return self._fallback_cleanup(machine or self._machine_in(text), looked_at, suggestions, rich)
         ids = INCIDENT_ID.findall(text) or ([incident] if incident else [])
         known = {i["id"] for i in self.core.list_incidents()}
         parts = []
@@ -772,8 +901,8 @@ class OperatorChat:
                              "look at building it" + ("" if idea["new"] else f" (others have asked for it too: "
                                                       f"{idea['count']} times so far)") + ". Here is where things stand now:")
         if not parts or noted:
-            looked_at.append("risk overview")
-            o = self._overview()
+            looked_at.append(f"computer {self.names().get(machine) or machine}" if machine else "risk overview")
+            o = self._overview(machine)
             active = [i for i in o["incidents"] if i["status"] in ("open", "acknowledged", "contained")]
             waiting = [i for i in active if not i["acked"]]
             level = {"green": "calm", "amber": "raised", "red": "high", "critical": "critical"}.get(o["band"], o["band"])
@@ -825,6 +954,47 @@ class OperatorChat:
             parts.append("**What the team told me:**\n" + "\n".join(f"- {t}" for t in told[:5]))
         parts.append(NO_AI_NOTE)
         return "\n\n".join(parts)
+
+    def _machine_in(self, text: str) -> str | None:
+        """A computer named in the question ("... for RexGuard Machine"), by its given name or host."""
+        low = f" {text.lower()} "
+        named = sorted(self.names().items(), key=lambda kv: -len(kv[1]))
+        for host, name in named:
+            if name and name.lower() in low:
+                return host
+        hosts = {str(i.get("host")) for i in self.core.list_incidents() if i.get("host")}
+        for host in sorted(hosts, key=len, reverse=True):
+            if re.search(rf"(?i)(?<![\w.-]){re.escape(host)}(?![\w.-])", text):
+                return host
+        return None
+
+    def _fallback_cleanup(self, machine: str | None, looked_at: list[str], suggestions: list[dict[str, Any]],
+                          rich: dict[str, Any]) -> str:
+        """"Clean up the overdue risks (on this computer)": one button that acknowledges all of them."""
+        where = self.names().get(machine) or machine if machine else None
+        looked_at.append(f"overdue risks on {where}" if where else "overdue risks")
+        incs = [i for i in self.core.list_incidents(host=machine) if i.get("status") in STILL_OPEN and not handled(i)]
+        late = [i for i in incs if overdue(i)]
+        on = f" on **{where}**" if where else ""
+        if not late:
+            waiting = [i for i in incs if not i.get("acked")]
+            rich["followups"][:] = ["What needs my attention today?", "Are we safe right now?"]
+            return (f"**Nothing is overdue{on}.**"
+                    + (f" {len(waiting)} risk{'' if len(waiting) == 1 else 's'} still wait{'s' if len(waiting) == 1 else ''}"
+                       f" for a first look, but none has passed its time limit." if waiting else " Nothing needs you there.")
+                    + "\n\n" + NO_AI_NOTE)
+        ids = [i["id"] for i in late][:MAX_BULK]
+        suggestions.append({"kind": "bulk", "incidents": ids, "decision": "ack",
+                            "label": f"Acknowledge {len(ids)} overdue risk{'' if len(ids) == 1 else 's'}",
+                            "reason": "Cleared from the chat: overdue risks looked at" + (f" on {where}" if where else "")})
+        rich["blocks"].append(table("Overdue risks", ["Incident", "What happened", "Computer", "How serious"], [
+            [i["id"], plain_title(i.get("category")), self.names().get(str(i.get("host"))) or str(i.get("host") or "-"),
+             str(i.get("severity") or "").capitalize()] for i in late[:50]], link="incident"))
+        rich["followups"][:] = ["Which of these is the most serious?", "Are we safe right now?"]
+        return (f"**{len(late)} risk{' is' if len(late) == 1 else 's are'} overdue{on}**: past {'its' if len(late) == 1 else 'their'}"
+                f" time limit with nobody having looked yet. The button below marks {'it' if len(late) == 1 else 'them all'}"
+                f" as looked at, which clears the overdue warning. It does not close them or undo any block."
+                f"\n\n{NO_AI_NOTE}")
 
     def _fallback_files(self, files: list[dict[str, Any]], looked_at: list[str], rich: dict[str, list[Any]]) -> str:
         """No model: read attached logs with simple rules (addresses, failures); pictures need a model."""

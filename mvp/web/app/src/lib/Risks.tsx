@@ -40,26 +40,30 @@ const CARD_COLOR: Record<Level, string> = { critical: 'var(--card-critical)', hi
 
 const LEVEL_ICON: Record<Level, LucideIcon> = { critical: ShieldAlert, high: TriangleAlert, medium: Bell, low: ShieldCheck }
 
+// One row of four on a wide page, two by two on a medium one, one per row on a phone (by the page's own width).
+// In the row of four (and on a phone) the icon sits in the top corner, so the words have the whole card.
+const SEV_GRID = 'grid gap-6 @2xl:grid-cols-2 @5xl:grid-cols-4'
+
 /** The Command center's grouped buttons: a glowing card per severity (Critical, High, Medium, Low) with its count. */
 export function SeverityBubbles({ data }: { data: Risks | null }) {
   if (!data) return (
-    <ul role="status" aria-label="Loading" className="grid max-w-[64rem] gap-8 sm:grid-cols-2">
+    <div className="@container"><ul role="status" aria-label="Loading" className={SEV_GRID}>
       {[0, 1, 2, 3].map((i) => <li key={i} className="skeleton h-[10.75rem] rounded-[1.25rem]" />)}
-    </ul>)
+    </ul></div>)
   return (
-    <ul className="grid max-w-[64rem] gap-8 sm:grid-cols-2">
+    <div className="@container"><ul className={SEV_GRID}>
       {data.levels.map((l) => {
         const t = LEVEL_TEXT[l.severity]
         const Icon = LEVEL_ICON[l.severity]
         return (
           <li key={l.severity}>
             <VLink to={`/risks/${l.severity}`} aria-label={`${t.name}: ${l.count} risk${l.count === 1 ? '' : 's'}. Open the list.`}
-              className={'sev-card flex min-h-[10.75rem] items-center gap-12 px-8 py-6 sm:px-11' + (l.count ? '' : ' sev-zero')} style={{ '--c': CARD_COLOR[l.severity], viewTransitionName: `sev-${l.severity}` } as React.CSSProperties}>
-              <Icon className="sev-icon shrink-0" size={72} strokeWidth={1.6} aria-hidden />
+              className={'sev-card flex h-full min-h-[10.75rem] items-center gap-8 px-5 py-6 @2xl:gap-10 @2xl:px-9 @5xl:px-7' + (l.count ? '' : ' sev-zero')} style={{ '--c': CARD_COLOR[l.severity], viewTransitionName: `sev-${l.severity}` } as React.CSSProperties}>
+              <Icon className="sev-icon absolute right-5 top-5 size-10 shrink-0 @2xl:static @2xl:size-[4.5rem] @5xl:absolute @5xl:right-6 @5xl:top-6 @5xl:size-12" size={72} strokeWidth={1.6} aria-hidden />
               <span className="min-w-0 space-y-1">
-                <span className="sev-name block text-[1.375rem] font-bold uppercase">{t.name}</span>
+                <span className="sev-name block pr-12 text-[1.375rem] font-bold uppercase @2xl:pr-0 @5xl:pr-12">{t.name}</span>
                 <span className="block text-[2.75rem] font-bold tabular-nums leading-none text-ink">{l.count.toLocaleString()}</span>
-                <span className="flex items-center gap-1 pt-1.5 text-[1.0625rem] text-soft">
+                <span className="flex items-center gap-1 pt-1.5 text-[1.0625rem] text-soft @5xl:text-base">
                   {l.count === 0 ? 'Nothing needs you here' : `${l.count === 1 ? 'Risk requires' : 'Risks require'} your attention`}
                   <ChevronRight size={16} aria-hidden />
                 </span>
@@ -68,7 +72,7 @@ export function SeverityBubbles({ data }: { data: Risks | null }) {
             </VLink>
           </li>)
       })}
-    </ul>
+    </ul></div>
   )
 }
 
@@ -81,7 +85,7 @@ export function RiskTable({ data }: { data: Risks | null }) {
   const t = GROUP_TABS.find((g) => g.key === tab)!
   const rows = data.groups[tab]
   return (
-    <section aria-labelledby="risk-table-title" className="risk-table max-w-[64rem] rounded-[1.25rem] border border-line">
+    <section aria-labelledby="risk-table-title" className="risk-table rounded-[1.25rem] border border-line">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 pt-4 pb-3">
         <h2 id="risk-table-title" className="text-lg font-semibold">Where Your Risks Are</h2>
         <div role="tablist" aria-label="Group the risks" className="flex flex-wrap gap-1">
