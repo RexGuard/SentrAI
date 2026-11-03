@@ -6,14 +6,18 @@ description: Change SentrAI's security preset, protected IPs, your own administr
 
 # Settings
 
-There are three ways to change SentrAI's settings. They all write the same settings file, and
+There are a few ways to change SentrAI's settings. They all write the same settings file, and
 every part reads it when it starts.
 
-- **The dashboard:** **Configuration** has every setting, with a search box at the top.
-- **A guided chat:** on a new machine the dashboard opens on **Chat** with a **Set up** offer. It
-  asks plain questions (what SentrAI guards, which IPs never to touch, how to alert you) and
-  saves nothing until you confirm the summary. Keys and passwords go in a hidden box.
-- **The command line:** `python sentrai_config.py setup` asks the same questions in the terminal.
+- **The web dashboard:** **Setup** has the one choice an owner needs, the security preset
+  (Strict, Moderate or Minimum). The **i** button next to it explains each one.
+- **The team command line:** on a server, the SentrAI team changes everything else with
+  `sudo sentrai settings set NAME=VALUE` (for example `PROTECTED_IPS`, `TYPESAFE_API_KEY` or
+  `TELEGRAM_BOT_TOKEN`). See [Team command line](cli.html).
+- **The classic dashboard:** **Configuration** still has every setting, with a search box at the
+  top. On a new machine it also offers a guided **Set up** chat that asks plain questions and saves
+  nothing until you confirm the summary.
+- **On a laptop:** `python sentrai_config.py setup` asks the same questions in the terminal, and
   `python sentrai_config.py` shows the current settings.
 
 The file is `~/.sentrai/config.json` (`%USERPROFILE%\.sentrai\config.json` on Windows), or
@@ -135,9 +139,21 @@ is only sent when Telegram fails; choose **always** to get every alert by email 
 ## AI key
 
 SentrAI works without an AI key: its rules decide on their own. A key adds the guided chat's
-free-text answers and the log search on servers. Under **Configuration**, section
-**5. AI model**, pick a provider (Anthropic, OpenAI, DeepSeek or another OpenAI-compatible
-service) and paste its key.
+free-text answers, Sentry's chat answers, the AI responder's planned fixes and the log search on
+servers. Pick a provider (Anthropic, OpenAI, DeepSeek or another OpenAI-compatible service) and save
+its key, either on the classic dashboard (**Configuration**, section **5. AI model**) or with the
+team command line:
+
+```bash
+sudo sentrai settings set ANTHROPIC_API_KEY=...
+```
+
+**Jev** (TypeSafe System One) is a separate, fast AI step that labels log lines the rules miss. It
+turns on when its key is saved:
+
+```bash
+sudo sentrai settings set TYPESAFE_API_KEY=...
+```
 
 ## Firewall blocking
 

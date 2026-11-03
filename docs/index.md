@@ -14,6 +14,7 @@ a server that keeps watch around the clock.
 
 | You want to | Go to | Time |
 | --- | --- | --- |
+| See SentrAI stop an attack, with nothing to install | [Try the demo](demo.html) | about 2 minutes |
 | Run SentrAI on your own computer | [Run on a laptop](laptop.html) | about 5 minutes |
 | Keep SentrAI running on a Linux server | [Install on a server](server.html) | about 10 minutes |
 | Watch several machines from one dashboard | [One panel, many machines](panel.html) | about 10 minutes per machine |
@@ -68,6 +69,20 @@ Every command in this guide is run from that `mvp` folder unless it says otherwi
 | Classic dashboard | the earlier Streamlit console, kept as a fallback and for demos | `127.0.0.1:8501` |
 | Notifier | sends alerts to Telegram or email, with Approve and Reject buttons | |
 | Agent | only on extra machines that report to a [central panel](panel.html): sends their logs and applies their blocks | outgoing HTTPS only |
+
+## Who does what
+
+SentrAI is made for a business owner with no IT team. The web dashboard, the **SentrAI
+Cybersecurity Control Panel**, only shows what the owner needs: the **Command Center** with what
+needs them, their **Computers**, the **Activity Log**, one **Setup** choice (Strict, Moderate or
+Minimum) and **People and Access**. **Sentry**, the chat assistant, answers questions in plain words.
+
+Setup and fine-tuning are left to the SentrAI team, who use the `sentrai` command on the panel
+server (see [Team command line](cli.html)). For example, `sudo sentrai settings set
+TYPESAFE_API_KEY=...` turns on Jev, the AI threat classifier, and `sudo sentrai-update` updates
+everything.
+
+## Where it listens
 
 The core only ever listens on your own machine. The dashboards do too, unless you open it to
 named IP addresses during a [server install](server.html#open-the-dashboard-to-your-computer).
