@@ -29,7 +29,7 @@ computer's IP. Put your real ones in their place.
 Install the panel on the server as in [Install the panel](server.html):
 
 ```bash
-git clone https://github.com/RexGuard/SentrAI && cd SentrAI/mvp
+git clone https://github.com/RexGuard/SentrAI && cd SentrAI
 sudo ./deploy/install-panel.sh --protect 203.0.113.10 --admin-email you@example.com
 ```
 
@@ -88,8 +88,8 @@ blocking on once its dry run looks right.
 | See who is signed in on a machine, what your administrators ran as root, and teach SentrAI who they are | on its page, the **Admins** tab |
 | Scan a machine for threats, or back it up | on its page, press **Scan for threats** or **Back up now** |
 | Remove a machine from the panel | on its page, **Agent** tab: tick **Yes, stop accepting its key**, press **Revoke key** |
-| Remove the agent from a Linux machine | `sudo ./mvp/deploy/uninstall-agent.sh` (add `--purge` to delete its key too) |
-| Remove the agent from a Windows machine | `powershell -ExecutionPolicy Bypass -File .\mvp\deploy\uninstall-agent.ps1` (add `-Purge` to delete its key too) |
+| Remove the agent from a Linux machine | `sudo ./deploy/uninstall-agent.sh` (add `--purge` to delete its key too) |
+| Remove the agent from a Windows machine | `powershell -ExecutionPolicy Bypass -File .\deploy\uninstall-agent.ps1` (add `-Purge` to delete its key too) |
 
 A revoked machine stops at once: its key no longer works. To bring it back, make a new join code
 and run the installer again with it.
@@ -149,11 +149,11 @@ The panel's certificate lasts five years. If you replace it, every machine needs
 dashboard shows the new pin with every join code. On each machine, from the `SentrAI` folder:
 
 ```bash
-sudo ./mvp/deploy/install-agent.sh --pin sha256:...
+sudo ./deploy/install-agent.sh --pin sha256:...
 ```
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\mvp\deploy\install-agent.ps1 -Pin sha256:...
+powershell -ExecutionPolicy Bypass -File .\deploy\install-agent.ps1 -Pin sha256:...
 ```
 
 The installer keeps every other setting and restarts the agent.

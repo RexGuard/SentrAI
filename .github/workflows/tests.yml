@@ -25,7 +25,7 @@ jobs:
     defaults:
       run:
         shell: bash
-        working-directory: mvp
+        working-directory: app
     env:
       # No secrets in CI: AI features fall back to playbooks / fake planners.
       ANTHROPIC_API_KEY: ""
@@ -40,7 +40,7 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-          cache-dependency-path: mvp/*/requirements.txt
+          cache-dependency-path: app/*/requirements.txt
 
       # One venv per part, at <part>/.venv, the same layout the demo scripts and
       # the notifier tests (which borrow the dashboard venv's fake core) expect.
@@ -53,38 +53,38 @@ jobs:
           done
 
       - name: Core tests
-        working-directory: mvp/core
+        working-directory: app/core
         run: .venv/${{ runner.os == 'Windows' && 'Scripts/python.exe' || 'bin/python' }} -m pytest -q
 
       - name: Classifier evaluation tests
         if: ${{ !cancelled() }}
-        working-directory: mvp/eval
+        working-directory: app/eval
         run: ../core/.venv/${{ runner.os == 'Windows' && 'Scripts/python.exe' || 'bin/python' }} -m pytest -q
 
       - name: Lab tests
         if: ${{ !cancelled() }}
-        working-directory: mvp/lab
+        working-directory: app/lab
         run: .venv/${{ runner.os == 'Windows' && 'Scripts/python.exe' || 'bin/python' }} -m pytest -q
 
       - name: Dashboard tests
         if: ${{ !cancelled() }}
-        working-directory: mvp/dashboard
+        working-directory: app/dashboard
         run: .venv/${{ runner.os == 'Windows' && 'Scripts/python.exe' || 'bin/python' }} -m pytest -q
 
       - name: Notifier tests
         if: ${{ !cancelled() }}
-        working-directory: mvp/notifier
+        working-directory: app/notifier
         run: .venv/${{ runner.os == 'Windows' && 'Scripts/python.exe' || 'bin/python' }} -m pytest -q
 
       # Each extension's tests run in the venv of the part they plug into.
       - name: Extension tests (core side)
         if: ${{ !cancelled() }}
-        working-directory: mvp/extensions
+        working-directory: app/extensions
         run: ../core/.venv/${{ runner.os == 'Windows' && 'Scripts/python.exe' || 'bin/python' }} -m pytest -q --ignore-glob='*_notifier.py'
 
       - name: Extension tests (notifier side)
         if: ${{ !cancelled() }}
-        working-directory: mvp/extensions
+        working-directory: app/extensions
         run: ../notifier/.venv/${{ runner.os == 'Windows' && 'Scripts/python.exe' || 'bin/python' }} -m pytest -q --ignore-glob='*_core.py'
 
   windows-agent:
@@ -96,7 +96,7 @@ jobs:
     defaults:
       run:
         shell: powershell
-        working-directory: mvp
+        working-directory: app
     env:
       PYTHONUTF8: "1"
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
@@ -107,7 +107,7 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-          cache-dependency-path: mvp/*/requirements.txt
+          cache-dependency-path: app/*/requirements.txt
 
       - name: Panel venv
         run: |
@@ -130,7 +130,7 @@ jobs:
         os: [ubuntu-24.04, ubuntu-22.04]
     defaults:
       run:
-        working-directory: mvp
+        working-directory: app
     env:
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
     steps:
@@ -158,5 +158,5 @@ jobs:
           OLD: /tmp/sentrai-before-rename
         run: |
           git fetch -q --depth 1 origin "$OLD_SHA"
-          mkdir -p "$OLD" && git -C .. archive "$OLD_SHA" mvp | tar -C "$OLD" -xf -  # from the repo root: this step runs in mvp/
+          mkdir -p "$OLD" && git -C .. archive "$OLD_SHA" mvp | tar -C "$OLD" -xf -  # from the repo root: this step runs in app/
           sudo PYTHON=/usr/bin/python3 OLD="$OLD" ../.github/scripts/linux-upgrade-smoke.sh

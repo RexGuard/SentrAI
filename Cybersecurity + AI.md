@@ -6,12 +6,12 @@ An accountability-based security system that follows **CIANA** and gives CXOs pr
 
 > *"A sentry doesn't chase you. It just guards the gate."*
 
-All factual claims were verified on 27 Sep 2026; sources are in `mvp/research/SOURCES.md`. Items marked **[FILL]** still need input.
+All factual claims were verified on 27 Sep 2026; sources are in `app/research/SOURCES.md`. Items marked **[FILL]** still need input.
 
 **How this document is organized**
 - **Sections 1 to 3:** the problem, our principles and the team.
 - **Part A, Final product (sections 4 to 14):** the full design we are building toward.
-- **Part B, MVP product (sections 15 and 16):** the first working prototype (27 to 28 Sep 2026) and what its demo shows.
+- **Part B, first version (sections 15 and 16):** the first working prototype (27 to 28 Sep 2026) and what its demo shows.
 
 ---
 
@@ -65,15 +65,15 @@ To minimize the risk of human error, our team has formulated a plan that can be 
 | --- | --- | --- | --- |
 | **Erick Sientaro** | Developer | Demo lab, collectors, risk engine, Jev integration, hotpatch playbooks, dashboard, Telegram bot | Working demo |
 | **Ishmail** | CEO | Problem story, business case, pitch narration, final call on scope | Pitch script and video narration |
-| **Hozen** | Notetaker | Meeting notes, this document, keeping sources in `mvp/research/SOURCES.md` current, slide content, recording checklist | Slides and verified sources |
+| **Hozen** | Notetaker | Meeting notes, this document, keeping sources in `app/research/SOURCES.md` current, slide content, recording checklist | Slides and verified sources |
 
-Erick carries the whole build, so the MVP (section 15) is scoped to what one developer can finish in two days.
+Erick carries the whole build, so the first version (section 15) is scoped to what one developer can finish in two days.
 
 ---
 
 # Part A: Final Product
 
-The full design SentrAI is built toward. Part B (section 15) says which pieces the MVP already runs.
+The full design SentrAI is built toward. Part B (section 15) says which pieces the first version already runs.
 
 ## 4. How SentrAI Gets the Data from Each System Layer
 
@@ -90,7 +90,7 @@ Lightweight collector agents on each host read logs the system already produces.
 
 **Flow:** Collector → normalize to one JSON event format (section 14) → Redis stream → Rules + Jev classifier → Risk Engine → Dashboard / Notifier / Responder.
 
-The MVP covers only the **web, database and OS** layers, read from the demo portal's log files (section 15).
+The first version covers only the **web, database and OS** layers, read from the demo portal's log files (section 15).
 
 ---
 
@@ -245,7 +245,7 @@ Detect → Snapshot → Pick playbook → Apply with TTL → Verify → Notify �
 
 ## 9. Notification to Operator
 
-**Channels:** dashboard (always) → Telegram bot (MVP) → email (backup). SMS/phone call on the roadmap.
+**Channels:** dashboard (always) → Telegram bot (built) → email (backup). SMS/phone call on the roadmap.
 
 **Escalation ladder**
 
@@ -310,7 +310,7 @@ What the "prick" actually is (all inside our own perimeter):
 - **Deception:** honeypot login pages, honeytoken DB rows and credentials. Any touch is a near-certain alert.
 - **Evidence:** preserve logs and hand them to SingCERT or the police. The attacker is pricked by attribution and prosecution, not retaliation.
 
-**In the MVP:** the demo portal has a honeypot login page, a planted credential, bait member rows and a tarpit, all off by default (`run_demo -Tripwires`). Any touch becomes a confidence 1.0 incident (see `mvp/lab/README.md`).
+**In the first version:** the demo portal has a honeypot login page, a planted credential, bait member rows and a tarpit, all off by default (`run_demo -Tripwires`). Any touch becomes a confidence 1.0 incident (see `app/lab/README.md`).
 
 ---
 
@@ -335,13 +335,13 @@ Each agent specializes in one layer or OS, which gives a different approach for 
 - Every autonomous action needs Countersign's approval.
 - Jev and Claude judge and explain; deterministic code scores and executes.
 
-**In the MVP:** the agents are Python classes inside the core, with Warden calling them in turn (section 15). Separate agent services are on the roadmap.
+**In the first version:** the agents are Python classes inside the core, with Warden calling them in turn (section 15). Separate agent services are on the roadmap.
 
 ---
 
 ## 13. Programming Language & Stack
 
-**Target stack.** The MVP (section 15) uses Python throughout, stores state in memory plus the audit chain, and needs no Redis or Docker.
+**Target stack.** The first version (section 15) uses Python throughout, stores state in memory plus the audit chain, and needs no Redis or Docker.
 
 | Part | Tool |
 | --- | --- |
@@ -402,9 +402,9 @@ Roadmap: production collectors rewritten in Go or Rust for a small single-binary
 
 ---
 
-# Part B: MVP Product
+# Part B: First Version
 
-What the first working prototype (27 to 28 Sep 2026) did and what its demo shows. The product has moved on since; the README and install guide describe what it does today. The code is in `mvp/` of the repo; `mvp/README.md` has the full run instructions.
+What the first working prototype (27 to 28 Sep 2026) did and what its demo shows. The product has moved on since; the README and install guide describe what it does today. The code is in `app/` of the repo; `app/README.md` has the full run instructions.
 
 ## 15. System Workflow & Minimum Viable Prototype
 
@@ -454,7 +454,7 @@ A sidebar menu, opening on Configuration:
 5. The evidence report shows the timeline of inaction, "Ack: none" and the audit chain hash.
 6. The operator presses **Rollback** or **Make Permanent** on the Approvals page, and it appears in the audit trail.
 
-**Real vs simulated in the MVP**
+**Real vs simulated in the first version**
 - Real: log collection, rules classification, risk index and inaction penalty, IP blocks and account locks (enforced by the portal), TTL expiry, audit chain, evidence reports, dashboard.
 - Simulated: rate limit, WAF rule, kill process and revoke ACL are recorded but have no effect. No firewall, OS or network setting is ever changed.
 - Not yet tested live: Jev (no TypeSafe API key yet; the fallback heuristic classifies what the rules cannot) and a real Telegram bot.

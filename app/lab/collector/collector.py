@@ -1,0 +1,1091 @@
+"""Part 1 of 3: the collector. Turns raw logs into Events and ships them to core.
+
+A source is any ``Source`` subclass: implement ``poll()`` and return new Event
+dicts (build them with ``make_event`` so every source emits the same shape, see
+``app/CONTRACT.md``). The ``Collector`` polls all its sources, batches the events
+to core ``POST /events`` once per second, and keeps them buffered while core is down.
+
+Default sources: one ``JsonLogSource`` per target-app log, one ``DiscoveredLogSource`` (or
+``JournaldSource``) per approved server log in ``scout/sources.json``, a ``SessionSource`` that asks
+``who`` (Windows: ``quser``) every 15 seconds who is signed in on this machine (``SENTRAI_SESSIONS=off``
+leaves it out), plus a ``HeartbeatSource`` every 10 seconds so Watchdog can tell the collector is alive.
+
+Server logs (nginx; sshd, sudo, su and systemd-logind via syslog or journald; Suricata, MySQL/MariaDB,
+PostgreSQL, MongoDB) and the Windows Event Log (``WindowsEventSource``) are parsed by
+``collector/parsers.py``: events carry
+the log's own timestamp and host name and a ``parsed`` object (see "Parsed fields" in
+``app/CONTRACT.md``). Read positions are saved in ``collector/state.json`` in the data root (or
+``SENTRAI_COLLECTOR_STATE``) once core has accepted the events, so a restart carries on where it
+stopped instead of re-sending whole files.
+
+Run:  python -m collector.collector           (from app/lab)
+   or python collector/collector.py
+      python -m collector.collector --add-system-logs   approve this machine's web, login, network
+                                                        and database logs (Windows: its event logs)
+
+On a new machine (no settings file yet) it first runs the setup wizard in
+``app/sentrai_config.py``; the logs directory and file names come from there.
+
+Handles file creation (logs may not exist yet), rotation (reads the rest of the rotated
+``.1`` file first) and truncation.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import ipaddress
+import json
+import os
+import queue
+import re
+import shutil
+import socket
+import subprocess
+import sys
+import threading
+import time
+import uuid
+from abc import ABC, abstractmethod
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Callable
+
+import requests
+
+# Allow running both as ``python -m collector.collector`` and as a script.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.append(str(Path(__file__).resolve().parents[2]))
+import sentrai_config  # noqa: E402
+import sentrai_paths  # noqa: E402
+
+if __name__ == "__main__":
+    # First run on this machine: ask for the settings before any path or log name is read.
+    sentrai_config.ensure()
+from collector import parsers  # noqa: E402
+from collector import paths  # noqa: E402
+
+HOST = "web-01"  # the demo portal's pretend server name; real logs use the real host name
+
+# log file -> (layer, source)
+SOURCE_MAP = {
+    paths.ACCESS_LOG: ("web", "flask_access"),
+    paths.AUTH_LOG: ("web", "flask_auth"),
+    paths.DB_LOG: ("db", "db_query"),
+    paths.OS_LOG: ("os", "os_process"),
+    paths.DECEPTION_LOG: ("web", "tripwire"),  # a tripwire sets its own layer ("db" for bait rows)
+}
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+
+
+def real_host() -> str:
+    """This machine's name (``SENTRAI_HOST`` overrides), for server logs that don't name their host."""
+    return os.environ.get("SENTRAI_HOST") or socket.gethostname() or "unknown"
+
+
+def criticality_for(layer: str, record: dict) -> float:
+    """1.5 for DB-layer or PII-tagged events, else 1.0."""
+    if layer == "db" or record.get("pii"):
+        return 1.5
+    return 1.0
+
+
+def make_event(layer: str, source: str, raw: str, *, src_ip: str | None = None, user: str | None = None,
+               ts: str | None = None, criticality: float = 1.0, host: str | None = None,
+               parsed: dict[str, Any] | None = None) -> dict[str, Any]:
+    """The one place an Event dict is built (contract Event schema)."""
+    event = {
+        "event_id": f"evt-{uuid.uuid4().hex[:12]}",
+        "timestamp": ts or _now_iso(),
+        "host": host or HOST,
+        "layer": layer,
+        "source": source,
+        "src_ip": src_ip,
+        "user": user,
+        "raw": raw,
+        "asset_criticality": criticality,
+    }
+    if parsed is not None:
+        event["parsed"] = parsed
+    return event
+
+
+def normalize(log_name: str, record: dict[str, Any]) -> dict[str, Any] | None:
+    """Turn one raw log line into a contract Event dict.
+
+    Returns None if the log file is unknown.
+    """
+    mapping = SOURCE_MAP.get(log_name)
+    if mapping is None:
+        return None
+    layer, source = mapping
+    if source == "tripwire" and record.get("layer") in ("web", "db", "os", "network", "cloud"):
+        layer = record["layer"]
+    return make_event(layer, source, record.get("raw", ""), src_ip=record.get("src_ip"), user=record.get("user"),
+                      ts=record.get("ts"), criticality=criticality_for(layer, record),
+                      parsed=_demo_fields(source, record))
+
+
+def _demo_fields(source: str, record: dict[str, Any]) -> dict[str, Any]:
+    """The demo portal's JSON fields in the same ``parsed`` shape as real logs, so rules can use either."""
+    f: dict[str, Any] = {"format": "sentrai_demo"}
+    if source == "flask_access":
+        f.update(kind="http_request", method=record.get("method"), path=record.get("path"),
+                 status=record.get("status"))
+    elif source == "flask_auth":
+        result = str(record.get("result") or "")
+        f.update(kind="web_login", outcome="success" if result in ("success", "ok") else "failure" if result else "info")
+    elif source == "db_query":
+        f.update(kind="db_query", rows=record.get("rows"))
+    else:
+        f["kind"] = "log"
+    return f
+
+
+def heartbeat_event() -> dict[str, Any]:
+    return make_event("os", "heartbeat", "collector heartbeat")
+
+
+def state_file() -> Path:
+    """collector/state.json in the data root (SENTRAI_COLLECTOR_STATE moves it)."""
+    return sentrai_paths.path("collector.state")
+
+
+def path_key(path: Path) -> str:
+    """How a file is named in collector-state.json."""
+    return str(path.absolute())
+
+
+# Line chain (CONTRACT.md "Line chain"): every event the collector sends carries a seal linking it
+# to the one before, so the core can tell when a batch went missing or a line was changed after
+# it was read. The fields sealed are the ones that say what happened, where and when.
+CHAIN_FIELDS = ("event_id", "timestamp", "host", "layer", "source", "raw")
+GENESIS = "0" * 64
+
+
+def chain_hash(prev: str, event: dict[str, Any]) -> str:
+    body = json.dumps([event.get(k) for k in CHAIN_FIELDS], separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256((prev + body).encode("utf-8")).hexdigest()
+
+
+class LineChain:
+    """Seals events in the order they are sent. ``checkpoint()`` is saved with the read positions,
+    once the sealed events have reached the core, so a restart carries on the same chain."""
+
+    def __init__(self, saved: dict | None = None) -> None:
+        saved = saved or {}
+        self.stream = str(saved.get("stream") or f"{real_host()}-{uuid.uuid4().hex[:8]}")
+        self.seq = int(saved.get("seq") or 0)
+        self.head = str(saved.get("hash") or GENESIS)
+
+    def seal(self, event: dict[str, Any]) -> dict[str, Any]:
+        self.seq += 1
+        h = chain_hash(self.head, event)
+        event["chain"] = {"stream": self.stream, "seq": self.seq, "prev": self.head, "hash": h}
+        self.head = h
+        return event
+
+    def checkpoint(self) -> dict:
+        return {"stream": self.stream, "seq": self.seq, "hash": self.head}
+
+
+class OffsetStore:
+    """Where each log was read up to, saved as JSON so a restart resumes instead of re-sending."""
+
+    def __init__(self, path: Path | None = None) -> None:
+        self.path = path or state_file()
+        try:
+            data = json.loads(self.path.read_text(encoding="utf-8"))
+            self.data: dict[str, dict] = data if isinstance(data, dict) else {}
+        except (OSError, json.JSONDecodeError):
+            self.data = {}
+
+    def get(self, key: str) -> dict | None:
+        entry = self.data.get(key)
+        return entry if isinstance(entry, dict) else None
+
+    def save(self, updates: dict[str, dict]) -> None:
+        if not updates or all(self.data.get(k) == v for k, v in updates.items()):
+            return
+        self.data.update(updates)
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self.path.with_name(self.path.name + ".tmp")
+            tmp.write_text(json.dumps(self.data, indent=1), encoding="utf-8")
+            os.replace(tmp, self.path)
+        except OSError as exc:
+            print(f"[collector] could not save read positions to {self.path} ({exc})", flush=True)
+
+
+HEAD_BYTES = 256            # the start of a file identifies it across renames and restarts
+ROTATION_GRACE_S = 600      # a rotated copy (name.1, name.1.gz, name-20261002) this recent explains a shrink
+MAX_READ = 1 << 20          # read at most 1 MiB per file per poll
+BACKFILL = int(os.environ.get("SENTRAI_COLLECTOR_BACKFILL_KB", "256")) * 1024
+
+
+class Tailer:
+    """Follows a single append-only file, tolerant of creation, rotation and truncation.
+
+    ``start`` says where to begin the first time a file that already exists is seen with no
+    saved position: "beginning", "end", or "backfill" (only its last ``BACKFILL`` bytes).
+    A file that appears later is always read from its beginning. ``checkpoint()`` returns the
+    position to save once the lines read so far have been delivered.
+    """
+
+    def __init__(self, path: Path, saved: dict | None = None, start: str = "beginning") -> None:
+        self.path = path
+        self.pos = 0
+        self._inode: int | None = None
+        self._head: str | None = None
+        self._head_len = 0
+        self._first = True
+        self._saved = saved
+        self._start = start
+        self._warned = False
+        # Log-integrity notices: the file shrank, vanished or was replaced and no rotated copy explains
+        # it, so lines may have been wiped. The source turns each one into a "log_integrity" event.
+        self.notices: list[str] = []
+
+    # -- file identity
+    @staticmethod
+    def _fingerprint(path: Path, length: int) -> str | None:
+        try:
+            with open(path, "rb") as fh:
+                return hashlib.sha1(fh.read(length)).hexdigest()
+        except OSError:
+            return None
+
+    def _remember_head(self, size: int) -> None:
+        if self._head_len < HEAD_BYTES and size > self._head_len:
+            self._head_len = min(size, HEAD_BYTES)
+            self._head = self._fingerprint(self.path, self._head_len)
+
+    def _same_file(self, path: Path, inode: int, size: int, want_inode: int | None, head: str | None,
+                   head_len: int) -> bool:
+        if want_inode and inode and inode != want_inode:
+            return False
+        if size < head_len:
+            return False
+        return head is None or self._fingerprint(path, head_len) == head
+
+    def _rotated_copy(self) -> bool:
+        """True when a sibling such as access.log.1, auth.log.1.gz or secure-20261002 was written
+        recently: logrotate (rename or copytruncate) explains the shrink."""
+        name, cutoff = self.path.name, time.time() - ROTATION_GRACE_S
+        try:
+            siblings = list(self.path.parent.iterdir())
+        except OSError:
+            return True  # cannot tell: do not raise an alarm we cannot back up
+        for p in siblings:
+            if p.name != name and (p.name.startswith(name + ".") or p.name.startswith(name + "-")):
+                try:
+                    if p.stat().st_mtime >= cutoff:
+                        return True
+                except OSError:
+                    continue
+        return False
+
+    def _notice(self, what: str) -> None:
+        if not self._rotated_copy():
+            self.notices.append(what)
+
+    def checkpoint(self) -> dict:
+        return {"pos": self.pos, "inode": self._inode or 0, "head": self._head, "head_len": self._head_len}
+
+    def _stat(self, path: Path | None = None):
+        try:
+            return (path or self.path).stat()
+        except FileNotFoundError:
+            return None
+        except OSError:
+            return None
+
+    def _begin(self, st) -> list[str]:
+        """First look at a file: resume a saved position, or apply the start policy."""
+        self._first = False
+        inode, size = getattr(st, "st_ino", 0), st.st_size
+        saved = self._saved
+        lines: list[str] = []
+        if saved:
+            s_inode, s_pos = saved.get("inode") or 0, int(saved.get("pos") or 0)
+            s_head, s_len = saved.get("head"), int(saved.get("head_len") or 0)
+            if self._same_file(self.path, inode, size, s_inode, s_head, s_len) and size >= s_pos:
+                self.pos, self._head, self._head_len = s_pos, s_head, s_len
+                self._inode = inode
+                return []
+            # Rotated while we were stopped: finish the old file (now "<name>.1"), then read the new one.
+            lines = self._drain_rotated(s_inode, s_pos, s_head, s_len)
+            self.pos = 0
+        elif self._start == "end":
+            self.pos = size
+        elif self._start == "backfill" and size > BACKFILL:
+            self.pos = self._line_start(size - BACKFILL)
+        self._inode = inode
+        self._head, self._head_len = None, 0
+        return lines
+
+    def _line_start(self, offset: int) -> int:
+        """The first line boundary at or after ``offset``."""
+        try:
+            with open(self.path, "rb") as fh:
+                fh.seek(max(offset - 1, 0))
+                if offset == 0 or fh.read(1) == b"\n":
+                    return offset
+                fh.readline()
+                return fh.tell()
+        except OSError:
+            return offset
+
+    def _drain_rotated(self, inode: int, pos: int, head: str | None, head_len: int) -> list[str]:
+        """logrotate renames access.log to access.log.1: read what was added there after ``pos``."""
+        old = self.path.with_name(self.path.name + ".1")
+        st = self._stat(old)
+        if st is None or st.st_size <= pos or not self._same_file(old, getattr(st, "st_ino", 0), st.st_size,
+                                                                  inode, head, head_len):
+            return []
+        lines, _ = self._read_from(old, pos, st.st_size, final=True)
+        return lines
+
+    def _read_from(self, path: Path, pos: int, size: int, final: bool = False) -> tuple[list[str], int]:
+        """Complete lines from ``pos``; returns them and the new position (a partial last line stays unread)."""
+        try:
+            with open(path, "rb") as fh:
+                fh.seek(pos)
+                chunk = fh.read(min(size - pos, MAX_READ))
+        except OSError as exc:
+            if not self._warned:
+                self._warned = True
+                print(f"[collector] cannot read {path} ({exc.__class__.__name__}: {exc}); "
+                      f"run the collector as a user that can read it", flush=True)
+            return [], pos
+        self._warned = False
+        end = chunk.rfind(b"\n")
+        if end < 0 and not final and len(chunk) < MAX_READ:
+            return [], pos  # no complete line yet
+        used = chunk if (end < 0 or (final and end < len(chunk) - 1)) else chunk[:end + 1]
+        text = used.decode("utf-8", errors="replace")
+        lines = [ln.strip() for ln in text.split("\n")]
+        return [ln for ln in lines if ln], pos + len(used)
+
+    def read_new_lines(self) -> list[str]:
+        st = self._stat()
+        if st is None:
+            # File not created yet (or gone): when it appears it is new, so read it from the start.
+            if self._first and self._saved:
+                pass  # keep the saved position until the file is back
+            else:
+                if self._inode is not None and self.pos > 0:
+                    self._notice(f"deleted: {self.path} disappeared after {self.pos} bytes were read, "
+                                 f"and no rotated copy was made")
+                self._first = False
+                self.pos = 0
+                self._inode = None
+                self._head, self._head_len = None, 0
+            return []
+        lines: list[str] = []
+        if self._first:
+            lines = self._begin(st)
+        inode = getattr(st, "st_ino", 0)
+        # Rotation (new inode) or truncation (shrunk file): start again from the top.
+        if self._inode is not None and inode != self._inode:
+            if self.pos > 0:
+                self._notice(f"replaced: {self.path} was swapped for a new file after {self.pos} bytes were read, "
+                             f"and no rotated copy was made")
+            lines += self._drain_rotated(self._inode, self.pos, self._head, self._head_len)
+            self.pos, self._head, self._head_len = 0, None, 0
+        elif st.st_size < self.pos:
+            self._notice(f"truncated: {self.path} shrank from {self.pos} to {st.st_size} bytes in place, "
+                         f"and no rotated copy was made")
+            self.pos, self._head, self._head_len = 0, None, 0
+        self._inode = inode
+        self._remember_head(st.st_size)
+        if st.st_size > self.pos:
+            new, self.pos = self._read_from(self.path, self.pos, st.st_size)
+            lines += new
+        return lines
+
+
+class Source(ABC):
+    """Anything that produces events: a log file, a syslog socket, a cloud API."""
+
+    key: str | None = None  # names the source in collector-state.json; None = nothing to resume
+
+    @abstractmethod
+    def poll(self) -> list[dict[str, Any]]:
+        """Return the Events that appeared since the last call (may be empty)."""
+
+    def checkpoint(self) -> dict | None:
+        """Where to resume after a restart, once the events polled so far have reached core."""
+        return None
+
+
+class FileSource(Source):
+    """A source that tails one file and can resume from a saved read position."""
+
+    def __init__(self, path: Path, saved: dict | None = None, start: str = "beginning") -> None:
+        self.name = path.name
+        self.key = path_key(path)
+        self.tailer = Tailer(path, saved, start)
+
+    def checkpoint(self) -> dict | None:
+        return self.tailer.checkpoint()
+
+    def integrity_events(self, host: str | None = None) -> list[dict[str, Any]]:
+        """One "log_integrity" event per notice the tailer raised (rules classify it as log tampering)."""
+        notices, self.tailer.notices = self.tailer.notices, []
+        return [make_event("os", "log_integrity", f"log-integrity {n}", host=host) for n in notices]
+
+
+class JsonLogSource(FileSource):
+    """One JSON-lines log file written by the target app."""
+
+    def poll(self) -> list[dict[str, Any]]:
+        events = []
+        for line in self.tailer.read_new_lines():
+            try:
+                event = normalize(self.name, json.loads(line))
+            except json.JSONDecodeError:
+                continue
+            if event is not None:
+                events.append(event)
+        return events + self.integrity_events()
+
+
+class HeartbeatSource(Source):
+    """Emits one heartbeat event every ``interval`` seconds."""
+
+    def __init__(self, interval: float = 10.0) -> None:
+        self.interval = interval
+        self._last = time.time()  # first heartbeat one interval after start
+
+    def poll(self) -> list[dict[str, Any]]:
+        now = time.time()
+        if now - self._last < self.interval:
+            return []
+        self._last = now
+        return [heartbeat_event()]
+
+
+IPV4 = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
+USER = re.compile(r"(?i)\b(?:user(?:name)?|for(?: invalid user)?)[=: ]+([\w.@-]+)")
+
+
+def server_log_event(line: str, layer: str, source: str, fmt: str,
+                     sessions: dict[str, tuple[str | None, str | None]] | None = None) -> dict[str, Any] | None:
+    """One line of a real server log -> Event, or None for a line the format writes but SentrAI skips
+    (Suricata flow records, MongoDB storage notes). Known formats are parsed; anything else keeps
+    its raw text with the source IP and user guessed from it.
+
+    ``sessions`` (one dict per log file) remembers each database connection's client address and
+    user, so a later line of the same PostgreSQL process or MySQL thread gets them too."""
+    src_ip = user = ts = host = None
+    fields: dict[str, Any] | None = None
+    raw = line
+    if fmt == "jsonl":
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            rec = None
+        if isinstance(rec, dict):
+            src_ip = next((str(rec[k]) for k in ("src_ip", "ip", "client_ip", "remote_addr") if rec.get(k)), None)
+            user = next((str(rec[k]) for k in ("user", "username", "account") if rec.get(k)), None)
+            ts = rec.get("ts") or rec.get("timestamp")
+            ts = ts if isinstance(ts, str) else None
+        fields = {"format": "jsonl", "kind": "log"}
+    elif (p := parsers.parse_line(line, fmt)) is not None:
+        if p.extra.get("drop"):
+            return None
+        src_ip, user, ts, host, fields = p.src_ip, p.user, p.ts, p.host, p.fields
+        if fmt == "journald":
+            raw = str(fields.get("message") or line)
+        elif fields.get("format") == "winevent":
+            raw = parsers.winevent_raw(p)
+        elif fields.get("format") == "suricata":
+            raw = parsers.suricata_raw(p)
+        elif fields.get("kind") == "db_query" and fields.get("sql"):
+            raw = str(fields["sql"])
+        if sessions is not None and (sid := fields.get("session")):
+            known_ip, known_user = sessions.get(sid, (None, None))
+            src_ip, user = src_ip or known_ip, user or known_user
+            if (src_ip, user) != (known_ip, known_user):
+                if len(sessions) > 5000:
+                    sessions.clear()
+                sessions[sid] = (src_ip, user)
+    if fields is None:
+        fields = {"format": "text", "kind": "log"}
+    guess = fields.get("kind") == "log" or fields.get("ssh_event") == "other"
+    if src_ip is None and guess and (m := IPV4.search(raw)):
+        src_ip = m.group(0)
+    if user is None and guess and (m := USER.search(raw)):
+        user = m.group(1)
+    return make_event(layer, source, raw[:2000], src_ip=src_ip, user=user, ts=ts, host=host or real_host(),
+                      parsed=fields, criticality=criticality_for(layer, {}))
+
+
+class DiscoveredLogSource(FileSource):
+    """A log file Scout found and the technician approved (``scout/sources.json``).
+
+    Any format: each new line becomes one event carrying the raw text. nginx access/error logs and
+    syslog files (auth.log, secure: sshd and friends) are parsed into the ``parsed`` fields with the
+    log's own timestamp and host; JSON-lines fields are used when present; otherwise the source IP
+    and user are guessed from the text.
+
+    With no saved read position, a file that exists at startup is read from its last
+    ``SENTRAI_COLLECTOR_BACKFILL_KB`` (256) KB, and one approved while running only from its end."""
+
+    def __init__(self, path: Path, layer: str, fmt: str = "text", from_end: bool = False,
+                 saved: dict | None = None) -> None:
+        super().__init__(path, saved, "end" if from_end else "backfill")
+        self.layer, self.fmt = layer, fmt
+        self.source = f"scout:{path.name}"
+        self.sessions: dict[str, tuple[str | None, str | None]] = {}
+
+    def poll(self) -> list[dict[str, Any]]:
+        events = [ev for line in self.tailer.read_new_lines()
+                  if (ev := server_log_event(line, self.layer, self.source, self.fmt, self.sessions)) is not None]
+        return events + self.integrity_events(real_host())
+
+
+JOURNALD_SSH = ["SYSLOG_IDENTIFIER=sshd", "SYSLOG_IDENTIFIER=sshd-session", "SYSLOG_IDENTIFIER=sshd-auth"]
+# Who became root and who signed in: sudo and su commands (with their PAM sessions), and the sessions
+# systemd-logind opens and closes. journalctl ORs matches on the same field.
+JOURNALD_ADMIN = ["SYSLOG_IDENTIFIER=sudo", "SYSLOG_IDENTIFIER=su", "SYSLOG_IDENTIFIER=su-l",
+                  "SYSLOG_IDENTIFIER=systemd-logind"]
+JOURNALD_DEFAULT = JOURNALD_SSH + JOURNALD_ADMIN
+
+
+class JournaldSource(Source):
+    """Follows ``journalctl -o json`` for systems that keep SSH logins only in the journal (no
+    /var/log/auth.log or /var/log/secure): sshd, and with it sudo, su and systemd-logind, so the core
+    can tell an administrator's own root work from an intruder's. sources.json entry: ``{"path":
+    "journald:sshd", "format": "journald", "layer": "os"}``; ``"match"`` (a list of journalctl matches)
+    picks other programs. Resumes from the saved journal cursor; with none, starts with the last 200
+    entries."""
+
+    def __init__(self, layer: str = "os", match: list[str] | None = None, name: str = "sshd",
+                 saved: dict | None = None, from_end: bool = False, command: list[str] | None = None) -> None:
+        self.name = f"journald:{name}"
+        self.key = self.name
+        self.layer = layer
+        self.source = f"journald:{name}"
+        self.match = match or JOURNALD_DEFAULT
+        self.cursor: str | None = (saved or {}).get("cursor")
+        self._read_cursor = self.cursor
+        self._from_end = from_end
+        self._command = command
+        self._proc: subprocess.Popen | None = None
+        self._lines: queue.Queue[str] = queue.Queue()
+        self._next_start = 0.0
+        self._warned = False
+
+    def command(self) -> list[str]:
+        if self._command is not None:
+            return self._command
+        cmd = ["journalctl", "-o", "json", "--no-pager", "--follow"]
+        if self._read_cursor:
+            cmd += ["--after-cursor", self._read_cursor]
+        else:
+            cmd += ["--lines", "0" if self._from_end else "200"]
+        return cmd + self.match
+
+    def _start(self) -> None:
+        if time.time() < self._next_start:
+            return
+        self._next_start = time.time() + 10  # retry a failed journalctl at most every 10 s
+        try:
+            self._proc = subprocess.Popen(self.command(), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                          stdin=subprocess.DEVNULL, text=True, encoding="utf-8", errors="replace")
+        except OSError as exc:
+            if not self._warned:
+                self._warned = True
+                print(f"[collector] cannot run journalctl ({exc}); SSH logins, sudo and sign-in sessions from "
+                      f"the journal are not collected", flush=True)
+            self._proc = None
+            return
+        threading.Thread(target=self._pump, args=(self._proc,), daemon=True).start()
+
+    def _pump(self, proc: subprocess.Popen) -> None:
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            self._lines.put(line)
+
+    def poll(self) -> list[dict[str, Any]]:
+        if self._proc is None or (self._proc.poll() is not None and self._lines.empty()):
+            self._start()
+        events = []
+        while True:
+            try:
+                line = self._lines.get_nowait().strip()
+            except queue.Empty:
+                break
+            if not line:
+                continue
+            parsed = parsers.parse_journald(line)
+            if parsed is None:
+                continue
+            if parsed.extra.get("cursor"):
+                self._read_cursor = parsed.extra["cursor"]
+            if (ev := server_log_event(line, self.layer, self.source, "journald")) is not None:
+                events.append(ev)
+        return events
+
+    def checkpoint(self) -> dict | None:
+        return {"cursor": self._read_cursor} if self._read_cursor else None
+
+    def stop(self) -> None:
+        if self._proc and self._proc.poll() is None:
+            self._proc.terminate()
+
+
+SESSIONS_EVERY_S = 15.0  # how often `who` / `quser` runs: one short subprocess, nothing else
+SESSIONS_KEEPALIVE_S = 3600.0  # how often a sign-in still open is reported again, so the core keeps it
+
+
+def run_command(cmd: list[str], timeout: float = 10.0) -> tuple[int, str, str]:
+    """Run a short command to completion: (exit code, stdout, stderr). Raises OSError when it is not
+    installed and subprocess.TimeoutExpired when it hangs."""
+    extra: dict[str, Any] = {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0)} if os.name == "nt" else {}
+    done = subprocess.run(cmd, capture_output=True, text=True, encoding="oem" if os.name == "nt" else "utf-8",
+                          errors="replace", stdin=subprocess.DEVNULL, timeout=timeout, **extra)
+    return done.returncode, done.stdout, done.stderr
+
+
+def _address(origin: str | None) -> str | None:
+    """The origin of a session when it is an IP address; None for a host name, a display or the console."""
+    try:
+        return str(ipaddress.ip_address(str(origin).strip("[]"))) if origin else None
+    except ValueError:
+        return None
+
+
+def sessions_on() -> bool:
+    """The sign-in session poll runs unless ``SENTRAI_SESSIONS`` is off."""
+    return os.environ.get("SENTRAI_SESSIONS", "on").strip().lower() not in ("off", "0", "no", "false")
+
+
+class SessionSource(Source):
+    """Who is signed in on this machine: ``who`` (Linux, macOS) or ``quser`` (Windows), run every 15 s.
+
+    The sign-ins present at start are each sent once as ``session existing: ...``; after that every change
+    is one event, ``session started: erick on pts/0 from 203.0.113.5 since 2026-10-28T10:21:00+08:00`` or
+    ``session ended: ...``, with a ``login_session`` parsed object (``app/CONTRACT.md``, "Parsed fields").
+    A sign-in that stays open is reported again as "existing" about once an hour, so the core does not
+    forget it. The core ties each sudo or su command to the sign-in on its terminal (``core/app/admins.py``)
+    and tells an administrator's own root work from an intruder's. Where the command is missing (Windows
+    Home has no quser) it says so once and sends nothing. ``since`` carries this computer's UTC offset."""
+
+    def __init__(self, interval: float = SESSIONS_EVERY_S, windows: bool | None = None,
+                 run: Callable[[list[str]], tuple[int, str, str]] | None = None, tz: Any = None,
+                 clock: Callable[[], float] = time.time, keepalive: float = SESSIONS_KEEPALIVE_S) -> None:
+        self.windows = os.name == "nt" if windows is None else windows
+        self.command = ["quser"] if self.windows else ["who"]
+        self.format = "quser" if self.windows else "who"
+        self.name = self.source = "sessions"
+        self.layer = "os"
+        self.interval, self.keepalive = interval, keepalive
+        self._run, self._tz, self._clock = run, tz, clock
+        self._seen: dict[tuple, dict[str, Any]] | None = None  # None until the first successful read
+        self._next = 0.0
+        self._keepalive_at = 0.0
+        self._off = False
+        self._warned = False
+
+    def sessions(self) -> list[dict[str, Any]] | None:
+        """The sessions open right now, or None when the command could not be run this time."""
+        runner = self._run if self._run is not None else run_command
+        try:
+            code, out, err = runner(self.command)
+        except OSError as exc:  # not installed, or this account may not run it: say so once, then stay quiet
+            self._off = True
+            print(f"[collector] cannot run {self.command[0]} ({exc}); who is signed in is not collected", flush=True)
+            return None
+        except subprocess.SubprocessError as exc:  # hung this time: try again at the next poll
+            if not self._warned:
+                self._warned = True
+                print(f"[collector] {self.command[0]} did not answer ({exc}); will try again", flush=True)
+            return None
+        if code != 0 and not (self.windows and "no user exists" in (out + err).lower()):
+            if not self._warned:  # quser says "No User exists for *" (exit 1) when nobody is signed in
+                self._warned = True
+                print(f"[collector] {self.command[0]} failed (exit {code}): {(err or out).strip()[:200]}", flush=True)
+            return None
+        return parsers.parse_quser(out, self._tz) if self.windows else parsers.parse_who(out, self._tz)
+
+    @staticmethod
+    def _key(s: dict[str, Any]) -> tuple:
+        return (s["user"], s["tty"], s.get("since"))
+
+    def event(self, what: str, s: dict[str, Any]) -> dict[str, Any]:
+        origin, since = s.get("origin"), s.get("since")
+        raw = f"session {what}: {s['user']} on {s['tty']}" + (f" from {origin}" if origin else "") \
+            + (f" since {since}" if since else "")
+        parsed = {"format": self.format, "kind": "login_session", "session_event": what, "user": s["user"],
+                  "tty": s["tty"], "origin": origin, "session_id": s.get("session_id"), "since": since}
+        return make_event(self.layer, self.source, raw, src_ip=_address(origin), user=s["user"], host=real_host(),
+                          parsed=parsed)
+
+    def poll(self) -> list[dict[str, Any]]:
+        now = self._clock()
+        if self._off or now < self._next:
+            return []
+        self._next = now + self.interval
+        current = self.sessions()
+        if current is None:
+            return []
+        seen = {self._key(s): s for s in current}
+        if self._seen is None:
+            events = [self.event("existing", s) for s in current]
+            self._keepalive_at = now + self.keepalive
+        else:
+            events = [self.event("ended", s) for key, s in self._seen.items() if key not in seen]
+            started = [key for key in seen if key not in self._seen]
+            events += [self.event("started", seen[key]) for key in started]
+            if now >= self._keepalive_at:
+                events += [self.event("existing", s) for key, s in seen.items() if key not in started]
+                self._keepalive_at = now + self.keepalive
+        self._seen = seen
+        return events
+
+
+# Windows channel -> the event IDs read from it (parsers.WINDOWS_EVENTS says what each one means).
+# 4688 (every process started) is left out: it is only useful with command-line auditing on and
+# floods a busy machine; add it with "event_ids" in the sources.json entry.
+WINDOWS_CHANNELS: dict[str, list[int]] = {
+    "Security": [4624, 4625, 4740, 4771, 4776, 1102, 4720, 4728, 4732, 4756, 4697],
+    "System": [104, 7045],
+    "Application": [18456],
+    "Microsoft-Windows-Windows Defender/Operational": [1116, 1117],
+}
+WINDOWS_EVERY_S = 5.0
+
+
+class WindowsEventSource(Source):
+    """Reads one Windows event log channel through the Event Log API (``collector/wevtapi.py``;
+    built into Windows, no extra package). sources.json entry:
+    ``{"path": "winevent:Security", "format": "winevent", "layer": "os"}``; ``"event_ids"`` picks
+    other events. Every 5 s it asks for records newer than the last one read and resumes from that
+    record number after a restart; with none, it starts with the last 200.
+
+    The Security channel needs an administrator (the agent's service account) or a member of the
+    "Event Log Readers" group; without that it says so once and keeps trying."""
+
+    def __init__(self, channel: str = "Security", layer: str = "os", event_ids: list[int] | None = None,
+                 saved: dict | None = None, from_end: bool = False,
+                 read: Callable[[str, str, bool, int], str] | None = None) -> None:
+        self.channel = channel
+        self.name = self.key = self.source = f"winevent:{channel}"
+        self.layer = layer
+        self.event_ids = [int(i) for i in (event_ids or WINDOWS_CHANNELS.get(channel) or [])]
+        self.record_id: int | None = (saved or {}).get("record_id")
+        self._from_end = from_end and self.record_id is None
+        self._read = read
+        self._next = 0.0
+        self._warned = False
+
+    def query(self) -> tuple[str, bool, int]:
+        """(XPath, newest first?, how many) for the next read."""
+        ids = " or ".join(f"EventID={i}" for i in self.event_ids)
+        where = f"({ids})" if ids else ""
+        if self.record_id is not None:
+            where = f"EventRecordID>{self.record_id}" + (f" and {where}" if where else "")
+            return (f"*[System[{where}]]", False, 500)
+        # First look: the newest 200 (or just the newest one, to learn where "now" is); put back in order below.
+        return (f"*[System[{where}]]" if where else "*", True, 1 if self._from_end else 200)
+
+    def poll(self) -> list[dict[str, Any]]:
+        if time.time() < self._next:
+            return []
+        self._next = time.time() + WINDOWS_EVERY_S
+        first = self.record_id is None
+        try:
+            if self._read is None:
+                from collector import wevtapi
+                self._read = wevtapi.query
+            records = parsers.winevent_from_xml(self._read(self.channel, *self.query()))
+        except OSError as exc:
+            if not self._warned:
+                self._warned = True
+                print(f"[collector] cannot read the Windows {self.channel} log ({exc}); run SentrAI as an "
+                      f"administrator or add its account to Event Log Readers", flush=True)
+            return []
+        records.sort(key=lambda r: r.get("record_id") or 0)
+        if records and records[-1].get("record_id") is not None:
+            self.record_id = max(self.record_id or 0, int(records[-1]["record_id"]))
+        elif first and not records:
+            self.record_id = 0  # an empty log: read everything from now on
+        if first and self._from_end:
+            return []  # approved while running: only what happens from now on
+        events = []
+        for rec in records:
+            if (p := parsers.winevent_parsed(rec)) is None:
+                continue
+            events.append(make_event(self.layer, self.source, parsers.winevent_raw(p)[:2000], src_ip=p.src_ip,
+                                     user=p.user, ts=p.ts, host=real_host(), parsed=p.fields))
+        return events
+
+    def checkpoint(self) -> dict | None:
+        return {"record_id": self.record_id} if self.record_id is not None else None
+
+
+def source_for(entry: dict, store: OffsetStore | None = None, from_end: bool = False) -> Source:
+    """A ``scout/sources.json`` entry -> the Source that reads it."""
+    fmt = entry.get("format", "text")
+    if str(entry["path"]).startswith("winevent:"):
+        key = str(entry["path"])
+        return WindowsEventSource(key.split(":", 1)[1], entry["layer"], entry.get("event_ids"),
+                                  saved=store.get(key) if store else None, from_end=from_end)
+    if fmt == "journald" or str(entry["path"]).startswith("journald:"):
+        name = str(entry["path"]).split(":", 1)[1] if ":" in str(entry["path"]) else "sshd"
+        key = f"journald:{name}"
+        return JournaldSource(entry["layer"], entry.get("match"), name,
+                              saved=store.get(key) if store else None, from_end=from_end)
+    path = Path(entry["path"])
+    return DiscoveredLogSource(path, entry["layer"], fmt, from_end=from_end,
+                               saved=store.get(path_key(path)) if store else None)
+
+
+def discovered_sources(store: OffsetStore | None = None) -> list[Source]:
+    from scout import sources as scout_sources
+
+    return [source_for(s, store) for s in scout_sources.load()]
+
+
+def default_sources(logs_dir: Path, heartbeat_interval: float = 10.0, store: OffsetStore | None = None) -> list[Source]:
+    def saved(name: str) -> dict | None:
+        return store.get(path_key(logs_dir / name)) if store else None
+
+    return [*(JsonLogSource(logs_dir / name, saved(name)) for name in SOURCE_MAP), *discovered_sources(store),
+            *([SessionSource()] if sessions_on() else []), HeartbeatSource(heartbeat_interval)]
+
+
+POLL_S = float(os.environ.get("SENTRAI_COLLECTOR_POLL_S", "0.05"))  # how often logs are checked for new lines
+RETRY_MAX_S = 30.0  # longest wait between attempts while the core is unreachable
+CHAIN_KEY = "_chain"  # the line chain's head in collector-state.json
+
+
+class Collector:
+    """Streams events to the core: logs are checked every ``poll_interval`` seconds (50 ms) and new
+    lines are sent at once over one kept-alive connection. While the core is unreachable they are
+    buffered and retried, waiting ``flush_interval`` seconds at first and up to 30 s."""
+
+    def __init__(self, core_url: str, logs_dir: Path,
+                 flush_interval: float = 1.0, heartbeat_interval: float = 10.0,
+                 sources: list[Source] | None = None, token: str = "", poll_interval: float = POLL_S,
+                 host: str | None = None):
+        self.core_url = core_url.rstrip("/")
+        # A machine's agent names every event after the machine it joined as, before sealing it, so
+        # the panel's own host stamp matches the seal (otherwise every line reads as altered).
+        self.host = host
+        self.headers = {"Authorization": f"Bearer {token}"} if token else {}
+        self.logs_dir = logs_dir
+        self.flush_interval = flush_interval
+        self.poll_interval = poll_interval
+        self.heartbeat_interval = heartbeat_interval
+        self.watch_sources = sources is None  # default set: also pick up newly approved log files
+        self.store = OffsetStore() if sources is None else None
+        self.sources = sources if sources is not None else default_sources(logs_dir, heartbeat_interval, self.store)
+        self.chain = LineChain(self.store.get(CHAIN_KEY) if self.store else None)
+        self.session = requests.Session()
+        self._sources_stamp: float | None = None
+        self._tail_from_end = False
+        self._started = time.time()
+        self._sent_since_report = 0
+        self._next_report = 0.0
+        self.pending: list[dict] = []
+
+    def refresh_discovered(self) -> list[Source]:
+        """Start tailing log files approved since startup (Scout, or a process scan in the dashboard)."""
+        from scout import sources as scout_sources
+
+        f = scout_sources.sources_file()
+        try:
+            stamp = f.stat().st_mtime
+        except OSError:
+            return []
+        if stamp == self._sources_stamp:
+            return []
+        self._tail_from_end = self._sources_stamp is not None or stamp > self._started
+        self._sources_stamp = stamp
+        tailed = {str(s.tailer.path) for s in self.sources if isinstance(s, DiscoveredLogSource)}
+        tailed |= {s.name for s in self.sources if isinstance(s, (JournaldSource, WindowsEventSource))}
+        added: list[Source] = [source_for(s, self.store, from_end=self._tail_from_end)
+                               for s in scout_sources.load() if str(Path(s["path"])) not in tailed
+                               and s["path"] not in tailed]
+        for src in added:
+            print(f"[collector] now watching {src.name} ({src.layer})", flush=True)
+        self.sources[-1:-1] = added  # before the heartbeat
+        return added
+
+    def collect(self) -> None:
+        if self.watch_sources:
+            self.refresh_discovered()
+        for source in self.sources:
+            for ev in source.poll():
+                if self.host:
+                    ev["host"] = self.host
+                self.pending.append(self.chain.seal(ev))
+
+    def flush(self) -> bool:
+        """POST pending events. Keep them buffered if core is down."""
+        if not self.pending:
+            self.save_positions()
+            return True
+        batch = self.pending
+        try:
+            resp = self.session.post(f"{self.core_url}/events", json=batch, headers=self.headers, timeout=3)
+            resp.raise_for_status()
+            body = {}
+            try:
+                body = resp.json()
+            except Exception:
+                pass
+            self._sent_since_report += len(batch)
+            if time.monotonic() >= self._next_report:  # streaming sends often: one line every 10 s at most
+                print(f"[collector] sent {self._sent_since_report} events -> core "
+                      f"(risk_index={body.get('risk_index', '?')})", flush=True)
+                self._sent_since_report, self._next_report = 0, time.monotonic() + 10.0
+            self.pending = []
+            self.save_positions()
+            return True
+        except Exception as exc:
+            print(f"[collector] core unreachable ({exc.__class__.__name__}); "
+                  f"buffering {len(batch)} events, will retry", flush=True)
+            return False
+
+    def save_positions(self) -> None:
+        """Everything polled so far has reached core: remember where each log was read up to."""
+        if self.store is None:
+            return
+        self.store.save({**{s.key: cp for s in self.sources if s.key and (cp := s.checkpoint()) is not None},
+                         CHAIN_KEY: self.chain.checkpoint()})
+
+    def run(self) -> None:
+        print(f"[collector] streaming {self.logs_dir} -> {self.core_url}/events "
+              f"(checks every {self.poll_interval * 1000:.0f} ms, heartbeat {self.heartbeat_interval}s, "
+              f"chain {self.chain.stream} at #{self.chain.seq})", flush=True)
+        retry_at, wait, idle_save = 0.0, self.flush_interval, 0.0
+        while True:
+            self.collect()
+            now = time.monotonic()
+            if self.pending and now >= retry_at:
+                if self.flush():
+                    wait = self.flush_interval
+                else:
+                    retry_at, wait = now + wait, min(wait * 2, RETRY_MAX_S)
+            elif not self.pending and now >= idle_save:
+                self.save_positions()  # nothing waiting: everything read so far has been delivered
+                idle_save = now + 1.0
+            time.sleep(self.poll_interval)
+
+
+NGINX_LOGS = [("/var/log/nginx/access.log", "web", "nginx"), ("/var/log/nginx/error.log", "web", "nginx")]
+AUTH_LOGS = ["/var/log/auth.log", "/var/log/secure"]  # Debian/Ubuntu, RHEL/Fedora
+# Network and database logs at their usual places: (candidate paths or globs, layer, format, why).
+# The first candidate that exists wins; a glob picks the newest file.
+SERVICE_LOGS = [
+    (["/var/log/suricata/eve.json"], "network", "suricata", "Suricata network alerts"),
+    (["/var/log/mysql/error.log", "/var/log/mysql/mysqld.log", "/var/log/mysqld.log", "/var/log/mariadb/mariadb.log"],
+     "db", "mysql", "MySQL / MariaDB sign-ins"),
+    (["/var/log/postgresql/postgresql-*-main.log", "/var/lib/pgsql/data/log/postgresql-*.log",
+      "/var/lib/pgsql/*/data/log/postgresql-*.log"], "db", "postgres", "PostgreSQL sign-ins"),
+    (["/var/log/mongodb/mongod.log", "/var/log/mongodb/mongodb.log"], "db", "mongodb", "MongoDB sign-ins"),
+]
+WINDOWS_WHY = {"Security": "Windows sign-ins, lockouts, admin group changes and cleared logs",
+               "System": "new Windows services and cleared logs",
+               "Application": "SQL Server sign-ins",
+               "Microsoft-Windows-Windows Defender/Operational": "Microsoft Defender malware alerts"}
+
+
+def _is_file(p: Path) -> bool:
+    """Path.is_file that says False, instead of raising, for a folder this account may not look in."""
+    try:
+        return p.is_file()
+    except OSError:
+        return False
+
+
+def service_log_entries(root: Path = Path("/")) -> list[dict]:
+    """Suricata, MySQL/MariaDB, PostgreSQL and MongoDB logs on this machine, as sources.json entries."""
+    found = []
+    for candidates, layer, fmt, why in SERVICE_LOGS:
+        for pattern in candidates:
+            rel = pattern.lstrip("/")
+            hits = [p for p in root.glob(rel) if _is_file(p)] if "*" in rel else [root / rel] if _is_file(root / rel) else []
+            if hits:
+                newest = max(hits, key=lambda p: p.stat().st_mtime)
+                found.append({"path": str(newest), "layer": layer, "format": fmt, "why": why})
+                break
+    return found
+
+
+def windows_log_entries() -> list[dict]:
+    return [{"path": f"winevent:{ch}", "layer": "os", "format": "winevent", "why": WINDOWS_WHY[ch]}
+            for ch in WINDOWS_CHANNELS]
+
+
+def system_log_entries(root: Path = Path("/"), has_journalctl: bool | None = None,
+                       windows: bool | None = None) -> list[dict]:
+    """This machine's web, SSH login, network and database logs, as ``scout/sources.json`` entries;
+    on Windows also its event logs."""
+    def here(p: str) -> Path:
+        return root / p.lstrip("/")
+
+    if windows if windows is not None else os.name == "nt":
+        return windows_log_entries() + service_log_entries(root)
+
+    entries = [{"path": str(here(p)), "layer": layer, "format": fmt, "why": "nginx web server log"}
+               for p, layer, fmt in NGINX_LOGS if _is_file(here(p))]
+    auth = next((here(p) for p in AUTH_LOGS if _is_file(here(p))), None)
+    if auth is not None:
+        entries.append({"path": str(auth), "layer": "os", "format": "syslog", "why": "SSH logins (sshd)"})
+    elif has_journalctl if has_journalctl is not None else shutil.which("journalctl"):
+        entries.append({"path": "journald:sshd", "layer": "os", "format": "journald",
+                        "why": "SSH logins (sshd), sudo, su and sign-in sessions from the systemd journal; "
+                               "this system has no auth.log"})
+    return entries + service_log_entries(root)
+
+
+def add_system_logs() -> int:
+    from scout import sources as scout_sources
+
+    entries = system_log_entries()
+    if not entries:
+        print("[collector] found no nginx, SSH, Suricata, database or Windows event logs on this machine")
+        return 1
+    for e in entries:
+        scout_sources.add(e, "collector --add-system-logs")
+        print(f"[collector] approved {e['path']} ({e['why']})")
+    print(f"[collector] saved to {scout_sources.sources_file()}; a running collector picks them up by itself")
+    return 0
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description="SentrAI log collector")
+    ap.add_argument("--core", default=os.environ.get("SENTRAI_CORE_URL",
+                                                      "http://127.0.0.1:8000"))
+    ap.add_argument("--logs", default=str(paths.logs_dir()))
+    ap.add_argument("--flush-interval", type=float, default=1.0,
+                    help="first wait before retrying when the core is unreachable (doubles up to 30 s)")
+    ap.add_argument("--poll-interval", type=float, default=POLL_S,
+                    help="seconds between checks for new log lines (default 0.05; SENTRAI_COLLECTOR_POLL_S)")
+    ap.add_argument("--heartbeat-interval", type=float, default=10.0)
+    ap.add_argument("--add-system-logs", action="store_true",
+                    help="approve this machine's nginx, SSH login (auth.log, secure or journald), Suricata and "
+                         "database logs, or on Windows its event logs, then exit")
+    args = ap.parse_args()
+    if args.add_system_logs:
+        sys.exit(add_system_logs())
+
+    logs_dir = Path(args.logs)
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    Collector(args.core, logs_dir, args.flush_interval,
+              args.heartbeat_interval, token=sentrai_config.api_token(), poll_interval=args.poll_interval).run()
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n[collector] stopped.")

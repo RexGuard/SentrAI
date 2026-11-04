@@ -57,7 +57,7 @@ open `http://127.0.0.1:5000/lab` next to it and press **Full story**: normal tra
 guessing nobody acts on, SQL injection, then a web shell from the same attacker. The machine passes
 its threshold and both attackers are blocked; the portal shows them a "Blocked by SentrAI" page.
 
-To see it in the web dashboard too, run `./run-web.sh` in `.demo/SentrAI/mvp/web` and open
+To see it in the web dashboard too, run `./run-web.sh` in `.demo/SentrAI/app/web` and open
 `http://127.0.0.1:5173` with the same account.
 
 Use `./demo.sh --fresh` between rehearsals to start over, and `./stop.sh` (Windows: `.\stop.ps1`) to

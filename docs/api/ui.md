@@ -129,7 +129,7 @@ The map's Save. **Body** `{"settings": {...}}`. Checked again on the core; `400`
 
 ## Guided setup
 
-Cyanide's setup questions on the Chat page (`mvp/setup_chat.py`). The conversation lives in the core's memory for the signed-in person, never in the chat history; secret answers are shown as dots. Nothing is written until the person confirms the summary, and saving needs the `configure` permission.
+Cyanide's setup questions on the Chat page (`app/setup_chat.py`). The conversation lives in the core's memory for the signed-in person, never in the chat history; secret answers are shown as dots. Nothing is written until the person confirms the summary, and saving needs the `configure` permission.
 
 ### `GET /ui/setup`
 

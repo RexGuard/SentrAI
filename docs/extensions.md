@@ -42,7 +42,7 @@ buttons are then greyed out.
 
 ## Install or uninstall one
 
-An extension is a folder. The ones that ship with SentrAI are in `mvp/extensions/`. To install
+An extension is a folder. The ones that ship with SentrAI are in `app/extensions/`. To install
 another, put its folder there, or in a folder named in `SENTRAI_EXTENSIONS_DIR` (several folders are
 separated by `:` on Linux and `;` on Windows). To uninstall one, delete its folder. Either way,
 restart SentrAI. Its saved settings stay in the settings file, in case it comes back.
@@ -135,7 +135,7 @@ choose. Use it to reach a service SentrAI does not connect to yet, through n8n, 
 
 ## Write your own
 
-Copy one of the folders in `mvp/extensions/` and change it. An extension needs:
+Copy one of the folders in `app/extensions/` and change it. An extension needs:
 
 - **`extension.json`**: `name` (the folder's name), `title`, `kind` (Blocking, Lookups, Alerts,
   Classifier or Other), `what` (one sentence), `about`, `docs` (where to get a key), `order`, and
@@ -152,7 +152,7 @@ Copy one of the folders in `mvp/extensions/` and change it. An extension needs:
   channel until `ctx.changed()` is true, or `None`. `copy_channel(ctx)` returns a function that
   posts a copy of each alert, or `None`.
 - **`tests/`**: files named `test_<name>_core.py` run with the core's packages and
-  `test_<name>_notifier.py` with the notifier's. Run them from `mvp/extensions`:
+  `test_<name>_notifier.py` with the notifier's. Run them from `app/extensions`:
 
 ```bash
 ../core/.venv/bin/python -m pytest -q --ignore-glob='*_notifier.py'

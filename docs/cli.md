@@ -95,7 +95,7 @@ sudo sentrai backups unlock HOST b-...     # a machine was lost: unlock its copy
 ```
 
 If the panel itself is lost, take the newest `.sbk` file from `/var/lib/sentrai/agent/backups/copies/_panel/`
-on any machine and run, in `mvp/core`: `python -m app.sealed open COPY.sbk backup.tar.gz --code CODE`.
+on any machine and run, in `app/core`: `python -m app.sealed open COPY.sbk backup.tar.gz --code CODE`.
 
 ## Incidents
 
@@ -154,5 +154,5 @@ sudo sentrai api POST /backups '{"operator": "cli:me"}'
 To let your own Claude list blocks and keep or undo them, see [Keep or undo blocks from Claude](claude.html)
 (`sudo sentrai mcp`).
 
-From another computer, run `python mvp/sentrai_cli.py` with `SENTRAI_CORE_URL` and `SENTRAI_API_TOKEN`
+From another computer, run `python app/sentrai_cli.py` with `SENTRAI_CORE_URL` and `SENTRAI_API_TOKEN`
 set. Keep the token secret: it can change anything. `team` only works on the panel server.

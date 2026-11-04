@@ -10,8 +10,8 @@ SentrAI comes with two installers, one for each part:
 
 | Part | What it is | Installer | Page |
 | --- | --- | --- | --- |
-| **Panel** | the central server: risk engine, web dashboard, alerts, and the port agents join | `mvp/deploy/install-panel.sh` | this page |
-| **Agent** (wings) | the small part on each machine the panel watches | `mvp/deploy/install-agent.sh` (Linux), `install-agent.ps1` (Windows) | [Install the agent](agent.html) |
+| **Panel** | the central server: risk engine, web dashboard, alerts, and the port agents join | `deploy/install-panel.sh` | this page |
+| **Agent** (wings) | the small part on each machine the panel watches | `deploy/install-agent.sh` (Linux), `install-agent.ps1` (Windows) | [Install the agent](agent.html) |
 
 Install the panel once, then the agent on every other machine. Neither installer touches the
 other's part. The panel also watches its own server's logs, so it needs no agent there.
@@ -34,7 +34,7 @@ that computer.
 ## Install
 
 ```bash
-git clone https://github.com/RexGuard/SentrAI && cd SentrAI/mvp
+git clone https://github.com/RexGuard/SentrAI && cd SentrAI
 sudo ./deploy/install-panel.sh --protect 203.0.113.10 --admin-email you@example.com
 ```
 
@@ -143,7 +143,7 @@ Its suggestions appear under **Collector**, then **Scout proposals**, where you 
 | `--no-notifier` | leave Telegram and email alerts off |
 | `--no-start` | install and enable the services without starting them |
 | `--seal-journal` | sign the system journal so old entries cannot be rewritten unnoticed. Prints a key once: keep it off the server |
-| `--remote-copy URL` | send every record to a second machine that keeps a copy root on this server cannot change. See the [server README](https://github.com/RexGuard/SentrAI/blob/main/mvp/deploy/README.md#off-box-copy---remote-copy) |
+| `--remote-copy URL` | send every record to a second machine that keeps a copy root on this server cannot change. See the [server README](https://github.com/RexGuard/SentrAI/blob/main/deploy/README.md#off-box-copy---remote-copy) |
 | `--panel [PORT]` / `--panel-url URL` | the port agents on other machines join ([One panel, many machines](panel.html)). On by default on a first install (8443); `--panel off` closes it, for one server on its own |
 | `--prefix DIR` / `--user NAME` | install somewhere other than `/opt/sentrai`, or run as another account |
 
@@ -157,7 +157,7 @@ sudo ./deploy/install-panel.sh --protect 203.0.113.10 --admin-email you@example.
 
 | What | Where |
 | --- | --- |
-| Program | `/opt/sentrai/mvp` |
+| Program | `/opt/sentrai/app` |
 | Service settings (ports, addresses, protected IPs) | `/etc/sentrai/sentrai.env` |
 | Dashboard certificate | `/etc/sentrai/tls/` |
 | Saved settings, watched logs, the audit record, one folder per part (`core/`, `collector/`, `scout/`, `notifier/`) | `/var/lib/sentrai/` |
@@ -219,11 +219,24 @@ update after it was added. Do that one the old way, once:
 
 ```bash
 cd SentrAI && git pull
-sudo ./mvp/deploy/update.sh
+sudo ./deploy/update.sh
 ```
 
 From then on `sudo sentrai-update` is enough. Running `sudo ./deploy/install-panel.sh` again still
 works too: it is how you change options (only the options you pass change).
+
+**Servers installed before November 2026.** The code used to live in an `mvp` folder, and the
+`sentrai-update` on those servers still looks for it, so it stops with *has no mvp/deploy/install.sh*.
+Update once with the new updater from a checkout:
+
+```bash
+cd SentrAI && git pull
+sudo ./deploy/update.sh
+```
+
+It moves the installed code from `/opt/sentrai/mvp` to `/opt/sentrai/app` (keeping the Python
+packages, settings, records and sign-in), puts the new `sentrai-update` in place, and goes back to
+the old version by itself if a check fails. From then on `sudo sentrai-update` works again.
 
 ### Upgrading a server set up before the SentrAI name
 

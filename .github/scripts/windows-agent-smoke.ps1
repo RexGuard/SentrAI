@@ -1,7 +1,7 @@
 # CI check of the Windows agent installer on a real Windows runner (as Administrator):
 # start a panel core, make a join code, install the agent as a service, see it report in,
 # switch to -Enforce, put one real netsh block in place, then uninstall and check it is all gone.
-# Run from mvp\ with the core venv at core\.venv.
+# Run from app\ with the core venv at core\.venv.
 $ErrorActionPreference = "Stop"
 $Port = 8765
 $Panel = "http://127.0.0.1:$Port"
@@ -39,7 +39,7 @@ Write-Host "join code $code"
 
 try {
     # --- first install: join, service, dry run ---------------------------------
-    & .\deploy\install-agent.ps1 -Panel $Panel -Code $code -AllowHttp -Protect 203.0.113.10
+    & ..\deploy\install-agent.ps1 -Panel $Panel -Code $code -AllowHttp -Protect 203.0.113.10
     if ($LASTEXITCODE) { Fail "install-agent.ps1 exited $LASTEXITCODE" }
     Wait-For "service is running" { (Get-Service SentrAIAgent).Status -eq "Running" }
     $svc = Get-CimInstance Win32_Service -Filter "Name='SentrAIAgent'"
@@ -55,7 +55,7 @@ try {
     if (-not (Test-Path (Join-Path $State "INDEX.md"))) { Fail "install-agent.ps1 did not write $State\INDEX.md" }
 
     # --- upgrade in place with -Enforce (no join code: the machine stays joined) ---
-    & .\deploy\install-agent.ps1 -Enforce
+    & ..\deploy\install-agent.ps1 -Enforce
     if ($LASTEXITCODE) { Fail "reinstall with -Enforce exited $LASTEXITCODE" }
     if (-not (Select-String -Path $Xml -SimpleMatch 'name="SENTRAI_FIREWALL_ENFORCE" value="1"' -Quiet)) { Fail "-Enforce was not saved" }
     if (-not (Select-String -Path $Xml -SimpleMatch '203.0.113.10' -Quiet)) { Fail "-Protect was lost on upgrade" }
@@ -77,7 +77,7 @@ try {
     $Head = (git -C $Root rev-parse HEAD).Trim()
     $Updater = Join-Path $Prefix "update-agent.ps1"
     if (-not (Test-Path $Updater)) { Fail "install-agent.ps1 did not add update-agent.ps1" }
-    if (-not (Select-String -Path (Join-Path $Prefix "mvp\VERSION") -SimpleMatch "commit=$Head" -Quiet)) { Fail "VERSION does not name the installed commit" }
+    if (-not (Select-String -Path (Join-Path $Prefix "app\VERSION") -SimpleMatch "commit=$Head" -Quiet)) { Fail "VERSION does not name the installed commit" }
     function Same-Settings([string]$After) {
         if (-not (Select-String -Path $Xml -SimpleMatch 'name="SENTRAI_FIREWALL_ENFORCE" value="1"' -Quiet)) { Fail "$After lost -Enforce" }
         if (-not (Select-String -Path $Xml -SimpleMatch '203.0.113.10' -Quiet)) { Fail "$After lost -Protect" }
@@ -91,10 +91,10 @@ try {
     $Broken = Join-Path $env:RUNNER_TEMP "sentrai-broken"
     git -C $Root archive --format=zip -o "$Broken.zip" HEAD
     Expand-Archive "$Broken.zip" $Broken
-    Add-Content (Join-Path $Broken "mvp\lab\agent\agent.py") 'raise SystemExit("broken on purpose (CI)")'
+    Add-Content (Join-Path $Broken "app\lab\agent\agent.py") 'raise SystemExit("broken on purpose (CI)")'
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Updater -From $Broken
     if (-not $LASTEXITCODE) { Fail "a broken version passed the update's checks" }
-    if (Select-String -Path (Join-Path $Prefix "mvp\lab\agent\agent.py") -SimpleMatch "broken on purpose" -Quiet) { Fail "the broken code is still installed" }
+    if (Select-String -Path (Join-Path $Prefix "app\lab\agent\agent.py") -SimpleMatch "broken on purpose" -Quiet) { Fail "the broken code is still installed" }
     Wait-For "the agent reports in again after the rollback" {
         $m = @(Invoke-RestMethod "$Panel/machines" -Headers $Headers) | Where-Object { $_.host -eq "ci-win" }
         $m -and ([datetimeoffset]$m.last_seen).UtcDateTime -gt [datetime]::UtcNow.AddSeconds(-15)
@@ -102,7 +102,7 @@ try {
     Same-Settings "the rollback"
 
     # --- one real Windows Firewall block through the agent's own netsh commands ---
-    Push-Location (Join-Path $Prefix "mvp\lab")
+    Push-Location (Join-Path $Prefix "app\lab")
     & .\.venv\Scripts\python.exe -c "from agent.agent import Enforcer; e = Enforcer('netsh', True, set()); print(e.sync({'$TestIp'}), e.log); assert e.applied == {'$TestIp'}, e.log"
     $rc = $LASTEXITCODE
     Pop-Location
@@ -125,14 +125,14 @@ try {
 }
 
 # --- uninstall: service, code and blocks go; the key stays until -Purge ---------
-& .\deploy\uninstall-agent.ps1
+& ..\deploy\uninstall-agent.ps1
 if (Get-Service SentrAIAgent -ErrorAction SilentlyContinue) { Fail "service still installed" }
 $left = @(Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like "*-m agent run*" })
 if ($left) { Fail "the agent kept running after the service was removed: $($left.CommandLine -join '; ')" }
 if (Test-Path $Prefix) { Fail "$Prefix still there" }
 if (Get-NetFirewallRule -DisplayName "SentrAI-block-*" -ErrorAction SilentlyContinue) { Fail "block rules left behind" }
 if (-not (Test-Path (Join-Path $State "agent.json"))) { Fail "uninstall deleted the machine key without -Purge" }
-& .\deploy\uninstall-agent.ps1 -Purge
+& ..\deploy\uninstall-agent.ps1 -Purge
 if (Test-Path $State) { Fail "-Purge left $State" }
 Stop-Process -Id $core.Id -Force
 Write-Host "Windows agent installer: all checks passed"

@@ -3,7 +3,7 @@
 [Lucide](https://lucide.dev) 1.55.0 icons (ISC licence, a few derived from Feather, MIT: see [LICENSE](LICENSE)), picked
 from the [free icon resources](https://github.com/noahelhadedy/free-icon-resources) list. Each one is pasted inline into
 the page as SVG (`index.html`, `_layouts/default.html`), so the site loads no icon files and nothing from a CDN.
-The console uses the same set: `mvp/dashboard/sentrai_ui/icons/`.
+The console uses the same set: `app/dashboard/sentrai_ui/icons/`.
 
 | Icon | Where |
 |---|---|

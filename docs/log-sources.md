@@ -9,7 +9,7 @@ description: The logs SentrAI can read, what it catches in each one, and the one
 SentrAI only reads the logs you approve. The quickest way to approve the usual ones is:
 
 ```bash
-python -m collector.collector --add-system-logs   # from mvp/lab; the agent installer runs it for you
+python -m collector.collector --add-system-logs   # from app/lab; the agent installer runs it for you
 ```
 
 It looks for every log below at its usual place and approves the ones it finds. You can also

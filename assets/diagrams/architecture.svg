@@ -85,7 +85,7 @@
   <!-- ===== Row 2: agent team ===== -->
   <rect x="30" y="270" width="1340" height="320" rx="14" fill="#EEF2F8" stroke="#B7CBF3" stroke-width="1.5"/>
   <text x="50" y="296" class="h" fill="#1F4FB8">Agent team</text>
-  <text x="50" y="314" class="s">MVP: Python classes in the SentrAI core, called in turn</text>
+  <text x="50" y="314" class="s">Today: Python classes in the SentrAI core, called in turn</text>
 
   <!-- risk engine -> Warden -->
   <path d="M995,220 L995,250 L700,250 L700,316" class="flow" marker-end="url(#arrow)"/>

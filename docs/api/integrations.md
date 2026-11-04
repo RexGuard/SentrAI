@@ -7,7 +7,7 @@ description: See which extensions are installed, added and set up, add or remove
 # Extensions
 
 SentrAI's outside services are extensions: TypeSafe (the Jev classifier), Telegram, Slack,
-Cloudflare and AbuseIPDB. Each one lives in its own folder under `mvp/extensions/`, and SentrAI runs
+Cloudflare and AbuseIPDB. Each one lives in its own folder under `app/extensions/`, and SentrAI runs
 fine with none of them. These endpoints say which ones are installed, added and set up, add or remove
 one while SentrAI runs, and test one with a single harmless call. Two channels are part of SentrAI
 itself and always on: the webhook for any other system, and email. They are listed too, marked

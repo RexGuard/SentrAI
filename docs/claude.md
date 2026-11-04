@@ -76,7 +76,7 @@ From a computer that can reach the core's API (see [Where the core listens](api/
 run the command line from a copy of the code with the address and token set:
 
 ```bash
-SENTRAI_CORE_URL=http://127.0.0.1:8000 SENTRAI_API_TOKEN=... python mvp/sentrai_cli.py mcp
+SENTRAI_CORE_URL=http://127.0.0.1:8000 SENTRAI_API_TOKEN=... python app/sentrai_cli.py mcp
 ```
 
 Keep the token secret: it can change anything.

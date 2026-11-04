@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CI check of the upgrade from the CactAI names (run with sudo from mvp/, on a clean runner):
+# CI check of the upgrade from the CactAI names (run with sudo from app/, on a clean runner):
 # install the panel and an agent with the last version before the rename (cactai-* services,
 # /etc/cactai, /var/lib/cactai, the cactai user, nft table inet cactai), put a block in place,
 # then run today's install.sh once and check that everything moved to the sentrai names: the
@@ -34,7 +34,7 @@ dump() {
 trap 'rc=$?; [ "$rc" = 0 ] || dump; exit "$rc"' EXIT
 
 [ "$(id -u)" = 0 ] || fail "run with sudo"
-[ -f deploy/install.sh ] || fail "run from mvp/"
+[ -f ../deploy/install.sh ] || fail "run from app/"
 
 # --- the old version ------------------------------------------------------------------------
 [ -f "$OLD/mvp/deploy/install.sh" ] || fail "no old checkout in $OLD"
@@ -62,7 +62,7 @@ nft list table inet cactai
 echo "ok: old version installed (panel and agent)"
 
 # --- today's installer, run once by its old name (install.sh forwards to install-panel.sh) ------
-./deploy/install.sh --no-questions
+../deploy/install.sh --no-questions
 for u in sentrai-core sentrai-collector sentrai-dashboard sentrai-agent; do
     wait_for "$u is running" 60 systemctl is-active --quiet "$u"
 done
@@ -87,7 +87,7 @@ grep -q '^SENTRAI_HOME=/var/lib/sentrai$' /etc/sentrai/sentrai.env || fail "SENT
 echo "ok: services, folders, settings and account moved"
 
 # The same token and audit record; the agent is still the one machine that joined.
-NEW_TOKEN="$(cd /opt/sentrai/mvp && set -a && . /etc/sentrai/sentrai.env && set +a && \
+NEW_TOKEN="$(cd /opt/sentrai/app && set -a && . /etc/sentrai/sentrai.env && set +a && \
     runuser -u sentrai -- env HOME=/var/lib/sentrai lab/.venv/bin/python sentrai_config.py token)"
 [ "$NEW_TOKEN" = "$OLD_TOKEN" ] || fail "the API token changed"
 AUDIT_AFTER="$(api "$PANEL/audit" | python3 -c 'import json, sys; print(len(json.load(sys.stdin)))')"
@@ -109,9 +109,9 @@ DASH="$(nft list table inet sentrai_dashboard 2>&1 || true)"
 [[ "$DASH" == *"$ADMIN_IP"* ]] || fail "the dashboard rule does not allow $ADMIN_IP: $DASH"
 echo "ok: firewall blocks carried over to the sentrai names"
 
-./deploy/install.sh --no-questions >/dev/null  # a second run has nothing left to move
+../deploy/install.sh --no-questions >/dev/null  # a second run has nothing left to move
 iptables -w -D INPUT -s "$BLOCKED" -m comment --comment sentrai -j DROP
-./deploy/uninstall-agent.sh --purge
-./deploy/uninstall.sh --purge
+../deploy/uninstall-agent.sh --purge
+../deploy/uninstall.sh --purge
 ! id sentrai >/dev/null 2>&1 || fail "sentrai user still there"
 echo "Upgrade from the CactAI names: all checks passed"

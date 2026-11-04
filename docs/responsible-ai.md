@@ -49,7 +49,7 @@ it the rules and keyword fallback do the labelling.
 | --- | --- |
 | A false alarm blocks a real customer | Blocks are short and reversible, protected addresses are never blocked, and a busy-server mode raises the bar |
 | The AI explains something wrongly or makes up a detail | Sentry is told to state only facts it looked up and to say when it does not know. Its fix choice is limited to an allowlist checked by code |
-| Rules tuned on demo logs miss real attacks | Expect tuning per client. The detection test set is in `mvp/eval` |
+| Rules tuned on demo logs miss real attacks | Expect tuning per client. The detection test set is in `app/eval` |
 | An attacker uses a trusted address | A learned admin address only quiets alerts about root work. It never stops blocking |
 | Personal data in log lines reaches the AI provider | Optional AI, short excerpts, disclosed here. Masking is on the roadmap |
 | The live browser demo uses a public relay (ntfy.sh) | It only carries the scripted demo's made-up events, never real data |
@@ -59,14 +59,14 @@ it the rules and keyword fallback do the labelling.
 | What | Used for |
 | --- | --- |
 | **Claude Code** (Anthropic, Claude models) | Most of the code, tests, docs, plan edits, the deck build script and the animated videos' HTML. A person on the team reviewed and tested each change |
-| **Claude** (Anthropic) in the product | Sentry, and `mvp/eval/sentry_sim.py`, where Claude plays non-technical managers and grades Sentry's answers |
+| **Claude** (Anthropic) in the product | Sentry, and `app/eval/sentry_sim.py`, where Claude plays non-technical managers and grades Sentry's answers |
 | **TypeSafe System One** | Jev, the optional threat labeller |
 | **ElevenLabs** | AI voices. The "Erick voice" videos use a voice clone of team member Erick Sientaro, made by him with his consent. "Stand-in" videos use a stock AI voice |
 | **HyperFrames + GSAP** | Animated explainer, teaser and story videos (all AI-assisted, made by code, no real footage) |
 | **Higgsfield** | *Only if used:* AI-generated intro or B-roll clips in the demo video |
 
 **Prompts.** The product's prompts are in the repository: Sentry's chat and setup prompts in
-`mvp/core/app/chat.py` (guide: [Sentry](sentry.html)) and the simulation prompts in `mvp/eval/sentry_sim.py`.
+`app/core/app/chat.py` (guide: [Sentry](sentry.html)) and the simulation prompts in `app/eval/sentry_sim.py`.
 
 **Labelling.** Every video and voice made with AI is labelled "AI-generated" where it is shown or submitted.
 Screens of the panel are real screenshots of the prototype with made-up demo data.
@@ -81,4 +81,4 @@ Screens of the panel are real screenshots of the prototype with made-up demo dat
 - **Back end:** FastAPI, Streamlit and other Python packages listed in each part's `requirements.txt`.
 - **Demo data:** made up. Attacker addresses come from documentation-only ranges such as 203.0.113.x. No real
   people's data is used.
-- **Sources** for the facts we quote are in [mvp/research/SOURCES.md](https://github.com/RexGuard/SentrAI/blob/main/mvp/research/SOURCES.md).
+- **Sources** for the facts we quote are in [app/research/SOURCES.md](https://github.com/RexGuard/SentrAI/blob/main/app/research/SOURCES.md).

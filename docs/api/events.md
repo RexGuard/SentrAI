@@ -63,7 +63,7 @@ Any other field is kept with the event. Two of them have a meaning:
   `journald`, `winevent`, `suricata`, `mysql` and so on), its `kind`, and the fields of that format,
   such as `method`, `path` and `status` for a web request. The rules read it first and fall back to
   `raw`. Every format and field is listed in the
-  [contract](https://github.com/RexGuard/SentrAI/blob/main/mvp/CONTRACT.md#parsed-fields-optional-parsed-object-on-an-event).
+  [contract](https://github.com/RexGuard/SentrAI/blob/main/app/CONTRACT.md#parsed-fields-optional-parsed-object-on-an-event).
 - `chain` is the line chain, `{"stream", "seq", "prev", "hash"}`, which lets the core notice a
   missing or altered line. `seq` counts up from 1 for each `stream` (one per collector), `prev` is
   the `hash` of the event before it (64 zeros for the first), and
@@ -325,7 +325,7 @@ as `log_source_added`, and the collector starts reading it within a few seconds.
 
 ## Answer Scout's proposals
 
-Scout, SentrAI's log finder (`python -m scout find` in `mvp/lab`), looks through the folders for log
+Scout, SentrAI's log finder (`python -m scout find` in `app/lab`), looks through the folders for log
 files. When no technician is at the keyboard, it decides on its own and leaves what it found waiting
 for a person, in `pending.json` beside the list (`SENTRAI_SCOUT_PENDING` moves it).
 
