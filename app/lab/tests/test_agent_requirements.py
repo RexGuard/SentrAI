@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 
 LAB = Path(__file__).resolve().parents[1]
-DEPLOY = LAB.parent / "deploy"
+DEPLOY = LAB.parents[1] / "deploy"  # the repo's deploy/, next to app/
 
 
 def _names(path: Path) -> set[str]:

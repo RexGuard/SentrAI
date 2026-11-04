@@ -6,7 +6,7 @@ import pytest
 
 from app.rules import RulesEngine, log_wipe
 
-DEPLOY = Path(__file__).resolve().parents[2] / "deploy"
+DEPLOY = Path(__file__).resolve().parents[3] / "deploy"  # the repo's deploy/, next to app/
 SUDO = "sudo:  deploy : TTY=pts/1 ; PWD=/root ; USER=root ; COMMAND="
 T0 = 1_790_000_000.0
 
