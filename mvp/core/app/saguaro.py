@@ -58,6 +58,7 @@ log = logging.getLogger("sentrai.saguaro")
 RISK_STATUSES = ("open", "acknowledged")  # count toward raw score
 MERGE_STATUSES = ("open", "acknowledged", "contained")  # new events attach to these
 CLOSED_STATUSES = ("resolved", "rejected")
+AGENT_OWNER = "Sentry (AI)"  # the AI agent, when it answers for a machine (Machines page, sentrai machines owner)
 ROLES = ("on_duty", "team_lead", "it_manager", "cxo")  # the four people in the settings (routing.defaults)
 
 TITLES = {
@@ -297,6 +298,9 @@ class Saguaro(Agent):
         self.responders = Responders(self.blocklist_responder, self._simulated)
         self._ext_responders: dict[str, list[Responder]] = {}  # extension name -> the responders it added
         self.extensions = Host(self)  # the installed extensions; the added ones start just before _restore()
+        # Who answers for each machine (fleet.Fleet.owners, set by main.py): {"kind": "person" | "agent", ...} or None.
+        self.machine_owner: Callable[[str], dict[str, Any] | None] = lambda host: None
+        self.machine_name: Callable[[str], str] = lambda host: host  # the name people gave it (fleet.Fleet.names)
         self.root = Root(self.classifier)
         self.reservoir = Reservoir(self.classifier)
         self.spinenet = SpineNet(self.classifier)
@@ -923,6 +927,7 @@ class Saguaro(Agent):
         self._auto_close_quiet(now)
         r = self._compute(now)
         self._sla_reminders(now, r)
+        self._agent_pass(now)
         self._notify_open_incidents(now, r)
         self._wave_updates(now)
         self._band_changes(now, r)
@@ -1050,6 +1055,14 @@ class Saguaro(Agent):
     def _notify(self, now: float, kind: str, incident_id: str | None, recipients: list[str], title: str,
                 text: str, buttons: list[dict[str, str]]) -> dict[str, Any]:
         inc = self.incidents.get(incident_id) if incident_id else None
+        if AGENT_OWNER in recipients:
+            # The AI agent reads its alerts in the panel (_agent_pass); a message to it would only reach the
+            # fallback address, which is the very owner it answers for.
+            recipients = [r for r in recipients if r != AGENT_OWNER]
+            if not recipients:
+                if inc is not None:
+                    self._timeline(inc, now, "notified", f"{kind.replace('_', ' ')} kept for {AGENT_OWNER}, not sent")
+                return {"id": None, "incident": incident_id, "kind": kind, "kept_for": AGENT_OWNER}
         if inc is not None and (wave := self.waves.get(inc.get("wave"))) is not None:
             # A wave member: counted into the wave's next summary instead of sent on its own.
             self.waves.fold(wave, kind)
@@ -1292,11 +1305,146 @@ class Saguaro(Agent):
 
     def _route_incident(self, inc: dict[str, Any], now: float) -> None:
         route = self.router.route(inc)
-        self._set_owner(inc, route.owner, self.router.backup_of(route.owner), f"routing: {route.rule}", now)
-        inc["route"] = route.rule
-        inc["notify"] = [c.name for c in route.notify]
+        mine = self._machine_owner_of(_host(inc), route.owner)
+        if mine is not None:  # the machine has someone responsible: they get its alerts, the rule's people still hear
+            owner, backup, rule = mine
+        else:
+            owner, backup, rule = route.owner, self.router.backup_of(route.owner), route.rule
+        self._set_owner(inc, owner, backup, f"routing: {rule}", now)
+        inc["route"] = rule
+        inc["notify"] = [c.name for c in route.notify if c.name != owner.name]
         cc = f"; also told: {', '.join(inc['notify'])}" if inc["notify"] else ""
-        self._timeline(inc, now, "assigned", f"Assigned to {inc['owner']} by rule \"{route.rule}\"{cc}")
+        self._timeline(inc, now, "assigned", f"Assigned to {inc['owner']} by rule \"{rule}\"{cc}")
+
+    # ------------------------------------------------------- machine owners
+    def _machine_owner_of(self, host: str, fallback: routing.Contact | None = None
+                          ) -> tuple[routing.Contact, routing.Contact | None, str] | None:
+        """(owner, backup, rule label) for a machine someone answers for, or None. A person must still be in Routing;
+        the AI agent's backup is the person it hands decisions to (its own pick, else the rule's owner)."""
+        try:
+            o = self.machine_owner(host) if host else None
+        except Exception:  # noqa: BLE001 - the fleet file is read elsewhere; never break routing over it
+            o = None
+        if not o:
+            return None
+        if o.get("kind") == "person":
+            who = self.router.contact(o.get("contact"))
+            if who is None:
+                return None
+            return who, self.router.backup_of(who), "Machine owner"
+        if o.get("kind") == "agent":
+            backup = self.router.contact(o.get("backup")) or fallback or next(iter(self.router.contacts.values()))
+            return routing.Contact(id="", name=AGENT_OWNER, role="agent"), backup, "Machine owner (AI agent)"
+        return None
+
+    def adopt_machine(self, host: str, by: str) -> dict[str, Any]:
+        """A machine's owner changed: its incidents that are still open go to the new owner (or back to the routing
+        rules when nobody is set). The AI agent then looks at them straight away."""
+        with self.lock:
+            now = self.clock.now()
+            moved = 0
+            for inc in self.incidents.values():
+                if inc["status"] in CLOSED_STATUSES or _host(inc) != host:
+                    continue
+                route = self.router.route(inc)
+                mine = self._machine_owner_of(host, route.owner)
+                owner, backup, rule = mine if mine else (route.owner, self.router.backup_of(route.owner), route.rule)
+                if owner.name == inc.get("owner"):
+                    continue
+                old = inc.get("owner")
+                self._set_owner(inc, owner, backup, by, now)
+                inc["route"] = rule
+                moved += 1
+                self.scribe.record(self.name, "incident_assigned", {"incident": inc["id"], "from": old, "to": owner.name,
+                                                                    "operator": by, "note": "machine owner changed"})
+                self._timeline(inc, now, "assigned", f"Given to {owner.name}, who now answers for {self.machine_name(host)}"
+                                                     f" (set by {by})")
+            done = self._agent_pass(now, host)
+            self._save()
+            return {"moved": moved, "agent": done}
+
+    def _agent_pass(self, now: float, host: str | None = None) -> list[dict[str, str]]:
+        """The AI agent handles the alerts of the machines it answers for, on the owner's behalf. It never makes
+        SentrAI less careful: it does not approve, undo or reject anything, and it leaves open incidents unacknowledged
+        so automatic containment still applies. It
+          * acknowledges an incident whose containment is already in force (nothing is left for the owner),
+          * hands one that needs a person's decision (critical, uncertain, or a sign-in to confirm) to its backup,
+          * otherwise keeps it and notes so once; unanswered, the normal reminders still escalate to the backup."""
+        done: list[dict[str, str]] = []
+        for inc in list(self.incidents.values()):
+            if inc["status"] in CLOSED_STATUSES or inc.get("owner") != AGENT_OWNER:
+                continue
+            if host is not None and _host(inc) != host:
+                continue
+            where = self.machine_name(_host(inc))
+            if inc["status"] == "contained" and not inc["acked"]:
+                self._set_acked(inc, AGENT_OWNER, "ai_owner", now)
+                self._timeline(inc, now, "agent", f"{AGENT_OWNER} handled this for {where}'s owner: the containment is "
+                                                  f"in place, so nothing is left for them to do.")
+                self.scribe.record(self.name, "agent_handled", {"incident": inc["id"], "host": _host(inc), "step": "acknowledged"})
+                done.append({"incident": inc["id"], "step": "acknowledged"})
+            elif (inc["severity"] == "critical" or inc["needs_review"] or inc["category"] == ADMIN_CATEGORY) \
+                    and inc["status"] == "open":
+                backup = self.router.contact(inc.get("backup_id"))
+                if backup is None:
+                    continue
+                why = ("a sign-in needs confirming" if inc["category"] == ADMIN_CATEGORY else
+                       "SentrAI is not sure what this is" if inc["needs_review"] else "it is critical")
+                self._set_owner(inc, backup, self.router.backup_of(backup), AGENT_OWNER, now)
+                self.scribe.record(self.name, "agent_handled", {"incident": inc["id"], "host": _host(inc),
+                                                                "step": "handed_over", "to": backup.name, "why": why})
+                self._timeline(inc, now, "assigned", f"{AGENT_OWNER} handed this to {backup.name}: {why}, so a person decides")
+                self._notify(now, "assigned", inc["id"], [backup.name], f"{inc['id']} needs you",
+                             f"{AGENT_OWNER} looks after {where} and handed this to you because {why}.\n"
+                             f"{self._headline(inc, self._last_risk)}\nRecommended: {inc['recommended_action']}."
+                             f"\n{self._owner_line(inc)}", self._buttons(inc))
+                done.append({"incident": inc["id"], "step": "handed_over", "to": backup.name})
+            elif inc.get("_agent_noted") != inc["status"]:
+                inc["_agent_noted"] = inc["status"]
+                self._timeline(inc, now, "agent", f"{AGENT_OWNER} is watching this for {where}'s owner. Recommended: "
+                                                  f"{inc['recommended_action']}. If it stays unanswered it goes to "
+                                                  f"{inc.get('backup') or 'the backup'}.")
+                done.append({"incident": inc["id"], "step": "watching"})
+        return done
+
+    def ping_machine_owner(self, host: str, by: str) -> dict[str, Any]:
+        """The Machines list's bell: tell whoever answers for this machine to look at it. A person gets a message
+        with its open alerts; the AI agent goes through them now. ValueError when nobody answers for it."""
+        with self.lock:
+            now = self.clock.now()
+            route_owner = next(iter(self.router.contacts.values()))
+            mine = self._machine_owner_of(host, route_owner)
+            if mine is None:
+                raise ValueError(f"Nobody is responsible for {self.machine_name(host)} yet. Set an owner first.")
+            owner, backup, _ = mine
+            name = self.machine_name(host)
+            still = [i for i in self.incidents.values() if _host(i) == host and i["status"] not in CLOSED_STATUSES]
+            self.scribe.record(self.name, "machine_owner_pinged", {"host": host, "owner": owner.name, "operator": by,
+                                                                   "open": [i["id"] for i in still]})
+            if owner.name == AGENT_OWNER:
+                done = self._agent_pass(now, host)
+                self._save()
+                steps = {"acknowledged": 0, "handed_over": 0, "watching": 0}
+                for d in done:
+                    steps[d["step"]] += 1
+                words = [f"{n} {w}" for w, n in (("acknowledged (contained already)", steps["acknowledged"]),
+                                                  (f"handed to {backup.name if backup else 'its backup'}", steps["handed_over"]),
+                                                  ("being watched", steps["watching"])) if n]
+                msg = (f"{AGENT_OWNER} went through {name}'s {len(still)} open alert{'s' if len(still) != 1 else ''}: "
+                       + ", ".join(words) + "." if words else
+                       f"{AGENT_OWNER} looked at {name}: " + ("nothing new since its last look." if still else "no open alerts."))
+                return {"owner": owner.name, "kind": "agent", "open": len(still), "agent": done, "message": msg}
+            lines = [f"- {i['id']} · {TITLES.get(i['category'], i['category'])} · {i['severity']} · {i['status']}"
+                     for i in sorted(still, key=lambda i: str(i.get("opened_at") or ""), reverse=True)[:10]]
+            text = (f"{by} asks you to look at {name}, which you are responsible for. "
+                    + (f"It has {len(still)} open alert{'s' if len(still) != 1 else ''}:\n" + "\n".join(lines)
+                       if still else "It has no open alerts right now."))
+            n = self._notify(now, "machine_ping", None, [owner.name], f"Please look at {name}", text, [])
+            self._save()
+            reach = [x for x in (n.get("deliver_to") or []) if x.get("email") or x.get("telegram") or x.get("chat_id")]
+            how = "" if reach else " They have no email or Telegram in Routing yet, so it waits in the panel's notifications."
+            return {"owner": owner.name, "kind": "person", "open": len(still), "notification": n.get("id"),
+                    "message": f"{owner.name} was asked to look at {name}.{how}"}
 
     def _escalate(self, inc: dict[str, Any], now: float, r: dict[str, Any], n: int, hours: float) -> bool:
         """Hand an unanswered incident to the owner's backup. False when it is not time yet or nobody is left."""

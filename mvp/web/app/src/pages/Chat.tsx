@@ -10,6 +10,7 @@ import { SetupBanner, SetupConversation, type Setup } from './SetupChat'
 export type Suggestion = {
   kind?: string; incident?: string; decision?: string; label?: string; reason?: string; file_id?: string; finding_id?: string
   incidents?: string[] // kind 'bulk': the same decision on each of these
+  host?: string; owner_kind?: string; contact?: string; backup?: string // kinds 'machine_owner' and 'ping_owner'
 }
 export type Message = {
   id: string | number; role: string; text: string; ts?: string; operator?: string; incident?: string; machine?: string; source?: string
@@ -24,6 +25,7 @@ export const INCIDENT_FIELDS = 'status,category,acked,actions,host'
 
 const STARTERS = ['What is happening right now?', 'Which incident should I deal with first?', 'Why did you block the last IP address?']
 const FOLLOW_UPS = [...STARTERS, 'Is anything waiting for my approval?', 'What changed in the last hour?', 'Is any machine offline?']
+const NOT_INCIDENT = ['watch_log', 'quarantine_file', 'backup_now', 'machine_owner', 'ping_owner']
 const NEEDS: Record<string, 'decide' | 'ack' | 'mine' | 'contain'> = { approve: 'decide', reject: 'decide', ack: 'ack', mine: 'mine', rollback: 'contain', keep: 'contain', permanent: 'contain', make_permanent: 'contain' }
 
 /** The computers Sentry can be kept to (GET /ui/machines): only the ones with a host, not "This computer" alone. */
@@ -50,7 +52,7 @@ export function suggestionOpen(s: Suggestion, byId: Record<string, Incident>): [
     const left = (s.incidents ?? []).filter((id) => canDo(byId[id], s.decision ?? '')[0]).length
     return left ? [true, ''] : [false, 'nothing left to do: all of them are already handled']
   }
-  if (s.kind && ['watch_log', 'quarantine_file', 'backup_now'].includes(s.kind)) return [true, '']
+  if (s.kind && NOT_INCIDENT.includes(s.kind)) return [true, '']
   return canDo(byId[String(s.incident)], s.decision ?? '')
 }
 
@@ -77,7 +79,8 @@ export function SuggestionCard({ s, byId, onDone }: { s: Suggestion; byId: Recor
   const [err, setErr] = useState('')
   const decision = s.decision ?? ''
   const inc = byId[String(s.incident)]
-  const isIncident = !s.kind || !['watch_log', 'quarantine_file', 'backup_now'].includes(s.kind)
+  const isIncident = !s.kind || !NOT_INCIDENT.includes(s.kind)
+  const needs = s.kind === 'machine_owner' ? 'configure' : 'act' // setting who is responsible is an Owner/Admin change
   const [ok, whyNot] = suggestionOpen(s, byId)
   const todo = s.kind === 'bulk' ? (s.incidents ?? []).filter((id) => canDo(byId[id], decision)[0]) : []
   if (!ok) return <p className="text-sm text-muted"><Lightbulb size={14} className="mr-1 inline" aria-hidden />Suggested: {label} · {whyNot}</p>
@@ -95,6 +98,13 @@ export function SuggestionCard({ s, byId, onDone }: { s: Suggestion; byId: Recor
       if (s.kind === 'watch_log') await api('/log-sources', { body: { file_id: s.file_id, operator: op } })
       else if (s.kind === 'quarantine_file') await api(`/threats/${encodeURIComponent(s.finding_id ?? '')}/quarantine`, { body: { operator: op, reason: s.reason ?? '' } })
       else if (s.kind === 'backup_now') await api('/backups', { body: { operator: op } })
+      else if (s.kind === 'machine_owner') {
+        const out = await api<{ message: string }>(`/ui/machines/${encodeURIComponent(s.host ?? '')}/owner`, { body: { kind: s.owner_kind ?? '', contact: s.contact ?? '', backup: s.backup ?? '' } })
+        onDone(out.message); setBusy(false); return
+      } else if (s.kind === 'ping_owner') {
+        const out = await api<{ message: string }>(`/ui/machines/${encodeURIComponent(s.host ?? '')}/ping`, { body: {} })
+        onDone(out.message); setBusy(false); return
+      }
       else await decide(decision, s.incident ?? '', inc, op, why.trim())
       onDone(`Done: ${label}`)
     } catch (e) { setErr(e instanceof ApiError ? e.message : 'That did not go through.') }
@@ -109,7 +119,7 @@ export function SuggestionCard({ s, byId, onDone }: { s: Suggestion; byId: Recor
             <input value={why} onChange={(e) => setWhy(e.target.value)} className="mt-1 block w-full rounded-md border border-line bg-surface px-3 py-1.5 text-ink" /></label>
         : s.reason && <p className="text-sm text-soft">{s.reason}</p>}
       {err && <p role="alert" className="text-sm text-bad">{err}</p>}
-      <button className={decision === 'reject' ? btn : btnPrimary} disabled={busy || !can('act')} title={can('act') ? undefined : 'Your role can read everything but change nothing.'}>
+      <button className={decision === 'reject' ? btn : btnPrimary} disabled={busy || !can(needs)} title={can(needs) ? undefined : 'Your role can read everything but change nothing.'}>
         Confirm: {label}
       </button>
     </form>

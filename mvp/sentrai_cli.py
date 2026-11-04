@@ -14,6 +14,7 @@ On the panel (installed as /usr/local/bin/sentrai, runs as the service account):
     sudo sentrai routing export > routing.json            sudo sentrai routing import - < routing.json
     sudo sentrai integrations list | on NAME | off NAME | test NAME | reload
     sudo sentrai machines list | rename HOST NAME | delete HOST | restore HOST | join-code [--name N] | agents | revoke AGENT_ID
+    sudo sentrai machines owner HOST PERSON | owner HOST --agent [--backup PERSON] | owner HOST --clear | ping HOST
     sudo sentrai jobs list [--host H] | scan HOST | backup HOST | deps HOST | packages HOST
                       | update HOST FINDING | undo HOST UPDATE | cancel JOB
     sudo sentrai deps show | scan
@@ -281,6 +282,14 @@ def cmd_integrations(call: Call, a: argparse.Namespace) -> Any:
     return str(out)
 
 
+def owner_cell(o: Any) -> str:
+    if not isinstance(o, dict):
+        return "-"
+    if o.get("kind") == "agent":
+        return "AI agent" + (f" (backup {o.get('backup_name') or o.get('backup')})" if o.get("backup") else "")
+    return str(o.get("name") or o.get("contact") or "-")
+
+
 def cmd_machines(call: Call, a: argparse.Namespace) -> Any:
     op = operator_name()
     if a.action == "list":
@@ -289,9 +298,10 @@ def cmd_machines(call: Call, a: argparse.Namespace) -> Any:
             return m
         words = m.get("band_words", {})
         rows = [[r.get("name"), r.get("host"), "online" if r.get("online") else ("waiting" if r.get("waiting") else "offline"),
-                 "off" if r.get("monitor_only") else "on", f"{r.get('index', 0):.0f} {words.get(r.get('band'), '')}",
-                 r.get("open"), r.get("blocked"), r.get("last_seen") or ""] for r in m.get("machines", [])]
-        out = table(rows, ["Name", "Host", "State", "Protection", "Risk", "Open", "Blocks", "Last seen"])
+                 "off" if r.get("monitor_only") else "on", f"{r.get('index') or 0:.0f} {words.get(r.get('band'), '')}",
+                 r.get("open"), r.get("blocked"), owner_cell(r.get("owner")), r.get("last_seen") or ""]
+                for r in m.get("machines", [])]
+        out = table(rows, ["Name", "Host", "State", "Protection", "Risk", "Open", "Blocks", "Owner", "Last seen"])
         gone = m.get("removed") or []
         if gone:
             out += "\n\nDeleted (hidden): " + ", ".join(str(g.get("host")) for g in gone) \
@@ -308,6 +318,16 @@ def cmd_machines(call: Call, a: argparse.Namespace) -> Any:
         out = call("POST", f"/ui/machines/{a.host}/delete", {"operator": op})
     elif a.action == "restore":
         out = call("POST", f"/ui/machines/{a.host}/restore", {"operator": op})
+    elif a.action == "owner":
+        if a.clear:
+            body = {"kind": ""}
+        elif a.agent:
+            body = {"kind": "agent", "backup": a.backup or ""}
+        else:
+            body = {"kind": "person", "contact": a.name}
+        out = call("POST", f"/ui/machines/{a.host}/owner", {**body, "operator": op})
+    elif a.action == "ping":
+        out = call("POST", f"/ui/machines/{a.host}/ping", {"operator": op})
     elif a.action == "revoke":
         out = call("POST", f"/fleet/agents/{a.host}/revoke", {"operator": op})
         return out if a.json else f"Key revoked for {out.get('host')}."
@@ -581,9 +601,13 @@ def parser() -> argparse.ArgumentParser:
     i.add_argument("action", choices=["list", "on", "off", "test", "reload"])
     i.add_argument("name", nargs="?")
     m = add("machines", cmd_machines, "joined computers")
-    m.add_argument("action", choices=["list", "agents", "rename", "delete", "restore", "revoke", "join-code"])
+    m.add_argument("action", choices=["list", "agents", "rename", "delete", "restore", "revoke", "join-code", "owner", "ping"])
     m.add_argument("host", nargs="?", help="host name (revoke: agent id)")
-    m.add_argument("name", nargs="?", help="rename: the new name (blank goes back to the host name)")
+    m.add_argument("name", nargs="?", help="rename: the new name (blank goes back to the host name) · "
+                                           "owner: the person responsible (a Routing contact id or name)")
+    m.add_argument("--agent", action="store_true", help="owner: the AI agent answers for it and handles its alerts")
+    m.add_argument("--backup", help="owner --agent: the person it hands decisions to (a Routing contact)")
+    m.add_argument("--clear", action="store_true", help="owner: nobody; the Routing rules decide again")
     m.add_argument("--name", dest="name_opt", help="join-code: fix the new machine's name")
     m.add_argument("--panel-url", help="join-code: the address new machines use (default SENTRAI_PANEL_URL)")
     j = add("jobs", cmd_jobs, "ask a machine to scan, back up or update packages")
@@ -648,8 +672,10 @@ def normalise(a: argparse.Namespace) -> argparse.Namespace:
     elif a.cmd == "machines":
         if a.action == "join-code":
             a.name = a.name_opt or a.host
-        elif a.action in ("rename", "delete", "restore", "revoke") and not a.host:
+        elif a.action in ("rename", "delete", "restore", "revoke", "owner", "ping") and not a.host:
             raise CliError(f"which machine? sentrai machines {a.action} HOST")
+        elif a.action == "owner" and not (a.clear or a.agent or a.name):
+            raise CliError("who? sentrai machines owner HOST PERSON, or --agent [--backup PERSON], or --clear")
     elif a.cmd == "jobs":
         if a.action == "list":
             a.host = a.host_opt or a.host

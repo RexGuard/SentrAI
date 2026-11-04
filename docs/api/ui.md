@@ -74,6 +74,34 @@ Its old agent key stays revoked, so to manage it again join it with a new code. 
 
 **Returns** `{"host": "...", "restored_by": "...", "was_removed_at": "...", "message": "..."}`.
 
+### `POST /ui/machines/{host}/owner`
+
+Who is responsible for a machine (the Machines list's three-dot menu, "Who is responsible…"). Owner and Admin only
+(`403` for an Auditor). Send `{"kind": "person", "contact": "<routing contact id or name>"}` for someone in Routing,
+`{"kind": "agent", "backup": "<contact>"}` for the AI agent (Sentry) with an optional backup person, or `{"kind": ""}`
+to clear it. An unknown person is a `400`. Kept in `fleet.json`; recorded as `machine_owner_set`.
+
+From then on the machine's new incidents go to that owner (rule `Machine owner`; the matching Routing rule's people are
+still told), and its open ones move over. The AI agent handles alerts for the owner, on headless servers nobody
+watches: it acknowledges incidents whose containment is already in force, hands critical, uncertain and
+"was this you" ones to its backup, and keeps the rest (unanswered, the usual reminders escalate them to the backup).
+It never approves, rejects or undoes anything and never acknowledges an open incident, so automatic containment still
+applies. Nothing is sent to the agent itself. CLI: `sentrai machines owner HOST PERSON`, `--agent [--backup PERSON]`,
+`--clear`. In the chat, Sentry can offer a button for it.
+
+**Returns** `{"host": "...", "owner": {"kind", "contact", "backup", "by", "at"} | null, "moved": 0, "agent": [...], "message": "..."}`.
+`GET /ui/machines` shows each row's `owner` (`{"kind", "name", "contact", "backup", "backup_name"}` or `null`), plus
+`contacts` (Routing's people) and `agent_name`.
+
+### `POST /ui/machines/{host}/ping`
+
+The Machines list's bell: asks whoever is responsible to look at the machine now. A person gets a `machine_ping`
+notification listing its open alerts (by email or Telegram when Routing has them); the AI agent goes through its
+alerts straight away and the message says what it did. `409` when nobody is responsible yet or the machine was
+deleted. Recorded as `machine_owner_pinged`. CLI: `sentrai machines ping HOST`.
+
+**Returns** `{"host": "...", "owner": "...", "kind": "person" | "agent", "open": 2, "message": "..."}`.
+
 ### `POST /ui/machines/{host}/rename`
 
 The Machines list's pencil: the name people see for a machine. Owner and Admin only (`403` for an Auditor). Send

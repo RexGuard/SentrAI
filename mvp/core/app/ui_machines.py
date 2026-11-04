@@ -12,6 +12,7 @@ from typing import Any
 from fastapi import Body, FastAPI, HTTPException, Request
 
 from . import fleet
+from .saguaro import AGENT_OWNER
 from .ui_approvals import parse_ts, span_label
 
 AGENT_STALE_S = 60.0  # an agent that has not called in for this long shows as offline
@@ -44,10 +45,24 @@ def hardware_line(hw: Any) -> dict[str, float | None]:
             "disk": max(disks) if disks else None}
 
 
+def owner_row(o: dict | None, contacts: dict[str, str]) -> dict | None:
+    """Who answers for a machine, as the list shows it: {"kind", "name", "contact", "backup", "backup_name"}."""
+    if not o:
+        return None
+    if o.get("kind") == "agent":
+        return {"kind": "agent", "name": AGENT_OWNER, "contact": "", "backup": o.get("backup") or "",
+                "backup_name": contacts.get(o.get("backup") or "", "")}
+    cid = str(o.get("contact") or "")
+    return {"kind": "person", "name": contacts.get(cid, cid), "contact": cid, "backup": "", "backup_name": "",
+            **({} if cid in contacts else {"missing": True})}
+
+
 def build(found: list[dict], agents: list[dict], risk: dict, panel: bool, name: str, now: datetime,
-          names: dict[str, str] | None = None) -> list[dict]:
-    """The machine list, worst first. `names` are the names people gave machines (Rename); the host stays the id."""
-    names = names or {}
+          names: dict[str, str] | None = None, owners: dict[str, dict] | None = None,
+          contacts: dict[str, str] | None = None) -> list[dict]:
+    """The machine list, worst first. `names` are the names people gave machines (Rename); the host stays the id.
+    `owners` (fleet.Fleet.owners) say who answers for each machine; `contacts` are Routing's {id: name}."""
+    names, owners, contacts = names or {}, owners or {}, contacts or {}
     threshold = float(risk.get("threshold") or 80)
     if not panel:
         idx = risk.get("risk_index")
@@ -55,7 +70,7 @@ def build(found: list[dict], agents: list[dict], risk: dict, panel: bool, name: 
                  "index": None if idx is None else max(0.0, min(100.0, float(idx))),
                  "band": risk.get("band") or band_for(idx), "threshold": threshold,
                  "monitor_only": bool(risk.get("monitor_only")), "open": 0, "contained": 0, "blocked": 0,
-                 "last_seen": "", "services": [], "hardware": hardware_line(None), "sessions": None}]
+                 "last_seen": "", "services": [], "hardware": hardware_line(None), "sessions": None, "owner": None}]
     live = {str(a.get("host")): a for a in agents if isinstance(a, dict) and not a.get("revoked_at")}
     rows, seen = [], set()
     for m in found:
@@ -80,13 +95,14 @@ def build(found: list[dict], agents: list[dict], risk: dict, panel: bool, name: 
             "services": [str(x.get("name")) + (f" :{x['port']}" if x.get("port") else "")
                          for x in m.get("services") or [] if isinstance(x, dict) and x.get("name")][:4],
             "hardware": hardware_line(m.get("hardware")) if online else hardware_line(None),
-            "sessions": int(m["sessions"]) if isinstance(m.get("sessions"), (int, float)) else None})
+            "sessions": int(m["sessions"]) if isinstance(m.get("sessions"), (int, float)) else None,
+            "owner": owner_row(owners.get(host), contacts)})
     for host, agent in live.items():
         if host not in seen:
             rows.append({"name": names.get(host, host), "host": host, "place": "Agent", "online": False, "waiting": True, "index": None,
                          "band": "unknown", "threshold": threshold, "monitor_only": False, "open": 0, "contained": 0,
                          "blocked": 0, "last_seen": "never", "services": [], "hardware": hardware_line(None),
-                         "sessions": None})
+                         "sessions": None, "owner": owner_row(owners.get(host), contacts)})
     rows.sort(key=lambda r: (-(r["index"] or 0), r["name"]))
     return rows
 
@@ -129,7 +145,9 @@ def install(app: FastAPI, core: Any, machines: fleet.Fleet, health: Any) -> None
         found = [{**m, "hardware": health.latest(m["host"])} for m in core.machines()
                  if not still_removed(gone.get(m["host"]))] if panel else []
         agents = machines.agents()
-        rows = build(found, agents, risk, panel, "This computer", now, machines.names())  # not the core agent's name: people read it
+        contacts = {c.id: c.name for c in core.router.contacts.values()}
+        rows = build(found, agents, risk, panel, "This computer", now, machines.names(),  # not the core agent's name: people read it
+                     machines.owners(), contacts)
         online = sum(1 for r in rows if r["online"])
         return {
             "panel": panel, "machines": rows, "joined": agent_rows(agents) if panel else [],
@@ -137,6 +155,7 @@ def install(app: FastAPI, core: Any, machines: fleet.Fleet, health: Any) -> None
                       "need_a_look": sum(1 for r in rows if r["open"] or r["band"] in ("red", "critical")),
                       "blocks": sum(r["blocked"] for r in rows)},
             "panel_info": fleet.panel_info(), "band_words": BAND_WORD,
+            "contacts": [{"id": cid, "name": n} for cid, n in contacts.items()], "agent_name": AGENT_OWNER,
             "removed": [{"host": h, "at": v.get("at"), "by": v.get("by")} for h, v in sorted(gone.items())] if panel else [],
         }
 
