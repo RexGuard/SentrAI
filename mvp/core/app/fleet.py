@@ -85,6 +85,9 @@ def panel_info() -> dict[str, str]:
             "pin": cert_pin(os.environ.get("SENTRAI_PANEL_CERT", "").strip())}
 
 
+OWNER_KINDS = ("person", "agent")  # who answers for a machine: a person from Routing, or the AI agent (Sentry)
+
+
 class Fleet:
     def __init__(self, path: Path, clock=time.time) -> None:
         self.path = path
@@ -95,7 +98,8 @@ class Fleet:
         try:
             loaded = json.loads(path.read_text(encoding="utf-8"))
             self._data = {"codes": dict(loaded.get("codes") or {}), "agents": dict(loaded.get("agents") or {}),
-                          "removed": dict(loaded.get("removed") or {}), "names": dict(loaded.get("names") or {})}
+                          "removed": dict(loaded.get("removed") or {}), "names": dict(loaded.get("names") or {}),
+                          "owners": dict(loaded.get("owners") or {})}
         except (OSError, ValueError):
             pass
 
@@ -226,6 +230,28 @@ class Fleet:
     def names(self) -> dict[str, str]:
         """{host: the name people gave it} for the machines that were renamed."""
         return {h: str(v.get("name")) for h, v in (self._data.get("names") or {}).items() if isinstance(v, dict) and v.get("name")}
+
+    def set_owner(self, host: str, kind: str, contact: str, backup: str, by: str) -> dict[str, Any]:
+        """Who answers for a machine: a person (a routing contact id) or the AI agent, with a person as its backup.
+        Blank kind clears it. The ids are checked against the routing contacts by the caller."""
+        kind = str(kind or "").strip().lower()
+        if kind not in ("", *OWNER_KINDS):
+            raise FleetError("The owner is a person or the AI agent.")
+        if kind == "person" and not contact:
+            raise FleetError("Say which person is responsible.")
+        with self.lock:
+            owners = self._data.setdefault("owners", {})
+            if kind:
+                owners[host] = {"kind": kind, "contact": contact if kind == "person" else "",
+                                "backup": "" if kind == "person" else (backup or ""), "by": by, "at": _iso(self.clock())}
+            else:
+                owners.pop(host, None)
+            self._save()
+            return dict(owners.get(host) or {})
+
+    def owners(self) -> dict[str, dict[str, Any]]:
+        """{host: {"kind": "person" | "agent", "contact": id, "backup": id, "by", "at"}} for machines with an owner."""
+        return {h: dict(v) for h, v in (self._data.get("owners") or {}).items() if isinstance(v, dict) and v.get("kind")}
 
     def offline_report(self, agent: dict[str, Any], report: dict[str, Any]) -> dict[str, Any]:
         """An agent is back after the panel was out of reach: keep a short summary of what it did alone."""

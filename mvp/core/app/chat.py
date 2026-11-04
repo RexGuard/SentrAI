@@ -25,7 +25,7 @@ from collections import Counter
 from typing import Any, Callable
 
 from .config import Settings  # noqa: F401  (puts mvp/ on sys.path, for sentrai_llm)
-from .saguaro import Saguaro
+from .saguaro import AGENT_OWNER, Saguaro
 from .summary import PLAIN_ACTIONS, plain_names, plain_title
 from .ui_approvals import handled
 
@@ -270,6 +270,11 @@ call suggest_bulk_action once with all of them instead of one button each. Overd
 with nobody having looked yet; acknowledging ("ack") clears that. Only offer decisions that are still possible: \
 an incident that is resolved or already acknowledged needs no button.
 - When the operator has one computer selected, talk only about that computer and its incidents (get_machine).
+- Each computer can have someone responsible for it (get_machine shows "responsible"): a person, who gets its \
+alerts, or the AI agent, which handles its alerts for the owner (it acknowledges ones already contained and \
+hands anything that needs a decision to its backup person). When they ask who looks after a computer, to \
+change that, or to have the AI agent look after a server nobody watches, call suggest_machine_owner. To have the \
+responsible one look at it now, call suggest_ping_owner.
 - A message starting "My fix for <incident>:" is their own idea for that incident. Look the incident up, \
 say in two or three sentences whether the idea is safe and enough, what it misses, and call suggest_action with \
 the decision closest to it (or a better one, saying why). Steps SentrAI cannot do, such as a password reset, \
@@ -421,6 +426,22 @@ TOOLS: list[dict[str, Any]] = [
          "label": {"type": "string", "description": "Short button text, e.g. 'Acknowledge 4 overdue risks'."},
          "reason": {"type": "string", "description": "One sentence; prefilled as the operator's justification."}},
          "required": ["incidents", "decision", "label", "reason"], "additionalProperties": False}},
+    {"name": "suggest_machine_owner", "description": "Offer the operator a button that sets who is responsible for "
+         "one computer: a person from Routing (they get its alerts), or the AI agent, which then handles that "
+         "computer's alerts on the owner's behalf and hands anything needing a decision to a backup person. Best for "
+         "servers nobody watches. It does nothing until the operator presses it.",
+     "input_schema": {"type": "object", "properties": {
+         "machine": {"type": "string"},
+         "kind": {"type": "string", "enum": ["person", "agent", "nobody"]},
+         "person": {"type": "string", "description": "kind person: who (a name from people_in_routing). kind agent: "
+                                                     "the backup person it hands decisions to (optional)."},
+         "reason": {"type": "string"}},
+         "required": ["machine", "kind", "reason"], "additionalProperties": False}},
+    {"name": "suggest_ping_owner", "description": "Offer the operator a button that asks whoever is responsible for "
+         "one computer to look at it now (a message to the person, or the AI agent goes through its alerts). Only "
+         "when get_machine shows someone responsible. It does nothing until the operator presses it.",
+     "input_schema": {"type": "object", "properties": {"machine": {"type": "string"}, "reason": {"type": "string"}},
+                      "required": ["machine", "reason"], "additionalProperties": False}},
     {"name": "suggest_action", "description": "Offer the operator a button for a decision on an incident. "
                                               "It does nothing until the operator presses it.",
      "input_schema": {"type": "object", "properties": {
@@ -466,6 +487,7 @@ class OperatorChat:
         self.core, self.provider, self.discovery, self.threats = core, provider, discovery, threats
         self.backups = backups
         self.names: Callable[[], dict[str, str]] = dict  # host -> the name people gave it (fleet.Fleet.names)
+        self.owners: Callable[[], dict[str, dict[str, Any]]] = dict  # host -> who answers for it (fleet.Fleet.owners)
         self.memory: Any = None  # chat_memory.Memory, set by chat_memory.install
         self.ideas: Any = None  # feature_ideas.Ideas, set by feature_ideas.install
         self.off_reason: str | None = None  # why there is no model (set by main.py and /ai/reload)
@@ -827,6 +849,41 @@ class OperatorChat:
                                 "reason": str(a.get("reason") or "").strip()[:300]})
             return (f"One button shown for {len(ok)} incident(s). Nothing happens unless they press it."
                     + (f" Left out, not possible: {'; '.join(skipped[:10])}." if skipped else ""))
+        if name == "suggest_machine_owner":
+            host = self._host_of(str(a.get("machine") or ""))
+            shown = self.names().get(host) or host
+            kind = str(a.get("kind") or "").strip()
+            said = str(a.get("person") or "").strip()
+            who = self.core.router.contact(said) if said else None
+            if said and who is None:
+                raise ValueError(f"{said!r} is not in Routing; people there: "
+                                 + ", ".join(c.name for c in self.core.router.contacts.values()))
+            if kind == "person":
+                if who is None:
+                    raise ValueError("say which person (a name from people_in_routing)")
+                s = {"kind": "machine_owner", "host": host, "owner_kind": "person", "contact": who.id,
+                     "label": f"Make {who.name} responsible for {shown}"}
+            elif kind == "agent":
+                s = {"kind": "machine_owner", "host": host, "owner_kind": "agent", "backup": who.id if who else "",
+                     "label": f"Let the AI agent handle {shown}'s alerts" + (f" (backup {who.name})" if who else "")}
+            elif kind == "nobody":
+                s = {"kind": "machine_owner", "host": host, "owner_kind": "", "label": f"Clear who is responsible for {shown}"}
+            else:
+                raise ValueError("kind must be person, agent or nobody")
+            s["reason"] = str(a.get("reason") or "").strip()[:300]
+            if not any(x.get("kind") == "machine_owner" and x.get("host") == host for x in suggestions):
+                suggestions.append(s)
+            return "Button shown to the operator. Nothing changes unless they press it."
+        if name == "suggest_ping_owner":
+            host = self._host_of(str(a.get("machine") or ""))
+            who = self._owner_of(host)
+            if who is None:
+                raise ValueError("nobody is responsible for that computer yet; offer suggest_machine_owner instead")
+            if not any(x.get("kind") == "ping_owner" and x.get("host") == host for x in suggestions):
+                suggestions.append({"kind": "ping_owner", "host": host,
+                                    "label": f"Ping {who['name']} about {self.names().get(host) or host}",
+                                    "reason": str(a.get("reason") or "").strip()[:300]})
+            return "Button shown to the operator. Nobody is pinged unless they press it."
         if name == "suggest_action":
             iid, decision = str(a["incident"]).strip(), str(a["decision"]).strip()
             if decision not in DECISIONS:
@@ -912,9 +969,20 @@ class OperatorChat:
                 return host
         raise KeyError(f"no computer called {said!r}")
 
+    def _owner_of(self, host: str) -> dict[str, Any] | None:
+        o = self.owners().get(host)
+        if not o:
+            return None
+        if o.get("kind") == "agent":
+            b = self.core.router.contact(o.get("backup"))
+            return {"kind": "agent", "name": AGENT_OWNER, "backup": b.name if b else None}
+        c = self.core.router.contact(o.get("contact"))
+        return {"kind": "person", "name": c.name if c else o.get("contact")}
+
     def _machine(self, host: str) -> dict[str, Any]:
         incs = self.core.list_incidents(host=host)
-        return {"host": host, "name": self.names().get(host) or host,
+        return {"host": host, "name": self.names().get(host) or host, "responsible": self._owner_of(host),
+                "people_in_routing": [c.name for c in self.core.router.contacts.values()][:30],
                 "incidents": [{**{k: i.get(k) for k in ("id", "category", "severity", "status", "acked",
                                                          "recommended_action")}, "overdue": overdue(i)}
                               for i in incs if i.get("status") in STILL_OPEN][:60],

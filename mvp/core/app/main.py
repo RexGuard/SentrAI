@@ -34,7 +34,7 @@ from .staff_reports import RateLimited, ReportError, StaffReports
 from .threats import ThreatWatch
 from .backups import BackupWatch
 from .cyanide import Cyanide, default_planner
-from .saguaro import BadRequestError, ConflictError, Saguaro
+from .saguaro import AGENT_OWNER, BadRequestError, ConflictError, Saguaro
 
 log = logging.getLogger("sentrai.core")
 STREAM_PACE_S = float(os.getenv("SENTRAI_CHAT_STREAM_PACE_S", "0.012"))  # between words of a streamed answer
@@ -420,6 +420,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     core_dir = Path(core.settings.db_path).parent  # machines/fleet.json and machines/jobs.json sit next to the database
     machines = fleet.Fleet(sentrai_paths.path("core.fleet", core_dir))
     chat.names = machines.names  # Sentry knows computers by the names people gave them
+    core.machine_owner = lambda host: machines.owners().get(host)  # whoever answers for a machine gets its alerts
+    core.machine_name = lambda host: machines.names().get(host) or host
+    chat.owners = machines.owners
     machine_jobs = jobs.Jobs(sentrai_paths.path("core.jobs", core_dir))
 
     def copy_hosts() -> list[str]:
@@ -1247,6 +1250,63 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {**out, "jobs_cancelled": dropped,
                 "message": f"{host} was deleted from the panel" + (" and its agent's key was revoked" if out["revoked"] else "")
                            + ". It stays off the list until it joins again with a new code."}
+
+    def owner_words(o: dict[str, Any] | None) -> str:
+        if not o:
+            return "nobody"
+        if o.get("kind") == "agent":
+            b = core.router.contact(o.get("backup"))
+            return f"the AI agent ({AGENT_OWNER})" + (f", with {b.name} as backup" if b else "")
+        c = core.router.contact(o.get("contact"))
+        return c.name if c else str(o.get("contact"))
+
+    @app.post("/ui/machines/{host}/owner")
+    def post_machine_owner(host: str, request: Request, body: dict = Body(...)) -> dict[str, Any]:
+        """Who answers for a machine and gets its alerts: {"kind": "person", "contact": id} (someone in Routing),
+        {"kind": "agent", "backup": id} (the AI agent, handing decisions to that person), or {"kind": ""} to clear.
+        Owner and Admin only. Its open incidents move to the new owner."""
+        account = getattr(request.state, "account", None)
+        if account and not acc.can(account.get("role"), "configure"):
+            raise HTTPException(403, "Only an Owner or Admin can change who is responsible for a machine.")
+        operator = (account or {}).get("email") or str(body.get("operator") or "dashboard")[:64]
+        kind = str(body.get("kind") or "").strip().lower()
+        if kind == "ai":
+            kind = "agent"
+        contact = core.router.contact(str(body.get("contact") or "").strip()) if body.get("contact") else None
+        backup = core.router.contact(str(body.get("backup") or "").strip()) if body.get("backup") else None
+        if kind == "person" and contact is None:
+            raise HTTPException(400, f"{body.get('contact') or 'That person'} is not in Routing. Add them there first.")
+        if kind == "agent" and body.get("backup") and backup is None:
+            raise HTTPException(400, f"{body.get('backup')} is not in Routing. Add them there first.")
+        try:
+            out = machines.set_owner(host, kind, contact.id if contact else "", backup.id if backup else "", operator)
+        except fleet.FleetError as exc:
+            raise fleet_error(exc)
+        core.scribe.record(core.name, "machine_owner_set", {"host": host, "kind": kind or None,
+                                                            "owner": owner_words(out or None), "operator": operator})
+        moved = core.adopt_machine(host, operator)
+        name = machines.names().get(host) or host
+        if kind == "agent":
+            msg = f"{AGENT_OWNER} now handles {name}'s alerts" + (f", with {backup.name} as backup." if backup else ".")
+        elif kind:
+            msg = f"{contact.name if contact else '?'} is now responsible for {name}."
+        else:
+            msg = f"Nobody is set for {name}; the Routing rules decide."
+        if moved["moved"]:
+            msg += f" {moved['moved']} open incident{'s' if moved['moved'] != 1 else ''} moved over."
+        return {"host": host, "owner": out or None, "moved": moved["moved"], "agent": moved["agent"], "message": msg}
+
+    @app.post("/ui/machines/{host}/ping")
+    def post_ping_owner(host: str, request: Request, body: Optional[dict] = Body(None)) -> dict[str, Any]:
+        """The Machines list's bell: ask whoever answers for the machine to look at it. Anyone signed in may ping."""
+        account = getattr(request.state, "account", None)
+        operator = (account or {}).get("email") or str((body or {}).get("operator") or "dashboard")[:64]
+        if machines.removed().get(host):
+            raise HTTPException(409, f"{host} was deleted from the panel.")
+        try:
+            return {"host": host, **core.ping_machine_owner(host, operator)}
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
 
     @app.post("/ui/machines/{host}/restore")
     def post_restore_machine(host: str, request: Request, body: Optional[dict] = Body(None)) -> dict[str, Any]:

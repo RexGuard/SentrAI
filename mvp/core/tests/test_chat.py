@@ -477,3 +477,23 @@ def test_overview_for_the_model_counts_everything_and_lists_only_the_urgent(clie
 def test_incident_lookup_folds_repeated_lines():
     from app.chat import lean
     assert lean({"a": None, "b": False, "c": [], "d": 0, "snapshot_hash": "x", "e": {"f": ""}}) == {"d": 0}
+
+
+def test_owner_buttons_for_a_computer(panel):
+    two_machines(panel)
+    provider = FakeProvider([
+        sentrai_llm.Turn(tool_calls=[call("get_machine", machine="web-01"),
+                                     call("suggest_ping_owner", machine="web-01", reason="x")], stop="tool_use"),
+        sentrai_llm.Turn(tool_calls=[call("suggest_machine_owner", machine="web-01", kind="agent", person="Nobody Real",
+                                          reason="x")], stop="tool_use"),
+        sentrai_llm.Turn(tool_calls=[call("suggest_machine_owner", machine="web-01", kind="agent", person="cxo",
+                                          reason="Nobody watches this server")], stop="tool_use"),
+        sentrai_llm.Turn(texts=["Nobody looks after web-01 yet; the AI agent can."]),
+    ])
+    chat = OperatorChat(panel.core, provider)
+    reply = chat.ask("erick", "who looks after this?", machine="web-01")
+    assert '"responsible"' not in provider.convos[0].results[0][0][1]  # nobody yet (lean drops empty fields)
+    assert "nobody is responsible" in provider.convos[0].results[0][1][1]  # no ping button without an owner
+    assert "not in Routing" in provider.convos[0].results[1][0][1]
+    [s] = reply["suggestions"]
+    assert s["kind"] == "machine_owner" and s["owner_kind"] == "agent" and s["backup"] == "cxo" and s["host"] == "web-01"

@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import Stat from '../lib/Stat'
 import { Link } from 'react-router-dom'
-import { Bell, Check, Copy, Trash2, KeyRound, Pencil, Plus, Shield, ShieldCheck, ShieldOff, X } from 'lucide-react'
+import { Bell, Bot, Check, Copy, Trash2, KeyRound, ListChecks, MoreVertical, Pencil, Plus, Shield, ShieldCheck, ShieldOff, UserRound, X } from 'lucide-react'
 import { api, ApiError } from '../lib/api'
 import { btn, btnPrimary } from '../lib/ui'
 import { useSession } from '../lib/session'
@@ -12,11 +12,15 @@ type Machine = {
   name: string; host: string; place: string; online: boolean; waiting: boolean; index: number | null; band: string
   threshold: number; monitor_only: boolean; open: number; contained: number; blocked: number; last_seen: string
   services: string[]; hardware: { cpu: number | null; memory: number | null; disk: number | null }; sessions: number | null
+  owner: Owner | null
 }
+/** Who answers for a machine and gets its alerts: a person from Routing, or the AI agent (with a person as backup). */
+type Owner = { kind: 'person' | 'agent'; name: string; contact: string; backup: string; backup_name: string; missing?: boolean }
+type Contact = { id: string; name: string }
 type Page = {
   panel: boolean; machines: Machine[]; panel_info: { panel_url: string; pin: string }
   stats: { machines: number; online: number; offline: number; need_a_look: number; blocks: number }
-  band_words: Record<string, string>
+  band_words: Record<string, string>; contacts: Contact[]; agent_name: string
 }
 type Made = { code: string; expires_at: string; https: boolean; pin: string | null; commands: { linux: string; windows: string } }
 
@@ -86,7 +90,82 @@ function Name({ m, canRename, done }: { m: Machine; canRename: boolean; done: (m
           onClick={() => { setText(m.name); setEditing(true) }}><Pencil size={13} aria-hidden /></button>}
       </p>
       <p className="truncate text-xs text-muted">{m.name !== m.host && m.host ? `${m.host} · ` : ''}{m.place}{m.services.length ? ` · ${m.services.join(', ')}` : ''}</p>
+      {m.owner && <p className={'flex items-center gap-1 truncate text-xs ' + (m.owner.missing ? 'text-warn' : 'text-soft')}>
+        {m.owner.kind === 'agent' ? <Bot size={12} aria-hidden /> : <UserRound size={12} aria-hidden />}
+        {m.owner.kind === 'agent' ? `${m.owner.name} handles its alerts${m.owner.backup_name ? ` · backup ${m.owner.backup_name}` : ''}`
+          : m.owner.missing ? `Responsible: ${m.owner.contact} (no longer in Routing)` : `Responsible: ${m.owner.name}`}
+      </p>}
     </div>
+  )
+}
+
+// The row's three-dot menu: the less used actions, with Delete last. Closes on Escape or a click elsewhere.
+function RowMenu({ label, children }: { label: string; children: (close: () => void) => ReactNode }) {
+  const [open, setOpen] = useState(false)
+  const box = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const away = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false) }
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', away); document.addEventListener('keydown', esc)
+    return () => { document.removeEventListener('mousedown', away); document.removeEventListener('keydown', esc) }
+  }, [open])
+  return (
+    <div ref={box} className="relative">
+      <button className={btn} aria-haspopup="menu" aria-expanded={open} aria-label={label} title="More" onClick={() => setOpen(!open)}>
+        <MoreVertical size={14} aria-hidden />
+      </button>
+      {open && <div role="menu" className="absolute right-0 z-20 mt-1 w-56 overflow-hidden rounded-md border border-line bg-surface py-1 shadow-lg">
+        {children(() => setOpen(false))}
+      </div>}
+    </div>
+  )
+}
+const item = 'flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50'
+
+// Who answers for the machine: a person from Routing gets its alerts, or the AI agent handles them for the owner.
+function OwnerForm({ m, page, done, cancel }: { m: Machine; page: Page; done: (msg: string) => void; cancel: () => void }) {
+  const [kind, setKind] = useState<'person' | 'agent' | ''>(m.owner?.kind ?? 'person')
+  const [contact, setContact] = useState(m.owner?.kind === 'person' ? m.owner.contact : page.contacts[0]?.id ?? '')
+  const [backup, setBackup] = useState(m.owner?.kind === 'agent' ? m.owner.backup : '')
+  const [err, setErr] = useState('')
+  const [busy, setBusy] = useState(false)
+  const save = async (k: string) => {
+    setErr(''); setBusy(true)
+    try { done((await api<{ message: string }>(`/ui/machines/${encodeURIComponent(m.host)}/owner`, { body: { kind: k, contact, backup } })).message) }
+    catch (e) { setErr(e instanceof ApiError ? e.message : 'Could not save who is responsible.') }
+    setBusy(false)
+  }
+  const field = 'mt-1 block w-full rounded-md border border-line bg-surface px-3 py-1.5 text-ink'
+  return (
+    <form className="col-span-full space-y-3 rounded-lg border border-line bg-surface-2 p-4" onSubmit={(e) => { e.preventDefault(); void save(kind) }}>
+      <h3 className="font-semibold">Who is responsible for {m.name}? <span className="font-normal text-muted">· they get its alerts and the bell pings them</span></h3>
+      <fieldset className="flex flex-wrap gap-4 text-sm">
+        <legend className="sr-only">Responsible</legend>
+        <label className="flex items-center gap-2"><input type="radio" name={`ok-${m.host}`} checked={kind === 'person'} onChange={() => setKind('person')} /> A person</label>
+        <label className="flex items-center gap-2"><input type="radio" name={`ok-${m.host}`} checked={kind === 'agent'} onChange={() => setKind('agent')} /> The AI agent (Sentry)</label>
+      </fieldset>
+      {kind === 'person' && (page.contacts.length
+        ? <label className="block text-sm text-soft">Person (from Routing)
+            <select className={field} value={contact} onChange={(e) => setContact(e.target.value)}>
+              {page.contacts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select></label>
+        : <p className="text-sm text-warn">Nobody is in Routing yet. Add people there first.</p>)}
+      {kind === 'agent' && <>
+        <p className="text-sm text-soft">For a server nobody watches. It handles this machine's alerts for you: it signs off ones that are already contained, and hands anything that needs a decision to the backup. It never approves or undoes anything, and automatic protection keeps working.</p>
+        <label className="block text-sm text-soft">Backup person, for decisions
+          <select className={field} value={backup} onChange={(e) => setBackup(e.target.value)}>
+            <option value="">Whoever the Routing rules pick</option>
+            {page.contacts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select></label>
+      </>}
+      {err && <p role="alert" className="text-sm text-bad">{err}</p>}
+      <div className="flex flex-wrap gap-2">
+        <button type="submit" className={btnPrimary} disabled={busy || (kind === 'person' && !contact)}><Check size={14} aria-hidden /> Save</button>
+        {m.owner && <button type="button" className={btn} disabled={busy} onClick={() => void save('')}>Nobody (Routing rules decide)</button>}
+        <button type="button" className={btn} onClick={cancel}>Cancel</button>
+      </div>
+    </form>
   )
 }
 
@@ -154,6 +233,12 @@ export default function Machines() {
     try { setNote((await api<{ message: string }>(`/ui/machines/${encodeURIComponent(m.host)}/delete`, { body: {} })).message); await load() }
     catch (e) { setNote(e instanceof ApiError ? e.message : 'The machine could not be deleted.') }
   }
+  const [owning, setOwning] = useState('')
+  const ping = async (m: Machine) => {
+    if (!m.owner) { setOwning(m.host); return }
+    try { setNote((await api<{ message: string }>(`/ui/machines/${encodeURIComponent(m.host)}/ping`, { body: {} })).message); await load() }
+    catch (e) { setNote(e instanceof ApiError ? e.message : 'Could not ping them.') }
+  }
   const list = useFilters(page?.machines ?? NO_M, FILTERS, (m) => [m.name, m.host, m.place, m.services], 'machines')
   return (
     <section className="space-y-4">
@@ -189,14 +274,26 @@ export default function Machines() {
                   <span className="hidden md:block"><Risk m={m} /></span>
                   <div className="flex items-center justify-end gap-2">
                     <span className="md:hidden"><Status m={m} /></span>
-                    {m.host && <Link to={`/machines/${encodeURIComponent(m.host)}?tab=Incidents`} className={btn + ' relative'} aria-label={`Alerts on ${m.name}: ${m.open} open`}
-                      title={m.open ? `${m.open} open alert${m.open === 1 ? '' : 's'}` : 'No open alerts'}>
-                      <Bell size={14} aria-hidden />
+                    {m.host && page.panel && <button className={btn + ' relative'} onClick={() => void ping(m)}
+                      aria-label={m.owner ? `Ping ${m.owner.name} about ${m.name}: ${m.open} open alerts` : `Set who is responsible for ${m.name}`}
+                      title={m.owner ? `Ping ${m.owner.name}` + (m.open ? ` · ${m.open} open alert${m.open === 1 ? '' : 's'}` : ' · no open alerts')
+                        : 'Nobody is responsible yet: set someone to ping'}>
+                      {m.owner?.kind === 'agent' ? <Bot size={14} aria-hidden /> : <Bell size={14} aria-hidden />}
                       {m.open > 0 && <span className="absolute -right-1.5 -top-1.5 min-w-4 rounded-full bg-bad px-1 text-center text-[10px] font-semibold leading-4 text-white" aria-hidden>{m.open}</span>}
-                    </Link>}
-                    {m.host && page.panel && <button className={btn + ' text-bad'} disabled={!can('configure')} aria-label={`Delete ${m.name}`}
-                      title={can('configure') ? `Delete ${m.name} from the panel` : 'Only an Owner or Admin can delete a machine.'} onClick={() => void remove(m)}><Trash2 size={14} aria-hidden /></button>}
+                    </button>}
+                    {m.host && <RowMenu label={`More for ${m.name}`}>{(close) => <>
+                      <Link role="menuitem" to={`/machines/${encodeURIComponent(m.host)}?tab=Incidents`} className={item} onClick={close}>
+                        <ListChecks size={14} aria-hidden /> Open alerts{m.open ? ` (${m.open})` : ''}</Link>
+                      {page.panel && <button role="menuitem" className={item} disabled={!can('configure')}
+                        title={can('configure') ? undefined : 'Only an Owner or Admin can change who is responsible.'}
+                        onClick={() => { close(); setOwning(m.host) }}><UserRound size={14} aria-hidden /> Who is responsible…</button>}
+                      {page.panel && <button role="menuitem" className={item + ' text-bad'} disabled={!can('configure')}
+                        title={can('configure') ? `Delete ${m.name} from the panel` : 'Only an Owner or Admin can delete a machine.'}
+                        onClick={() => { close(); void remove(m) }}><Trash2 size={14} aria-hidden /> Delete</button>}
+                    </>}</RowMenu>}
                   </div>
+                  {owning === m.host && m.host && <OwnerForm m={m} page={page} cancel={() => setOwning('')}
+                    done={(msg) => { setOwning(''); setNote(msg); void load() }} />}
                 </li>
               ))}
             </ul>
