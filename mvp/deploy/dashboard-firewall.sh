@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Lets only the addresses in SENTRAI_DASHBOARD_ALLOW reach the dashboard port; every other address is
-# dropped. install.sh copies this to /usr/local/sbin/sentrai-dashboard-firewall, and the dashboard
+# dropped. install-panel.sh copies this to /usr/local/sbin/sentrai-dashboard-firewall, and the dashboard
 # service runs it (as root) each time it starts, so the rule comes back after a reboot. It fails,
 # and the dashboard stays down, when neither nft nor iptables is there: better closed than open.
 #
 #   sentrai-dashboard-firewall          apply the rule from /etc/sentrai/sentrai.env
-#   sentrai-dashboard-firewall remove   take it away again (uninstall.sh does this)
+#   sentrai-dashboard-firewall remove   take it away again (uninstall-panel.sh does this)
 #
 # The rule sits in its own nftables table (inet sentrai_dashboard) or iptables chain (SENTRAI-DASH)
 # and only drops: it never accepts traffic that the rest of the firewall would block.

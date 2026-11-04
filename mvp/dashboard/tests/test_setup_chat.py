@@ -60,7 +60,7 @@ def test_walkthrough_with_buttons_and_typing(tmp_path):
     run(sc, "network", "earlier", "8600")
     assert sc.state == "review" and "Shall I save it?" in last(sc)
     assert cfg.HASH_ENV not in sc.values()  # people sign in with their own accounts, not a setting
-    assert setup_chat.deploy_command(sc) == ("sudo ./deploy/install.sh --dashboard-allow 192.168.1.20 "
+    assert setup_chat.deploy_command(sc) == ("sudo ./deploy/install-panel.sh --dashboard-allow 192.168.1.20 "
                                              "--dashboard-allow 10.0.0.0/24 --dashboard-port 8600 --no-questions")
     assert "Strict" in last(sc)
     # the bot token is never echoed in the transcript
@@ -105,7 +105,7 @@ def test_ai_maps_an_unclear_answer_but_never_sees_secrets():
 def test_review_and_restart():
     sc = run(setup_chat.SetupChat(), "busy", "yes", "own", "none", "none", "keep", "console", "none",
              "local", "keep")
-    assert sc.state == "review" and setup_chat.deploy_command(sc) == "sudo ./deploy/install.sh --dashboard-local --no-questions"
+    assert sc.state == "review" and setup_chat.deploy_command(sc) == "sudo ./deploy/install-panel.sh --dashboard-local --no-questions"
     sc.answer("restart")
     assert sc.state == "asking" and sc.step.key == "kind" and not sc.answers
 
@@ -122,7 +122,7 @@ def test_setup_done_marker(config_file):
 
 
 def test_launcher_sign_in_does_not_count_as_setup(config_file):
-    assert cfg.main(["admin"]) == 0  # what run.sh/run.ps1 and install.sh do on a first start (a setup code)
+    assert cfg.main(["admin"]) == 0  # what run.sh/run.ps1 and install-panel.sh do on a first start (a setup code)
     assert not cfg.setup_done()
 
 

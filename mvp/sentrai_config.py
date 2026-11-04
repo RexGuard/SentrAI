@@ -23,7 +23,7 @@ Run (any venv, stdlib only):
     python sentrai_config.py get NAME     print one value, for scripts
     python sentrai_config.py token        print the core API token (made and saved on first use)
     python sentrai_config.py admin        who may sign in; on a new machine, a one-time setup code for the Owner
-    python sentrai_config.py admin --email you@example.com --password-stdin   make the Owner directly (install.sh)
+    python sentrai_config.py admin --email you@example.com --password-stdin   make the Owner directly (install-panel.sh)
     python sentrai_config.py admin --reset [--email you@example.com]          new password, authenticator again
 
 Dashboard accounts (Owner, Admin, Auditor) live in accounts.json next to this file: see sentrai_accounts.py.
@@ -659,7 +659,7 @@ def admin(args: list[str]) -> int:
     """`python sentrai_config.py admin` (on a server `sudo sentrai-admin`): the dashboard's people, from the shell.
 
     Whoever can run this on the machine is trusted: it makes the setup code for the first Owner, makes
-    the Owner directly (install.sh), or resets someone's password and authenticator.
+    the Owner directly (install-panel.sh), or resets someone's password and authenticator.
     """
     import sentrai_accounts as acc
 

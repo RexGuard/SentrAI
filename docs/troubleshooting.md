@@ -12,7 +12,7 @@ Another program is using 8000, 8501 or (web dashboard) 5173. Pick other ports:
 
 ```bash
 ./run.sh --core-port 8100 --dashboard-port 8601                  # Linux, macOS
-sudo ./deploy/install.sh --core-port 8100 --dashboard-port 8601       # server
+sudo ./deploy/install-panel.sh --core-port 8100 --dashboard-port 8601       # server
 ```
 
 ```powershell
@@ -37,7 +37,7 @@ rm -rf core/.venv lab/.venv dashboard/.venv notifier/.venv
 
 The installer fetches its Python packages from pypi.org, so the machine needs outgoing HTTPS. Check
 with `curl -sI https://pypi.org/simple/ | head -1` (it should print a `200` line). Behind a proxy, set
-`HTTPS_PROXY` when you run the installer, for example `sudo HTTPS_PROXY=http://proxy:3128 ./mvp/deploy/install.sh`.
+`HTTPS_PROXY` when you run the installer, for example `sudo HTTPS_PROXY=http://proxy:3128 ./mvp/deploy/install-panel.sh`.
 On Windows, run `$env:HTTPS_PROXY = "http://proxy:3128"` in the same PowerShell first.
 Then run the same install command again: it carries on where it stopped.
 
@@ -57,7 +57,7 @@ Work through these in order:
 
 1. **Is it running?** On the server: `systemctl status sentrai-dashboard`.
 2. **Is your IP allowed?** Your public IP may have changed. Check it, then
-   `sudo ./deploy/install.sh --dashboard-allow <your IP>`.
+   `sudo ./deploy/install-panel.sh --dashboard-allow <your IP>`.
 3. **Are you using https?** A server dashboard opened to other computers only answers on
    `https://`, not `http://`.
 4. **Does the cloud provider block the port?** Some hosts have their own firewall in their web
@@ -126,7 +126,7 @@ password guessing from the same address is treated as unknown on purpose; **This
 The agent installer prints why. The usual causes:
 
 - **"the panel must be reached over https://"**: use the agents' address, `https://…:8443`, not
-  `http://…:8000`. The panel needs `install.sh --panel` first; see
+  `http://…:8000`. The panel needs `install-panel.sh --panel` first; see
   [Install the panel](panel.html#1-install-the-panel).
 - **"could not reach the panel"**: from the new machine, try
   `curl -k https://panel.example.com:8443/health`. If it fails, allow port 8443 from that machine in

@@ -169,16 +169,16 @@ if (Get-ChildItem $State -Force) {
     if ($LASTEXITCODE -ne 0) { Die "could not reset access inside $State" }
 }
 
-# --- code and venv (the agent uses the lab venv, plus the core's firewall module) ---
+# --- code and venv: only what the agent runs (lab without its tests, plus the core's firewall module) ---
 Write-Host "Copying code to $Mvp ..."
 function Copy-Tree([string]$From, [string]$To, [string[]]$Extra = @()) {
     # /MIR mirrors; the excluded folders (the venv) are neither copied nor deleted on the other side.
     Native robocopy.exe $From $To /MIR /NFL /NDL /NJH /NJS /NP /R:2 /W:2 /XD .venv __pycache__ .pytest_cache @Extra | Out-Null
     if ($LASTEXITCODE -ge 8) { Die "copying $From failed (robocopy exit $LASTEXITCODE)" }
 }
-# Not the checkout's own logs, approved log list, proposals or recorded trails (2*.jsonl: named by
+# Not the lab's tests, the checkout's own logs, approved log list, proposals or recorded trails (2*.jsonl: named by
 # date; the example trails are copied).
-Copy-Tree (Join-Path $Src "lab") (Join-Path $Mvp "lab") @((Join-Path $Src "lab\logs"), "/XF", "sources.json", "pending.json", "2*.jsonl")
+Copy-Tree (Join-Path $Src "lab") (Join-Path $Mvp "lab") @((Join-Path $Src "lab\logs"), (Join-Path $Src "lab\tests"), "/XF", "sources.json", "pending.json", "2*.jsonl")
 Copy-Tree (Join-Path $Src "core\app") (Join-Path $Mvp "core\app")
 foreach ($f in "sentrai_config.py", "sentrai_llm.py", "sentrai_env.py", "sentrai_paths.py", "sentrai_extensions.py") { Copy-Item -Force (Join-Path $Src $f) (Join-Path $Mvp $f) }
 # Which code is installed (update-agent.ps1 compares it with the newest), and the updater itself.
@@ -196,6 +196,16 @@ Set-Content -Path (Join-Path $Mvp "VERSION") -Encoding ASCII `
     -Value "commit=$commit`r`nref=$ref`r`nrepo=$repo`r`ninstalled=$((Get-Date).ToUniversalTime().ToString('s'))Z"
 Copy-Item -Force (Join-Path $Src "deploy\update-agent.ps1") (Join-Path $Prefix "update-agent.ps1")
 
+# Only the agent's own packages (lab\requirements-agent.txt): no test runner, no AI libraries. A venv an
+# older install filled with the whole lab\requirements.txt is made again once, smaller.
+$req = Join-Path $Mvp "lab\requirements-agent.txt"
+$stamp = Join-Path $Venv "requirements.installed"
+$want = "agent:" + (Get-FileHash $req -Algorithm SHA256).Hash
+$have = if (Test-Path $stamp) { (Get-Content $stamp -Raw).Trim() } else { "" }
+if ((Test-Path $VenvPy) -and -not $have.StartsWith("agent:")) {
+    Write-Host "Making the agent's Python environment again with only the packages it needs ..."
+    Remove-Item -Recurse -Force $Venv
+}
 if (-not (Test-Path $VenvPy)) {
     $python = Find-Python
     if (-not $python) {
@@ -216,10 +226,6 @@ if (-not (Test-Path $VenvPy)) {
 $home_ = (Get-Content (Join-Path $Venv "pyvenv.cfg") | Where-Object { $_ -match '^\s*home\s*=' } | Select-Object -First 1) -replace '^\s*home\s*=\s*', ''
 $BasePy = Join-Path $home_.Trim() "python.exe"
 if (-not (Test-Path $BasePy)) { Die "the venv's Python ($BasePy) is gone; delete $Venv and run the installer again" }
-$req = Join-Path $Mvp "lab\requirements.txt"
-$stamp = Join-Path $Venv "requirements.installed"
-$want = (Get-FileHash $req -Algorithm SHA256).Hash
-$have = if (Test-Path $stamp) { (Get-Content $stamp -Raw).Trim() } else { "" }
 if ($want -ne $have) {
     Write-Host "Installing packages ..."
     Native $VenvPy -m pip install -q -r $req

@@ -58,7 +58,7 @@ for your app or proxy to enforce. Add your own IP to `PROTECTED_IPS` first.
 ### On a server (systemd services)
 
 To keep SentrAI running on a Linux server, install it as services instead of using `run.sh`:
-`sudo ./deploy/install.sh --protect <your admin IP>`. It opens the dashboard over HTTPS to that IP
+`sudo ./deploy/install-panel.sh --protect <your admin IP>`. It opens the dashboard over HTTPS to that IP
 only and prints the address and the sign-in. See [deploy/README.md](deploy/README.md).
 
 ## Configuration
@@ -95,7 +95,7 @@ button on Chat, or **Set up with Cyanide** on Configuration, starts it any time)
 what SentrAI guards and suggests a preset, then the logs folder, IPs and accounts never to
 touch, your name, how to alert you (Telegram and/or email), the AI key, and the dashboard:
 who may open it (this computer, or named IP addresses) and its port. Opening the dashboard to other
-computers changes the firewall, so Sentry ends with the one `sudo ./deploy/install.sh
+computers changes the firewall, so Sentry ends with the one `sudo ./deploy/install-panel.sh
 --dashboard-allow ...` command that applies it on a Linux server. Answer with the buttons or by typing. Keys and passwords go in a hidden field and are
 never shown in the chat. Nothing is saved until you confirm the summary; it then saves through
 the same settings file, switches Sentry to the new AI settings, and says what needs a restart.
@@ -136,7 +136,7 @@ behind an arrow.
 | `PROTECTED_NETS` | private ranges | core: networks Countersign never blocks on its own (an operator still can); `10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,100.64.0.0/10,fc00::/7` by default, `off` for a lab whose attackers sit on a private network |
 | `INFRA_ALLOWLIST` | empty | core: gateways, DNS, monitoring and other infrastructure never blocked (addresses or networks). This machine's DNS servers and default gateway are added automatically (`INFRA_AUTODETECT=0` turns that off) |
 | `ADMIN_SESSIONS` | `on` | core: keep track of who is signed in on each machine and whose root work (`sudo`, `su`, Windows admin events) is whose: a known administrator's is recorded, never an incident; `off` judges every line on its own |
-| `ADMIN_IPS` | empty | core: addresses or networks the administrators sign in from (`deploy/install.sh` puts the `--protect` and dashboard-allowed addresses here); "This was me" on an incident teaches more |
+| `ADMIN_IPS` | empty | core: addresses or networks the administrators sign in from (`deploy/install-panel.sh` puts the `--protect` and dashboard-allowed addresses here); "This was me" on an incident teaches more |
 | `ADMIN_SSH_KEYS` | empty | core: their SSH key fingerprints, `SHA256:...` as `ssh-keygen -lf ~/.ssh/id_ed25519.pub` prints them |
 | `ADMIN_ACCOUNTS` | empty | core: their accounts, `deploy` on every machine or `erick@web-01` on one |
 | `ADMIN_SESSION_HOURS` / `ADMIN_SIGNIN_HOURS` | `12` / `12` | core: hours a sign-in counts as open after its last line; hours a dashboard sign-in as Owner or Admin vouches for its address |
@@ -148,7 +148,7 @@ behind an arrow.
 | `SENTRAI_FIREWALL` | `off` | core: also block IPs in the host firewall (`auto`, `nftables`, `iptables`, `netsh`); `off` keeps blocks on SentrAI's own blocklist only |
 | `SENTRAI_FIREWALL_ENFORCE` | `0` | core: `0` is a dry run that only logs the firewall command; `1` really runs it (needs admin/root) |
 | `SENTRAI_RISK_SCOPE` | `fleet` | core: `host` scores and blocks each machine on its own, for a central panel (set `SENTRAI_FIREWALL=off` with it) |
-| `SENTRAI_PANEL_PORT` / `SENTRAI_PANEL_URL` | unset | core and dashboard: the agents' HTTPS port and the address they use (`install.sh --panel` sets both, with `SENTRAI_PANEL_CERT` / `SENTRAI_PANEL_KEY`) |
+| `SENTRAI_PANEL_PORT` / `SENTRAI_PANEL_URL` | unset | core and dashboard: the agents' HTTPS port and the address they use (`install-panel.sh --panel` sets both, with `SENTRAI_PANEL_CERT` / `SENTRAI_PANEL_KEY`) |
 | `SENTRAI_AGENT_OFFLINE_HOLD_H` | `24` | agent: hours blocks stay in place while the panel cannot be reached |
 | `SENTRAI_HW_ALERTS` | `on` | core: alert the on-duty person when a machine's hardware passes a limit (`off`: only show it) |
 | `SENTRAI_HW_CPU_PCT` / `SENTRAI_HW_MEM_PCT` / `SENTRAI_HW_DISK_PCT` / `SENTRAI_HW_TEMP_C` | `90` / `90` / `90` / `85` | core: those limits; CPU, memory and heat must stay over for `SENTRAI_HW_FOR_MIN` (`5`) minutes |

@@ -147,7 +147,7 @@ python -m app.remote_copy compare --url https://198.51.100.20:8600 --read-token-
 ```
 
 Status: `GET /audit/remote-copy`. Setup: `deploy/install-witness.sh` on the second machine, then
-`deploy/install.sh --remote-copy ...` here (deploy/README.md, "Off-box copy").
+`deploy/install-panel.sh --remote-copy ...` here (deploy/README.md, "Off-box copy").
 
 ### Record fingerprints
 
@@ -177,7 +177,7 @@ pass it with `--db`.
 | `INFRA_ALLOWLIST` | empty | Infrastructure never blocked. The DNS servers and default gateway are added automatically unless `INFRA_AUTODETECT=0`. |
 | `PROTECTED_USERS` | empty | Extra accounts never auto-locked. Admin and service accounts are always protected. |
 | `ADMIN_SESSIONS` | `on` | Keep track of who is signed in on each machine and whose root work is whose (`app/admins.py`, below). `off` judges every line on its own, as before. |
-| `ADMIN_IPS` | empty | Addresses or networks the administrators sign in from. `deploy/install.sh` puts the `--protect` and dashboard-allowed addresses here (no network wider than a /16). |
+| `ADMIN_IPS` | empty | Addresses or networks the administrators sign in from. `deploy/install-panel.sh` puts the `--protect` and dashboard-allowed addresses here (no network wider than a /16). |
 | `ADMIN_SSH_KEYS` | empty | Their SSH key fingerprints, `SHA256:...` (`ssh-keygen -lf ~/.ssh/id_ed25519.pub` prints one). |
 | `ADMIN_ACCOUNTS` | empty | Their accounts: `deploy` on every machine, `erick@web-01` on one. |
 | `ADMIN_SESSION_HOURS` / `ADMIN_SIGNIN_HOURS` | `12` / `12` | How long a sign-in counts as open after its last line; how long a dashboard sign-in as Owner or Admin vouches for its address. |
@@ -297,7 +297,7 @@ Audit records: `dep_scan`, and `machine_job_queued` / `machine_job_done` with th
 - **Proof.** Inside each archive, `manifest.json` lists every file with its SHA-256. The archive's own SHA-256 goes into the audit trail (`backup_made`), so **Check** (`POST /backups/{id}/verify`) catches a backup that was edited or swapped later.
 - **Alerts.** A failed backup (or a failed second copy) sends a `backup_failed` notice to the on-duty contact; a failed scheduled one is retried after an hour, not every minute.
 - **Restore needs a person**, and checks the backup first. By default files go into `restores/<id>-<time>/` next to the database and nothing live changes. Putting them back in place needs `in_place` and the backup id typed as `confirm`, and first takes a `before_restore` safety backup of the folders it will overwrite, so the restore can itself be undone. SentrAI's own data is never written over while the core runs; it is unpacked with a note on how to swap it in. The chat can show backups and offer a **Back up now** button, but cannot restore.
-- **On a hardened server** (`deploy/install.sh`), the core runs as its own account and may only write under `/var/lib/sentrai/core` (and `/var/lib/sentrai/scout`, for approved log files). Files it cannot read are skipped and listed on the backup. To restore in place there, add the folders to `ReadWritePaths=` in `sentrai-core.service`, or restore into a new folder and copy back by hand.
+- **On a hardened server** (`deploy/install-panel.sh`), the core runs as its own account and may only write under `/var/lib/sentrai/core` (and `/var/lib/sentrai/scout`, for approved log files). Files it cannot read are skipped and listed on the backup. To restore in place there, add the folders to `ReadWritePaths=` in `sentrai-core.service`, or restore into a new folder and copy back by hand.
 - **With the central panel** (planned agents on each machine), each agent runs this same code on its own machine and reports its backups to the panel.
 
 Audit records: `backup_made`, `backup_failed`, `backup_verified`, `backup_restored`, `backup_pruned`.

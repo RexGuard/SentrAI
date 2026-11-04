@@ -61,7 +61,7 @@ iptables -w -I INPUT -s "$BLOCKED" -m comment --comment cactai -j DROP
 nft list table inet cactai
 echo "ok: old version installed (panel and agent)"
 
-# --- today's install.sh, run once ---------------------------------------------------------------
+# --- today's installer, run once by its old name (install.sh forwards to install-panel.sh) ------
 ./deploy/install.sh --no-questions
 for u in sentrai-core sentrai-collector sentrai-dashboard sentrai-agent; do
     wait_for "$u is running" 60 systemctl is-active --quiet "$u"

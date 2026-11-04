@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Shared by install.sh and install-agent.sh (sourced): what sentrai-update needs on every machine.
+# Shared by install-panel.sh and install-agent.sh (sourced): what sentrai-update needs on every machine.
 
 # record_version MVP SRC: which code is installed ($MVP/VERSION); sentrai-update compares it with the newest.
 # sentrai-update passes the commit it fetched; a run from a git checkout reads it from there.

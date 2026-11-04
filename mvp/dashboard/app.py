@@ -3284,7 +3284,7 @@ def add_machine(panel: bool) -> None:
         name = st.text_input("Machine name (optional)", key="join_name", placeholder="web-01",
                              help="Leave empty to use the new machine's own host name")
         url = st.text_input("Panel address the machine will use", key="join_url", value=panel_address(),
-                            help="Must be https:// from another machine (install.sh --panel opens port 8443)")
+                            help="Must be https:// from another machine (install-panel.sh --panel opens port 8443)")
         if st.button("Make join code", icon=":material/key:", type="primary", key="join_make",
                      disabled=locked("configure"), help=why_locked("configure")):
             try:
@@ -3309,7 +3309,7 @@ def add_machine(panel: bool) -> None:
                            "panel and nothing pretending to be it.")
             if not url.startswith("https://"):
                 st.warning("Other machines refuse a plain http:// panel. Install the panel with "
-                           "sudo ./deploy/install.sh --panel to open its HTTPS port for agents.",
+                           "sudo ./deploy/install-panel.sh --panel to open its HTTPS port for agents.",
                            icon=":material/lock_open:")
             elif not pin:
                 st.info("No certificate pin is known (SENTRAI_PANEL_CERT is not set), so the machine checks the "

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # CI check of the Linux install on a real Ubuntu runner with systemd (run with sudo from mvp/):
-# install the panel with install.sh, join this machine to it with install-agent.sh, send a real
+# install the panel with install-panel.sh, join this machine to it with install-agent.sh, send a real
 # attack through a web log, approve the block and see it land in nftables, undo it, switch the
 # agent to iptables and block again, then uninstall both and check everything is gone.
 set -euo pipefail
@@ -30,7 +30,7 @@ dump() {
 trap 'rc=$?; [ "$rc" = 0 ] || dump; exit "$rc"' EXIT
 
 [ "$(id -u)" = 0 ] || fail "run with sudo"
-[ -f deploy/install.sh ] || fail "run from mvp/"
+[ -f deploy/install-panel.sh ] || fail "run from mvp/"
 
 # An nginx access log where Ubuntu keeps it, with Ubuntu's owner and mode (the agent reads it
 # through the adm group, the way it would on a real web server).
@@ -41,7 +41,7 @@ chmod 0640 "$LOG"
 
 # --- panel --------------------------------------------------------------------------------
 # As on a VPS: agents reach the panel over the internet on its agents-only HTTPS port (--panel).
-./deploy/install.sh --no-questions --admin-email ci@example.com --protect "$ADMIN_IP" \
+./deploy/install-panel.sh --no-questions --admin-email ci@example.com --protect "$ADMIN_IP" \
     --panel 8443 --panel-url "$AGENT_URL"
 for u in sentrai-core sentrai-collector sentrai-dashboard; do
     wait_for "$u is running" 30 systemctl is-active --quiet "$u"
@@ -51,7 +51,7 @@ wait_for "dashboard answers over HTTPS" 90 curl -skf https://127.0.0.1:8501/_stc
 nft list table inet sentrai_dashboard | grep -q "$ADMIN_IP" || fail "dashboard firewall rule does not allow $ADMIN_IP"
 [ "$(stat -c '%U:%G %a' /etc/sentrai/sentrai.env)" = "root:sentrai 640" ] || fail "sentrai.env owner/mode"
 [ "$(stat -c '%a' /var/lib/sentrai/core)" = 700 ] || fail "core state folder is not 0700"
-[ -f /var/lib/sentrai/INDEX.md ] || fail "install.sh did not write /var/lib/sentrai/INDEX.md"
+[ -f /var/lib/sentrai/INDEX.md ] || fail "install-panel.sh did not write /var/lib/sentrai/INDEX.md"
 grep -q '^SENTRAI_HOME=/var/lib/sentrai$' /etc/sentrai/sentrai.env || fail "SENTRAI_HOME missing from sentrai.env"
 TOKEN="$(cd /opt/sentrai/mvp && set -a && . /etc/sentrai/sentrai.env && set +a && \
     runuser -u sentrai -- env HOME=/var/lib/sentrai lab/.venv/bin/python sentrai_config.py token)"
@@ -60,12 +60,12 @@ api() { curl -sf -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application
 
 grep -q '^SENTRAI_RISK_SCOPE=host' /etc/sentrai/sentrai.env || fail "--panel did not turn on per-machine scoring"
 # Reruns keep the address agents use: --panel alone must not swap it for this server's own name,
-# and --panel-url alone (what install.sh tells you to run) must change it.
-./deploy/install.sh --no-questions --panel >/dev/null
+# and --panel-url alone (what install-panel.sh tells you to run) must change it.
+./deploy/install-panel.sh --no-questions --panel >/dev/null
 grep -qx "SENTRAI_PANEL_URL=$AGENT_URL" /etc/sentrai/sentrai.env || fail "a --panel rerun lost --panel-url"
-./deploy/install.sh --no-questions --panel-url https://panel.example.com:8443 >/dev/null
+./deploy/install-panel.sh --no-questions --panel-url https://panel.example.com:8443 >/dev/null
 grep -qx "SENTRAI_PANEL_URL=https://panel.example.com:8443" /etc/sentrai/sentrai.env || fail "--panel-url alone was ignored"
-./deploy/install.sh --no-questions --panel-url "$AGENT_URL" >/dev/null
+./deploy/install-panel.sh --no-questions --panel-url "$AGENT_URL" >/dev/null
 grep -qx "SENTRAI_PANEL_URL=$AGENT_URL" /etc/sentrai/sentrai.env || fail "--panel-url did not change back"
 wait_for "core answers after reruns" 60 curl -sf "$PANEL/health"
 wait_for "the agents' HTTPS port answers" 30 curl -skf "$AGENT_URL/health"
@@ -116,7 +116,7 @@ n="$(api "$PANEL/fleet/agents" | python3 -c 'import json, sys; print(len(json.lo
 ROOT="$(cd .. && pwd)"
 HEAD="$(git -c safe.directory='*' -C "$ROOT" rev-parse HEAD)"
 git config --system --add safe.directory '*'  # root fetches from the runner's checkout (a real server fetches from GitHub)
-[ -x /usr/local/sbin/sentrai-update ] || fail "install.sh did not add sentrai-update"
+[ -x /usr/local/sbin/sentrai-update ] || fail "install-panel.sh did not add sentrai-update"
 grep -qx "commit=$HEAD" /opt/sentrai/mvp/VERSION || fail "VERSION does not name the installed commit"
 systemctl is-enabled --quiet sentrai-update-check.timer || fail "the daily update check is not on"
 ENV_SUM="$(sha256sum < /etc/sentrai/sentrai.env)"
@@ -221,7 +221,7 @@ systemctl is-active --quiet sentrai-core || fail "agent uninstall stopped the pa
 ./deploy/uninstall-agent.sh --purge
 [ ! -e /var/lib/sentrai/agent ] || fail "--purge left /var/lib/sentrai/agent"
 
-./deploy/uninstall.sh --purge
+./deploy/uninstall-panel.sh --purge
 for u in sentrai-core sentrai-collector sentrai-dashboard sentrai-notifier; do
     ! systemctl cat "$u" >/dev/null 2>&1 || fail "$u still installed"
 done

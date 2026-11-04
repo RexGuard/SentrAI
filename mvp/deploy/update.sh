@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Updates an installed SentrAI (the panel, an agent, or both on one machine) to the newest code,
 # keeping every setting, account, port and flag it was installed with. Installed as
-# /usr/local/sbin/sentrai-update by install.sh and install-agent.sh.
+# /usr/local/sbin/sentrai-update by install-panel.sh and install-agent.sh.
 #
 #   sudo sentrai-update                  update to the newest main (or the branch/tag saved with --ref)
 #   sudo sentrai-update --check          only say whether a newer version is out (exit 10 if so)
@@ -11,7 +11,7 @@
 #   1. fetches the code (git, or GitHub's download when git is missing) into /opt/sentrai/source
 #   2. stops SentrAI and saves the code, its Python packages, /etc/sentrai, the service files and
 #      the data (except collected logs) to /var/backups/sentrai/<time>/ (the newest 2 are kept)
-#   3. runs the new install.sh --update and/or install-agent.sh: new code, changed packages, file
+#   3. runs the new install-panel.sh --update and/or install-agent.sh: new code, changed packages, file
 #      moves, service files; settings and sign-in stay as they are, no new setup code
 #   4. checks it works: the core answers /health, the dashboard and agents' port answer, and no
 #      service keeps restarting. If not, everything from step 2 is put back and the old version runs.
@@ -292,7 +292,7 @@ fi
 # --- 1. get the code -----------------------------------------------------------------------
 if [ -n "$FROM" ]; then
     FROM="$(cd "$FROM" && pwd)"
-    [ -f "$FROM/mvp/deploy/install.sh" ] || die "--from $FROM is not a SentrAI checkout (no mvp/deploy/install.sh)"
+    [ -f "$FROM/mvp/deploy/install-agent.sh" ] || die "--from $FROM is not a SentrAI checkout (no mvp/deploy/install-agent.sh)"
     NEW_SRC="$FROM"
     NEW="$(git -c safe.directory='*' -C "$FROM" rev-parse HEAD 2>/dev/null || echo local)"
     REF="$FROM"  # what the summary names; nothing is saved
@@ -324,7 +324,10 @@ EOF
     NEW_SRC="$SOURCE"
     save_settings
 fi
-[ -f "$NEW_SRC/mvp/deploy/install.sh" ] || die "$REF has no mvp/deploy/install.sh"
+[ -f "$NEW_SRC/mvp/deploy/install-agent.sh" ] || die "$REF has no mvp/deploy/install-agent.sh"
+# The panel installer is install-panel.sh; versions before the split call it install.sh (--ref to an older one).
+PANEL_INSTALLER="$NEW_SRC/mvp/deploy/install-panel.sh"
+[ -f "$PANEL_INSTALLER" ] || PANEL_INSTALLER="$NEW_SRC/mvp/deploy/install.sh"
 
 if [ "$NEW" = "$INSTALLED" ] && [ "$FORCE" = 0 ]; then
     echo "SentrAI is already up to date (${NEW:0:7}, $REF). --force reinstalls it anyway."
@@ -341,7 +344,7 @@ make_backup "$BACKUP" || { start_all; die "could not save the current version; n
 export SENTRAI_SOURCE_COMMIT="$NEW" SENTRAI_SOURCE_REF="$REF" SENTRAI_SOURCE_REPO="$REPO"
 rc=0
 if [ "$PANEL" = 1 ]; then
-    "$NEW_SRC/mvp/deploy/install.sh" --update --prefix "$PREFIX" --user "$SVC_USER" || rc=$?
+    "$PANEL_INSTALLER" --update --prefix "$PREFIX" --user "$SVC_USER" || rc=$?
 fi
 if [ "$rc" = 0 ] && [ "$AGENT" = 1 ]; then
     "$NEW_SRC/mvp/deploy/install-agent.sh" --prefix "$PREFIX" --user "$SVC_USER" || rc=$?

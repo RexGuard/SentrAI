@@ -6,7 +6,7 @@ only). It holds password hashes, authenticator secrets and hashes of one-time co
 How people get in:
   - A new machine has no accounts. `python sentrai_config.py admin` (on a server: `sudo sentrai-admin`)
     prints a one-time setup code; whoever has it creates the Owner account on the dashboard's first
-    screen. The code works once, for SETUP_CODE_HOURS. install.sh can also make the Owner directly.
+    screen. The code works once, for SETUP_CODE_HOURS. install-panel.sh can also make the Owner directly.
   - Everyone after that is invited by an Owner or Admin (no open sign-up). An invite is a code, or a
     link that carries it, valid for INVITE_HOURS.
   - Every sign-in is email, password, then a 6-digit authenticator code (TOTP, RFC 6238), or one of the
@@ -228,7 +228,7 @@ def register_owner(code: str, name: str, email: str, password: str) -> dict:
 
 
 def make_owner(email: str, password: str, name: str = "") -> dict:
-    """install.sh with an email and password: the person at the shell becomes the Owner directly."""
+    """install-panel.sh with an email and password: the person at the shell becomes the Owner directly."""
     _check_email(email)
     _check_new_password(password)
     with _lock:
