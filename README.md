@@ -148,17 +148,18 @@ On Linux and macOS each part logs to `mvp/.run_logs/<part>.log`. Port taken or a
 
 | You want to | Do this | Guide |
 | --- | --- | --- |
-| Keep SentrAI running on a Linux server | `sudo ./deploy/install.sh --protect YOUR-IP --admin-email you@example.com` | [Install on a server](https://rexguard.github.io/SentrAI/docs/server.html) |
-| Watch several machines from one panel | add `--panel`, then add each machine with a join code | [One panel, many machines](https://rexguard.github.io/SentrAI/docs/panel.html) |
+| Install the panel on a Linux server | `sudo ./deploy/install-panel.sh --protect YOUR-IP --admin-email you@example.com` | [Install the panel](https://rexguard.github.io/SentrAI/docs/server.html) |
+| Add a machine to the panel (the agent, "wings") | make a join code on **Machines**, then on that machine `sudo ./mvp/deploy/install-agent.sh --panel URL --code CODE --pin PIN` (Windows: `install-agent.ps1`) | [Install the agent](https://rexguard.github.io/SentrAI/docs/agent.html) |
+| Watch several machines from one panel | the Machines page on the panel | [One panel, many machines](https://rexguard.github.io/SentrAI/docs/panel.html) |
 | Update | `sudo sentrai-update` (keeps every setting and record, goes back by itself if a check fails) | [Update](https://rexguard.github.io/SentrAI/docs/server.html#update) |
-| Remove | `sudo ./deploy/uninstall.sh` (`--purge` also deletes settings and records) | [Uninstall](https://rexguard.github.io/SentrAI/docs/server.html#uninstall) |
+| Remove | `sudo ./deploy/uninstall-panel.sh` (`--purge` also deletes settings and records) | [Uninstall](https://rexguard.github.io/SentrAI/docs/server.html#uninstall) |
 
 The short version for a server (Ubuntu 22.04 or 24.04 works well; install Node.js 20 or newer first for the
 web dashboard):
 
 ```bash
 git clone https://github.com/RexGuard/SentrAI && cd SentrAI/mvp
-sudo ./deploy/install.sh --protect 203.0.113.10 --admin-email you@example.com --panel
+sudo ./deploy/install-panel.sh --protect 203.0.113.10 --admin-email you@example.com --panel
 ```
 
 Replace `203.0.113.10` with **the public IP you manage the server from**. SentrAI never blocks a protected

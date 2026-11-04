@@ -205,7 +205,7 @@ function AddMachine({ page, onMade }: { page: Page; onMade: () => void }) {
               </div>
             </div>
           ))}
-          {!made.https && <p className="text-warn">Other machines refuse a plain http:// panel. Install the panel with sudo ./deploy/install.sh --panel to open its HTTPS port for agents.</p>}
+          {!made.https && <p className="text-warn">Other machines refuse a plain http:// panel. Install the panel with sudo ./deploy/install-panel.sh --panel to open its HTTPS port for agents.</p>}
         </div>
       )}
     </div>

@@ -6,7 +6,7 @@
     python sentrai_paths.py migrate   # only move files from the places older versions used
 
 The root is ``SENTRAI_HOME``; else the folder of ``SENTRAI_CONFIG`` (every install puts the settings
-file at the root); else ``~/.sentrai``. deploy/install.sh uses /var/lib/sentrai, install-agent.sh
+file at the root); else ``~/.sentrai``. deploy/install-panel.sh uses /var/lib/sentrai, install-agent.sh
 /var/lib/sentrai/agent and install-agent.ps1 C:\\ProgramData\\SentrAI\\agent.
 
     <root>/
@@ -21,7 +21,7 @@ file at the root); else ``~/.sentrai``. deploy/install.sh uses /var/lib/sentrai,
         protection.json             Warden: the monitor-only switch
         summary.json                when the client summary goes out
         extensions.json             extensions added or removed on the dashboard
-        remote-copy.token           the witness's append token (install.sh --remote-copy)
+        remote-copy.token           the witness's append token (install-panel.sh --remote-copy)
         people/routing.json         who gets what: contacts, routing rules, escalation   SENTRAI_ROUTING
         people/telegram_links.json  contacts linked to Telegram chats                SENTRAI_TELEGRAM_LINKS
         people/staff_reports.json   what staff reported                              SENTRAI_STAFF_REPORTS
@@ -48,7 +48,7 @@ file at the root); else ``~/.sentrai``. deploy/install.sh uses /var/lib/sentrai,
 
 Rules:
 
-* A variable that is set always wins, so a server set up by install.sh changes nothing it pinned.
+* A variable that is set always wins, so a server set up by install-panel.sh changes nothing it pinned.
 * "Next to" relations hold: the core's files sit next to the database wherever SENTRAI_DB points,
   pending.json next to sources.json, the agent's backups next to agent.json.
 * A file an older version kept somewhere else (the checkout's mvp/core/data, mvp/lab/scout,
@@ -140,7 +140,7 @@ ENTRIES: dict[str, Entry] = {e.key: e for e in (
     Entry("core.summary", "core", "summary.json", "when the client summary goes out (Reports page)", "Scribe"),
     Entry("core.extensions", "core", "extensions.json", "extensions added or removed on the dashboard (Extensions page)",
           "Extensions", optional=True, old=("part:extensions.json",)),
-    Entry("core.remote_copy_token", "core", "remote-copy.token", "the witness's append token (install.sh --remote-copy)",
+    Entry("core.remote_copy_token", "core", "remote-copy.token", "the witness's append token (install-panel.sh --remote-copy)",
           "Scribe", "SENTRAI_REMOTE_COPY_TOKEN_FILE", optional=True),
     Entry("core.playbooks", "core", "playbooks.json", "playbooks an AI model drafted from similar past incidents "
           "(Analytics page)", "Analytics", optional=True),

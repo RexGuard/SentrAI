@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Installs the SentrAI agent on a machine that reports to a central SentrAI panel (run as root,
-# from a checkout of the repo). The panel scores and decides; this machine sends its logs and puts
+# Installs the SentrAI AGENT ("wings") on a machine that reports to a central SentrAI panel (run as
+# root, from a checkout of the repo). Only the agent: the panel is installed on its own server with
+# deploy/install-panel.sh. The agent gets only lab/ (no tests), the core's firewall module and the
+# packages in lab/requirements-agent.txt. The panel scores and decides; this machine sends its logs and puts
 # the panel's blocks for it into its own firewall. Only outgoing HTTPS, no open port. While the
 # panel cannot be reached, local rules block clear attacks for an hour at a time and report back.
 #
@@ -58,7 +60,7 @@ while [ $# -gt 0 ]; do
         --prefix) PREFIX="$2"; shift 2 ;;
         --user) SVC_USER="$2"; shift 2 ;;
         --no-start) START=0; shift ;;
-        -h|--help) sed -n '2,33p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,35p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "Unknown option: $1 (see --help)" >&2; exit 2 ;;
     esac
 done
@@ -97,26 +99,44 @@ done
 install -d -o "$SVC_USER" -g "$SVC_USER" -m 0700 "$STATE" "$STATE/logs"
 install -d -m 0750 -o root -g "$SVC_USER" /etc/sentrai
 
-# --- code and venv (the agent uses the lab venv, plus the core's firewall module) ---
+# --- code and venv: only what the agent runs (lab/ without its tests, plus the core's firewall module) ---
 echo "Copying code to $MVP ..."
 install -d -m 0755 "$PREFIX" "$MVP"
 [ -d "$MVP/lab" ] && find "$MVP/lab" -mindepth 1 -maxdepth 1 ! -name .venv -exec rm -rf {} +
 rm -rf "$MVP/core/app"
 tar -C "$SRC" -cf - --exclude=.venv --exclude=__pycache__ --exclude=.pytest_cache \
     --exclude=./lab/logs --exclude=./lab/scout/sources.json --exclude=./lab/scout/pending.json \
-    --exclude='./lab/scout/trails/[0-9]*' \
+    --exclude='./lab/scout/trails/[0-9]*' --exclude=./lab/tests \
     ./lab ./core/app ./sentrai_config.py ./sentrai_llm.py ./sentrai_env.py ./sentrai_paths.py ./sentrai_extensions.py \
     | tar -C "$MVP" -xf - --no-same-owner
 record_version "$MVP" "$SRC"
 chown -R root:root "$MVP"
 chmod -R u=rwX,go=rX "$MVP"
 PIP_HELP="could not download the Python packages (pip's message is above). This machine must reach pypi.org over HTTPS; fix that, then run this again."
-if [ ! -x "$MVP/lab/.venv/bin/python" ]; then
-    echo "Creating venv ..."
-    "$PYTHON" -m venv "$MVP/lab/.venv" || die "could not create the Python environment in $MVP/lab/.venv"
-    "$MVP/lab/.venv/bin/python" -m pip install -q --upgrade pip || { rm -rf "$MVP/lab/.venv"; die "$PIP_HELP"; }
+# Only the agent's own packages (lab/requirements-agent.txt): no test runner, no AI libraries. A venv
+# an older install filled with the whole lab/requirements.txt is made again once, smaller. With a panel
+# on this same machine the venv is the panel's too, so then it is only topped up.
+VENV="$MVP/lab/.venv"
+REQ="$MVP/lab/requirements-agent.txt"
+STAMP="$VENV/requirements.installed"
+want="agent:$(sha256sum "$REQ" | cut -d' ' -f1)"
+have="$(cat "$STAMP" 2>/dev/null || true)"
+PANEL_HERE=0; [ -f /etc/systemd/system/sentrai-core.service ] && PANEL_HERE=1
+if [ "$PANEL_HERE" = 0 ] && [ -x "$VENV/bin/python" ] && [ "${have%%:*}" != agent ]; then
+    echo "Making the agent's Python environment again with only the packages it needs ..."
+    systemctl stop sentrai-agent 2>/dev/null || true
+    rm -rf "$VENV"
 fi
-"$MVP/lab/.venv/bin/python" -m pip install -q -r "$MVP/lab/requirements.txt" || die "$PIP_HELP"
+if [ ! -x "$VENV/bin/python" ]; then
+    echo "Creating venv ..."
+    "$PYTHON" -m venv "$VENV" || die "could not create the Python environment in $VENV"
+    "$VENV/bin/python" -m pip install -q --upgrade pip || { rm -rf "$VENV"; die "$PIP_HELP"; }
+fi
+if [ "$want" != "$have" ]; then
+    "$VENV/bin/python" -m pip install -q -r "$REQ" || die "$PIP_HELP"
+    # The panel's installer keeps its own stamp here; leave that one so it still sees its packages.
+    [ "$PANEL_HERE" = 1 ] || echo "$want" > "$STAMP"
+fi
 
 # --- settings ---------------------------------------------------------------
 # An upgrade keeps what an earlier run set: the addresses never to block, enforcing or dry run, and

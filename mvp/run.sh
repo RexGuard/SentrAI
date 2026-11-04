@@ -19,7 +19,7 @@
 #   ./run.sh --core-port 8100           when 8000 is taken (or set SENTRAI_CORE_PORT; the dashboard
 #                                       port can come from SENTRAI_DASHBOARD_PORT the same way)
 #
-# For a server that should keep SentrAI running, use deploy/install.sh (systemd services) instead.
+# For a server that should keep SentrAI running, use deploy/install-panel.sh (systemd services) instead.
 #
 # Needs python3 with the venv module (Debian/Ubuntu: sudo apt install python3-venv).
 set -euo pipefail

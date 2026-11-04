@@ -4,9 +4,9 @@
 
   SENTRAI_CORE_HOST / SENTRAI_CORE_PORT    the local API as before (default 127.0.0.1:8000): the dashboard,
                                          collector and notifier on this machine talk to it
-  SENTRAI_PANEL_PORT                      the agents' HTTPS port (off when empty; install.sh --panel uses 8443)
+  SENTRAI_PANEL_PORT                      the agents' HTTPS port (off when empty; install-panel.sh --panel uses 8443)
   SENTRAI_PANEL_HOST                      its address (default 0.0.0.0)
-  SENTRAI_PANEL_CERT / SENTRAI_PANEL_KEY   its certificate and key (install.sh --panel makes a self-signed pair;
+  SENTRAI_PANEL_CERT / SENTRAI_PANEL_KEY   its certificate and key (install-panel.sh --panel makes a self-signed pair;
                                          agents pin it, so it need not come from a public authority)
 
 The agents' listener only answers what a machine key may do (main.AGENT_ROUTES) plus /fleet/enrol and
@@ -70,7 +70,7 @@ def panel_config(app: Any, env: dict[str, str]) -> uvicorn.Config | None:
     cert, key = (env.get("SENTRAI_PANEL_CERT") or "").strip(), (env.get("SENTRAI_PANEL_KEY") or "").strip()
     if not (cert and key):
         raise SystemExit("SENTRAI_PANEL_PORT is set but SENTRAI_PANEL_CERT / SENTRAI_PANEL_KEY are not: agents only "
-                         "talk HTTPS (sudo ./deploy/install.sh --panel makes a certificate)")
+                         "talk HTTPS (sudo ./deploy/install-panel.sh --panel makes a certificate)")
     from .main import AGENT_ROUTES
 
     return uvicorn.Config(agents_only(app, AGENT_ROUTES), host=env.get("SENTRAI_PANEL_HOST") or "0.0.0.0",

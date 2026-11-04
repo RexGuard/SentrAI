@@ -1,11 +1,23 @@
-# Running SentrAI as server services
+# Installing SentrAI: the panel and the agent
 
-`run.sh` is for trying SentrAI on a laptop: everything stops when you run `stop.sh`. On a real
-Linux server, install SentrAI as systemd services instead.
+`run.sh` is for trying SentrAI on a laptop: everything stops when you run `stop.sh`. For real use,
+SentrAI has two separate installers, one for each part:
+
+| Part | Where it goes | Installer | Removed with | Python packages |
+| --- | --- | --- | --- | --- |
+| **Panel** | one Linux server: risk engine, dashboards, alerts, the agents' port | `install-panel.sh` | `uninstall-panel.sh` | every part's `requirements.txt` |
+| **Agent** ("wings") | each machine the panel watches (Linux or Windows) | `install-agent.sh` / `install-agent.ps1` | `uninstall-agent.sh` / `uninstall-agent.ps1` | `lab/requirements-agent.txt` only (about 20 MB) |
+
+Neither installer installs the other part, and each has its own `--help`. Both put in the same
+updater, `sudo sentrai-update` (Windows: `update-agent.ps1`), which updates whatever is on the
+machine. `install.sh` and `uninstall.sh` are the panel's old names; they still work and run the
+`-panel` scripts.
+
+## The panel (`install-panel.sh`)
 
 ```bash
 git clone https://github.com/RexGuard/SentrAI && cd SentrAI/mvp
-sudo ./deploy/install.sh --protect 203.0.113.10 --admin-email you@example.com
+sudo ./deploy/install-panel.sh --protect 203.0.113.10 --admin-email you@example.com
 ```
 
 Run from a terminal, the installer then asks about the web dashboard, with the answer in
@@ -132,7 +144,7 @@ sudo ./deploy/install-witness.sh --name 198.51.100.20 --allow 203.0.113.10   # t
 It prints what to copy over. Then, here:
 
 ```bash
-sudo ./deploy/install.sh --remote-copy https://198.51.100.20:8600 \
+sudo ./deploy/install-panel.sh --remote-copy https://198.51.100.20:8600 \
      --remote-copy-token-file ./append.token --remote-copy-ca ./cert.pem
 ```
 
@@ -198,13 +210,13 @@ button on the same page finds log files without an AI key.
 systemctl status 'sentrai-*'
 journalctl -u sentrai-core -f          # or -u sentrai-collector, -u sentrai-dashboard
 sudo systemctl restart sentrai.target
-sudo ./deploy/uninstall.sh            # keeps /etc/sentrai and /var/lib/sentrai; --purge removes them
+sudo ./deploy/uninstall-panel.sh            # keeps /etc/sentrai and /var/lib/sentrai; --purge removes them
                                       # (also removes the dashboard firewall rule)
 ```
 
 ## Updating (`sentrai-update`)
 
-`install.sh` and `install-agent.sh` install `deploy/update.sh` as `/usr/local/sbin/sentrai-update`:
+`install-panel.sh` and `install-agent.sh` install `deploy/update.sh` as `/usr/local/sbin/sentrai-update`:
 
 ```bash
 sudo sentrai-update                 # newest main (or the --ref saved earlier), same settings
@@ -217,7 +229,7 @@ It finds what is installed here (panel, agent or both, `--prefix`, `--user`) fro
 files, fetches the code into `/opt/sentrai/source` (git, or GitHub's download when git is
 missing), stops SentrAI, saves the code with its venvs, `/etc/sentrai`, the service files and
 `/var/lib/sentrai` (without collected logs) to `/var/backups/sentrai/<time>/` (newest 2 kept),
-then runs the new `install.sh --update` and/or `install-agent.sh`. `--update` means no questions,
+then runs the new `install-panel.sh --update` and/or `install-agent.sh`. `--update` means no questions,
 the notifier stays as it was and the sign-in is left alone (no new setup code). Then it checks the
 core's `/health`, the dashboard's `/_stcore/health` and the agents' port, and that no service that
 was running before restarts within 20 seconds. On a failure it restores the backup and starts it.
@@ -239,21 +251,27 @@ the new names, and deletes `/opt/cactai` and the old commands. When both the pan
 were on the machine, the installer that ran upgrades the other one as well. Rules added to ufw or
 firewalld keep their old `cactai-` comment; they still allow the same ports.
 
-## One panel, many machines (`install-agent.sh`)
+## The agent (`install-agent.sh`, `install-agent.ps1`)
 
-One SentrAI install can be the central panel for other machines. Each other machine runs only
-the agent: it sends that machine's logs to the panel and puts the panel's blocks for that machine
-into its own firewall. The panel does the scoring; the agent only makes outgoing HTTPS calls.
+Each machine the panel watches runs only the agent: it sends that machine's logs to the panel and
+puts the panel's blocks for that machine into its own firewall. The panel does the scoring; the
+agent only makes outgoing HTTPS calls. The agent's installer copies only `lab/` (without its tests)
+and the core's firewall module, and installs only `lab/requirements-agent.txt` (`requests`,
+`psutil`, `tzdata`): no dashboard, notifier, test runner or AI packages. An agent installed before
+the split gets a fresh, smaller Python environment once, at its next update; with a panel on the
+same machine they share it and nothing is removed.
 
-On the panel, install (or upgrade) with `--panel`. It opens a second core port for agents only
-(8443, HTTPS with a self-signed certificate), scores each machine on its own
+### The agents' port on the panel (`--panel`)
+
+A first panel install opens a second core port for agents only (8443, HTTPS with a self-signed
+certificate); an older panel gets it with `--panel`. It scores each machine on its own
 (`SENTRAI_RISK_SCOPE=host`) and prints the certificate's pin. Keep the panel's own firewall out of it
 with `SENTRAI_FIREWALL=off` in `/etc/sentrai/sentrai.env` when the panel is not itself a guarded server.
 
 ```bash
-sudo ./deploy/install.sh --panel                                  # port 8443
-sudo ./deploy/install.sh --panel 9443 --panel-url https://panel.example.com:9443
-sudo ./deploy/install.sh --panel off                              # close it again
+sudo ./deploy/install-panel.sh --panel                                  # port 8443 (a first install does this)
+sudo ./deploy/install-panel.sh --panel 9443 --panel-url https://panel.example.com:9443
+sudo ./deploy/install-panel.sh --panel off                              # close it again
 ```
 
 The agents' port answers only what a machine key may do (send its events, read its blocks, report

@@ -5,7 +5,7 @@
 #   sudo ./deploy/install-witness.sh --name 198.51.100.20
 #
 # Then, on the watched server, point SentrAI at it with the line this prints:
-#   sudo ./deploy/install.sh --remote-copy https://198.51.100.20:8600 --remote-copy-token-file ...
+#   sudo ./deploy/install-panel.sh --remote-copy https://198.51.100.20:8600 --remote-copy-token-file ...
 #
 # Options:
 #   --name HOST_OR_IP   how the watched server reaches this machine (goes in the HTTPS certificate)
@@ -150,7 +150,7 @@ The SentrAI witness is running on $SCHEME://$NAME:$PORT and keeps its copy in $D
 
 On the watched server, copy these two files over (scp), then run the installer there:
   $ETC/append.token$( [ "$TLS" = 1 ] && echo "      and  $ETC/tls/cert.pem" )
-  sudo ./deploy/install.sh --remote-copy $SCHEME://$NAME:$PORT --remote-copy-token-file ./append.token$( [ "$TLS" = 1 ] && echo " --remote-copy-ca ./cert.pem" )
+  sudo ./deploy/install-panel.sh --remote-copy $SCHEME://$NAME:$PORT --remote-copy-token-file ./append.token$( [ "$TLS" = 1 ] && echo " --remote-copy-ca ./cert.pem" )
 
 Keep $ETC/read.token OFF the watched server: it reads the copy back. To compare later:
   python -m app.remote_copy compare --url $SCHEME://$NAME:$PORT --read-token-file read.token

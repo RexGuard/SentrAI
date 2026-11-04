@@ -1,5 +1,5 @@
 # Moves an install made before the CactAI -> SentrAI rename over to the new names. Sourced by
-# install.sh, install-agent.sh, install-witness.sh and the uninstall scripts; it does nothing on a
+# install-panel.sh, install-agent.sh, install-witness.sh and the uninstall scripts; it does nothing on a
 # machine without the old names, and running it twice changes nothing the second time.
 #
 #   migrate_from_cactai server|witness
@@ -131,7 +131,7 @@ migrate_from_cactai() {
     rm -f /etc/systemd/system/cactai.target
     systemctl daemon-reload
 
-    # The dashboard rule goes with its old command; install.sh puts the new one in before the dashboard starts.
+    # The dashboard rule goes with its old command; install-panel.sh puts the new one in before the dashboard starts.
     if [ -x /usr/local/sbin/cactai-dashboard-firewall ]; then /usr/local/sbin/cactai-dashboard-firewall remove || true; fi
     rm -f /usr/local/sbin/cactai-dashboard-firewall /usr/local/bin/cactai-admin /usr/local/bin/cactai-scout
     _mig_firewall
@@ -163,6 +163,6 @@ reinstall_other_after_cactai() {  # ME (panel|agent) DIR: upgrade the other part
         "$2/install-agent.sh" || echo "WARNING: upgrade the agent with: sudo $2/install-agent.sh" >&2
     elif [ "$1" = agent ] && [ "$OLD_PANEL" = 1 ] && [ ! -e /etc/systemd/system/sentrai-core.service ]; then
         echo "The SentrAI panel on this machine was installed under the old names; upgrading it too ..."
-        "$2/install.sh" --no-questions || echo "WARNING: upgrade the panel with: sudo $2/install.sh" >&2
+        "$2/install-panel.sh" --no-questions || echo "WARNING: upgrade the panel with: sudo $2/install-panel.sh" >&2
     fi
 }

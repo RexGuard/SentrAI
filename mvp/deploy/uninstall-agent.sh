@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Removes the SentrAI agent that install-agent.sh added: its service, the blocks it put in this
 # machine's firewall and its code. The machine key stays (so a reinstall needs no new join code)
-# until --purge. A SentrAI panel installed on the same machine (install.sh) is left alone.
+# until --purge. A SentrAI panel installed on the same machine (install-panel.sh) is left alone.
 #
 #   sudo ./deploy/uninstall-agent.sh               remove the service, its blocks and its code
 #   sudo ./deploy/uninstall-agent.sh --purge       also delete the machine key, settings and the sentrai user
@@ -33,7 +33,7 @@ reinstall_other_after_cactai agent "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd
 STATE=/var/lib/sentrai/agent
 ENV_FILE=/etc/sentrai/agent.env
 MVP="$PREFIX/mvp"
-PANEL=0  # install.sh put the panel here too: its code, folders and user stay
+PANEL=0  # install-panel.sh put the panel here too: its code, folders and user stay
 if [ -f /etc/systemd/system/sentrai-core.service ]; then PANEL=1; fi
 
 systemctl disable --now sentrai-agent 2>/dev/null || true

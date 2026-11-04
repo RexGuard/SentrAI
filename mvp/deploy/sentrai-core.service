@@ -10,7 +10,7 @@ WorkingDirectory=@PREFIX@/mvp/core
 # iptables takes this lock file before every change; /run is read-only to the service otherwise.
 ExecStartPre=-+/bin/sh -c 'touch /run/xtables.lock'
 # app.serve: the local API on SENTRAI_CORE_HOST:SENTRAI_CORE_PORT, plus the agents' HTTPS port when
-# SENTRAI_PANEL_PORT is set (install.sh --panel).
+# SENTRAI_PANEL_PORT is set (install-panel.sh --panel).
 ExecStart=@PREFIX@/mvp/core/.venv/bin/python -m app.serve
 User=@USER@
 Group=@USER@

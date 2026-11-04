@@ -118,7 +118,7 @@ jobs:
         run: ..\.github\scripts\windows-agent-smoke.ps1
 
   linux-install:
-    # Installs the panel (install.sh) and the agent (install-agent.sh) as real systemd services on
+    # Installs the panel (install-panel.sh) and the agent (install-agent.sh) as real systemd services on
     # Ubuntu, sends an attack through a web log, checks the real nftables and iptables blocks, and
     # uninstalls both again.
     name: Linux install (${{ matrix.os }})
@@ -140,10 +140,18 @@ jobs:
       - name: Server packages
         run: sudo apt-get update -q && sudo apt-get install -yq python3-venv nftables iptables
 
+      # The agent's installers install only lab/requirements-agent.txt: the agent must run on that alone.
+      - name: Agent runs on its own packages
+        run: |
+          /usr/bin/python3 -m venv /tmp/agent-venv
+          /tmp/agent-venv/bin/python -m pip install -q -r lab/requirements-agent.txt
+          cd lab && /tmp/agent-venv/bin/python -c "import agent.agent, agent.offline, agent.tasks, agent.services, agent.hardware, collector.collector, scout.sources; from app import firewall, protect, risk, backup_copies"
+          /tmp/agent-venv/bin/python -m agent --help >/dev/null
+
       - name: Install, attack, block, uninstall
         run: sudo PYTHON=/usr/bin/python3 ../.github/scripts/linux-smoke.sh
 
-      # A server installed before the CactAI -> SentrAI rename, upgraded with today's install.sh.
+      # A server installed before the CactAI -> SentrAI rename, upgraded with today's install-panel.sh.
       - name: Upgrade from the CactAI names
         env:
           OLD_SHA: 3ed7261a9b519d391ac75f8aafcf1eb155996589  # main just before the rename

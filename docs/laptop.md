@@ -79,5 +79,5 @@ To see SentrAI react without waiting for a real attack, start the
 
 ## Next
 
-To keep SentrAI watching a machine around the clock, [install it on a server](server.html). A
-laptop can also report to a server you already run, with the [agent](panel.html#on-a-laptop-without-a-service).
+To keep SentrAI watching a machine around the clock, [install the panel on a server](server.html). A
+laptop can also report to a server you already run, with the [agent](agent.html#on-a-laptop-without-a-service).

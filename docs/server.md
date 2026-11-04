@@ -1,14 +1,24 @@
 ---
-title: Install on a server
+title: Install the panel
 nav: docs
-description: Install SentrAI as systemd services on a Linux server, open the dashboard to your own IP, update and uninstall.
+description: Install the SentrAI panel as systemd services on a Linux server, open the dashboard to your own IP, update and uninstall.
 ---
 
-# Install on a server
+# Install the panel
 
-On a Linux server, SentrAI runs as four systemd services that start at boot and keep a real-time
-clock. The installer sets up a service account, its settings, HTTPS for the dashboard, and a
-firewall rule so only the computers you name can open it.
+SentrAI comes with two installers, one for each part:
+
+| Part | What it is | Installer | Page |
+| --- | --- | --- | --- |
+| **Panel** | the central server: risk engine, web dashboard, alerts, and the port agents join | `mvp/deploy/install-panel.sh` | this page |
+| **Agent** (wings) | the small part on each machine the panel watches | `mvp/deploy/install-agent.sh` (Linux), `install-agent.ps1` (Windows) | [Install the agent](agent.html) |
+
+Install the panel once, then the agent on every other machine. Neither installer touches the
+other's part. The panel also watches its own server's logs, so it needs no agent there.
+
+On a Linux server, the panel runs as four systemd services that start at boot and keep a real-time
+clock. The installer sets up a service account, its settings, HTTPS for the dashboard, a firewall
+rule so only the computers you name can open it, and the agents' HTTPS port (8443).
 
 The examples use `203.0.113.10` as **your own computer's public IP** (the one you manage the
 server from). Put your real one in its place. If you do not know it, search "what is my IP" from
@@ -25,7 +35,7 @@ that computer.
 
 ```bash
 git clone https://github.com/RexGuard/SentrAI && cd SentrAI/mvp
-sudo ./deploy/install.sh --protect 203.0.113.10 --admin-email you@example.com
+sudo ./deploy/install-panel.sh --protect 203.0.113.10 --admin-email you@example.com
 ```
 
 `--protect` does three things: SentrAI will never block that address, the dashboard opens to it,
@@ -49,6 +59,10 @@ The Owner questions come only on a new machine. The password is asked twice. Pre
 Owner in the browser instead. The **Allowed IPs** go into `ADMIN_IPS` too, like `--protect`. When
 it finishes, it prints the dashboard address, either the Owner's email or the setup code, and the
 addresses whose `sudo` counts as your own.
+
+A first install also opens **port 8443** for agents and prints the certificate pin they use (see
+[One panel, many machines](panel.html#1-install-the-panel)). For one server on its own, with no
+agents, add `--panel off`.
 
 ## Open the dashboard to your computer
 
@@ -74,7 +88,7 @@ to `ADMIN_IPS`; an old one stays there until you remove it from `/etc/sentrai/se
 restart `sentrai.target`):
 
 ```bash
-sudo ./deploy/install.sh --dashboard-allow 203.0.113.25
+sudo ./deploy/install-panel.sh --dashboard-allow 203.0.113.25
 ```
 
 ### Keep the dashboard on the server
@@ -83,7 +97,7 @@ For the tightest setup, or when the server has no `nft` or `iptables`, keep the 
 network and reach it through an SSH tunnel:
 
 ```bash
-sudo ./deploy/install.sh --dashboard-local
+sudo ./deploy/install-panel.sh --dashboard-local
 ```
 
 Then, from your own computer:
@@ -130,13 +144,13 @@ Its suggestions appear under **Collector**, then **Scout proposals**, where you 
 | `--no-start` | install and enable the services without starting them |
 | `--seal-journal` | sign the system journal so old entries cannot be rewritten unnoticed. Prints a key once: keep it off the server |
 | `--remote-copy URL` | send every record to a second machine that keeps a copy root on this server cannot change. See the [server README](https://github.com/RexGuard/SentrAI/blob/main/mvp/deploy/README.md#off-box-copy---remote-copy) |
-| `--panel [PORT]` / `--panel-url URL` | make this server a [central panel](panel.html) that agents on other machines join (port 8443 by default); `--panel off` closes it |
+| `--panel [PORT]` / `--panel-url URL` | the port agents on other machines join ([One panel, many machines](panel.html)). On by default on a first install (8443); `--panel off` closes it, for one server on its own |
 | `--prefix DIR` / `--user NAME` | install somewhere other than `/opt/sentrai`, or run as another account |
 
 A setup with no questions, for a script:
 
 ```bash
-sudo ./deploy/install.sh --protect 203.0.113.10 --admin-email you@example.com --no-questions
+sudo ./deploy/install-panel.sh --protect 203.0.113.10 --admin-email you@example.com --no-questions
 ```
 
 ## Where things go
@@ -194,7 +208,7 @@ update leaves you where you were. Every run is logged to `/var/log/sentrai-updat
 | `sudo sentrai-update --from ~/SentrAI` | install from a checkout on the server, without fetching |
 
 An agent installed on the same server is updated with the panel. Agents on other machines are
-updated on each machine with the same command (see [One panel, many machines](panel.html#update-the-agents)).
+updated on each machine with the same command (see [One panel, many machines](agent.html#update-the-agent)).
 
 **Update available.** Once a day the server checks GitHub for a newer version (it only checks,
 it never installs on its own). When one is out, the dashboard's sidebar shows **Update
@@ -208,7 +222,7 @@ cd SentrAI && git pull
 sudo ./mvp/deploy/update.sh
 ```
 
-From then on `sudo sentrai-update` is enough. Running `sudo ./deploy/install.sh` again still
+From then on `sudo sentrai-update` is enough. Running `sudo ./deploy/install-panel.sh` again still
 works too: it is how you change options (only the options you pass change).
 
 ### Upgrading a server set up before the SentrAI name
@@ -224,8 +238,8 @@ old `CACTAI_` names still work, and SentrAI prints a reminder to rename them to 
 ## Uninstall
 
 ```bash
-sudo ./deploy/uninstall.sh            # removes the services, keeps settings and records
-sudo ./deploy/uninstall.sh --purge    # also removes /etc/sentrai and /var/lib/sentrai
+sudo ./deploy/uninstall-panel.sh            # removes the services, keeps settings and records
+sudo ./deploy/uninstall-panel.sh --purge    # also removes /etc/sentrai and /var/lib/sentrai
 ```
 
 Both remove the dashboard's firewall rule. A sealed journal stays sealed.
@@ -240,5 +254,5 @@ after your own IP is protected.
 
 ## Next
 
-To watch more machines from this server's dashboard, make it a
-[central panel](panel.html) and add them with the agent.
+Add your other machines: make a join code on **Machines** and [install the agent](agent.html) on
+each one.

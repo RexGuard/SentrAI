@@ -462,7 +462,7 @@ data into `sentrai`. To restore in place:
 why (at most 20); `ok` is `false` when any failed or nothing was written. `safety_backup` is the id
 of the safety backup an in-place restore took: restore that one in place to undo this one.
 
-On a server installed with `deploy/install.sh`, the core may only write under `/var/lib/sentrai/core`.
+On a server installed with `deploy/install-panel.sh`, the core may only write under `/var/lib/sentrai/core`.
 To restore in place there, add the folders to `ReadWritePaths=` in `sentrai-core.service`, or restore
 into a new folder and copy back by hand.
 

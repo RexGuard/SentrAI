@@ -5,8 +5,10 @@
   url: /docs/demo.html
 - title: Run on a laptop
   url: /docs/laptop.html
-- title: Install on a server
+- title: Install the panel
   url: /docs/server.html
+- title: Install the agent
+  url: /docs/agent.html
 - title: One panel, many machines
   url: /docs/panel.html
 - title: Log sources

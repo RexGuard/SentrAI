@@ -40,13 +40,13 @@ and the incidents that make it up.
 | --- | --- | --- |
 | `./run.sh` (Linux, macOS) | `--core-bind 0.0.0.0` | `--core-port 8100` |
 | `.\run.ps1` (Windows) | `-CoreBind 0.0.0.0` | `-CorePort 8100` |
-| `deploy/install.sh` (server) | `--core-bind 0.0.0.0` | `--core-port 8100` |
+| `deploy/install-panel.sh` (server) | `--core-bind 0.0.0.0` | `--core-port 8100` |
 
 The API is plain HTTP. Open it to the network only on a private test network: on a server, reach it
 through SSH instead (`ssh -L 8000:127.0.0.1:8000 you@panel.example.com`, then use
 `http://127.0.0.1:8000` on your own computer).
 
-**The agents' port** opens on a [central panel](../panel.html) installed with `install.sh --panel`
+**The agents' port** opens on a [central panel](../panel.html) installed with `install-panel.sh --panel`
 (`SENTRAI_PANEL_PORT`, 8443; `SENTRAI_PANEL_HOST`, default `0.0.0.0`). It uses HTTPS with the
 certificate in `SENTRAI_PANEL_CERT` and `SENTRAI_PANEL_KEY`. The installer makes a self-signed one,
 and each agent pins it when it joins, so it does not need to come from a public authority. This port
@@ -76,7 +76,7 @@ Print it on a laptop install (in the `mvp` folder):
 python sentrai_config.py token
 ```
 
-Print it on a server set up with `deploy/install.sh` (the settings file belongs to the `sentrai`
+Print it on a server set up with `deploy/install-panel.sh` (the settings file belongs to the `sentrai`
 account):
 
 ```bash

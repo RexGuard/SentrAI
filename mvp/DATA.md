@@ -8,7 +8,7 @@ records. [`sentrai_paths.py`](sentrai_paths.py) decides where each file goes, an
 | --- | --- |
 | A laptop (Linux, macOS) | `~/.sentrai` |
 | A laptop (Windows) | `%USERPROFILE%\.sentrai` |
-| A server (`deploy/install.sh`) | `/var/lib/sentrai` |
+| A server (`deploy/install-panel.sh`) | `/var/lib/sentrai` |
 | A Linux machine with only the agent (`deploy/install-agent.sh`) | `/var/lib/sentrai/agent` |
 | A Windows machine with only the agent (`deploy/install-agent.ps1`) | `C:\ProgramData\SentrAI\agent` |
 
@@ -54,7 +54,7 @@ or part the file belongs to. **Set with** is the variable that puts it somewhere
 | `core/protection.json` | Warden | the monitor-only switch, as an operator last set it | |
 | `core/summary.json` | Scribe | when the client summary goes out (Reports page) | |
 | `core/extensions.json` | Extensions | extensions added or removed on the dashboard (Extensions page) | |
-| `core/remote-copy.token` | Scribe | the witness's append token (`install.sh --remote-copy`) | `SENTRAI_REMOTE_COPY_TOKEN_FILE` |
+| `core/remote-copy.token` | Scribe | the witness's append token (`install-panel.sh --remote-copy`) | `SENTRAI_REMOTE_COPY_TOKEN_FILE` |
 | `core/playbooks.json` | Analytics | playbooks an AI model drafted from similar past incidents (Analytics page) | |
 | `core/people/routing.json` | Warden | who gets what: contacts, routing rules, escalation | `SENTRAI_ROUTING` |
 | `core/people/admins.json` | Warden | the administrators: accounts, sign-in addresses and SSH keys (taught or learned), who is signed in now | `SENTRAI_ADMINS` |
@@ -77,7 +77,7 @@ or part the file belongs to. **Set with** is the variable that puts it somewhere
 
 ## Rules
 
-- **A variable that is set always wins.** A server keeps every path `install.sh` pinned in
+- **A variable that is set always wins.** A server keeps every path `install-panel.sh` pinned in
   `/etc/sentrai/sentrai.env`, and an agent the ones in `agent.env` or `SentrAIAgent.xml`.
 - **Files that belong together stay together.** The core's files sit next to the database wherever
   `SENTRAI_DB` points, `pending.json` and `trails/` next to `sources.json`, `accounts.json` next to

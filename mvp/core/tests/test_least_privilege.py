@@ -69,7 +69,7 @@ def test_each_service_sees_only_its_own_state():
 
 
 def test_installer_keeps_the_account_out_of_the_log_groups():
-    text = (DEPLOY / "install.sh").read_text(encoding="utf-8")
+    text = (DEPLOY / "install-panel.sh").read_text(encoding="utf-8")
     assert "usermod -aG" not in text
     assert "SENTRAI_DB=$STATE/core/sentrai.db" in text
     assert "SENTRAI_COLLECTOR_STATE=$STATE/collector/state.json" in text

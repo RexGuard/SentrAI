@@ -516,7 +516,7 @@ def _model(s: SetupChat, answer: str) -> str:
 
 # 8. Web dashboard: who may open it and on which port. People sign in with their own accounts (Team page).
 # Opening it to other computers changes the firewall, which needs admin rights, so Cyanide saves the
-# port and gives the one install command that applies the rest (deploy/install.sh).
+# port and gives the one install command that applies the rest (deploy/install-panel.sh).
 DEFAULT_PORT = "8501"
 
 
@@ -553,7 +553,7 @@ def deploy_command(s: SetupChat) -> str:
     port = s.notes.get("port", DEFAULT_PORT)
     if "web" not in s.notes:
         return ""
-    args = ["sudo ./deploy/install.sh"]
+    args = ["sudo ./deploy/install-panel.sh"]
     if s.notes["web"] == "network":
         args += [f"--dashboard-allow {ip}" for ip in s.notes.get("allow", [])]
     else:
