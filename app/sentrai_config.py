@@ -1,0 +1,736 @@
+"""SentrAI settings file and first-run setup wizard.
+
+Every component already reads its settings from environment variables. This module keeps
+those values in one JSON file per machine and, on `load()`, sets each variable that is not
+already set. An explicit environment variable therefore always wins over the file.
+
+A machine is "new" when it has no settings file yet. There, `ensure()` walks the user
+through one short section per part of the pipeline (collector, classifier, responder,
+notifications). Pressing Enter keeps the default, which is exactly what the demo uses.
+
+The security values (when an event counts as an attack, when SentrAI acts, for how long) come
+from a preset: Strict, Moderate or Minimum, or Advanced to set each value yourself. The saved
+file keeps the preset's name and every value. Values that no longer match their preset are saved
+as Advanced (see `settle_preset()`).
+
+Each installed extension (Cloudflare, TypeSafe, Telegram, ...: see sentrai_extensions.py) brings its
+own settings in its extension.json; they are saved under "extension:<name>" and asked last. Settings
+this version does not know (an uninstalled extension's, say) are kept as they are when saving.
+
+Run (any venv, stdlib only):
+    python sentrai_config.py              set up if this is a new machine, then show settings
+    python sentrai_config.py setup        run the wizard again (current values as defaults)
+    python sentrai_config.py get NAME     print one value, for scripts
+    python sentrai_config.py token        print the core API token (made and saved on first use)
+    python sentrai_config.py admin        who may sign in; on a new machine, a one-time setup code for the Owner
+    python sentrai_config.py admin --email you@example.com --password-stdin   make the Owner directly (install-panel.sh)
+    python sentrai_config.py admin --reset [--email you@example.com]          new password, authenticator again
+
+Dashboard accounts (Owner, Admin, Auditor) live in accounts.json next to this file: see sentrai_accounts.py.
+"""
+from __future__ import annotations
+
+import getpass
+import hashlib
+import hmac
+import json
+import os
+import secrets
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Callable
+
+import sentrai_env  # first: old CACTAI_* names still work
+import sentrai_llm
+import sentrai_paths  # where every part keeps its data
+
+try:
+    import sentrai_extensions
+except ImportError:  # an agent install copies only a few of these files, and runs no extensions
+    sentrai_extensions = None
+
+APP_DIR = Path(__file__).resolve().parent
+
+
+def config_path() -> Path:
+    """config.json in the data root (SENTRAI_CONFIG moves it; see sentrai_paths.py for the whole tree)."""
+    return sentrai_paths.path("config")
+
+
+def accounts_path() -> Path:
+    """The dashboard accounts (sentrai_accounts.py), next to the settings file (SENTRAI_ACCOUNTS moves it)."""
+    return sentrai_paths.path("accounts")
+
+
+def approval_groups_path() -> Path:
+    """Approvals bundled into named groups on the dashboard, next to the settings file."""
+    return sentrai_paths.path("approval_groups")
+
+
+def approval_groups() -> dict[str, list[str]]:
+    """{group name: [incident ids]}; {} until someone makes a group."""
+    try:
+        data = json.loads(approval_groups_path().read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {str(k): [str(i) for i in v] for k, v in data.items() if isinstance(v, list)}
+
+
+def save_approval_groups(groups: dict[str, list[str]]) -> Path:
+    path = approval_groups_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _write_private(path, json.dumps({k: v for k, v in groups.items() if v}, indent=2) + "\n")
+    return path
+
+
+def _write_private(path: Path, text: str) -> None:
+    """The settings hold the API token and keys: readable by this user only (no effect on Windows)."""
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(text)
+    try:
+        os.chmod(path, 0o600)  # a file saved by an older version keeps its old mode otherwise
+    except OSError:
+        pass
+
+
+@dataclass(frozen=True)
+class Field:
+    env: str  # the environment variable the components already read
+    prompt: str
+    default: str = ""
+    kind: type = str  # str, int or float; used only to validate the answer
+    secret: bool = False
+    choices: tuple[str, ...] = ()  # when set, the answer must be one of these
+    generated: bool = False  # never asked: the wizard keeps the saved value or makes a new one
+    advanced: bool = False  # never asked by the wizard; set on the Configuration page
+
+
+@dataclass(frozen=True)
+class Section:
+    key: str
+    title: str
+    about: str
+    fields: tuple[Field, ...]
+    on_when: tuple[str, ...] = ()  # an extension's main settings: blank in the wizard skips the rest
+
+
+PRESET_ENV = "SENTRAI_PRESET"
+DEFAULT_PRESET = "moderate"  # the values the demo was built and recorded with
+
+
+@dataclass(frozen=True)
+class Preset:
+    label: str
+    about: str
+    values: dict[str, str]
+
+
+# Ordered from most to least cautious. Each preset sets every field listed in PRESET_FIELDS.
+PRESETS = {
+    "strict": Preset("Strict", "Acts early and holds longer. For sensitive data; expect more alerts and "
+                     "some false positives.", {
+        "BRUTE_FORCE_COUNT": "3", "BRUTE_FORCE_WINDOW_S": "120", "EXPORT_ROWS_THRESHOLD": "50",
+        "RISK_THRESHOLD": "65", "HOTPATCH_TTL_HOURS": "4", "SLA_HOURS": "1", "NEEDLE_MIN_CONFIDENCE": "0.5"}),
+    "moderate": Preset("Moderate", "The recommended default: clear attacks are contained quickly, "
+                       "unclear ones wait for a person.", {
+        "BRUTE_FORCE_COUNT": "5", "BRUTE_FORCE_WINDOW_S": "60", "EXPORT_ROWS_THRESHOLD": "100",
+        "RISK_THRESHOLD": "80", "HOTPATCH_TTL_HOURS": "2", "SLA_HOURS": "2", "NEEDLE_MIN_CONFIDENCE": "0.6"}),
+    "balanced": Preset("Minimum", "The lightest protection, for day-to-day operations first: acts only on strong "
+                       "evidence, blocks briefly and gives people more time.", {
+        "BRUTE_FORCE_COUNT": "8", "BRUTE_FORCE_WINDOW_S": "60", "EXPORT_ROWS_THRESHOLD": "250",
+        "RISK_THRESHOLD": "90", "HOTPATCH_TTL_HOURS": "1", "SLA_HOURS": "4", "NEEDLE_MIN_CONFIDENCE": "0.75"}),
+}
+PRESET_FIELDS = tuple(PRESETS[DEFAULT_PRESET].values)
+ADVANCED = "advanced"  # not a preset: every value is set by hand
+ADVANCED_ABOUT = "Set each detection and response value yourself."
+PRESET_CHOICES = (*PRESETS, ADVANCED)
+
+SECTIONS = (
+    Section("preset", "Security preset", "One choice sets the detection and response values below.", (
+        Field(PRESET_ENV, "Preset", DEFAULT_PRESET, choices=PRESET_CHOICES),
+    )),
+    Section("collector", "1. Collector", "Where the logs are and where to send events.", (
+        Field("SENTRAI_LAB_LOGS", "Logs directory", str(sentrai_paths.default("logs"))),
+        Field("SENTRAI_LOG_ACCESS", "Web access log file name", "access.jsonl"),
+        Field("SENTRAI_LOG_AUTH", "Login log file name", "auth.jsonl"),
+        Field("SENTRAI_LOG_DB", "Database log file name", "db.jsonl"),
+        Field("SENTRAI_LOG_OS", "OS / process log file name", "os.jsonl"),
+        Field("SENTRAI_CORE_URL", "Core URL", "http://127.0.0.1:8000"),
+    )),
+    Section("classifier", "2. Classifier", "When an event counts as an attack.", (
+        Field("BRUTE_FORCE_COUNT", "Failed logins that count as brute force", "5", int),
+        Field("BRUTE_FORCE_WINDOW_S", "...within how many seconds", "60", float),
+        Field("EXPORT_ROWS_THRESHOLD", "Rows in one export that count as bulk exfiltration", "100", int),
+    )),
+    Section("responder", "3. Responder", "When SentrAI acts, for how long, and what it never touches.", (
+        Field("RISK_THRESHOLD", "Risk index (0-100) at which temporary blocks start", "80", int),
+        Field("HOTPATCH_TTL_HOURS", "Hours before an automatic block expires", "2", float),
+        Field("SLA_HOURS", "Hours a human has to respond before escalation", "2", float),
+        Field("NEEDLE_MIN_CONFIDENCE", "AI confidence (0-1) needed before acting without a person", "0.6", float),
+        Field("AUTO_ACTIONS", "Actions SentrAI may take on its own (others wait for a person)",
+              "block_ip,rate_limit,waf_rule"),
+        Field("MAX_TTL_HOURS", "Longest any temporary action may last, in hours", "24", float),
+        Field("MAX_AUTO_ACTIONS_PER_HOUR", "Most automatic actions in one hour (then a person decides)", "10", int),
+        Field("AI_AUTO_REVIEW", "Let the AI keep or undo blocks with no person, once each block's check is in "
+              "(off; keep: only keep for good; on: keep, or undo a false alarm). Needs an AI key", "off",
+              choices=("off", "keep", "on"), advanced=True),
+        Field("AI_REVIEW_PER_HOUR", "Most blocks the AI may keep or undo in one hour (then a person decides)", "10",
+              int, advanced=True),
+        Field("SENTRAI_HEALTH_URL", "A page that must keep working while SentrAI blocks (checked after each action)"),
+        Field("PROTECTED_IPS", "IPs or networks never to block (comma-separated)", "127.0.0.1,::1,localhost"),
+        Field("PROTECTED_USERS", "More accounts never to lock (admin and service accounts always are)"),
+        # The administrators (core/app/admins.py): whose root work is their own. The installer writes ADMIN_IPS
+        # from the allowed addresses; "This was me" on an incident teaches the rest; the Configuration page has them all.
+        Field("ADMIN_IPS", "Addresses your administrators sign in from, so their root work (sudo) there is theirs, "
+              "not an incident (comma-separated; blank to teach it with This was me)", advanced=True),
+        Field("ADMIN_SSH_KEYS", "Your administrators' SSH key fingerprints, SHA256:... (ssh-keygen -lf "
+              "~/.ssh/id_ed25519.pub prints one; comma-separated)", advanced=True),
+        Field("ADMIN_ACCOUNTS", "Your administrators' accounts: deploy on every machine, or erick@web-01 on one "
+              "(comma-separated)", advanced=True),
+        Field("ADMIN_SESSIONS", "Tell your administrators' own root work from an intruder's (off judges every "
+              "line on its own)", "on", choices=("on", "off"), advanced=True),
+        Field("ADMIN_LEARN", "Learn a new address seen with a known SSH key, and a new key seen from a known "
+              "address", "on", choices=("on", "off"), advanced=True),
+        Field("ADMIN_SESSION_HOURS", "Hours a sign-in counts as open after its last line", "12", float, advanced=True),
+        Field("ADMIN_SIGNIN_HOURS", "Hours a dashboard sign-in as Owner or Admin vouches for its address", "12",
+              float, advanced=True),
+        Field("BUSY_SERVER", "Busy server (game server, big network): group many attackers into one wave and alert "
+              "with a summary", "off", choices=("off", "on"), advanced=True),
+        Field("TRUSTED_IPS", "Known-good IPs or networks never analysed (players' relay, CDN, monitoring)",
+              advanced=True),
+        Field("ON_DUTY", "On-duty responder shown in alerts (name, ID, shift)", "On-duty responder"),
+    )),
+    Section("notifications", "4. Notifications", "Email alerts. Telegram and Slack alerts are integrations, "
+            "set up after these. With neither, alerts print to the console.", (
+        Field("SENTRAI_OPERATOR", "Your name, as shown on approvals", "operator"),
+        Field("SMTP_HOST", "Email: SMTP server, blank for no email alerts"),
+        Field("SMTP_PORT", "Email: SMTP port (587 STARTTLS, 465 SSL)", "587", int),
+        Field("SMTP_SECURITY", "Email: connection security", "starttls", choices=("starttls", "ssl", "none")),
+        Field("SMTP_USER", "Email: SMTP login, blank if none"),
+        Field("SMTP_PASSWORD", "Email: SMTP password or app password", secret=True),
+        Field("ALERT_EMAIL_FROM", "Email: sender address, blank to use the login"),
+        Field("ALERT_EMAIL_TO", "Email: recipients (comma-separated)"),
+        Field("SENTRAI_EMAIL_MODE", "Email: send when the alert extension (Telegram) fails, or always", "backup",
+              choices=("backup", "always")),
+        Field("SENTRAI_FEEDBACK_EMAIL", "Email: where the panel's Contact Us messages go (comma-separated; uses the "
+              "SMTP server above)", advanced=True),
+    )),
+    Section("ai", "5. AI model", "Cyanide and Scout. Pick a provider and paste its key; "
+            "leave the key blank to run on fixed playbooks.", (
+        Field("SENTRAI_LLM_PROVIDER", "Provider", "anthropic", choices=sentrai_llm.PROVIDERS),
+        Field("SENTRAI_LLM_API_KEY", "API key", secret=True),
+        Field("SENTRAI_LLM_BASE_URL", "Base URL (only for another OpenAI-compatible service)"),
+        Field("SENTRAI_LLM_MODEL", "Model name, blank for the provider's default"),
+    )),
+    Section("access", "6. Access", "The token the parts of SentrAI use to talk to the core. "
+            "People sign in with their own accounts (dashboard Team page).", (
+        Field("SENTRAI_API_TOKEN", "Core API token (shared by the collector, dashboard and Telegram bot)",
+              secret=True, generated=True),
+    )),
+)
+_KINDS = {"int": int, "float": float}
+
+
+def extension_sections(environ=None) -> dict[str, Section]:
+    """One section per installed extension, from its extension.json, in the Extensions page's order.
+
+    A setting that another section already has is left out, so an extension can never take over one of
+    SentrAI's own settings (or another extension's)."""
+    if sentrai_extensions is None:
+        return {}
+    taken = {f.env for s in SECTIONS for f in s.fields}
+    out: dict[str, Section] = {}
+    for name, m in sentrai_extensions.installed(environ).items():
+        fields = tuple(Field(x.env, x.prompt, x.default, _KINDS.get(x.kind, str), x.secret, x.choices,
+                             advanced=x.advanced) for x in m.settings if x.env not in taken)
+        taken |= {f.env for f in fields}
+        out[name] = Section(m.section, m.title, m.about or m.what, fields,
+                            tuple(e for e in m.on_when if any(f.env == e for f in fields)))
+    return out
+
+
+EXTENSION_SECTIONS = extension_sections()  # name -> Section, keyed "extension:<name>" in the file
+ALL_SECTIONS = (*SECTIONS, *EXTENSION_SECTIONS.values())
+FIELDS = {f.env: f for s in ALL_SECTIONS for f in s.fields}
+EMAIL_FIELDS = ("SMTP_PORT", "SMTP_SECURITY", "SMTP_USER", "SMTP_PASSWORD", "ALERT_EMAIL_FROM", "ALERT_EMAIL_TO",
+                "SENTRAI_EMAIL_MODE")  # asked only when SMTP_HOST is set
+MODEL_ENV = "SENTRAI_LLM_MODEL"
+TOKEN_ENV = "SENTRAI_API_TOKEN"
+# Before accounts: one dashboard sign-in in the settings file. Read only to make it the first Owner account.
+PASSWORD_ENV = "SENTRAI_DASHBOARD_PASSWORD"  # before the sign-in had an email: a plain password
+EMAIL_ENV = "SENTRAI_DASHBOARD_EMAIL"
+HASH_ENV = "SENTRAI_DASHBOARD_PASSWORD_HASH"
+LEGACY_EMAIL = "admin@sentrai.local"
+LOGIN_ENV = "SENTRAI_DASHBOARD_LOGIN"  # "off" opens the dashboard without signing in (local testing only)
+_ITERATIONS = 600_000
+
+
+def hash_password(password: str) -> str:
+    """A salted PBKDF2-SHA256 hash, stored as pbkdf2_sha256$iterations$salt$hash (hex)."""
+    salt = secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, _ITERATIONS)
+    return f"pbkdf2_sha256${_ITERATIONS}${salt.hex()}${digest.hex()}"
+
+
+def check_password(password: str, stored: str) -> bool:
+    try:
+        scheme, iterations, salt, digest = stored.split("$")
+        if scheme != "pbkdf2_sha256":
+            return False
+        got = hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt), int(iterations))
+    except (ValueError, TypeError):
+        return False
+    return hmac.compare_digest(got.hex(), digest)
+
+
+def new_password() -> str:
+    return secrets.token_urlsafe(12)
+
+
+def _migrate_password(values: dict[str, str]) -> dict[str, str]:
+    """Settings saved with a plain dashboard password: keep only its hash."""
+    plain = values.pop(PASSWORD_ENV, "")
+    if plain and not values.get(HASH_ENV):
+        values[HASH_ENV] = hash_password(plain)
+    return values
+
+
+def _one_ai_key(values: dict[str, str]) -> dict[str, str]:
+    """Settings saved before the AI section had one key field: keep the key of the provider in use."""
+    legacy = {p: values.pop(env) for p, env in sentrai_llm.KEY_ENV.items()
+              if env != sentrai_llm.GENERIC_KEY_ENV and env in values}
+    legacy = {p: k for p, k in legacy.items() if k}
+    provider = values.get("SENTRAI_LLM_PROVIDER", "")
+    if provider in sentrai_llm.PROVIDERS and provider != "compatible" and provider in legacy:
+        values[sentrai_llm.GENERIC_KEY_ENV] = legacy[provider]
+    elif provider in ("", "auto"):
+        if legacy:  # what "auto" used to pick: the first provider with a key
+            provider = next(iter(legacy))
+            values[sentrai_llm.GENERIC_KEY_ENV] = legacy[provider]
+        elif values.get(sentrai_llm.GENERIC_KEY_ENV):
+            provider = "compatible"
+        values["SENTRAI_LLM_PROVIDER"] = provider if provider != "auto" else FIELDS["SENTRAI_LLM_PROVIDER"].default
+    return values
+
+
+def preset_values(name: str) -> dict[str, str]:
+    """The values a preset sets (the default preset's for an unknown name)."""
+    return dict(PRESETS.get(name, PRESETS[DEFAULT_PRESET]).values)
+
+
+def _same(a: str, b: str) -> bool:
+    try:
+        return float(a) == float(b)
+    except ValueError:
+        return a.strip() == b.strip()
+
+
+def preset_label(name: str) -> str:
+    return PRESETS[name].label if name in PRESETS else "Advanced"
+
+
+def overrides(values: dict[str, str]) -> dict[str, str]:
+    """The preset-controlled values that differ from the chosen preset ({} for Advanced, which has none)."""
+    name = values.get(PRESET_ENV, DEFAULT_PRESET)
+    if name == ADVANCED:
+        return {}
+    base = preset_values(name)
+    return {env: values[env] for env in PRESET_FIELDS if env in values and not _same(values[env], base[env])}
+
+
+def settle_preset(values: dict[str, str]) -> dict[str, str]:
+    """Name the preset Advanced when its values were changed by hand (or were saved before presets existed)."""
+    if values.get(PRESET_ENV) not in PRESET_CHOICES:
+        values[PRESET_ENV] = DEFAULT_PRESET
+    if overrides(values):
+        values[PRESET_ENV] = ADVANCED
+    return values
+
+
+def _percent(value: str) -> str:
+    """0.6 as people say it, "60 %"; anything that is not a number as it is."""
+    try:
+        return f"{float(value) * 100:g} %"
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def describe(values: dict[str, str]) -> list[tuple[str, tuple[str, ...]]]:
+    """The preset-controlled values in plain words, each with the fields it shows, for summaries."""
+    v = {env: values.get(env, FIELDS[env].default) for env in PRESET_FIELDS}
+    return [
+        (f"brute force at {v['BRUTE_FORCE_COUNT']} failed logins in {v['BRUTE_FORCE_WINDOW_S']} s",
+         ("BRUTE_FORCE_COUNT", "BRUTE_FORCE_WINDOW_S")),
+        (f"bulk export at {v['EXPORT_ROWS_THRESHOLD']} rows", ("EXPORT_ROWS_THRESHOLD",)),
+        (f"acts at risk {v['RISK_THRESHOLD']}", ("RISK_THRESHOLD",)),
+        (f"blocks last {v['HOTPATCH_TTL_HOURS']} h", ("HOTPATCH_TTL_HOURS",)),
+        (f"people have {v['SLA_HOURS']} h to respond", ("SLA_HOURS",)),
+        (f"acts alone only when the AI is {_percent(v['NEEDLE_MIN_CONFIDENCE'])} sure or more", ("NEEDLE_MIN_CONFIDENCE",)),
+    ]
+
+
+def read() -> dict[str, str]:
+    """The saved values as a flat {ENV_NAME: value} dict ({} on a new machine)."""
+    try:
+        data = json.loads(config_path().read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+    values = {sentrai_env.new_name(k): str(v)  # a file saved before the rename has CACTAI_* keys
+              for key, section in data.items() if isinstance(section, dict) and key != APPEARANCE_KEY
+              for k, v in section.items()}
+    return settle_preset(_one_ai_key(_migrate_password(values))) if values else values
+
+
+def save(values: dict[str, str]) -> Path:
+    path = config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    values = settle_preset(dict(values))
+    if not values.get(TOKEN_ENV):  # a form that leaves the token out must not wipe it
+        values[TOKEN_ENV] = read().get(TOKEN_ENV, "")
+    data = {s.key: {f.env: values.get(f.env, f.default) for f in s.fields} for s in ALL_SECTIONS}
+    for key, kept in _unknown().items():  # an uninstalled extension's settings: kept, where they were
+        data.setdefault(key, {}).update({env: values.get(env, value) for env, value in kept.items()})
+    if not accounts_path().exists():  # an old sign-in not yet made the Owner account: keep it until it is
+        old = read()
+        data["access"] |= {env: old[env] for env in (EMAIL_ENV, HASH_ENV) if old.get(env)}
+    for keep in (SETUP_DONE_KEY, APPEARANCE_KEY):  # not settings (read() skips them), so carry them over
+        if _raw().get(keep):
+            data[keep] = _raw()[keep]
+    _write_private(path, json.dumps(data, indent=2) + "\n")
+    return path
+
+
+SETUP_DONE_KEY = "setup_done"  # top-level marker: how setup was finished (wizard, dashboard or chat)
+APPEARANCE_KEY = "appearance"  # the console's theme and accent: only the dashboard reads it
+
+
+def appearance() -> dict[str, str]:
+    """{"theme": "dark" | "light", "accent": "mono" | a preset name | "#rrggbb"}; {} until one is saved."""
+    saved = _raw().get(APPEARANCE_KEY)
+    return {k: str(v) for k, v in saved.items() if k in ("theme", "accent")} if isinstance(saved, dict) else {}
+
+
+def save_appearance(theme: str, accent: str) -> Path:
+    """Saved at once, without touching the other settings."""
+    path = config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = _raw()
+    data[APPEARANCE_KEY] = {"theme": theme, "accent": accent}
+    _write_private(path, json.dumps(data, indent=2) + "\n")
+    return path
+
+
+def _raw() -> dict:
+    try:
+        data = json.loads(config_path().read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+# Saved keys that are no setting but are not lost either: read() turns them into others, or save() keeps them.
+_MIGRATED = {PASSWORD_ENV, EMAIL_ENV, HASH_ENV, *sentrai_llm.KEY_ENV.values()}
+
+
+def _unknown() -> dict[str, dict[str, str]]:
+    """The saved settings this version has no field for, by section: the settings of an extension that is
+    not installed any more (or not yet), so that saving keeps them for when it comes back."""
+    out: dict[str, dict[str, str]] = {}
+    for key, section in _raw().items():
+        if key == APPEARANCE_KEY or not isinstance(section, dict):
+            continue
+        for k, v in section.items():
+            env = sentrai_env.new_name(k)
+            if env not in FIELDS and env not in _MIGRATED:
+                out.setdefault(key, {})[env] = str(v)
+    return out
+
+
+def setup_done() -> bool:
+    """True once someone has set this machine up: the wizard, the Configuration page or the Chat page
+    saved, or the saved values differ from the defaults (files written before the marker existed).
+    The access section does not count: the launchers fill it in by themselves (API token, sign-in)."""
+    if _raw().get(SETUP_DONE_KEY):
+        return True
+    values = read()
+    return any(not _same(values.get(f.env, f.default), f.default)
+               for s in ALL_SECTIONS if s.key != "access" for f in s.fields if f.env in values)
+
+
+def mark_setup_done(how: str) -> None:
+    path = config_path()
+    data = _raw()
+    if not data:
+        save({})
+        data = _raw()
+    data[SETUP_DONE_KEY] = how
+    _write_private(path, json.dumps(data, indent=2) + "\n")
+
+
+_LOADED: dict[str, str] = {}  # what load() put into os.environ, so a reload can replace it
+
+
+def load(refresh: bool = False) -> dict[str, str]:
+    """Copy saved values into os.environ, without overriding anything already set.
+
+    refresh=True first takes back the values an earlier load() copied in (unless something else
+    changed them since), so edits saved while SentrAI runs win over the old saved values.
+    """
+    if refresh:
+        for name, value in _LOADED.items():
+            if os.environ.get(name) == value:
+                del os.environ[name]
+        _LOADED.clear()
+    values = read()
+    for name, value in values.items():
+        if value != "" and name not in os.environ:
+            os.environ[name] = _LOADED[name] = value
+    return values
+
+
+def new_token() -> str:
+    return secrets.token_urlsafe(32)
+
+
+def api_token() -> str:
+    """The token every client sends to the core, and the core requires.
+
+    An explicit SENTRAI_API_TOKEN wins. Otherwise the saved one is used, and a machine without
+    one gets a new token saved to the settings file, so every component finds the same value.
+    """
+    token = os.environ.get(TOKEN_ENV, "").strip()
+    if token:
+        return token
+    values = read()
+    if not values.get(TOKEN_ENV):
+        values[TOKEN_ENV] = new_token()
+        save(values)
+        values = read()  # another component may have saved one at the same moment; use what is on disk
+    return values[TOKEN_ENV]
+
+
+def _own_env(name: str) -> str:
+    """An environment variable set outside the settings file ("" when load() copied it from the file)."""
+    value = os.environ.get(name, "")
+    return "" if value and _LOADED.get(name) == value else value
+
+
+def dashboard_login() -> dict[str, str]:
+    """The sign-in from before accounts existed: {"email", "hash", "plain"}, all "" parts when there was none.
+
+    "plain" is a SENTRAI_DASHBOARD_PASSWORD set in the environment. An environment variable wins over the
+    settings file, as everywhere else. sentrai_accounts makes this the first Owner account.
+    """
+    values = read()
+    return {"email": _own_env(EMAIL_ENV) or values.get(EMAIL_ENV) or LEGACY_EMAIL,
+            "hash": _own_env(HASH_ENV) or values.get(HASH_ENV, ""),
+            "plain": _own_env(PASSWORD_ENV)}
+
+
+def login_required() -> bool:
+    return os.environ.get(LOGIN_ENV, "").strip().lower() not in ("off", "0", "no", "false")
+
+
+def valid(field: Field, answer: str) -> bool:
+    """True when the answer parses as the field's type and is one of its choices, if it has any."""
+    if field.choices and answer not in field.choices:
+        return False
+    try:
+        field.kind(answer)
+        return True
+    except ValueError:
+        return False
+
+
+def fetch_models(values: dict[str, str]) -> list[str]:
+    """The models the chosen provider offers for the key in these settings (raises LLMError)."""
+    return sentrai_llm.list_models(values.get("SENTRAI_LLM_PROVIDER", ""), values.get(sentrai_llm.GENERIC_KEY_ENV, ""),
+                                  values.get("SENTRAI_LLM_BASE_URL") or None)
+
+
+def wizard(ask: Callable[[str], str] | None = None, ask_secret: Callable[[str], str] | None = None,
+           say: Callable[[str], None] = print, models: Callable[[dict[str, str]], list[str]] = fetch_models,
+           ) -> dict[str, str]:
+    """Ask for every setting, one section per part. Enter keeps the value shown in brackets.
+
+    A field with choices shows a numbered list; the model question takes "?" to list the
+    models the key can use. `models` is replaceable for tests.
+
+    A preset fills the detection and response values without asking them; Advanced asks each
+    one, offering the values in use now.
+
+    The extensions come last. Each one's key is asked first; leaving it blank skips its other questions.
+    Advanced settings are never asked: they keep their value (the Configuration page sets them).
+    """
+    ask, ask_secret = ask or input, ask_secret or getpass.getpass
+    current = {f.env: f.default for f in FIELDS.values()} | read()
+    say("\nSentrAI setup. Press Enter to keep the value in [brackets].")
+    values: dict[str, str] = {}
+    preset, advanced = preset_values(DEFAULT_PRESET), False
+    for section in ALL_SECTIONS:
+        if section is next(iter(EXTENSION_SECTIONS.values()), None):
+            say("\nExtensions: outside services SentrAI can work with. Each one is off while its key is "
+                "blank. A key turns it on; the dashboard's Extensions page adds and removes them.")
+        say(f"\n{section.title}: {section.about}")
+        # an extension's key first: its other questions only matter once it has one
+        for f in sorted(section.fields, key=lambda f: f.env not in section.on_when):
+            if f.env in PRESET_FIELDS and not advanced:
+                values[f.env] = preset[f.env]
+                continue
+            if f.env in EMAIL_FIELDS and not values.get("SMTP_HOST"):
+                values[f.env] = current[f.env]  # no SMTP server, so the other email questions are skipped
+                continue
+            if f.advanced or (section.on_when and f.env not in section.on_when
+                              and not any(values.get(e) for e in section.on_when)):
+                values[f.env] = current[f.env]  # no key for this extension, so its other questions are skipped
+                continue
+            if f.generated:
+                values[f.env] = current[f.env] or new_token()
+                say(f"  {f.prompt}: {'kept' if current[f.env] else 'generated'} (python sentrai_config.py token shows it)")
+                continue
+            shown = ("set" if current[f.env] else "not set") if f.secret else current[f.env]
+            prompt = f.prompt
+            if f.choices:
+                for n, choice in enumerate(f.choices, 1):
+                    if f.env == PRESET_ENV:
+                        say(f"    {n}. {preset_label(choice)}: {PRESETS[choice].about if choice in PRESETS else ADVANCED_ABOUT}")
+                    else:
+                        say(f"    {n}. {sentrai_llm.LABEL.get(choice, choice)}")
+                prompt += " (number)"
+            listed: list[str] = []
+            if f.env == MODEL_ENV:
+                prompt += ", or ? to list the available models"
+            while True:
+                answer = (ask_secret if f.secret else ask)(f"  {prompt} [{shown}]: ").strip()
+                if f.env == MODEL_ENV and answer == "?":
+                    try:
+                        listed = models(values)
+                    except sentrai_llm.LLMError as e:
+                        say(f"    Could not list the models: {e}.")
+                        continue
+                    for n, name in enumerate(listed, 1):
+                        say(f"    {n}. {name}")
+                    if not listed:
+                        say("    The service listed no models; type the model name.")
+                    continue
+                answer = answer or current[f.env]
+                options = f.choices or tuple(listed)
+                if answer.isdigit() and options and 1 <= int(answer) <= len(options):
+                    answer = options[int(answer) - 1]
+                if valid(f, answer):
+                    break
+                say("    Please pick one of the numbers above." if f.choices else "    Please enter a number.")
+            values[f.env] = answer
+            if f.env == PRESET_ENV:
+                advanced = answer == ADVANCED
+                if not advanced:
+                    preset = preset_values(answer)
+                    say("    " + "; ".join(text for text, _ in describe(preset)) + ".")
+    return values
+
+
+def ensure(interactive: bool | None = None) -> dict[str, str]:
+    """Run the wizard on a new machine (when someone is at the keyboard), then load()."""
+    if interactive is None:
+        interactive = sys.stdin.isatty()
+    if interactive and not config_path().exists():
+        print(f"[sentrai] No settings found at {config_path()}; this looks like a new machine.")
+        setup()
+        print("[sentrai] Change them any time with: python sentrai_config.py setup")
+    return load()
+
+
+def setup() -> None:
+    """Run the wizard and save. Ctrl+C saves nothing and exits."""
+    try:
+        values = wizard()
+    except (KeyboardInterrupt, EOFError):
+        print("\nSetup cancelled; nothing saved.")
+        raise SystemExit(1)
+    print(f"[sentrai] Saved to {save(values)}.")
+    mark_setup_done("wizard")
+
+
+def admin(args: list[str]) -> int:
+    """`python sentrai_config.py admin` (on a server `sudo sentrai-admin`): the dashboard's people, from the shell.
+
+    Whoever can run this on the machine is trusted: it makes the setup code for the first Owner, makes
+    the Owner directly (install-panel.sh), or resets someone's password and authenticator.
+    """
+    import sentrai_accounts as acc
+
+    email, reset, typed = "", False, ""
+    while args:
+        if args[0] == "--email" and len(args) > 1 and "@" in args[1]:
+            email, args = args[1].strip(), args[2:]
+        elif args[0] == "--reset":
+            reset, args = True, args[1:]
+        elif args[0] == "--password-stdin":
+            typed, args = sys.stdin.readline().rstrip("\r\n"), args[1:]
+        else:
+            print("usage: python sentrai_config.py admin [--email you@example.com] [--reset] [--password-stdin]")
+            return 2
+    try:
+        if not acc.has_accounts():
+            if email and typed:
+                owner = acc.make_owner(email, typed)
+                print(f"Dashboard Owner: {owner['email']}  (the password you chose; add an authenticator "
+                      "app at the first sign-in)")
+                return 0
+            code = acc.new_setup_code()
+            print(f"Dashboard setup code: {code}")
+            print(f"  Open the dashboard and create the Owner account with it. It works once, for "
+                  f"{acc.SETUP_CODE_HOURS} hours; running this again makes a new one.")
+            return 0
+        if reset or typed:
+            who, password = acc.shell_reset(email, typed)
+            shown = "the password you chose" if typed else f"new password: {password}"
+            print(f"Dashboard sign-in reset for {who}  ({shown})")
+            if not typed:
+                print("  (shown once: write it down. Only its hash is saved.)")
+            print("  The authenticator app is added again at the next sign-in.")
+            return 0
+    except acc.AccountError as e:
+        print(f"Dashboard sign-in not changed: {e}", file=sys.stderr)
+        return 2
+    people = acc.people()
+    owners = ", ".join(p["email"] for p in people if p["role"] == "owner")
+    print(f"Dashboard sign-in: {len(people)} {'person' if len(people) == 1 else 'people'}; Owner: {owners}  "
+          "(add people on the Team page; --reset makes a new password)")
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    if argv[:1] == ["get"] and len(argv) == 2:
+        field = FIELDS.get(argv[1])
+        print(os.environ.get(argv[1]) or read().get(argv[1]) or (field.default if field else ""))
+        return 0
+    if argv == ["token"]:
+        print(api_token())
+        return 0
+    if argv[:1] == ["admin"]:
+        return admin(argv[1:])
+    if argv[:1] == ["setup"]:
+        setup()
+        return 0
+    if argv:
+        print(__doc__)
+        return 2
+    ensure()
+    values = read()
+    print(f"SentrAI settings ({config_path()}):")
+    for s in ALL_SECTIONS:
+        if s.key.startswith("extension:"):
+            print(f"  [{s.title} extension]")
+        for f in s.fields:
+            value = values.get(f.env, f.default)
+            print(f"  {f.env:<22} {('***' if value else '') if f.secret else value}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

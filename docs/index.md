@@ -52,13 +52,18 @@ so the first start takes a minute or two longer than the next ones.
 
 ```bash
 git clone https://github.com/RexGuard/SentrAI
-cd SentrAI/mvp
+cd SentrAI
 ```
 
 No Git? On the [GitHub page](https://github.com/RexGuard/SentrAI) choose **Code**, then
-**Download ZIP**, unzip it and open the `mvp` folder inside.
+**Download ZIP** and unzip it.
 
-Every command in this guide is run from that `mvp` folder unless it says otherwise.
+The checkout has two folders you use:
+
+- `deploy/` holds the production installers. Server and agent commands (`sudo ./deploy/...`) run from the
+  `SentrAI` folder itself.
+- `app/` holds the code. Commands for running SentrAI on your own computer (`run.sh`, `run.ps1`,
+  `python sentrai_config.py ...`) run from the `app` folder.
 
 ## What runs where
 

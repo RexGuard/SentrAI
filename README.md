@@ -24,14 +24,52 @@ needs them in plain words. The SentrAI team does the setup and fine-tuning from 
 
 ## Contents
 
-1. [Try it in 2 minutes (no install)](#try-it-in-2-minutes-no-install)
-2. [Run it on your computer (about 5 minutes)](#run-it-on-your-computer-about-5-minutes)
-3. [What you will see](#what-you-will-see)
-4. [Install it for real](#install-it-for-real)
+1. [Deploy to production](#deploy-to-production)
+2. [Try it in 2 minutes (no install)](#try-it-in-2-minutes-no-install)
+3. [Run it on your computer (about 5 minutes)](#run-it-on-your-computer-about-5-minutes)
+4. [What you will see](#what-you-will-see)
 5. [Who does what: owner panel and team command line](#who-does-what-owner-panel-and-team-command-line)
 6. [How it works](#how-it-works)
 7. [What is in this repository](#what-is-in-this-repository)
 8. [More reading](#more-reading)
+
+## Deploy to production
+
+SentrAI runs as a panel on one Linux server, plus a small agent on each machine it guards. Both install as
+systemd services (the agent also runs on Windows), and `sudo sentrai-update` keeps them current. All of it is
+run from the folder you cloned. [deploy/README.md](https://github.com/RexGuard/SentrAI/blob/main/deploy/README.md)
+lists every installer option and file.
+
+| You want to | Do this | Guide |
+| --- | --- | --- |
+| Install the panel on a Linux server | `sudo ./deploy/install-panel.sh --protect YOUR-IP --admin-email you@example.com` | [Install the panel](https://rexguard.github.io/SentrAI/docs/server.html) |
+| Add a machine to the panel (the agent, "wings") | make a join code on **Machines**, then on that machine `sudo ./deploy/install-agent.sh --panel URL --code CODE --pin PIN` (Windows: `install-agent.ps1`) | [Install the agent](https://rexguard.github.io/SentrAI/docs/agent.html) |
+| Watch several machines from one panel | the Machines page on the panel | [One panel, many machines](https://rexguard.github.io/SentrAI/docs/panel.html) |
+| Update | `sudo sentrai-update` (keeps every setting and record, goes back by itself if a check fails) | [Update](https://rexguard.github.io/SentrAI/docs/server.html#update) |
+| Remove | `sudo ./deploy/uninstall-panel.sh` (`--purge` also deletes settings and records) | [Uninstall](https://rexguard.github.io/SentrAI/docs/server.html#uninstall) |
+
+The short version for a server (Ubuntu 22.04 or 24.04 works well; install Node.js 20 or newer first for the
+web dashboard):
+
+```bash
+git clone https://github.com/RexGuard/SentrAI && cd SentrAI
+sudo ./deploy/install-panel.sh --protect 203.0.113.10 --admin-email you@example.com --panel
+```
+
+Replace `203.0.113.10` with **the public IP you manage the server from**. SentrAI never blocks a protected
+address, so this is what stops it locking you out. The installer prints the dashboard address
+(`https://<your server>:8501`) and your sign-in. Then, for each extra machine, make a join code on the panel:
+
+```bash
+sudo sentrai machines join-code --name shop-pc     # prints the command to run on that machine
+```
+
+and paste the printed `install-agent.sh` (Linux) or `install-agent.ps1` (Windows) command on the new machine.
+Agents only make outgoing HTTPS calls, and their blocks start as a dry run until you add `--enforce`.
+
+How blocks take effect (host firewall, Cloudflare or your own webhook) is in
+[Firewall blocking](https://rexguard.github.io/SentrAI/docs/settings.html#firewall-blocking). Which logs SentrAI
+reads is in [Log sources](https://rexguard.github.io/SentrAI/docs/log-sources.html).
 
 ## Try it in 2 minutes (no install)
 
@@ -65,10 +103,10 @@ first start takes a minute or two longer.
 
 ```bash
 git clone https://github.com/RexGuard/SentrAI
-cd SentrAI/mvp
+cd SentrAI/app
 ```
 
-Every command below runs from this `mvp` folder.
+Every command below runs from this `app` folder.
 
 ### 3. Start SentrAI
 
@@ -89,7 +127,7 @@ one-time **setup code**.
 
 ### 4. Open the web dashboard
 
-In a second terminal, from the same `mvp` folder:
+In a second terminal, from the same `app` folder:
 
 ```bash
 cd web && ./run-web.sh          # Windows: cd web; .\run-web.ps1
@@ -117,10 +155,10 @@ the attacker get blocked.
 ### 6. Stop
 
 ```bash
-./stop.sh            # Windows: .\stop.ps1   (in mvp, or in SentrAI-demo for the lab)
+./stop.sh            # Windows: .\stop.ps1   (in app, or in SentrAI-demo for the lab)
 ```
 
-On Linux and macOS each part logs to `mvp/.run_logs/<part>.log`. Port taken or a package missing? See
+On Linux and macOS each part logs to `app/.run_logs/<part>.log`. Port taken or a package missing? See
 [Troubleshooting](https://rexguard.github.io/SentrAI/docs/troubleshooting.html).
 
 | Option (Linux, macOS / Windows) | What it does |
@@ -144,39 +182,6 @@ On Linux and macOS each part logs to `mvp/.run_logs/<part>.log`. Port taken or a
 **Simple view** shows the same things in everyday words for a manager: *What Needs Me*, *Our Computers*,
 *Reports to Share*, *Backups*, *Privacy and Staff Data*.
 
-## Install it for real
-
-| You want to | Do this | Guide |
-| --- | --- | --- |
-| Install the panel on a Linux server | `sudo ./deploy/install-panel.sh --protect YOUR-IP --admin-email you@example.com` | [Install the panel](https://rexguard.github.io/SentrAI/docs/server.html) |
-| Add a machine to the panel (the agent, "wings") | make a join code on **Machines**, then on that machine `sudo ./mvp/deploy/install-agent.sh --panel URL --code CODE --pin PIN` (Windows: `install-agent.ps1`) | [Install the agent](https://rexguard.github.io/SentrAI/docs/agent.html) |
-| Watch several machines from one panel | the Machines page on the panel | [One panel, many machines](https://rexguard.github.io/SentrAI/docs/panel.html) |
-| Update | `sudo sentrai-update` (keeps every setting and record, goes back by itself if a check fails) | [Update](https://rexguard.github.io/SentrAI/docs/server.html#update) |
-| Remove | `sudo ./deploy/uninstall-panel.sh` (`--purge` also deletes settings and records) | [Uninstall](https://rexguard.github.io/SentrAI/docs/server.html#uninstall) |
-
-The short version for a server (Ubuntu 22.04 or 24.04 works well; install Node.js 20 or newer first for the
-web dashboard):
-
-```bash
-git clone https://github.com/RexGuard/SentrAI && cd SentrAI/mvp
-sudo ./deploy/install-panel.sh --protect 203.0.113.10 --admin-email you@example.com --panel
-```
-
-Replace `203.0.113.10` with **the public IP you manage the server from**. SentrAI never blocks a protected
-address, so this is what stops it locking you out. The installer prints the dashboard address
-(`https://<your server>:8501`) and your sign-in. Then, for each extra machine, make a join code on the panel:
-
-```bash
-sudo sentrai machines join-code --name shop-pc     # prints the command to run on that machine
-```
-
-and paste the printed `install-agent.sh` (Linux) or `install-agent.ps1` (Windows) command on the new machine.
-Agents only make outgoing HTTPS calls, and their blocks start as a dry run until you add `--enforce`.
-
-How blocks take effect (host firewall, Cloudflare or your own webhook) is in
-[Firewall blocking](https://rexguard.github.io/SentrAI/docs/settings.html#firewall-blocking). Which logs SentrAI
-reads is in [Log sources](https://rexguard.github.io/SentrAI/docs/log-sources.html).
-
 ## Who does what: owner panel and team command line
 
 SentrAI is built for a business owner with no IT team. So the web panel only shows what the owner needs
@@ -196,7 +201,7 @@ sudo sentrai --help                                   # every command
 ```
 
 All of it: [Team command line](https://rexguard.github.io/SentrAI/docs/cli.html). On a laptop, use
-`python sentrai_config.py setup` in `mvp` instead.
+`python sentrai_config.py setup` in `app` instead.
 
 ## How it works
 
@@ -225,36 +230,36 @@ Claude (Anthropic); OpenAI, DeepSeek or any OpenAI-compatible model also work.
 ## What is in this repository
 
 ```
-mvp/                    the product
+deploy/                 production installers: panel, agents (Linux and Windows), sentrai-update, systemd units
+app/                    the product code
   run.sh, run.ps1       start everything on one computer      stop.sh, stop.ps1   stop it
   core/                 risk scoring, decisions, blocks, Sentry chat, audit log (FastAPI, :8000)
   lab/                  the collector that reads approved logs, and Scout, which finds log files
   web/                  the web dashboard (React, Vite, Tailwind)   web/run-web.sh -> :5173
   dashboard/            the classic dashboard (Streamlit, :8501), kept as a fallback
   notifier/             Telegram and email alerts with Approve and Reject buttons
-  deploy/               server installer, agent installers, sentrai-update, systemd units
   sentrai_cli.py        the team's `sentrai` command
   extensions/           optional add-ons: Cloudflare, AbuseIPDB, Slack, Telegram, TypeSafe
   eval/                 detection accuracy and Sentry answer checks
 docs/                   the install guide and API reference (the website)
 demo-copy/              the browser-only copy of the panel used by the live demo
 Cybersecurity + AI.md   the full project plan
-ROADMAP.md              from the MVP to a pilot
+ROADMAP.md              the plan from the first version to paying customers
 ```
 
-Tests: after a first `./run.sh`, run `cd core && .venv/bin/python -m pytest -q` in `mvp` (and the same in
+Tests: after a first `./run.sh`, run `cd core && .venv/bin/python -m pytest -q` in `app` (and the same in
 `lab`, `dashboard` and `notifier`). Every variable, part and test is in
-[mvp/README.md](https://github.com/RexGuard/SentrAI/blob/main/mvp/README.md).
+[app/README.md](https://github.com/RexGuard/SentrAI/blob/main/app/README.md).
 
 ## More reading
 
 - 📘 **[Install guide](https://rexguard.github.io/SentrAI/docs/)**: laptop, server, central panel, log sources, sign-in, settings, team command line, troubleshooting.
 - 🔌 **[API reference](https://rexguard.github.io/SentrAI/docs/api/)**: every endpoint of the core with examples.
-- 🛠️ **[MVP README](https://github.com/RexGuard/SentrAI/blob/main/mvp/README.md)** and **[server README](https://github.com/RexGuard/SentrAI/blob/main/mvp/deploy/README.md)**: every variable and file.
+- 🛠️ **[Code README](https://github.com/RexGuard/SentrAI/blob/main/app/README.md)** and **[server README](https://github.com/RexGuard/SentrAI/blob/main/deploy/README.md)**: every variable and file.
 - 📄 **[Full project plan](https://rexguard.github.io/SentrAI/Cybersecurity%20+%20AI.html)**: problem, data per layer, risk formula, Jev pipeline, fix workflow, reports, ethics and stack ([Markdown source](https://github.com/RexGuard/SentrAI/blob/main/Cybersecurity%20%2B%20AI.md)).
 - 🛡️ **[Responsible AI and risk statement](https://rexguard.github.io/SentrAI/docs/responsible-ai.html)**: which AI is used, what data it sees, known risks, and every AI tool, model and asset used to build SentrAI.
-- 🗺️ **[Roadmap](https://rexguard.github.io/SentrAI/ROADMAP.html)**: 9 phases from the MVP to a pilot.
-- 📚 [Sources](https://github.com/RexGuard/SentrAI/blob/main/mvp/research/SOURCES.md) for the facts and figures we quote.
+- 🗺️ **[Roadmap](https://rexguard.github.io/SentrAI/ROADMAP.html)**: 9 phases from the first version to paying customers.
+- 📚 [Sources](https://github.com/RexGuard/SentrAI/blob/main/app/research/SOURCES.md) for the facts and figures we quote.
 
 ## Team
 
@@ -268,7 +273,7 @@ The people building SentrAI:
 
 ## Status
 
-Working prototype, tested on Windows and on Ubuntu servers, with agents for Linux and Windows (no macOS agent
+Deployed with the installers in `deploy/` and updated with `sudo sentrai-update`. Tested on Windows and on Ubuntu servers, with agents for Linux and Windows (no macOS agent
 yet). Detection rules were first tuned on demo logs, so expect to adjust them for your own machines. Only
 blocking an address and locking an account change anything for real; other fix types are recorded, or passed
 to your own gateway through a webhook.

@@ -1,0 +1,441 @@
+"""The SentrAI agent: what runs on each machine that reports to a central SentrAI panel.
+
+It does these jobs and nothing else:
+
+  * sends this machine's approved logs to the panel (the collector, with this machine's own key)
+  * puts the panel's blocks for this machine into the local firewall, and takes them out again
+  * once a minute, tells the panel which services listen here (names and ports only, services.py)
+  * every 30 s, tells the panel how the hardware is doing: CPU, memory, disks, network, uptime and
+    temperatures (numbers only, hardware.py)
+  * runs the threat scans and backups the panel asks for, on folders set here (tasks.py)
+
+The panel does the scoring and decides; the agent only makes outgoing HTTPS calls, so no port is
+opened on the machine. Every call checks the panel's certificate against the pin that came with the
+join code (pinning.py), so a self-signed panel needs no certificate file and a look-alike is refused.
+
+If the panel cannot be reached:
+  * blocks already in place stay for SENTRAI_AGENT_OFFLINE_HOLD_H hours (default 24) and are then
+    removed, so a lost panel never leaves a block in force forever
+  * the logs wait in the collector and are sent when the panel answers again
+  * after 30 s, local rules (offline.py) score the logs here and block clear attacks for an hour at a
+    time; when the panel is back it gets a report of every local block
+
+  python -m agent join --panel https://panel.example.com:8443 --code ABCD-EFGH-JKLM --pin sha256:... [--name web-01]
+  python -m agent run                 send logs and enforce blocks (dry run unless SENTRAI_FIREWALL_ENFORCE=1)
+  python -m agent status              what this machine joined as, and what it has blocked
+  python -m agent pin [sha256:...]    show the panel's pin, or set a new one after its certificate was renewed
+
+Settings: SENTRAI_FIREWALL (auto | nftables | iptables | netsh | off), SENTRAI_FIREWALL_ENFORCE (0 = only
+log the commands), PROTECTED_IPS (never blocked; the panel's own address is always added),
+SENTRAI_AGENT_FILE (where the key is kept, default next to the settings file, mode 0600),
+SENTRAI_AGENT_CA (the panel's certificate file, instead of a pin), SENTRAI_AGENT_LOCAL_RULES (on),
+SENTRAI_AGENT_LOCAL_TTL_MIN (60), SENTRAI_AGENT_LOCAL_MAX_PER_HOUR (10).
+"""
+from __future__ import annotations
+
+import argparse
+import ipaddress
+import json
+import os
+import socket
+import sys
+import threading
+import time
+from pathlib import Path
+from typing import Any, Callable
+from urllib.parse import urlparse
+
+import requests
+
+LAB_DIR = Path(__file__).resolve().parents[1]
+APP_DIR = LAB_DIR.parent
+sys.path.insert(0, str(LAB_DIR))
+sys.path.append(str(APP_DIR))
+sys.path.append(str(APP_DIR / "core"))
+import sentrai_config  # noqa: E402,F401  (old CACTAI_* names keep working)
+import sentrai_paths  # noqa: E402
+from app import firewall, protect  # noqa: E402  (the core's firewall commands and safety checks)
+from agent import offline, pinning  # noqa: E402
+
+POLL_S = 5.0
+SERVICES_EVERY_S = 60.0
+HARDWARE_EVERY_S = 30.0
+OFFLINE_HOLD_H = float(os.environ.get("SENTRAI_AGENT_OFFLINE_HOLD_H", "24") or 24)
+
+
+class AgentError(Exception):
+    pass
+
+
+def agent_file() -> Path:
+    """agent/agent.json in the data root (SENTRAI_AGENT_FILE moves it); backups go next to it."""
+    return sentrai_paths.path("agent.file")
+
+
+def load() -> dict[str, Any]:
+    try:
+        return json.loads(agent_file().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def save(data: dict[str, Any]) -> Path:
+    path = agent_file()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+    if os.name == "posix":
+        os.chmod(path, 0o600)
+    return path
+
+
+def check_panel_url(url: str, allow_http: bool = False) -> str:
+    """The panel's address. HTTPS only, so the key and the logs never cross the network in clear text;
+    plain http is accepted for this machine itself, or with --allow-http on a private test network."""
+    url = (url or "").strip().rstrip("/")
+    u = urlparse(url)
+    if u.scheme not in ("http", "https") or not u.hostname:
+        raise AgentError(f"panel address must look like https://panel.example.com:8000 (got {url!r})")
+    if u.scheme == "http" and not allow_http and u.hostname not in ("localhost", "127.0.0.1", "::1"):
+        raise AgentError("the panel must be reached over https:// (use --allow-http only on a private test network)")
+    return url
+
+
+def panel_ips(url: str) -> set[str]:
+    """The panel's own addresses: never blocked, or the agent would cut itself off."""
+    host = urlparse(url).hostname or ""
+    try:
+        return {str(ipaddress.ip_address(host))}
+    except ValueError:
+        pass
+    try:
+        return {info[4][0] for info in socket.getaddrinfo(host, None)}
+    except OSError:
+        return set()
+
+
+def _verify(data: dict[str, Any]) -> str | bool:
+    return data.get("ca") or os.environ.get("SENTRAI_AGENT_CA") or True
+
+
+def panel_session(data: dict[str, Any]) -> requests.Session:
+    """A session for this machine's calls to its panel: pinned to the panel's certificate when joined
+    with --pin, otherwise checked against the trusted authorities (or the --ca file)."""
+    return pinning.session(data["panel"], data.get("pin"), _verify(data))
+
+
+def join(panel: str, code: str, name: str | None = None, allow_http: bool = False, ca: str | None = None,
+         post: Callable[..., Any] | None = None, pin: str | None = None) -> dict[str, Any]:
+    """Swap a one-time join code for this machine's own key and keep it in the agent file."""
+    panel = check_panel_url(panel, allow_http)
+    host = (name or os.environ.get("SENTRAI_HOST") or socket.gethostname() or "").strip()
+    try:
+        pin = pinning.normalise(pin) if pin else None
+    except pinning.PinError as exc:
+        raise AgentError(str(exc)) from exc
+    if pin and not panel.startswith("https://"):
+        raise AgentError("--pin is for an https:// panel")
+    session = pinning.session(panel, pin, ca or os.environ.get("SENTRAI_AGENT_CA") or True)
+    try:
+        r = (post or session.post)(f"{panel}/fleet/enrol", json={"code": code, "host": host}, timeout=10,
+                                   verify=session.verify)
+    except requests.RequestException as exc:
+        why = pinning.explain(exc)
+        raise AgentError(f"could not reach the panel at {panel}: {why or exc.__class__.__name__}") from exc
+    if r.status_code != 200:
+        try:
+            detail = r.json().get("detail")
+        except ValueError:
+            detail = r.text[:200]
+        raise AgentError(f"the panel refused to join this machine ({r.status_code}): {detail}")
+    got = r.json()
+    data = {"panel": panel, "agent_id": got["agent_id"], "host": got["host"], "key": got["key"],
+            "allow_http": allow_http, "ca": ca or None, "pin": pin, "blocked": [], "last_ok": time.time()}
+    save(data)
+    return data
+
+
+class Enforcer:
+    """Keeps the local firewall equal to the panel's block list for this machine, plus any blocks the
+    local rules made while the panel was out of reach."""
+
+    def __init__(self, backend: str | None, enforce: bool, protected: set[str],
+                 runner: firewall.Runner = firewall.run_command, hold_s: float = OFFLINE_HOLD_H * 3600,
+                 applied: list[str] | None = None, last_ok: float | None = None, clock: Callable[[], float] = time.time,
+                 panel: list[str] | None = None):
+        self.backend = backend
+        self.enforce = enforce
+        self.protected = protected
+        self.runner = runner
+        self.hold_s = hold_s
+        self.clock = clock
+        self.applied: set[str] = set(applied or [])
+        self.panel: set[str] = set(panel if panel is not None else self.applied)  # the panel's last list
+        self.last_ok = last_ok if last_ok is not None else clock()
+        self.log: list[str] = []
+        self._ready = False
+        self._checked = False  # the saved list is only a hint until the firewall itself was checked
+
+    def _run(self, args: list[str], probe: bool = False) -> int:
+        if not self.enforce:
+            self.log.append("dry run: " + " ".join(args))
+            return 0
+        rc, out = self.runner(args)
+        if rc != 0 and not probe:
+            self.log.append(f"failed ({rc}): {' '.join(args)}: {out[:200]}")
+        return rc
+
+    def _setup(self) -> bool:
+        if not self._ready:
+            self._ready = all(self._run(cmd) == 0 for cmd in firewall.setup_commands(self.backend))
+        return self._ready
+
+    def _add(self, ip: str) -> bool:
+        reason = firewall.unsafe_reason(ip, self.protected)
+        if reason:
+            self.log.append(f"not blocking {ip}: {reason}")
+            return False
+        if self.backend is None:
+            self.log.append(f"would block {ip} (no firewall chosen: SENTRAI_FIREWALL=off)")
+            return True
+        add, check, _ = firewall.block_commands(self.backend, ip)
+        if not self._setup():
+            return False
+        if self.enforce and self._run(check, probe=True) == 0:
+            return True  # already there (e.g. after a restart)
+        return self._run(add) == 0 and (not self.enforce or self._run(check) == 0)
+
+    def _remove(self, ip: str) -> None:
+        if self.backend is not None:
+            self._run(firewall.block_commands(self.backend, ip)[2])
+
+    def sync(self, wanted: set[str] | None, local: set[str] | frozenset[str] = frozenset()) -> dict[str, list[str]]:
+        """Bring the firewall in line with the panel's list (None: the panel could not be reached, so its
+        last list is held) and the local rules' blocks."""
+        now = self.clock()
+        if wanted is None:
+            if self.panel and now - self.last_ok > self.hold_s:
+                self.log.append(f"panel unreachable for over {self.hold_s / 3600:g} h: removing its blocks")
+                self.panel = set()
+        else:
+            self.last_ok = now
+            self.panel = set(wanted)
+        target = self.panel | set(local)
+        # On the first pass put every block back: the saved list may come from a dry run, or from before a
+        # reboot that emptied the firewall. _add skips the ones already in place.
+        first = not self._checked
+        self._checked = True
+        added = [ip for ip in sorted(target if first else target - self.applied) if self._add(ip)]
+        removed = sorted(self.applied - target)
+        for ip in removed:
+            self._remove(ip)
+        self.applied = ((set() if first else self.applied) | set(added)) - set(removed)  # a failed re-add is tried again
+        return {"added": added, "removed": removed}
+
+
+def make_enforcer(data: dict[str, Any], runner: firewall.Runner = firewall.run_command) -> Enforcer:
+    backend = firewall.resolve_backend(os.environ.get("SENTRAI_FIREWALL", "auto"))
+    enforce = os.environ.get("SENTRAI_FIREWALL_ENFORCE", "0").strip().lower() in ("1", "true", "yes", "on")
+    protected = (protect.split(os.environ.get("PROTECTED_IPS", "127.0.0.1,::1,localhost"))
+                 | protect.split(os.environ.get("INFRA_ALLOWLIST", "")) | panel_ips(data["panel"]))
+    return Enforcer(backend, enforce, protected, runner, applied=data.get("blocked"), last_ok=data.get("last_ok"),
+                    panel=data.get("panel_blocked"))
+
+
+def make_guard(data: dict[str, Any], enforcer: Enforcer) -> offline.LocalGuard:
+    return offline.LocalGuard(enforcer.protected, saved=data.get("local"), on=offline.enabled())
+
+
+def fetch_blocklist(data: dict[str, Any], session: requests.Session) -> set[str] | None:
+    """This machine's blocked addresses from the panel, or None when it cannot be reached.
+    A revoked key raises, so the agent stops instead of guessing."""
+    try:
+        r = session.get(f"{data['panel']}/blocklist", headers={"Authorization": f"Bearer {data['key']}"},
+                        timeout=5, verify=getattr(session, "verify", True))
+    except requests.RequestException as exc:
+        if why := pinning.explain(exc):
+            print(f"[agent] {why}", flush=True)
+        return None
+    if r.status_code == 401:
+        raise AgentError("the panel no longer accepts this machine's key (revoked?): join again")
+    if r.status_code != 200:
+        return None
+    return {str(ip) for ip in r.json().get("ips", [])}
+
+
+def report_services(data: dict[str, Any], session: requests.Session,
+                    found: Callable[[], list[dict[str, Any]]] | None = None) -> bool:
+    """Tell the panel what runs on this machine (names and ports only). True when it was accepted."""
+    from agent import services
+
+    try:
+        r = session.post(f"{data['panel']}/fleet/services", json={"services": (found or services.listening)()},
+                         headers={"Authorization": f"Bearer {data['key']}"}, timeout=5,
+                         verify=getattr(session, "verify", True))
+    except requests.RequestException:
+        return False
+    return r.status_code == 200
+
+
+def report_hardware(data: dict[str, Any], session: requests.Session, reading: dict[str, Any]) -> bool:
+    """Send one hardware reading to the panel (numbers only). True when it was accepted."""
+    try:
+        r = session.post(f"{data['panel']}/fleet/hardware", json=reading,
+                         headers={"Authorization": f"Bearer {data['key']}"}, timeout=5,
+                         verify=getattr(session, "verify", True))
+    except requests.RequestException:
+        return False
+    return r.status_code == 200
+
+
+def send_offline_report(data: dict[str, Any], session: requests.Session, report: dict[str, Any]) -> bool:
+    """Tell the panel what the local rules did while it was out of reach. True once it is accepted."""
+    body = {**report, "actions": [{k: v for k, v in a.items() if k != "until_ts"} for a in report.get("actions", [])]}
+    try:
+        r = session.post(f"{data['panel']}/fleet/offline-report", json=body,
+                         headers={"Authorization": f"Bearer {data['key']}"}, timeout=10,
+                         verify=getattr(session, "verify", True))
+    except requests.RequestException:
+        return False
+    return r.status_code == 200
+
+
+def enforce_loop(data: dict[str, Any], enforcer: Enforcer, stop: threading.Event, poll_s: float = POLL_S,
+                 guard: offline.LocalGuard | None = None, session: requests.Session | None = None,
+                 reader: Any = None) -> None:
+    from agent import hardware
+
+    session = session or panel_session(data)
+    reader = reader or hardware.Reader()
+    next_services = next_hardware = 0.0
+    while not stop.is_set():
+        if time.monotonic() >= next_services:
+            next_services = time.monotonic() + (SERVICES_EVERY_S if report_services(data, session) else poll_s * 2)
+        if time.monotonic() >= next_hardware:
+            report_hardware(data, session, reader.read())  # a missed reading is simply skipped
+            next_hardware = time.monotonic() + HARDWARE_EVERY_S
+        wanted = fetch_blocklist(data, session)
+        local = guard.wanted() if guard else set()
+        change = enforcer.sync(wanted, local)
+        if guard:
+            guard.applied(set(change["added"]) & local)
+            report = guard.link(enforcer.last_ok)
+            if report is not None and wanted is not None and send_offline_report(data, session, report):
+                guard.reported()
+            for line in guard.log:
+                print(f"[agent] {line}", flush=True)
+            guard.log.clear()
+        for line in enforcer.log:
+            print(f"[agent] {line}", flush=True)
+        enforcer.log.clear()
+        if change["added"] or change["removed"]:
+            print(f"[agent] blocked {change['added'] or '-'}, unblocked {change['removed'] or '-'}", flush=True)
+        local_state = guard.state() if guard else data.get("local")
+        if change["added"] or change["removed"] or data.get("last_ok") != enforcer.last_ok \
+                or data.get("local") != local_state:
+            data.update(blocked=sorted(enforcer.applied), panel_blocked=sorted(enforcer.panel),
+                        last_ok=enforcer.last_ok, local=local_state)
+            save(data)  # blocks in force, and local blocks with their report, survive an agent restart
+        stop.wait(poll_s)
+
+
+def run(data: dict[str, Any]) -> None:
+    from collector.collector import Collector
+    from collector import paths
+
+    enforcer = make_enforcer(data)
+    guard = make_guard(data, enforcer)
+    mode = (f"{enforcer.backend}, {'enforcing' if enforcer.enforce else 'dry run'}" if enforcer.backend
+            else "no firewall (SENTRAI_FIREWALL=off)")
+    trust = "pinned certificate" if data.get("pin") else ("plain http" if data["panel"].startswith("http:")
+                                                           else "certificate authorities")
+    print(f"[agent] {data['host']} -> {data['panel']} ({trust}; blocks: {mode}; "
+          f"local rules {'on' if guard.on else 'off'} when the panel is unreachable)", flush=True)
+
+    class WatchedCollector(Collector):
+        """The collector, with every new line also shown to the local rules before it is sent."""
+
+        def collect(self) -> None:
+            start = len(self.pending)
+            super().collect()
+            if len(self.pending) > start:
+                guard.observe(self.pending[start:], held=enforcer.panel)
+
+    collector = WatchedCollector(data["panel"], paths.logs_dir(), token=data["key"], host=data["host"])
+    collector.session = panel_session(data)
+    stop = threading.Event()
+    threading.Thread(target=collector.run, name="collector", daemon=True).start()
+    from agent import tasks
+    jobs_session = panel_session(data)
+    threading.Thread(target=tasks.job_loop, args=(data, jobs_session.verify, agent_file().parent, stop),
+                     kwargs={"session": jobs_session}, name="jobs", daemon=True).start()
+    try:
+        enforce_loop(data, enforcer, stop, guard=guard)
+    finally:
+        stop.set()
+
+
+def set_pin(data: dict[str, Any], pin: str | None) -> int:
+    """Show the pin this machine checks and the one the panel shows now; with a value, keep that one."""
+    if not data["panel"].startswith("https://"):
+        print("[agent] this panel is reached over plain http: there is no certificate to pin")
+        return 1
+    try:
+        now = pinning.seen(data["panel"])
+    except OSError as exc:
+        now = f"(could not reach the panel: {exc.__class__.__name__})"
+    if not pin:
+        print(f"pin kept here:   {data.get('pin') or '(none: checked against certificate authorities)'}")
+        print(f"panel shows now: {now}")
+        return 0
+    try:
+        data["pin"] = pinning.normalise(pin)
+    except pinning.PinError as exc:
+        raise AgentError(str(exc)) from exc
+    save(data)
+    print(f"[agent] pin set to {data['pin']}" + ("" if data["pin"] == now else
+          f"; note the panel shows {now} right now, so calls fail until they match"))
+    print("[agent] restart the agent to use it: systemctl restart sentrai-agent")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(prog="python -m agent", description="SentrAI agent for a central panel")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    j = sub.add_parser("join", help="join this machine to a panel with a one-time code")
+    j.add_argument("--panel", required=True, help="the panel's core address, e.g. https://panel.example.com:8000")
+    j.add_argument("--code", required=True, help="the join code from the panel's Machines page")
+    j.add_argument("--name", help="this machine's name on the panel (default: its host name)")
+    j.add_argument("--pin", help="the panel's certificate pin (sha256:...), shown with the join code")
+    j.add_argument("--ca", help="the panel's certificate file, instead of a pin")
+    j.add_argument("--allow-http", action="store_true", help="accept plain http (private test networks only)")
+    sub.add_parser("run", help="send logs and enforce this machine's blocks")
+    sub.add_parser("status", help="show what this machine joined as")
+    pn = sub.add_parser("pin", help="show the panel's certificate pin, or set a new one")
+    pn.add_argument("value", nargs="?", help="the new pin (sha256:...), after the panel's certificate was renewed")
+    args = ap.parse_args(argv)
+    try:
+        if args.cmd == "join":
+            data = join(args.panel, args.code, args.name, args.allow_http, args.ca, pin=args.pin)
+            print(f"[agent] joined {data['panel']} as {data['host']}; key saved in {agent_file()}")
+            print("[agent] start it with: python -m agent run")
+            return 0
+        data = load()
+        if not data.get("key"):
+            print("[agent] this machine has not joined a panel yet: python -m agent join --panel URL --code CODE")
+            return 1
+        if args.cmd == "pin":
+            return set_pin(data, args.value)
+        if args.cmd == "status":
+            print(json.dumps({k: v for k, v in data.items() if k != "key"}, indent=2))
+            return 0
+        check_panel_url(data["panel"], data.get("allow_http", False))
+        run(data)
+        return 0
+    except AgentError as exc:
+        print(f"[agent] {exc}", file=sys.stderr)
+        return 2
+    except KeyboardInterrupt:
+        print("\n[agent] stopped.")
+        return 0

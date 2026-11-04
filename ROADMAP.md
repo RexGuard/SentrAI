@@ -4,17 +4,17 @@ title: SentrAI Roadmap
 
 # SentrAI Roadmap
 
-From the working MVP (27 Sep 2026) to a product a Singapore SME or private school can run in production.
+From the first working version (27 Sep 2026) to a product a Singapore SME or private school can run in production.
 
-[← Home](./) · [Full plan](https://rexguard.github.io/SentrAI/Cybersecurity%20+%20AI.html) · [MVP code](https://github.com/RexGuard/SentrAI/tree/main/mvp)
+[← Home](./) · [Full plan](https://rexguard.github.io/SentrAI/Cybersecurity%20+%20AI.html) · [Source code](https://github.com/RexGuard/SentrAI)
 
 **How to read this:** 9 phases, each with a goal, the features it adds, a done-when check, the owner, and a rough effort in developer-days for one developer (Erick). Effort figures are estimates made from the current codebase, not measurements; treat them as ±50%. Phases 2 to 6 can overlap once Phase 1 is done.
 
 ---
 
-## Where we are today (MVP, done)
+## Where we are today
 
-| Area | In the MVP | Still simulated or missing |
+| Area | In SentrAI today | Still simulated or missing |
 | --- | --- | --- |
 | Data collection | Web, DB and OS logs from the demo portal via a Python collector | Real servers, Windows, network, cloud |
 | Classification | Rules engine + fallback heuristic; Jev client written | Jev never called live (no API key); no accuracy measurement |
@@ -173,7 +173,7 @@ temporary fix, and write the evidence report.
 
 | # | Feature | Detail | Days |
 | --- | --- | --- | --- |
-| 6.1 | Security Evidence Report (PDF) | Done in the MVP: renamed from the old negligence report, PDF export with the audit-chain proof. | 1.5 |
+| 6.1 | Security Evidence Report (PDF) | Done in the first version: renamed from the old negligence report, PDF export with the audit-chain proof. | 1.5 |
 | 6.2 | Signed audit chain | Ed25519 signature on each chain head; periodic external timestamp (RFC 3161) so even an admin with DB access cannot rewrite history unnoticed. | 2 |
 | 6.3 | Fair-process features | Operator can add context before a report is final; report shows the operator's alert load at the time (so an overloaded person is not blamed for a staffing problem); HR-sensitive fields visible only to Executive/Auditor roles. | 2 |
 | 6.4 | Team metrics | Mean time to acknowledge and to resolve, SLA compliance, alerts per person, per week and per month. | 1.5 |
@@ -229,10 +229,10 @@ temporary fix, and write the evidence report.
 | Why someone picks SentrAI | Built in |
 | --- | --- |
 | One product for small teams: detect, escalate, temporarily fix, prove | P2, P4, P5, P6 |
-| Risk grows with inaction, so ignored alerts get louder | MVP; tuned in P1.3 |
-| Every automatic fix expires unless a human keeps it | MVP; real enforcement in P4 |
+| Risk grows with inaction, so ignored alerts get louder | Built; tuned in P1.3 |
+| Every automatic fix expires unless a human keeps it | Built; real enforcement in P4 |
 | Evidence built for the PDPC's "reasonable security arrangements" question | P6 |
-| Two-key autonomous actions (Countersign) and no hack-back, ever | MVP; hardened in P7 |
+| Two-key autonomous actions (Countersign) and no hack-back, ever | Built; hardened in P7 |
 | Fair to staff: context, workload and role-based visibility | P6.3 |
 
 ---
@@ -244,7 +244,7 @@ temporary fix, and write the evidence report.
 | False positives trigger blocks | Lost trust, blocked customers | P3 accuracy gates; protected assets; TTL; pilot starts read-only |
 | Staff see it as surveillance / blame | Pushback, HR issues | P6.3 fair-process features; reframe as evidence; staff notice |
 | SentrAI itself is compromised | Attacker gets an enforcement tool | P7 separate keys, P8.1 threat model, P8.4 pentest |
-| Jev API cost or outage | Classification slows or stops | Time budget and fallback already in the MVP; cost tracking in P3.1 |
+| Jev API cost or outage | Classification slows or stops | Time budget and fallback already built; cost tracking in P3.1 |
 | One developer | Schedule slips | Critical path only (P1 → P2 → P4 → P8); other phases are optional for the pilot |
 | Legal questions on active defense | Liability | No action outside our own perimeter (P4 done-when); legal review before the pilot |
 

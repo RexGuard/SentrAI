@@ -37,7 +37,7 @@ rm -rf core/.venv lab/.venv dashboard/.venv notifier/.venv
 
 The installer fetches its Python packages from pypi.org, so the machine needs outgoing HTTPS. Check
 with `curl -sI https://pypi.org/simple/ | head -1` (it should print a `200` line). Behind a proxy, set
-`HTTPS_PROXY` when you run the installer, for example `sudo HTTPS_PROXY=http://proxy:3128 ./mvp/deploy/install-panel.sh`.
+`HTTPS_PROXY` when you run the installer, for example `sudo HTTPS_PROXY=http://proxy:3128 ./deploy/install-panel.sh`.
 On Windows, run `$env:HTTPS_PROXY = "http://proxy:3128"` in the same PowerShell first.
 Then run the same install command again: it carries on where it stopped.
 
@@ -133,7 +133,7 @@ The agent installer prints why. The usual causes:
   the panel's firewall and in your cloud provider's.
 - **"could not reach the panel … SSLError"**: the certificate does not match the pin. Copy the
   command again from **Add machine**, with its `--pin`. After the panel's certificate changed, give
-  an installed machine the new pin with `sudo ./mvp/deploy/install-agent.sh --pin sha256:...`
+  an installed machine the new pin with `sudo ./deploy/install-agent.sh --pin sha256:...`
   (`-Pin sha256:...` on Windows); the dashboard shows it with every join code.
 - **"the panel refused to join this machine"**: the join code was already used or is more than 24
   hours old. Make a new one under **Machines**, **Add machine**.
@@ -156,12 +156,12 @@ Everything SentrAI keeps is in one folder, with one sub-folder per part: `~/.sen
 (`%USERPROFILE%\.sentrai` on Windows), `/var/lib/sentrai` on a server, and
 `/var/lib/sentrai/agent` (`C:\ProgramData\SentrAI\agent` on Windows) on a machine with only the
 agent. `INDEX.md` in that folder lists every file, what writes it and what it holds. On a laptop,
-`python sentrai_paths.py` in the `mvp` folder prints the same list.
+`python sentrai_paths.py` in the `app` folder prints the same list.
 
 Files from an older version are moved there the first time SentrAI starts. A file it could not
 move, because it was open or on another drive, stays in use where it is, and a warning names it
 when SentrAI starts. Nothing is deleted. See
-[where SentrAI keeps its data](https://github.com/RexGuard/SentrAI/blob/main/mvp/DATA.md).
+[where SentrAI keeps its data](https://github.com/RexGuard/SentrAI/blob/main/app/DATA.md).
 
 ## Still stuck?
 

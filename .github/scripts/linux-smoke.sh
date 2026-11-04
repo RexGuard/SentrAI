@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CI check of the Linux install on a real Ubuntu runner with systemd (run with sudo from mvp/):
+# CI check of the Linux install on a real Ubuntu runner with systemd (run with sudo from app/):
 # install the panel with install-panel.sh, join this machine to it with install-agent.sh, send a real
 # attack through a web log, approve the block and see it land in nftables, undo it, switch the
 # agent to iptables and block again, then uninstall both and check everything is gone.
@@ -30,7 +30,7 @@ dump() {
 trap 'rc=$?; [ "$rc" = 0 ] || dump; exit "$rc"' EXIT
 
 [ "$(id -u)" = 0 ] || fail "run with sudo"
-[ -f deploy/install-panel.sh ] || fail "run from mvp/"
+[ -f ../deploy/install-panel.sh ] || fail "run from app/"
 
 # An nginx access log where Ubuntu keeps it, with Ubuntu's owner and mode (the agent reads it
 # through the adm group, the way it would on a real web server).
@@ -41,7 +41,7 @@ chmod 0640 "$LOG"
 
 # --- panel --------------------------------------------------------------------------------
 # As on a VPS: agents reach the panel over the internet on its agents-only HTTPS port (--panel).
-./deploy/install-panel.sh --no-questions --admin-email ci@example.com --protect "$ADMIN_IP" \
+../deploy/install-panel.sh --no-questions --admin-email ci@example.com --protect "$ADMIN_IP" \
     --panel 8443 --panel-url "$AGENT_URL"
 for u in sentrai-core sentrai-collector sentrai-dashboard; do
     wait_for "$u is running" 30 systemctl is-active --quiet "$u"
@@ -53,7 +53,7 @@ nft list table inet sentrai_dashboard | grep -q "$ADMIN_IP" || fail "dashboard f
 [ "$(stat -c '%a' /var/lib/sentrai/core)" = 700 ] || fail "core state folder is not 0700"
 [ -f /var/lib/sentrai/INDEX.md ] || fail "install-panel.sh did not write /var/lib/sentrai/INDEX.md"
 grep -q '^SENTRAI_HOME=/var/lib/sentrai$' /etc/sentrai/sentrai.env || fail "SENTRAI_HOME missing from sentrai.env"
-TOKEN="$(cd /opt/sentrai/mvp && set -a && . /etc/sentrai/sentrai.env && set +a && \
+TOKEN="$(cd /opt/sentrai/app && set -a && . /etc/sentrai/sentrai.env && set +a && \
     runuser -u sentrai -- env HOME=/var/lib/sentrai lab/.venv/bin/python sentrai_config.py token)"
 [ -n "$TOKEN" ] || fail "no API token"
 api() { curl -sf -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' "$@"; }
@@ -61,11 +61,11 @@ api() { curl -sf -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application
 grep -q '^SENTRAI_RISK_SCOPE=host' /etc/sentrai/sentrai.env || fail "--panel did not turn on per-machine scoring"
 # Reruns keep the address agents use: --panel alone must not swap it for this server's own name,
 # and --panel-url alone (what install-panel.sh tells you to run) must change it.
-./deploy/install-panel.sh --no-questions --panel >/dev/null
+../deploy/install-panel.sh --no-questions --panel >/dev/null
 grep -qx "SENTRAI_PANEL_URL=$AGENT_URL" /etc/sentrai/sentrai.env || fail "a --panel rerun lost --panel-url"
-./deploy/install-panel.sh --no-questions --panel-url https://panel.example.com:8443 >/dev/null
+../deploy/install-panel.sh --no-questions --panel-url https://panel.example.com:8443 >/dev/null
 grep -qx "SENTRAI_PANEL_URL=https://panel.example.com:8443" /etc/sentrai/sentrai.env || fail "--panel-url alone was ignored"
-./deploy/install-panel.sh --no-questions --panel-url "$AGENT_URL" >/dev/null
+../deploy/install-panel.sh --no-questions --panel-url "$AGENT_URL" >/dev/null
 grep -qx "SENTRAI_PANEL_URL=$AGENT_URL" /etc/sentrai/sentrai.env || fail "--panel-url did not change back"
 wait_for "core answers after reruns" 60 curl -sf "$PANEL/health"
 wait_for "the agents' HTTPS port answers" 30 curl -skf "$AGENT_URL/health"
@@ -82,13 +82,13 @@ PIN="$(echo "$JOIN" | python3 -c 'import json, sys; print(json.load(sys.stdin)["
 echo "join code $CODE, pin $PIN"
 
 # A wrong pin is refused before anything is sent.
-if ./deploy/install-agent.sh --panel "$AGENT_URL" --code "$CODE" --name "$NAME" --no-start \
+if ../deploy/install-agent.sh --panel "$AGENT_URL" --code "$CODE" --name "$NAME" --no-start \
     --pin "sha256:$(printf '0%.0s' $(seq 1 64))"; then fail "a wrong pin was accepted"; fi
 echo "ok: a wrong pin is refused"
 rm -rf /var/lib/sentrai/agent /etc/sentrai/agent.env
 
 # --- agent: first install is a dry run ------------------------------------------------------
-./deploy/install-agent.sh --panel "$AGENT_URL" --code "$CODE" --pin "$PIN" --name "$NAME" --protect "$ADMIN_IP"
+../deploy/install-agent.sh --panel "$AGENT_URL" --code "$CODE" --pin "$PIN" --name "$NAME" --protect "$ADMIN_IP"
 wait_for "sentrai-agent is running" 30 systemctl is-active --quiet sentrai-agent
 machine_reported() {
     api "$PANEL/machines" | python3 -c "import json, sys; m = [x for x in json.load(sys.stdin) if x['host'] == '$NAME']; sys.exit(not (m and m[0].get('services_at')))"
@@ -104,7 +104,7 @@ grep -q '^SENTRAI_HOME=/var/lib/sentrai/agent$' /etc/sentrai/agent.env || fail "
 
 # --- upgrade in place with --enforce (no code: the machine stays joined) ----------------------
 # --pin without a code sets the pin on the joined machine (as after a panel certificate change).
-./deploy/install-agent.sh --enforce --pin "$PIN"
+../deploy/install-agent.sh --enforce --pin "$PIN"
 grep -q "\"pin\": \"$PIN\"" /var/lib/sentrai/agent/agent.json || fail "--pin on a joined machine was not saved"
 grep -q '^SENTRAI_FIREWALL_ENFORCE=1' /etc/sentrai/agent.env || fail "--enforce was not saved"
 grep -q "$ADMIN_IP" /etc/sentrai/agent.env || fail "--protect was lost on upgrade"
@@ -117,7 +117,7 @@ ROOT="$(cd .. && pwd)"
 HEAD="$(git -c safe.directory='*' -C "$ROOT" rev-parse HEAD)"
 git config --system --add safe.directory '*'  # root fetches from the runner's checkout (a real server fetches from GitHub)
 [ -x /usr/local/sbin/sentrai-update ] || fail "install-panel.sh did not add sentrai-update"
-grep -qx "commit=$HEAD" /opt/sentrai/mvp/VERSION || fail "VERSION does not name the installed commit"
+grep -qx "commit=$HEAD" /opt/sentrai/app/VERSION || fail "VERSION does not name the installed commit"
 systemctl is-enabled --quiet sentrai-update-check.timer || fail "the daily update check is not on"
 ENV_SUM="$(sha256sum < /etc/sentrai/sentrai.env)"
 ACCOUNTS_SUM="$(sha256sum < /var/lib/sentrai/accounts.json)"
@@ -136,7 +136,7 @@ same_settings() {
 out="$(sentrai-update --repo "file://$ROOT" --ref "$HEAD")"
 echo "$out" | grep -q "already up to date" || fail "an update to the installed commit did something: $out"
 sentrai-update --repo "file://$ROOT" --ref "$HEAD" --force || fail "sentrai-update --force failed"
-grep -qx "commit=$HEAD" /opt/sentrai/mvp/VERSION || fail "VERSION after the update"
+grep -qx "commit=$HEAD" /opt/sentrai/app/VERSION || fail "VERSION after the update"
 [ -n "$(ls -d /var/backups/sentrai/*/ 2>/dev/null)" ] || fail "the update saved no backup"
 same_settings "the update"
 sentrai-update --check || fail "--check says an update is available right after updating"
@@ -147,10 +147,10 @@ python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); sys.exit(d["avai
 BROKEN=/tmp/sentrai-broken
 rm -rf "$BROKEN" && mkdir -p "$BROKEN"
 git -c safe.directory='*' -C "$ROOT" archive HEAD | tar -C "$BROKEN" -xf -
-echo 'raise SystemExit("broken on purpose (CI)")' >> "$BROKEN/mvp/core/app/main.py"
+echo 'raise SystemExit("broken on purpose (CI)")' >> "$BROKEN/app/core/app/main.py"
 if sentrai-update --from "$BROKEN"; then fail "a broken version passed the update's checks"; fi
-grep -qx "commit=$HEAD" /opt/sentrai/mvp/VERSION || fail "the rollback did not bring back the old VERSION"
-! grep -q "broken on purpose" /opt/sentrai/mvp/core/app/main.py || fail "the broken code is still installed"
+grep -qx "commit=$HEAD" /opt/sentrai/app/VERSION || fail "the rollback did not bring back the old VERSION"
+! grep -q "broken on purpose" /opt/sentrai/app/core/app/main.py || fail "the broken code is still installed"
 wait_for "core answers after the rollback" 60 curl -sf "$PANEL/health"
 same_settings "the rollback"
 
@@ -212,16 +212,16 @@ if journalctl -q --no-pager -u sentrai-core -u sentrai-collector -u sentrai-noti
 fi
 
 # --- uninstall: service, code and blocks go; the key stays until --purge -------------------------
-./deploy/uninstall-agent.sh
+../deploy/uninstall-agent.sh
 ! systemctl cat sentrai-agent >/dev/null 2>&1 || fail "agent service still installed"
 ! ipt_has "$ATTACKER2" 2>/dev/null || fail "iptables block left behind"
 [ -f /var/lib/sentrai/agent/agent.json ] || fail "uninstall deleted the machine key without --purge"
-[ -f /opt/sentrai/mvp/core/app/main.py ] || fail "agent uninstall removed the panel's code"
+[ -f /opt/sentrai/app/core/app/main.py ] || fail "agent uninstall removed the panel's code"
 systemctl is-active --quiet sentrai-core || fail "agent uninstall stopped the panel"
-./deploy/uninstall-agent.sh --purge
+../deploy/uninstall-agent.sh --purge
 [ ! -e /var/lib/sentrai/agent ] || fail "--purge left /var/lib/sentrai/agent"
 
-./deploy/uninstall-panel.sh --purge
+../deploy/uninstall-panel.sh --purge
 for u in sentrai-core sentrai-collector sentrai-dashboard sentrai-notifier; do
     ! systemctl cat "$u" >/dev/null 2>&1 || fail "$u still installed"
 done

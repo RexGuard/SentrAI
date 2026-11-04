@@ -27,7 +27,7 @@ in the environment always wins over the file. Restart SentrAI after a change, or
 
 Every other file SentrAI keeps sits in the same folder as the settings file, one sub-folder per
 part. `INDEX.md` in that folder lists them all; see
-[where SentrAI keeps its data](https://github.com/RexGuard/SentrAI/blob/main/mvp/DATA.md).
+[where SentrAI keeps its data](https://github.com/RexGuard/SentrAI/blob/main/app/DATA.md).
 
 ## Security preset
 
@@ -281,7 +281,7 @@ panel. The panel's backup also holds every machine's key, so that one code bring
 ## All variables
 
 The full list, with every default, is in the
-[MVP README](https://github.com/RexGuard/SentrAI/blob/main/mvp/README.md#variables).
+[code README](https://github.com/RexGuard/SentrAI/blob/main/app/README.md#variables).
 
 Every variable starts with `SENTRAI_`. Names from before the rename (`CACTAI_FIREWALL` and the
 like) still work when the new name is not set; SentrAI prints a reminder to rename them.

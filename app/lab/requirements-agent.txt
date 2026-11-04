@@ -1,0 +1,8 @@
+# What an agent ("wings") on a machine needs, and nothing more: install-agent.sh and install-agent.ps1
+# install only this. requirements.txt adds the test runner and the AI packages for working on the lab.
+requests==2.33.0
+psutil==6.0.0
+# Time zone names (SENTRAI_LOG_TZ=Asia/Singapore) on Windows, which has no system tz database.
+tzdata>=2024.1
+# Scout's AI help (python -m scout find) is optional on an agent. To use it there, add the package to
+# the agent's venv: sudo /opt/sentrai/app/lab/.venv/bin/pip install anthropic   (or openai)

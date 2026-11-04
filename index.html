@@ -21,7 +21,7 @@ description: SentrAI watches your systems, scores risk from 0 to 100, applies te
         <p class="lede">SentrAI watches the web, database and OS layers, turns every anomaly into a live 0 to 100 risk score that grows while nobody acts, applies a temporary fix when your tolerance is crossed, and keeps tamper-evident proof of who knew what and when.</p>
         <div class="cta">
           <a class="btn btn-primary" href="#how">See how it works</a>
-          <a class="btn btn-ghost" href="https://github.com/RexGuard/SentrAI/tree/main/mvp">Explore the prototype</a>
+          <a class="btn btn-ghost" href="https://github.com/RexGuard/SentrAI">View the code</a>
         </div>
         <p class="quote">"A sentry doesn't chase you. It just guards the gate."</p>
       </div>
@@ -205,20 +205,20 @@ description: SentrAI watches your systems, scores risk from 0 to 100, applies te
     </div>
   </section>
 
-  <!-- Prototype -->
+  <!-- Deploy -->
   <section id="demo">
     <div class="wrap">
-      <p class="eyebrow">Working prototype</p>
+      <p class="eyebrow">Deploy it</p>
       <h2 class="section-title">Point it at your logs. SentrAI handles the attacks.</h2>
-      <p class="lede">The MVP runs on one laptop or a Linux server: SentrAI reads the logs you approve, scores the risk, alerts the operator, blocks the attackers when the score crosses 80, and writes a hash-chained evidence report. One script starts everything, and automated tests cover every part.</p>
+      <p class="lede">SentrAI runs as a panel on one Linux server, with a small agent on each Linux or Windows machine it guards: SentrAI reads the logs you approve, scores the risk, alerts the operator, blocks the attackers when the score crosses 80, and writes a hash-chained evidence report. One script starts everything, and automated tests cover every part.</p>
       <div class="figure">
         <img src="{{ '/assets/diagrams/architecture.svg' | relative_url }}" alt="SentrAI architecture: collector, classifier and responder around the risk engine, with the agents, dashboard and notifier" loading="lazy" width="1400" height="900">
       </div>
       <p class="figcap">Architecture: collector, classifier and responder around a deterministic risk engine.</p>
       <div class="cta" style="margin-top:24px">
-        <a class="btn btn-primary" href="{{ '/docs/' | relative_url }}">Install guide</a>
-        <a class="btn btn-ghost" href="https://github.com/RexGuard/SentrAI/tree/main/mvp">MVP code</a>
-        <a class="btn btn-ghost" href="https://github.com/RexGuard/SentrAI/blob/main/mvp/research/SOURCES.md">Sources</a>
+        <a class="btn btn-primary" href="{{ '/docs/server.html' | relative_url }}">Deploy guide</a>
+        <a class="btn btn-ghost" href="https://github.com/RexGuard/SentrAI">Source code</a>
+        <a class="btn btn-ghost" href="https://github.com/RexGuard/SentrAI/blob/main/app/research/SOURCES.md">Sources</a>
       </div>
     </div>
   </section>
@@ -252,7 +252,7 @@ description: SentrAI watches your systems, scores risk from 0 to 100, applies te
       <p class="eyebrow">Team</p>
       <h2 class="section-title">The people behind SentrAI.</h2>
       <div class="team" style="margin-top:28px">
-        <div class="member"><div class="avatar" aria-hidden="true">ES</div><div><b>Erick Sientaro</b><span>Developer, builds the prototype</span></div></div>
+        <div class="member"><div class="avatar" aria-hidden="true">ES</div><div><b>Erick Sientaro</b><span>Developer, builds SentrAI</span></div></div>
         <div class="member"><div class="avatar" aria-hidden="true">I</div><div><b>Ishmail</b><span>CEO, business and customers</span></div></div>
         <div class="member"><div class="avatar" aria-hidden="true">H</div><div><b>Hozen</b><span>Notetaker, documentation and source checks</span></div></div>
       </div>
@@ -264,7 +264,7 @@ description: SentrAI watches your systems, scores risk from 0 to 100, applies te
       <div class="band">
         <div>
           <h2>Read the full plan</h2>
-          <p>Problem, data collection per layer, the risk formula, the hotpatch workflow, ethics and the MVP demo script.</p>
+          <p>Problem, data collection per layer, the risk formula, the hotpatch workflow, ethics and the first version's demo script.</p>
         </div>
         <a class="btn btn-ghost" href="{{ '/Cybersecurity%20+%20AI.html' | relative_url }}">Open the plan</a>
       </div>

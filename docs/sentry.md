@@ -30,14 +30,14 @@ Sentry follows these rules unless your team says otherwise:
 
 ## How it is tested
 
-`mvp/eval/sentry_sim.py` has Claude play business owners and managers with no IT team (a bakery owner,
+`app/eval/sentry_sim.py` has Claude play business owners and managers with no IT team (a bakery owner,
 a clinic manager, a cafe owner who wants to "hack them back", ...) chatting with Sentry about realistic
 situations, each on a throw-away copy of the core, and grades every answer on seven points: answer first,
 plain words, length, accuracy, safety, next step and tone. It runs on the panel with the panel's own AI
 key and touches no real data:
 
 ```
-sudo /opt/sentrai/mvp/core/.venv/bin/python /opt/sentrai/mvp/eval/sentry_sim.py --convos 24 --budget 15
+sudo /opt/sentrai/app/core/.venv/bin/python /opt/sentrai/app/eval/sentry_sim.py --convos 24 --budget 15
 ```
 
 `--prompt FILE` tries new instructions before they go into `chat.py`. Results (report.md, summary.json,
@@ -50,7 +50,7 @@ adds a short note that a fuller answer needs the AI helper.
 
 | What | Where | Who changes it |
 | --- | --- | --- |
-| Default instructions for the chat | `SYSTEM` in [`mvp/core/app/chat.py`](https://github.com/RexGuard/SentrAI/blob/main/mvp/core/app/chat.py) | SentrAI's team, in code |
+| Default instructions for the chat | `SYSTEM` in [`app/core/app/chat.py`](https://github.com/RexGuard/SentrAI/blob/main/app/core/app/chat.py) | SentrAI's team, in code |
 | Default instructions for the setup chat | `SETUP_SYSTEM` in the same file | SentrAI's team, in code |
 | Answers without an AI key | `_fallback*` and `_plain_why` in the same file | SentrAI's team, in code |
 | Standing instructions for one organisation | **What Sentry remembers** panel in the Manager view, or `POST /chat/memory` | Owner or Admin |

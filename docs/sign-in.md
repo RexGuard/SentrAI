@@ -70,7 +70,7 @@ set a new password and authenticator. A recovery code also gets you in once with
 
 If no one else can sign in, reset from the machine itself:
 
-| | Laptop (from the `mvp` folder) | Server |
+| | Laptop (from the `app` folder) | Server |
 | --- | --- | --- |
 | Who may sign in (a setup code on a new machine) | `python sentrai_config.py admin` | `sudo sentrai-admin` |
 | The first Owner: new password, printed once | `python sentrai_config.py admin --reset` | `sudo sentrai-admin --reset` |

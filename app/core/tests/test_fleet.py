@@ -1,0 +1,294 @@
+"""Machines joining a central panel: join codes, agent keys, what a key may do, revoking."""
+
+import os
+
+import pytest
+from fastapi.testclient import TestClient
+
+from app import fleet
+from app.config import Settings
+from app.main import create_app
+
+from .conftest import AUTH, ev
+
+
+@pytest.fixture
+def panel(tmp_path):
+    settings = Settings(db_path=tmp_path / "sentrai.db", background=False, demo_speed=60.0, risk_scope="host")
+    app = create_app(settings)
+    with TestClient(app, headers=AUTH) as c:
+        c.core = app.state.core  # type: ignore[attr-defined]
+        c.fleet = app.state.fleet  # type: ignore[attr-defined]
+        c.tmp = tmp_path
+        yield c
+
+
+def join(c, host="office-pc", name=None):
+    code = c.post("/fleet/join-codes", json={"operator": "erick", "name": name}).json()["code"]
+    r = c.post("/fleet/enrol", json={"code": code, "host": host}, headers={"Authorization": ""})
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def as_agent(key):
+    return {"Authorization": f"Bearer {key}"}
+
+
+def test_join_code_is_one_time(panel):
+    code = panel.post("/fleet/join-codes", json={"operator": "erick"}).json()
+    assert len(fleet.normalise_code(code["code"])) == 12 and code["expires_at"]
+    first = panel.post("/fleet/enrol", json={"code": code["code"].lower(), "host": "office-pc"}, headers={"Authorization": ""})
+    assert first.status_code == 200 and first.json()["key"].startswith("sa_")
+    again = panel.post("/fleet/enrol", json={"code": code["code"], "host": "laptop"}, headers={"Authorization": ""})
+    assert again.status_code == 403
+    types = [r["type"] for r in panel.get("/audit").json()["records"]]
+    assert "join_code_created" in types and "machine_joined" in types
+
+
+def test_join_code_needs_the_owner_token(panel):
+    assert panel.post("/fleet/join-codes", json={}, headers={"Authorization": ""}).status_code == 401
+    key = join(panel)["key"]
+    assert panel.post("/fleet/join-codes", json={}, headers=as_agent(key)).status_code == 403
+
+
+def test_expired_code_and_name_rules(panel):
+    panel.fleet.clock = lambda: 1_000.0
+    code = panel.post("/fleet/join-codes", json={}).json()["code"]
+    panel.fleet.clock = lambda: 1_000.0 + fleet.CODE_TTL_S + 1
+    assert panel.post("/fleet/enrol", json={"code": code, "host": "a"}, headers={"Authorization": ""}).status_code == 403
+    assert panel.post("/fleet/join-codes", json={"name": "bad name!"}).status_code == 400
+    named = join(panel, host="ignored", name="web-01")
+    assert named["host"] == "web-01"
+
+
+def test_same_name_twice_is_refused(panel):
+    join(panel, "office-pc")
+    code = panel.post("/fleet/join-codes", json={}).json()["code"]
+    assert panel.post("/fleet/enrol", json={"code": code, "host": "office-pc"},
+                      headers={"Authorization": ""}).status_code == 409
+
+
+def test_too_many_wrong_codes_locks_enrolment(panel):
+    for _ in range(fleet.MAX_BAD_CODES):
+        panel.post("/fleet/enrol", json={"code": "AAAA-BBBB-CCCC", "host": "x"}, headers={"Authorization": ""})
+    code = panel.post("/fleet/join-codes", json={}).json()["code"]
+    assert panel.post("/fleet/enrol", json={"code": code, "host": "x"}, headers={"Authorization": ""}).status_code == 429
+
+
+def test_agent_key_only_reaches_its_own_routes(panel):
+    key = join(panel)["key"]
+    h = as_agent(key)
+    assert panel.get("/fleet/me", headers=h).json()["host"] == "office-pc"
+    assert panel.get("/incidents", headers=h).status_code == 403
+    assert panel.get("/risk", headers=h).status_code == 403
+    assert panel.post("/protection", json={"on": False, "operator": "x", "reason": "y"}, headers=h).status_code == 403
+    assert panel.get("/blocklist", params={"host": "web-01"}, headers=h).status_code == 403
+    assert panel.get("/blocklist", headers=h).status_code == 200
+    assert panel.get("/fleet/me", headers=as_agent(key + "x")).status_code == 401
+
+
+def test_agent_events_are_stamped_with_its_machine(panel):
+    key = join(panel)["key"]
+    for i in range(5):  # the log line claims another machine: the key decides
+        panel.post("/events", json=ev(i, "POST /login 401 user=admin", host="web-01"), headers=as_agent(key))
+    panel.post("/heartbeat", json={"collector": "web-01"}, headers=as_agent(key))
+    assert {i["host"] for i in panel.get("/incidents").json()} == {"office-pc"}
+    assert {m["host"] for m in panel.get("/machines").json()} == {"office-pc"}
+    assert panel.fleet.agents()[0]["last_seen"]
+
+
+def test_agent_reads_only_its_own_blocks(panel):
+    office = as_agent(join(panel, "office-pc")["key"])
+    web = as_agent(join(panel, "web-01")["key"])
+    for i in range(5):
+        panel.post("/events", json=ev(i, "POST /login 401 user=admin", ip="203.0.113.45"), headers=web)
+    panel.post("/events", json=ev(5, "GET /search?q=' OR 1=1 -- 200", ip="203.0.113.45", source="flask_access"), headers=web)
+    assert "203.0.113.45" in panel.get("/blocklist", headers=web).json()["ips"]
+    assert panel.get("/blocklist", headers=office).json()["ips"] == []
+    # Without a key, one machine's list is not open (the plain list stays open as before).
+    assert panel.get("/blocklist", params={"host": "web-01"}, headers={"Authorization": ""}).status_code == 401
+    assert panel.get("/blocklist", headers={"Authorization": ""}).status_code == 200
+
+
+def test_revoke(panel):
+    a = join(panel)
+    out = panel.post(f"/fleet/agents/{a['agent_id']}/revoke", json={"operator": "erick"}).json()
+    assert out["revoked_by"] == "erick" and "key_sha256" not in out
+    assert panel.get("/fleet/me", headers=as_agent(a["key"])).status_code == 401
+    assert panel.post("/fleet/agents/nope/revoke", json={}).status_code == 404
+    join(panel)  # the name is free again once revoked
+    listed = panel.get("/fleet/agents").json()
+    assert len(listed) == 2 and all("key_sha256" not in x for x in listed)
+
+
+def test_saved_without_plain_secrets(panel):
+    a = join(panel)
+    saved = panel.tmp / "machines" / "fleet.json"  # machines/ next to the database (app/sentrai_paths.py)
+    text = saved.read_text()
+    assert a["key"] not in text and a["agent_id"] in text
+    if os.name == "posix":
+        assert saved.stat().st_mode & 0o777 == 0o600
+    again = fleet.Fleet(saved)
+    assert again.check(a["key"])["host"] == "office-pc"
+
+
+def test_agent_reports_its_services(panel):
+    key = join(panel, "web-01")["key"]
+    svcs = [{"name": "nginx", "port": 443, "proto": "tcp", "process": "nginx"},
+            {"name": "sshd", "port": 22, "proto": "tcp", "process": "sshd"}]
+    out = panel.post("/fleet/services", json={"services": svcs}, headers=as_agent(key))
+    assert out.json() == {"ok": True, "services": 2}
+    other = panel.post("/fleet/services", json={"services": svcs}, params={"host": "office-pc"}, headers=as_agent(key))
+    assert other.status_code == 403  # an agent speaks for its own machine only
+    for i in range(5):
+        panel.post("/events", json={**ev(i, "Failed password for root from 203.0.113.9 port 4022 ssh2", ip="203.0.113.9",
+                                          layer="os", source="auth"),
+                                    "parsed": {"format": "syslog", "kind": "ssh", "program": "sshd", "ssh_event": "failed_auth"}},
+                   headers=as_agent(key))
+    m = {x["host"]: x for x in panel.get("/machines").json()}
+    assert "office-pc" not in m
+    by = {s["name"]: s for s in m["web-01"]["services"]}
+    assert by["nginx"]["port"] == 443 and by["nginx"]["open_incidents"] == 0
+    incs = panel.get("/incidents").json()
+    assert incs and incs[0]["service"] == "sshd" and by["sshd"]["open_incidents"] == 1
+    assert m["web-01"]["services_at"]
+    bad = panel.post("/fleet/services", json={"services": [{"name": "x", "port": 70000}]}, headers=as_agent(key))
+    assert bad.status_code == 422
+    assert panel.post("/fleet/services", json={"services": []}).status_code == 400  # operator must name the host
+
+
+def test_service_of():
+    from app.saguaro import service_of
+    assert service_of({"parsed": {"format": "nginx_access"}}) == "nginx"
+    assert service_of({"parsed": {"program": "sshd-session"}}) == "sshd"
+    assert service_of({"parsed": {"program": "postfix/smtpd"}}) == "postfix/smtpd"
+    assert service_of({"source": "flask_auth"}) == "flask_auth"
+    assert service_of({"service": "minecraft", "source": "x"}) == "minecraft"
+
+
+def reading(cpu=12.0, mem=40.0, disk=50.0, temp=None):
+    r = {"cpu": {"percent": cpu, "cores": 4, "load": [0.5, 0.4, 0.3]},
+         "memory": {"total": 8 * 2**30, "used": int(8 * 2**30 * mem / 100), "percent": mem},
+         "disks": [{"mount": "/", "total": 100 * 2**30, "used": int(100 * 2**30 * disk / 100), "percent": disk}],
+         "net": {"sent": 1000, "recv": 5000, "sent_rate": 10.0, "recv_rate": 50.0},
+         "uptime_s": 3600, "os": "Linux 6.8"}
+    if temp is not None:
+        r["temps"] = [{"label": "coretemp Package id 0", "current": temp, "high": 100}]
+    return r
+
+
+def test_agent_reports_its_hardware(panel):
+    key = join(panel, "web-01")["key"]
+    assert panel.post("/fleet/hardware", json=reading(), headers=as_agent(key)).json() == {"ok": True, "alerts": 0}
+    other = panel.post("/fleet/hardware", json=reading(), params={"host": "office-pc"}, headers=as_agent(key))
+    assert other.status_code == 403  # an agent speaks for its own machine only
+    m = {x["host"]: x for x in panel.get("/machines").json()}
+    hw = m["web-01"]["hardware"]
+    assert hw["cpu"]["percent"] == 12.0 and hw["disks"][0]["mount"] == "/" and hw["at"] and hw["warnings"] == []
+    view = panel.get("/fleet/hardware", params={"host": "web-01"}).json()
+    assert view["history"][-1]["cpu"] == 12.0 and view["history"][-1]["net_in"] == 50.0
+    assert view["limits"]["disk"] == 90
+    assert panel.get("/fleet/hardware", params={"host": "web-01"}, headers=as_agent(key)).status_code == 403
+    bad = panel.post("/fleet/hardware", json={"cpu": {"percent": 140}}, headers=as_agent(key))
+    assert bad.status_code == 422
+    assert panel.post("/fleet/hardware", json=reading()).status_code == 400  # operator must name the host
+
+
+def test_hardware_alerts_once_and_clears(panel, monkeypatch):
+    key = join(panel, "web-01")["key"]
+    health = panel.app.state.health
+    now = [1_000_000.0]
+    health.clock = lambda: now[0]
+
+    def send(**kw):
+        return panel.post("/fleet/hardware", json=reading(**kw), headers=as_agent(key)).json()["alerts"]
+
+    def told():
+        return [n for n in panel.core.notifications if n["kind"] == "hardware"]
+
+    assert send(disk=95) == 1  # a full disk counts at once
+    assert "disk / is 95% full" in told()[-1]["title"]
+    assert send(disk=96) == 0  # told once until it comes back down
+    assert send(disk=88) == 0 and panel.get("/machines").json()[0]["hardware"]["warnings"]  # not clear yet
+    send(disk=50)
+    assert panel.get("/machines").json()[0]["hardware"]["warnings"] == []
+    types = [r["type"] for r in panel.get("/audit").json()["records"]]
+    assert "machine_health" in types and "machine_health_ok" in types
+
+    assert send(cpu=99) == 0  # a CPU spike must last SENTRAI_HW_FOR_MIN (5 min) first
+    now[0] += 200
+    assert send(cpu=99) == 0
+    now[0] += 120
+    assert send(cpu=99) == 1 and "CPU at 99%" in told()[-1]["title"]
+    now[0] += 30
+    assert send(temp=91) == 0  # heat waits too
+    now[0] += 301
+    assert send(temp=92) == 1 and "temperature is 92 °C" in told()[-1]["title"]
+
+    monkeypatch.setenv("SENTRAI_HW_ALERTS", "off")
+    assert send(disk=99) == 0  # still shown, never sent
+    assert panel.get("/machines").json()[0]["hardware"]["warnings"]
+
+
+def test_revoking_forgets_hardware(panel):
+    out = join(panel, "web-01")
+    panel.post("/fleet/hardware", json=reading(), headers=as_agent(out["key"]))
+    panel.post(f"/fleet/agents/{out['agent_id']}/revoke", json={"operator": "erick"})
+    assert panel.get("/fleet/hardware", params={"host": "web-01"}).json()["latest"] is None
+
+
+def test_delete_machine_from_the_panel(panel):
+    a = join(panel, "web-01")
+    panel.post("/fleet/services", json={"services": [{"name": "nginx", "port": 443}]}, headers=as_agent(a["key"]))
+    names = lambda: [m["name"] for m in panel.get("/ui/machines").json()["machines"]]  # noqa: E731
+    assert "web-01" in names()
+    out = panel.post("/ui/machines/web-01/delete").json()
+    assert out["revoked"] == [a["agent_id"]] and "deleted" in out["message"]
+    assert "web-01" not in names()  # hidden from the list
+    assert panel.get("/fleet/me", headers=as_agent(a["key"])).status_code == 401  # its key no longer works
+    assert any(r.get("type") == "machine_removed" and r["data"]["host"] == "web-01" for r in panel.core.audit.records())
+    join(panel, "web-01")  # joining again brings it back
+    assert "web-01" in names()
+
+
+def test_deleted_machine_stays_gone_while_its_logs_keep_coming(panel):
+    a = join(panel, "web-01")
+    panel.post("/fleet/services", json={"services": [{"name": "nginx", "port": 443}]}, headers=as_agent(a["key"]))
+    names = lambda: [m["host"] for m in panel.get("/ui/machines").json()["machines"]]  # noqa: E731
+    panel.post("/ui/machines/web-01/delete")
+    # a collector or script with the panel token still sends lines that name it: it must not come back
+    panel.post("/events", json={"layer": "web", "source": "nginx", "raw": "GET / 200", "host": "web-01"})
+    page = panel.get("/ui/machines").json()
+    assert "web-01" not in names() and [g["host"] for g in page["removed"]] == ["web-01"]
+    out = panel.post("/ui/machines/web-01/restore")
+    assert out.status_code == 200 and "web-01" in names() and panel.get("/ui/machines").json()["removed"] == []
+    assert panel.get("/fleet/me", headers=as_agent(a["key"])).status_code == 401  # restoring does not bring the key back
+    assert any(r.get("type") == "machine_restored" for r in panel.core.audit.records())
+    assert panel.post("/ui/machines/web-01/restore").status_code == 404  # nothing to restore
+
+
+def test_still_removed_does_not_expire():
+    from app.ui_machines import still_removed
+    assert not still_removed(None)
+    assert still_removed({"at": "2026-11-01T08:00:00+00:00", "by": "erick"})
+
+
+def test_rename_machine_keeps_its_host(panel, tmp_path):
+    a = join(panel, "web-01")
+    panel.post("/fleet/services", json={"services": [{"name": "nginx", "port": 443}]}, headers=as_agent(a["key"]))
+    row = lambda: next(m for m in panel.get("/ui/machines").json()["machines"] if m["host"] == "web-01")  # noqa: E731
+    out = panel.post("/ui/machines/web-01/rename", json={"name": "  Shop   server "}).json()
+    assert out["name"] == "Shop server" and row()["name"] == "Shop server" and row()["host"] == "web-01"
+    assert any(r.get("type") == "machine_renamed" for r in panel.core.audit.records())
+    assert panel.post("/ui/machines/web-01/rename", json={"name": "x" * 61}).status_code == 400
+    panel.post("/ui/machines/web-01/rename", json={"name": ""})
+    assert row()["name"] == "web-01"  # blank: back to the host name
+
+
+def test_renames_and_deletes_survive_a_restart(tmp_path):
+    from app.fleet import Fleet
+    f = Fleet(tmp_path / "fleet.json")
+    f.rename("web-01", "Shop", "erick")
+    f.remove_host("db-01", "erick")
+    again = Fleet(tmp_path / "fleet.json")
+    assert again.names() == {"web-01": "Shop"} and "db-01" in again.removed()

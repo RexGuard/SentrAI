@@ -19,7 +19,7 @@ Your first two calls, on the machine running SentrAI:
 
 ```bash
 curl http://127.0.0.1:8000/health
-TOKEN=$(python sentrai_config.py token)     # in the mvp folder
+TOKEN=$(python sentrai_config.py token)     # in the app folder
 curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8000/risk
 ```
 
@@ -70,7 +70,7 @@ Every endpoint needs the API token unless its page says otherwise. The token is
 settings file. The launchers and the installer hand it to every part of SentrAI, so you only need it
 for your own calls.
 
-Print it on a laptop install (in the `mvp` folder):
+Print it on a laptop install (in the `app` folder):
 
 ```bash
 python sentrai_config.py token
@@ -80,7 +80,7 @@ Print it on a server set up with `deploy/install-panel.sh` (the settings file be
 account):
 
 ```bash
-sudo -u sentrai env SENTRAI_CONFIG=/var/lib/sentrai/config.json python3 /opt/sentrai/mvp/sentrai_config.py token
+sudo -u sentrai env SENTRAI_CONFIG=/var/lib/sentrai/config.json python3 /opt/sentrai/app/sentrai_config.py token
 ```
 
 Send it in either header:
@@ -321,11 +321,11 @@ curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8000/openapi.json -o sen
 
 ## Keeping this reference true
 
-For anyone changing the core: `mvp/core/tests/test_api_docs.py` fails when an endpoint has no
+For anyone changing the core: `app/core/tests/test_api_docs.py` fails when an endpoint has no
 section here, or when a section names an endpoint that no longer exists. Each endpoint has a heading
 `### `METHOD /path`` with the path exactly as in the code, on the page that `GROUPS` in
-`mvp/core/app/apidocs.py` gives its first path segment. The test's message names the page.
+`app/core/app/apidocs.py` gives its first path segment. The test's message names the page.
 
 To add an endpoint, add its section to that page in the same change: what it does, its body and
 answer with an example, and its errors. A new first path segment also needs an entry in `GROUPS`.
-`mvp/CONTRACT.md` keeps the short one-line form of each endpoint.
+`app/CONTRACT.md` keeps the short one-line form of each endpoint.

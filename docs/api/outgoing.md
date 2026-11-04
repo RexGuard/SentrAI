@@ -82,7 +82,7 @@ revert retries it and tells the person on duty. SentrAI does not follow redirect
 
 The witness keeps a copy of every audit record and every sealed log line on another machine, where
 someone with full access to the SentrAI server cannot change it (see
-[The off-box copy](audit.html#the-off-box-copy)). SentrAI ships one, `mvp/witness/witness.py`
+[The off-box copy](audit.html#the-off-box-copy)). SentrAI ships one, `app/witness/witness.py`
 (Python standard library only); this is its protocol, for running it or writing your own.
 
 ```bash

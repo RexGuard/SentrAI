@@ -29,7 +29,7 @@ command from the dashboard:
 
 ```bash
 git clone https://github.com/RexGuard/SentrAI && cd SentrAI
-sudo ./mvp/deploy/install-agent.sh --panel https://panel.example.com:8443 --code ABCD-EFGH-JKLM --pin sha256:... --name web-01
+sudo ./deploy/install-agent.sh --panel https://panel.example.com:8443 --code ABCD-EFGH-JKLM --pin sha256:... --name web-01
 ```
 
 The installer joins the panel, approves the machine's nginx, SSH, Suricata and database logs if it
@@ -44,7 +44,7 @@ Python cannot run as a service). Get the code, open PowerShell **as Administrato
 `SentrAI` folder and paste the Windows command from the dashboard:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\mvp\deploy\install-agent.ps1 -Panel https://panel.example.com:8443 -Code ABCD-EFGH-JKLM -Pin sha256:... -Name pc-01
+powershell -ExecutionPolicy Bypass -File .\deploy\install-agent.ps1 -Panel https://panel.example.com:8443 -Code ABCD-EFGH-JKLM -Pin sha256:... -Name pc-01
 ```
 
 It installs the **SentrAI agent** Windows service, which starts with Windows and restarts itself
@@ -58,11 +58,11 @@ it for a while (`journalctl -u sentrai-agent -f` on Linux, the log file above on
 commands look right, let it really change the firewall:
 
 ```bash
-sudo ./mvp/deploy/install-agent.sh --enforce --protect 203.0.113.10
+sudo ./deploy/install-agent.sh --enforce --protect 203.0.113.10
 ```
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\mvp\deploy\install-agent.ps1 -Enforce -Protect 203.0.113.10
+powershell -ExecutionPolicy Bypass -File .\deploy\install-agent.ps1 -Enforce -Protect 203.0.113.10
 ```
 
 The panel's own address is never blocked on an added machine. Add `--protect` (`-Protect`) for
@@ -93,7 +93,7 @@ change; the others are kept.
 
 ## On a laptop, without a service
 
-For a quick test, the agent can run from a checkout while a terminal is open. From `mvp/lab`, with
+For a quick test, the agent can run from a checkout while a terminal is open. From `app/lab`, with
 its Python environment from a first `run.sh` / `run.ps1`:
 
 ```bash
@@ -107,7 +107,7 @@ On Windows use `.\.venv\Scripts\python.exe` in place of `.venv/bin/python`.
 
 | | Linux | Windows |
 | --- | --- | --- |
-| Code and Python packages | `/opt/sentrai/mvp/lab` and `/opt/sentrai/mvp/core/app` | `C:\Program Files\SentrAI` |
+| Code and Python packages | `/opt/sentrai/app/lab` and `/opt/sentrai/app/core/app` | `C:\Program Files\SentrAI` |
 | Settings | `/etc/sentrai/agent.env` | `C:\Program Files\SentrAI\SentrAIAgent.xml` (rerun the installer to change) |
 | Machine key and state | `/var/lib/sentrai/agent/` | `C:\ProgramData\SentrAI\agent\` |
 | Service | `sentrai-agent` (systemd) | `SentrAIAgent` |
@@ -117,7 +117,7 @@ An agent installed before this version has the panel's larger set of packages. I
 once. With a panel on the same machine, the two share that environment and nothing is removed.
 
 To use Scout's AI help on an agent (`python -m scout find`), add the package yourself:
-`sudo /opt/sentrai/mvp/lab/.venv/bin/pip install anthropic` (or `openai`).
+`sudo /opt/sentrai/app/lab/.venv/bin/pip install anthropic` (or `openai`).
 
 ## Update the agent
 
@@ -140,18 +140,24 @@ and `--rollback` (`-Rollback`) goes back to the version before the last update. 
 first (also `sudo sentrai-update`, on the panel): a newer agent may need a newer panel.
 
 Agents installed before the updater was added get it with one last update the old way:
-`git pull`, then `sudo ./mvp/deploy/update.sh` (Linux) or the install command again without
+`git pull`, then `sudo ./deploy/update.sh` (Linux) or the install command again without
 `--code` (Windows).
+
+Agents installed before November 2026 (when the code still lived in an `mvp` folder) need the same
+one-time update: their updater still looks for `mvp/deploy`. In a checkout, `git pull`, then
+`sudo ./deploy/update.sh` (Linux) or
+`powershell -ExecutionPolicy Bypass -File .\deploy\install-agent.ps1` without `-Code` (Windows).
+The code moves from `mvp` to `app` in the install folder and the machine stays joined.
 
 ## Uninstall
 
 ```bash
-sudo ./mvp/deploy/uninstall-agent.sh            # keeps the machine key
-sudo ./mvp/deploy/uninstall-agent.sh --purge    # also deletes it
+sudo ./deploy/uninstall-agent.sh            # keeps the machine key
+sudo ./deploy/uninstall-agent.sh --purge    # also deletes it
 ```
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\mvp\deploy\uninstall-agent.ps1 -Purge
+powershell -ExecutionPolicy Bypass -File .\deploy\uninstall-agent.ps1 -Purge
 ```
 
 A panel on the same machine is left alone. To take the machine off the panel as well, revoke its key

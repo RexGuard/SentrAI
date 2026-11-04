@@ -9,11 +9,11 @@ description: Run SentrAI on Windows, Linux or macOS and point it at your own log
 `run.ps1` (Windows) and `run.sh` (Linux, macOS) start every part of SentrAI on your own computer
 and keep it watching the logs you approve until you stop it.
 
-If you have not yet, [get the code](./#get-the-code) and open the `mvp` folder.
+If you have not yet, [get the code](./#get-the-code) and open the `app` folder.
 
 ## On Windows
 
-Open PowerShell in the `mvp` folder and start everything:
+Open PowerShell in the `app` folder and start everything:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\run.ps1
@@ -36,7 +36,7 @@ Stop everything with:
 ./run.sh
 ```
 
-Each part runs in the background and writes to `mvp/.run_logs/<part>.log` instead of opening a
+Each part runs in the background and writes to `app/.run_logs/<part>.log` instead of opening a
 window. Watch a part as it works with `tail -f .run_logs/core.log`, and stop everything with
 `./stop.sh`.
 
@@ -56,7 +56,7 @@ Before you turn on firewall blocking, add your own IP address to the protected I
 
 ## Open the web dashboard
 
-The web dashboard is the main console. With SentrAI running, start it from the `mvp/web` folder:
+The web dashboard is the main console. With SentrAI running, start it from the `app/web` folder:
 
 ```bash
 ./run-web.sh        # Linux, macOS (Windows: .\run-web.ps1)
@@ -76,6 +76,14 @@ To see SentrAI react without waiting for a real attack, start the
 | `-NoBrowser` | `--no-browser` | does not open the browser for you |
 | `-CorePort 8100` | `--core-port 8100` | when port 8000 is taken |
 | `-DashboardPort 8601` | `--dashboard-port 8601` | when the classic dashboard's port 8501 is taken |
+
+## Updating an older checkout
+
+Before November 2026 the code lived in an `mvp` folder. After `git pull` it is in `app`, and `mvp` is
+left with only what Git does not track (the old Python environments and run logs). Stop the old copy
+first (`./stop.sh` or `.\stop.ps1` inside `mvp`), start SentrAI from `app`, and once it runs you can
+delete the `mvp` folder. Your settings and records stay where they are (see
+[Troubleshooting](troubleshooting.html) for the list of files).
 
 ## Next
 
