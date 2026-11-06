@@ -916,7 +916,8 @@ def agent_rows(agents: Iterable[dict]) -> pd.DataFrame:
 
 
 JOB_LABELS = {"threat_scan": "Threat scan", "backup": "Backup", "dep_scan": "Dependency scan",
-              "dep_update": "Package update", "dep_rollback": "Package update undo"}
+              "dep_update": "Package update", "dep_rollback": "Package update undo",
+              "quarantine": "Quarantine", "restore": "Quarantine undo"}
 JOB_STATUS = {"queued": "Waiting", "running": "Running", "done": "Done", "failed": "Failed",
               "expired": "Expired", "cancelled": "Cancelled"}
 

@@ -7,7 +7,10 @@ It does these jobs and nothing else:
   * once a minute, tells the panel which services listen here (names and ports only, services.py)
   * every 30 s, tells the panel how the hardware is doing: CPU, memory, disks, network, uptime and
     temperatures (numbers only, hardware.py)
-  * runs the threat scans and backups the panel asks for, on folders set here (tasks.py)
+  * runs the threat scans and backups the panel asks for, on folders set here (tasks.py), and locks
+    away a flagged file when a person asks (quarantine.py)
+  * watches those folders, important files and running programs between scans, like an antivirus's
+    real-time shield, and tells the panel what it finds (watch.py; SENTRAI_WATCH=off turns it off)
 
 The panel does the scoring and decides; the agent only makes outgoing HTTPS calls, so no port is
 opened on the machine. Every call checks the panel's certificate against the pin that came with the
@@ -370,6 +373,11 @@ def run(data: dict[str, Any]) -> None:
     jobs_session = panel_session(data)
     threading.Thread(target=tasks.job_loop, args=(data, jobs_session.verify, agent_file().parent, stop),
                      kwargs={"session": jobs_session}, name="jobs", daemon=True).start()
+    from agent import watch
+    if watch.on():
+        watch_session = panel_session(data)
+        threading.Thread(target=watch.loop, args=(data, watch_session.verify, agent_file().parent, stop),
+                         kwargs={"session": watch_session}, name="watch", daemon=True).start()
     try:
         enforce_loop(data, enforcer, stop, guard=guard)
     finally:
@@ -428,7 +436,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.cmd == "pin":
             return set_pin(data, args.value)
         if args.cmd == "status":
-            print(json.dumps({k: v for k, v in data.items() if k != "key"}, indent=2))
+            from agent import watch
+            print(json.dumps({k: v for k, v in data.items() if k != "key"}
+                             | {"antivirus": watch.status(agent_file().parent)}, indent=2))
             return 0
         check_panel_url(data["panel"], data.get("allow_http", False))
         run(data)

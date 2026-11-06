@@ -4,7 +4,9 @@ dependency scan, and the package updates a person pressed on the panel (and thei
 The agent asks the panel for work on its own outgoing calls, runs it here, and sends back a short
 result. What gets read is decided on this machine, never by the panel:
 
-  SENTRAI_THREAT_PATHS   folders to scan for web shells, miners, reverse shells (OS path separator)
+  SENTRAI_THREAT_PATHS   folders to scan for web shells, miners, reverse shells (OS path separator);
+                        the file watch (watch.py) also keeps an eye on them between scans
+  SENTRAI_CLAMAV         auto | off | path: also run ClamAV on them when it is installed (clamav.py)
   SENTRAI_BACKUP_PATHS   folders to back up; SENTRAI_BACKUP_KEEP (default 7), SENTRAI_BACKUP_COPY_TO,
                         SENTRAI_BACKUP_DIR (default: "backups" next to the agent file)
   SENTRAI_DEP_PATHS      folders with virtualenvs, npm projects or requirements files to check for
@@ -37,10 +39,11 @@ from typing import Any, Callable
 
 import requests
 
-from app import depscan, procscan, threatscan  # noqa: E402  (the core's scanner; agent.py puts core/ on the path)
+from app import clamav, depscan, procscan, signatures, threatscan  # noqa: E402  (the core's scanner; agent.py puts core/ on the path)
 from app import sealed  # noqa: E402
 from app.backups import BackupWatch  # noqa: E402
 import sentrai_paths  # noqa: E402  (mvp/, put on the path by app/__init__.py)
+from agent import quarantine  # noqa: E402
 
 JOBS_EVERY_S = 15.0
 COPIES_EVERY_S = 600.0     # how often backup copies are sent and fetched
@@ -51,12 +54,32 @@ def _paths(name: str) -> list[str]:
     return [p for p in os.environ.get(name, "").split(os.pathsep) if p.strip()]
 
 
-def run_threat_scan() -> dict[str, Any]:
+def run_threat_scan(data_dir: Path | None = None) -> dict[str, Any]:
+    """The full scan: SentrAI's signatures and checks, the panel's shared fingerprint list (the copy
+    the file watch keeps here) and ClamAV when it is installed. Each finding gets an id a person can
+    name to lock the file away (quarantine.py); the real path stays on this machine."""
     roots = _paths("SENTRAI_THREAT_PATHS")
     if not roots:
         return {"roots": [], "files_checked": 0, "findings": [], "counts": {},
                 "note": "No folders to scan on this machine: set SENTRAI_THREAT_PATHS for its agent."}
-    result = threatscan.scan(roots)
+    cfg: dict[str, Any] = {}
+    if data_dir is not None:
+        copy = signatures.load_copy(quarantine.threats_dir(data_dir) / "signatures.json")
+        cfg = {"known_bad_sha256": copy.get("sha256") or [], "known_bad_md5": copy.get("md5") or []}
+    result = threatscan.scan(roots, cfg)
+    clam = clamav.scan(roots, skip=threatscan._own_dirs())
+    if clam.get("engine"):
+        homes = procscan._homes()
+        have = {(f.get("real_path"), f.get("sha256")) for f in result["findings"]}
+        extra = [{**f, "path": procscan.hide_home(f["real_path"], homes)} for f in clam["findings"]
+                 if (f["real_path"], f["sha256"]) not in have]
+        result["findings"] = extra + result["findings"]
+        result["counts"]["critical"] = result["counts"].get("critical", 0) + len(extra)
+        result["engines"] = ["sentrai", clam["engine"]]
+        if clam.get("error"):
+            result["note"] = clam["error"]
+    if data_dir is not None:
+        result["findings"] = quarantine.remember(data_dir, result["findings"])
     for f in result["findings"]:
         f.pop("real_path", None)  # the panel sees the shown path only
     return result
@@ -326,7 +349,15 @@ def run_job(job: dict[str, Any], data_dir: Path) -> tuple[bool, dict[str, Any] |
     """Run one job here. Returns (ok, result, error); never raises."""
     try:
         if job["kind"] == "threat_scan":
-            return True, run_threat_scan(), None
+            return True, run_threat_scan(data_dir), None
+        if job["kind"] in ("quarantine", "restore"):
+            params = job.get("params") or {}
+            try:
+                if job["kind"] == "quarantine":
+                    return True, quarantine.quarantine(data_dir, str(params.get("finding") or ""), "panel"), None
+                return True, quarantine.restore(data_dir, str(params.get("item") or ""), "panel"), None
+            except quarantine.QuarantineError as exc:
+                return False, None, str(exc)[:400]
         if job["kind"] == "backup":
             out = run_backup(data_dir)
             return (True, out, None) if out.get("ok") else (False, None, out.get("error") or out.get("note"))

@@ -11,6 +11,8 @@
   url: /docs/agent.html
 - title: One panel, many machines
   url: /docs/panel.html
+- title: The agent's antivirus
+  url: /docs/antivirus.html
 - title: Log sources
   url: /docs/log-sources.html
 - title: Signing in

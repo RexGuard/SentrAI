@@ -51,6 +51,14 @@ It installs the **SentrAI agent** Windows service, which starts with Windows and
 after a crash. Check it with `Get-Service SentrAIAgent`. Its output is in
 `C:\ProgramData\SentrAI\agent\service\SentrAIAgent.out.log`.
 
+## Antivirus on the machine
+
+Between the scans you ask for, the agent watches the scan folders (`SENTRAI_THREAT_PATHS` in
+`/etc/sentrai/agent.env`), important files such as SSH login keys and cron jobs, and the running
+programs, every 30 seconds, and tells the panel about malware, disguised programs or signs of
+ransomware. It also checks every file against the panel's shared list of known-bad fingerprints, and
+uses ClamAV when that is installed. See [The agent's antivirus](antivirus.html).
+
 ## Blocks start as a dry run
 
 On a new machine the agent only **logs** the firewall command it would run for each block. Watch

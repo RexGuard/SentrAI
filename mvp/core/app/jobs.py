@@ -8,6 +8,9 @@ cannot choose what the agent reads: the agent scans and backs up only the folder
 machine itself (SENTRAI_THREAT_PATHS / SENTRAI_BACKUP_PATHS there). Backups stay on the machine;
 only their id, size and checksum come back.
 
+A quarantine names only a finding id that machine reported itself (a threat scan or its file watch),
+and its undo only the quarantine id: the agent looks the file up in its own list.
+
 A package update names only a finding id from that machine's own last dependency scan (and an undo
 only the update's id): the agent looks up the package, place and fixed version itself, so the panel
 cannot make a machine install anything that scan did not find.
@@ -28,9 +31,12 @@ from pathlib import Path
 from typing import Any
 
 KINDS = {"threat_scan": "Threat scan", "backup": "Backup", "dep_scan": "Dependency scan",
-         "dep_update": "Package update", "dep_rollback": "Package update undo"}
+         "dep_update": "Package update", "dep_rollback": "Package update undo",
+         "quarantine": "Quarantine", "restore": "Quarantine undo"}
 PARAM = {"dep_update": ("finding", re.compile(r"^[0-9a-f]{16}$")),
-         "dep_rollback": ("update", re.compile(r"^u-[0-9a-f]{8}$"))}  # the one id each of these needs
+         "dep_rollback": ("update", re.compile(r"^u-[0-9a-f]{8}$")),
+         "quarantine": ("finding", re.compile(r"^[0-9a-f]{16}$")),   # a finding id from the machine's own list
+         "restore": ("item", re.compile(r"^q-[0-9a-f]{8}$"))}        # the one id each of these needs
 QUEUED_TTL_S = 24 * 3600.0      # a job nobody picked up in a day is dropped (machine off or gone)
 RUNNING_TTL_S = 3 * 3600.0      # a job that never reports back in 3 h is marked failed
 MAX_KEEP = 20                   # finished jobs kept per machine
@@ -185,7 +191,8 @@ def check_params(kind: str, params: dict[str, Any] | None) -> dict[str, Any] | N
 def clean_scan(result: dict[str, Any]) -> dict[str, Any]:
     """Keep only what the panel shows from a machine's threat scan (the agent already hides homes
     and masks secrets; this drops anything else it might send)."""
-    keep = ("path", "entry", "line", "kind", "severity", "label", "key", "sha256", "snippet", "size")
+    keep = ("id", "path", "entry", "line", "kind", "severity", "label", "key", "sha256", "snippet", "size",
+            "source", "old", "new", "examples")
     findings = [{k: f.get(k) for k in keep if f.get(k) is not None}
                 for f in (result.get("findings") or [])[:MAX_FINDINGS] if isinstance(f, dict)]
     return {"roots": [str(r) for r in result.get("roots") or []][:50],
@@ -194,7 +201,25 @@ def clean_scan(result: dict[str, Any]) -> dict[str, Any]:
             "files_not_checked": int(result.get("files_not_checked") or 0),
             "counts": {str(k): int(v) for k, v in (result.get("counts") or {}).items()},
             "took_s": float(result.get("took_s") or 0), "findings": findings,
+            "engines": [str(e)[:40] for e in result.get("engines") or []][:5] or None,
             "note": str(result.get("note") or "")[:300] or None}
+
+
+def clean_findings(findings: Any) -> list[dict[str, Any]]:
+    """What the panel keeps of findings an agent's file watch sends on its own (POST /fleet/threats)."""
+    rows = clean_scan({"findings": findings if isinstance(findings, list) else []})["findings"]
+    for r in rows:
+        for k in ("path", "label", "snippet", "entry"):
+            if isinstance(r.get(k), str):
+                r[k] = r[k][:300]
+        if isinstance(r.get("examples"), list):
+            r["examples"] = [str(e)[:200] for e in r["examples"][:5]]
+    return rows
+
+
+def clean_quarantine(result: dict[str, Any]) -> dict[str, Any]:
+    keep = ("id", "path", "name", "sha256", "size", "label", "severity", "kind", "finding", "at", "restored_by")
+    return {k: str(result[k])[:300] if k != "size" else int(result[k] or 0) for k in keep if result.get(k) is not None}
 
 
 def clean_backup(result: dict[str, Any]) -> dict[str, Any]:
@@ -253,6 +278,10 @@ def summary(job: dict[str, Any]) -> str:
         return f"{r.get('name')} {r.get('from')} → {r.get('to')} in {r.get('path')} (update {r.get('id')})"
     if job["kind"] == "dep_rollback":
         return f"{r.get('name')} back to {r.get('from')} in {r.get('path')}"
+    if job["kind"] == "quarantine":
+        return f"{r.get('path')} locked away ({r.get('id')}); undo: restore {r.get('id')}"
+    if job["kind"] == "restore":
+        return f"{r.get('path')} put back from quarantine"
     if job["kind"] == "threat_scan":
         if r.get("note") and not r.get("files_checked"):
             return r["note"]

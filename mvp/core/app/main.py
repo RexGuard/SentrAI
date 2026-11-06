@@ -25,7 +25,7 @@ from .reports import build_report, render_markdown, render_pdf
 from . import summary as client_summary
 from . import auth as auth_cookie
 from . import ui_analytics, ui_approvals, ui_tuning, ui_audit, ui_incidents, ui_limits, ui_machine, ui_machines, ui_overview, ui_report, ui_routing, ui_settings, ui_setup, ui_team, ui_recovery, ui_privacy, ui_risks, ui_feedback
-from . import ai, anchor, apidocs, backup_copies, chat_memory, depscan, feature_ideas, fleet, hardware, integrations, jobs, procscan, webhook
+from . import ai, anchor, apidocs, backup_copies, chat_memory, depscan, feature_ideas, fleet, hardware, integrations, jobs, procscan, signatures, webhook
 from .extensions import ExtensionError
 from . import chat as chat_mod
 from .chat import OperatorChat, default_chat_provider
@@ -323,6 +323,26 @@ class OfflineActionIn(BaseModel):
     event_ids: list[str] = Field(default_factory=list, max_length=50)
 
 
+class ThreatsIn(BaseModel):
+    """What a machine's file watch found on its own (lab/agent/watch.py)."""
+    findings: list[dict[str, Any]] = Field(default_factory=list, max_length=300)
+
+
+class SignaturesIn(BaseModel):
+    """Fingerprints to add to the shared list: one by one, or the text of a list file to import."""
+    hashes: list[str] = Field(default_factory=list, max_length=1000)
+    name: str = Field("", max_length=80)
+    text: Optional[str] = Field(None, max_length=20_000_000)
+    source: str = Field("", max_length=60)
+    operator: str = Field("operator", max_length=64)
+
+
+class SignaturesOut(BaseModel):
+    hashes: list[str] = Field(default_factory=list, max_length=100_000)
+    source: Optional[str] = Field(None, max_length=60)
+    operator: str = Field("operator", max_length=64)
+
+
 class OfflineReportIn(BaseModel):
     """What an agent did on its own while the panel was out of reach (lab/agent/offline.py)."""
     from_: Optional[str] = Field(None, alias="from", max_length=40)
@@ -336,6 +356,8 @@ class OfflineReportIn(BaseModel):
 AGENT_ROUTES = frozenset({("POST", "/events"), ("POST", "/heartbeat"), ("GET", "/blocklist"), ("GET", "/fleet/me"),
                            ("POST", "/fleet/services"), ("POST", "/fleet/hardware"), ("GET", "/fleet/jobs/next"), ("POST", "/fleet/jobs/result"),
                            ("POST", "/fleet/offline-report"),
+                           # the file watch (lab/agent/watch.py): send what it found, fetch the shared fingerprint list
+                           ("POST", "/fleet/threats"), ("GET", "/fleet/signatures"),
                            # backup copies kept on other machines (backup_copies.py): send its key and its own sealed
                            # copies, fetch the copies it was picked to keep, say what it holds
                            ("POST", "/fleet/backup-key"), ("POST", "/fleet/backup-copies"),
@@ -424,6 +446,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     core.machine_name = lambda host: machines.names().get(host) or host
     chat.owners = machines.owners
     machine_jobs = jobs.Jobs(sentrai_paths.path("core.jobs", core_dir))
+    shared_sigs = signatures.Signatures(sentrai_paths.path("core.signatures", core_dir))
+    threats.signatures = shared_sigs
 
     def copy_hosts() -> list[str]:
         """Joined machines that can keep backup copies: not revoked, not taken off the panel."""
@@ -1434,7 +1458,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         result = None
         if body.ok and body.result is not None:
             clean = {"threat_scan": jobs.clean_scan, "backup": jobs.clean_backup, "dep_scan": jobs.clean_deps,
-                     "dep_update": jobs.clean_dep_change, "dep_rollback": jobs.clean_dep_change}.get(kind or "")
+                     "dep_update": jobs.clean_dep_change, "dep_rollback": jobs.clean_dep_change,
+                     "quarantine": jobs.clean_quarantine, "restore": jobs.clean_quarantine}.get(kind or "")
             result = clean(body.result) if clean else None
         try:
             job = machine_jobs.finish(host, body.id, body.ok, result, body.error)
@@ -1444,6 +1469,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if job["status"] == "done" and kind == "threat_scan":
             new_alerts = threats.raise_remote(host, (job["result"] or {}).get("findings") or [])
             job["result"]["new_alerts"] = new_alerts
+        if job["status"] == "done" and kind == "quarantine" and job["result"]:
+            r = job["result"]
+            threats.share(r.get("sha256"), r.get("label") or r.get("name") or "", host, job["requested_by"])
+            core.scribe.record(core.name, "file_quarantined", {
+                "operator": job["requested_by"], "host": host, "file": r.get("path"), "sha256": r.get("sha256"),
+                "quarantine_id": r.get("id"),
+                "summary": f"{job['requested_by']} locked {r.get('path')} away on {host} ({r.get('label')})"})
         line = jobs.summary(job)
         core.scribe.record(core.name, "machine_job_done" if job["status"] == "done" else "machine_job_failed", {
             "job": job["id"], "host": host, "kind": kind, "by": job["requested_by"], "new_alerts": new_alerts,
@@ -1458,6 +1490,76 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                              f"Backup on {host} failed", f"The backup {job['requested_by']} asked {host} to take "
                              f"failed: {line[:300]}. Until one works, {host} has no fresh copy to restore from.", [])
         return {"ok": True, "status": job["status"], "new_alerts": new_alerts}
+
+    # -- the agent's file watch and the shared fingerprint list (lab/agent/watch.py, signatures.py)
+    @app.post("/fleet/threats")
+    def post_fleet_threats(request: Request, body: ThreatsIn) -> dict[str, Any]:
+        """Finds a machine's file watch made on its own: critical and high ones open a malware incident
+        (once per machine, file and sign), all are kept for the machine's page and audited."""
+        a = request.state.agent
+        if a is None:
+            raise HTTPException(status_code=400, detail="only a machine's agent sends its file watch finds")
+        host = a["host"]
+        found = jobs.clean_findings(body.findings)
+        new_alerts = threats.raise_remote(host, found)
+        threats.record_watch(host, found)
+        if found:
+            worst = sorted(found, key=lambda f: {"critical": 0, "high": 1}.get(f.get("severity"), 2))[0]
+            core.scribe.record(core.name, "agent_file_watch", {
+                "host": host, "findings": len(found), "new_alerts": new_alerts,
+                "summary": f"{host}'s file watch: {len(found)} find(s), worst: {worst.get('severity')} "
+                           f"{worst.get('kind')}: {worst.get('label')} in {worst.get('path')}"[:400]})
+        return {"ok": True, "findings": len(found), "new_alerts": new_alerts}
+
+    @app.get("/fleet/threats")
+    def get_fleet_threats(host: str = Query(..., max_length=63)) -> dict[str, Any]:
+        """What one machine's file watch found lately (newest first). Each id can be quarantined."""
+        with threats.lock:
+            rows = list(threats.recent.get(host, []))
+        return {"host": host, "findings": rows}
+
+    @app.get("/fleet/signatures")
+    def get_fleet_signatures(have: Optional[int] = Query(None)) -> dict[str, Any]:
+        """The shared fingerprint list, as agents fetch it. ``have`` = the version a machine already has."""
+        extra = (threats.config().get("known_bad_sha256") or [])  # includes the profile's older list
+        if have is not None and have == shared_sigs.version:
+            return {"version": shared_sigs.version, "unchanged": True}
+        return {"version": shared_sigs.version, **shared_sigs.hashes(extra)}
+
+    @app.get("/signatures")
+    def get_signatures() -> dict[str, Any]:
+        """How big the shared list is, where its fingerprints came from, and the newest ones."""
+        return shared_sigs.summary()
+
+    @app.post("/signatures")
+    def post_signatures(body: SignaturesIn) -> dict[str, Any]:
+        """Add fingerprints by hand, or import a list (plain, CSV with a SHA-256 column, ClamAV .hdb/.hsb)."""
+        pairs = [(h, body.name) for h in body.hashes]
+        source = "operator"
+        if body.text:
+            pairs += signatures.parse(body.text)
+            source = f"import:{body.source or 'list'}"
+        if not pairs:
+            raise HTTPException(400, "no fingerprints found: send hashes, or the text of a list file")
+        try:
+            out = shared_sigs.add(pairs, source, body.operator)
+        except signatures.SignatureError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        core.scribe.record(core.name, "signatures_added", {
+            "operator": body.operator, "source": source, **out,
+            "summary": f"{body.operator} added {out['added']} fingerprint(s) to the shared list ({source})"})
+        return {**out, "version": shared_sigs.version, "count": shared_sigs.summary(0)["count"]}
+
+    @app.post("/signatures/remove")
+    def post_signatures_remove(body: SignaturesOut) -> dict[str, Any]:
+        """Take fingerprints off the list (a false alarm), or every one from one import source."""
+        if not body.hashes and not body.source:
+            raise HTTPException(400, "which ones? send hashes, or a source like import:feed.csv")
+        n = shared_sigs.remove(body.hashes, body.source)
+        core.scribe.record(core.name, "signatures_removed", {
+            "operator": body.operator, "removed": n, "source": body.source,
+            "summary": f"{body.operator} took {n} fingerprint(s) off the shared list"})
+        return {"removed": n, "version": shared_sigs.version}
 
     @app.post("/fleet/offline-report")
     def post_offline_report(request: Request, body: OfflineReportIn) -> dict[str, Any]:

@@ -143,6 +143,8 @@ A machine key can call these endpoints, and only for its own machine:
 | [`GET /fleet/jobs/next`](fleet.html#get-fleetjobsnext) | picks up the next job the panel queued for it |
 | [`POST /fleet/jobs/result`](fleet.html#post-fleetjobsresult) | reports how that job went |
 | [`POST /fleet/offline-report`](fleet.html#post-fleetoffline-report) | reports what it blocked on its own while the panel was out of reach |
+| [`POST /fleet/threats`](fleet.html#post-fleetthreats) | sends what its file watch found between scans |
+| [`GET /fleet/signatures`](fleet.html#get-fleetsignatures) | fetches the shared list of known-bad file fingerprints |
 
 Anything else, or a `?host=` naming another machine, gets status 403:
 
