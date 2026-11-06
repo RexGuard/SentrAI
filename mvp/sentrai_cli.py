@@ -17,6 +17,8 @@ On the panel (installed as /usr/local/bin/sentrai, runs as the service account):
     sudo sentrai machines owner HOST PERSON | owner HOST --agent [--backup PERSON] | owner HOST --clear | ping HOST
     sudo sentrai jobs list [--host H] | scan HOST | backup HOST | deps HOST | packages HOST
                       | update HOST FINDING | undo HOST UPDATE | cancel JOB
+                      | threats HOST | quarantine HOST FINDING | restore HOST QUARANTINE_ID
+    sudo sentrai signatures list | add HASH... [--name N] | import FILE | remove HASH... | remove --source S
     sudo sentrai deps show | scan
     sudo sentrai backups list | now | copies | key | unlock HOST BACKUP_ID
     sudo sentrai incidents list [--all] | show ID | approve ID... | reject ID... --why W | rollback ID... | keep ID...
@@ -356,6 +358,15 @@ def cmd_jobs(call: Call, a: argparse.Namespace) -> Any:
             raise CliError(f"no finished package check on {a.host} yet: sentrai jobs deps {a.host}")
         return done if a.json else f"Package check {done['id']} from {done.get('finished_at')}\n" + deps_table(done.get("result") or {}) + \
             f"\n\nTo update one: sentrai jobs update {a.host} ID"
+    if a.action == "threats":
+        rows = call("GET", f"/fleet/threats?host={a.host}")["findings"]
+        if a.json:
+            return rows
+        if not rows:
+            return f"Nothing found by {a.host}'s file watch since the panel started."
+        return table([[f.get("id") or "", f.get("seen_at"), f.get("severity"), f.get("kind"), f.get("label"), f.get("path")]
+                      for f in rows], ["Finding", "Seen", "Severity", "Kind", "What", "Where"]) + \
+            f"\n\nTo lock one away: sentrai jobs quarantine {a.host} FINDING"
     if a.action == "cancel":
         out = call("POST", f"/fleet/jobs/{a.host}/cancel", {"operator": op})
         return out if a.json else f"{out.get('id')}: {out.get('status')}"
@@ -364,13 +375,53 @@ def cmd_jobs(call: Call, a: argparse.Namespace) -> Any:
         body["kind"] = JOB_KINDS[a.action]
     elif a.action == "update":
         body |= {"kind": "dep_update", "params": {"finding": a.ref}}
+    elif a.action == "quarantine":
+        body |= {"kind": "quarantine", "params": {"finding": a.ref}}
+    elif a.action == "restore":
+        body |= {"kind": "restore", "params": {"item": a.ref}}
     else:  # undo
         body |= {"kind": "dep_rollback", "params": {"update": a.ref}}
-    if a.action in ("update", "undo") and not a.ref:
-        raise CliError("which one? update needs a finding id (sentrai jobs list), undo needs an update id (u-...)")
+    if a.action in ("update", "undo", "quarantine", "restore") and not a.ref:
+        raise CliError("which one? update and quarantine need a finding id (sentrai jobs list, sentrai jobs threats HOST), "
+                       "undo needs an update id (u-...), restore a quarantine id (q-...)")
     out = call("POST", "/fleet/jobs", body)
     return out if a.json else f"Queued {out.get('id')} on {a.host}: the machine picks it up within about 15 s. " \
                               f"Check with: sentrai jobs list --host {a.host}"
+
+
+def cmd_signatures(call: Call, a: argparse.Namespace) -> Any:
+    """The shared list of known-bad file fingerprints every machine checks against."""
+    op = operator_name()
+    if a.action == "list":
+        out = call("GET", "/signatures")
+        if a.json:
+            return out
+        src = ", ".join(f"{k} {v}" for k, v in sorted(out.get("by_source", {}).items())) or "none yet"
+        rows = [[r["hash"][:16] + "…", r.get("name") or "", r.get("source"), r.get("by"), r.get("at")]
+                for r in out.get("recent") or []]
+        return f"{out.get('count', 0)} fingerprints (version {out.get('version')}); from: {src}" + \
+            ("\n\n" + table(rows, ["Fingerprint", "Name", "Source", "By", "Added"]) if rows else "")
+    if a.action == "add":
+        if not a.items:
+            raise CliError("which fingerprints? sentrai signatures add SHA256... [--name N]")
+        out = call("POST", "/signatures", {"hashes": a.items, "name": a.name or "", "operator": op})
+    elif a.action == "import":
+        if len(a.items) != 1:
+            raise CliError("which file? sentrai signatures import FILE (one fingerprint per line, a CSV export "
+                           "with a sha256 column, or a ClamAV .hdb/.hsb)")
+        f = Path(a.items[0])
+        try:
+            text = f.read_text(encoding="utf-8", errors="replace")
+        except OSError as e:
+            raise CliError(f"cannot read {f}: {e.strerror}") from None
+        out = call("POST", "/signatures", {"text": text, "source": a.name or f.name, "operator": op})
+    else:  # remove
+        if not a.items and not a.source:
+            raise CliError("which ones? sentrai signatures remove SHA256..., or --source import:FILE")
+        out = call("POST", "/signatures/remove", {"hashes": a.items, "source": a.source, "operator": op})
+        return out if a.json else f"Removed {out.get('removed')} fingerprint(s). Machines pick up the change within 30 minutes."
+    return out if a.json else (f"Added {out.get('added')} ({out.get('known')} already known, {out.get('refused')} not "
+                               f"fingerprints); the list has {out.get('count')}. Machines pick it up within 30 minutes.")
 
 
 def cmd_backups(call: Call, a: argparse.Namespace) -> Any:
@@ -610,11 +661,17 @@ def parser() -> argparse.ArgumentParser:
     m.add_argument("--clear", action="store_true", help="owner: nobody; the Routing rules decide again")
     m.add_argument("--name", dest="name_opt", help="join-code: fix the new machine's name")
     m.add_argument("--panel-url", help="join-code: the address new machines use (default SENTRAI_PANEL_URL)")
-    j = add("jobs", cmd_jobs, "ask a machine to scan, back up or update packages")
-    j.add_argument("action", choices=["list", "scan", "backup", "deps", "packages", "update", "undo", "cancel"])
+    j = add("jobs", cmd_jobs, "ask a machine to scan, back up, update packages or lock a file away")
+    j.add_argument("action", choices=["list", "scan", "backup", "deps", "packages", "update", "undo", "cancel",
+                                      "threats", "quarantine", "restore"])
     j.add_argument("host", nargs="?", help="host name (cancel: job id)")
-    j.add_argument("ref", nargs="?", help="update: finding id · undo: update id")
+    j.add_argument("ref", nargs="?", help="update, quarantine: finding id · undo: update id · restore: quarantine id")
     j.add_argument("--host", dest="host_opt")
+    sg = add("signatures", cmd_signatures, "the shared list of known-bad file fingerprints")
+    sg.add_argument("action", choices=["list", "add", "import", "remove"])
+    sg.add_argument("items", nargs="*", help="add/remove: fingerprints · import: the list file")
+    sg.add_argument("--name", help="add: what they are · import: the list's name (default: the file name)")
+    sg.add_argument("--source", help="remove: every fingerprint from this source (import:FILE)")
     d = add("deps", cmd_deps, "this panel machine's package check")
     d.add_argument("action", choices=["show", "scan"])
     bk = add("backups", cmd_backups, "this panel's backups and their copies on other machines")

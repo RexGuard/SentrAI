@@ -320,6 +320,50 @@ as `file_restored`.
 - 404 `q-20261027024512-41b3ad04 is not in quarantine`: no such id, or it was restored already.
 - 409 `a file already exists at the original location; move it first`.
 
+## The shared fingerprint list
+
+One list of known-bad files, by SHA-256 or MD5, that the panel's own scans and every agent check
+against (agents fetch it with [`GET /fleet/signatures`](fleet.html#get-fleetsignatures)). A file a
+person quarantines, on the panel or on any machine, joins it on its own, so the same file is flagged
+everywhere. Only fingerprints and short names are kept; up to 200,000.
+
+### `GET /signatures`
+
+**Returns** the list's version, size, where its fingerprints came from, and the 20 newest:
+
+```json
+{"version": 7, "count": 1204, "by_source": {"quarantine on web-01": 3, "import:recent.csv": 1201},
+ "recent": [{"hash": "abab...", "name": "PHP web shell", "source": "quarantine on web-01", "by": "erick",
+             "at": "2026-11-06T12:00:00"}]}
+```
+
+### `POST /signatures`
+
+Adds fingerprints by hand, or imports a list file.
+
+**Body**
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `hashes` | list of strings | SHA-256 (64 hex) or MD5 (32 hex) fingerprints, up to 1000 |
+| `name` | string | what they are, shown on the panel |
+| `text` | string | the text of a list file: one fingerprint per line (`#` comments), a CSV with a `sha256` column (a MalwareBazaar export), or ClamAV's `.hdb` / `.hsb` (`hash:size:name`) |
+| `source` | string | the list's name, for `text`; saved as `import:<source>` so it can be removed in one go |
+| `operator` | string | who adds them |
+
+**Returns**: `{"added": 1201, "known": 3, "refused": 0, "version": 8, "count": 1204}`. Written to the
+audit trail (`signatures_added`).
+
+**Errors**: `400` `no fingerprints found: send hashes, or the text of a list file`; `409` when the list is full.
+
+### `POST /signatures/remove`
+
+Takes fingerprints off the list (a false alarm), or every one from one source.
+
+**Body**: `{"hashes": ["abab..."], "operator": "erick"}` or `{"source": "import:recent.csv"}`.
+
+**Returns**: `{"removed": 1, "version": 9}`. Written to the audit trail (`signatures_removed`).
+
 ## Back up and restore
 
 A backup copies the folders in `backup.paths` of the system profile (or `SENTRAI_BACKUP_PATHS`) and

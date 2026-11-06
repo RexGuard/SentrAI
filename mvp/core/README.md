@@ -275,7 +275,11 @@ The process scan finds logs; the threat scan (`app/threatscan.py`, `app/threats.
 - **Nothing is deleted, and nothing happens on its own.** There is no auto-delete and no auto-suspend. An operator quarantines a file by its finding id (dashboard Collector page, or Cyanide's `suggest_quarantine` button). The file must be unchanged since the scan; it moves to `threats/quarantine/` next to the database (`SENTRAI_QUARANTINE`), read-only, with a note of where it came from, and `POST /quarantine/{id}/restore` puts it back.
 - **Private details stay out.** Matched lines are cut to 160 characters with secrets masked and home folders shown as `~`; the model sees them labelled as untrusted text.
 
-Audit records: `threat_scan`, `file_quarantined`, `file_restored`.
+- **Guesses about unknown files.** A program pretending to be a picture or document (its first bytes say Windows, Linux or Mac program), a double extension (`invoice.pdf.exe`), a program in an upload or temporary folder (high or critical), and a packed program (medium). Only the first 4 KB of pictures and documents are read.
+- **Shared fingerprint list** (`app/signatures.py`, `threats/signatures.json`). Known-bad SHA-256 and MD5 fingerprints, checked by this scan and by every agent. A quarantined file joins it on its own (shared reputation); `sentrai signatures import FILE` loads a plain list, a CSV with a `sha256` column, or ClamAV `.hdb`/`.hsb`. `GET/POST /signatures`, `POST /signatures/remove`, agents `GET /fleet/signatures`.
+- **On the agents.** The agent runs the same scan with the shared list and ClamAV when installed (`app/clamav.py`), watches the folders, important files, ransomware signs and running programs every 30 s (`lab/agent/watch.py`, sent with `POST /fleet/threats`), and quarantines on the machine by finding id (`quarantine` / `restore` jobs, `lab/agent/quarantine.py`). See [docs/antivirus.md](../../docs/antivirus.md).
+
+Audit records: `threat_scan`, `file_quarantined`, `file_restored`, `agent_file_watch`, `signatures_added`, `signatures_removed`.
 
 ## Dependency scan (packages with known vulnerabilities)
 

@@ -263,9 +263,9 @@ Queues a job. Written to the audit trail (`machine_job_queued`).
 | Field | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `host` | string, required | | a joined machine |
-| `kind` | string, required | | `threat_scan`, `backup`, `dep_scan`, `dep_update` or `dep_rollback` |
+| `kind` | string, required | | `threat_scan`, `backup`, `dep_scan`, `dep_update`, `dep_rollback`, `quarantine` or `restore` |
 | `operator` | string | `operator` | who asked |
-| `params` | object | | `dep_update`: `{"finding": "<id>"}`, a finding of the machine's latest dependency scan whose `update` is `safe`; `dep_rollback`: `{"update": "u-<id>"}`, an update made there. Other jobs take none |
+| `params` | object | | `dep_update`: `{"finding": "<id>"}`, a finding of the machine's latest dependency scan whose `update` is `safe`; `dep_rollback`: `{"update": "u-<id>"}`, an update made there; `quarantine`: `{"finding": "<id>"}`, a finding id that machine reported (a threat scan's or its file watch's); `restore`: `{"item": "q-<id>"}`, a file that machine quarantined. Other jobs take none |
 
 A package update carries only that id. The agent looks the package, its place and the fixed version
 up in its own last scan, so the panel cannot make a machine install anything else, and only `safe`
@@ -340,7 +340,7 @@ Cancels a job that is still waiting. One the machine has started cannot be cance
 **Agent.** The next job for this machine, which is marked `running`. Agents ask every minute.
 
 **Returns**: `{"job": {"id": "j-f7d2dc41", "kind": "threat_scan"}}`, or `{"job": null}` when there is none.
-A package update or undo also has its `params`.
+A package update, a quarantine or their undo also has its `params`.
 
 **Errors**: `400` `only a machine's agent key picks up jobs`.
 
@@ -375,12 +375,63 @@ person on duty. Written to the audit trail (`machine_job_done` or `machine_job_f
 ```
 
 The `result` fields are those of [`POST /threats/scan`](scans.html#post-threatsscan) or
-[`POST /backups`](scans.html#post-backups).
+[`POST /backups`](scans.html#post-backups). A machine's threat scan also gives each finding an `id`
+(for a `quarantine` job) and, with ClamAV installed there, `engines: ["sentrai", "clamdscan"]`. A done
+`quarantine` writes `file_quarantined` to the audit trail and adds the file's fingerprint to the
+[shared list](scans.html#the-shared-fingerprint-list).
 
 **Returns**: `{"ok": true, "status": "done", "new_alerts": 1}`
 
 **Errors**: `400` `only a machine's agent key reports a job`; `404` `no job j-f7d2dc41 for this machine`;
 `409` `job j-f7d2dc41 is done, not running`.
+
+## The file watch and the shared fingerprint list
+
+Between the scans a person asks for, each agent watches its folders, important files and running
+programs on its own, like an antivirus's real-time shield (see [the agent's antivirus](../antivirus.html)).
+
+### `POST /fleet/threats`
+
+**Agent.** What the machine's file watch found. Critical and high finds open a "Malware found"
+incident on that machine, once per machine, file and sign, exactly like a scan job's findings. All
+finds are kept for [`GET /fleet/threats`](#get-fleetthreats) and summed up in the audit trail
+(`agent_file_watch`).
+
+**Body**: `{"findings": [...]}`, up to 300, each in the shape of a threat scan finding, with
+`source: "watch"`. `id` is set when the file can be quarantined; a ransomware find also has up to five
+`examples`; an important-file change has the first characters of the `old` and `new` fingerprints.
+
+```json
+{"findings": [{"id": "3f9c0a7d1e2b4c5a", "path": "~/site/uploads/cat.jpg", "kind": "disguised",
+               "severity": "critical", "label": "a Linux program pretending to be a .jpg file",
+               "key": "program-in-disguise", "sha256": "abab...", "source": "watch"}]}
+```
+
+**Returns**: `{"ok": true, "findings": 1, "new_alerts": 1}`
+
+**Errors**: `400` `only a machine's agent sends its file watch finds`.
+
+### `GET /fleet/threats`
+
+What one machine's file watch found lately, newest first (up to 50, kept until the panel restarts;
+the incidents and the audit trail keep them for good). Use an `id` with a
+[`quarantine` job](#post-fleetjobs) to lock that file away.
+
+**Query**: `host` (required).
+
+**Returns**: `{"host": "web-01", "findings": [{"id": "3f9c0a7d1e2b4c5a", "path": "...", "severity": "critical",
+"kind": "disguised", "label": "...", "seen_at": "2026-11-06T12:00:00"}]}`
+
+### `GET /fleet/signatures`
+
+**Agent** (the operator token may read it too). The shared list of known-bad file fingerprints that
+every machine checks new and changed files against (see [`GET /signatures`](scans.html#get-signatures)).
+Agents fetch it about every 30 minutes and keep a copy, so the check works while the panel is out of reach.
+
+**Query**: `have`: the version the machine already has. When it is the current one, the answer is
+only `{"version": 7, "unchanged": true}`.
+
+**Returns**: `{"version": 7, "sha256": ["..."], "md5": ["..."]}`. The names stay on the panel.
 
 ## Working offline
 

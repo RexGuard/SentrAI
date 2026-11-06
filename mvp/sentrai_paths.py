@@ -176,6 +176,8 @@ ENTRIES: dict[str, Entry] = {e.key: e for e in (
           "ThreatWatch", "SENTRAI_THREAT_STATE", old=("part:threat_seen.json", "mvp:core/data/threat_seen.json")),
     Entry("core.quarantine", "core", "threats/quarantine", "files moved out of reach, with what they were (restorable)",
           "ThreatWatch", "SENTRAI_QUARANTINE", kind="dir", old=("part:quarantine", "mvp:core/data/quarantine")),
+    Entry("core.signatures", "core", "threats/signatures.json", "the shared list of known-bad file fingerprints "
+          "every machine checks against", "ThreatWatch", optional=True),
     Entry("core.backups", "core", "backups", "backup archives and their manifests", "BackupWatch",
           "SENTRAI_BACKUP_DIR", kind="dir"),
     Entry("core.restores", "core", "restores", "folders a backup was restored into", "BackupWatch", kind="dir",
@@ -195,6 +197,9 @@ ENTRIES: dict[str, Entry] = {e.key: e for e in (
           "Agent", "SENTRAI_AGENT_FILE", old=("root:agent.json",)),
     Entry("agent.backups", "agent", "backups", "backups the panel asked this machine to make", "Agent",
           "SENTRAI_BACKUP_DIR", kind="dir", old=("root:backups",)),
+    Entry("agent.threats", "agent", "threats", "what the threat scan and file watch found here, files locked away "
+          "(quarantine), fingerprints of important files, decoys, the panel's shared fingerprint list", "Agent",
+          kind="dir", optional=True),
     Entry("agent.deps", "agent", "deps", "the last dependency scan, package updates made here and what undoes them",
           "Agent", kind="dir", optional=True),
 )}

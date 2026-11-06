@@ -192,3 +192,21 @@ def test_feedback_list_and_done(client):
     code, out = run(client, "feedback", "done", fid)
     assert code == 0 and "1 message marked done" in out
     assert fid not in run(client, "feedback", "list")[1]
+
+
+def test_antivirus_commands(client, monkeypatch, tmp_path):
+    monkeypatch.setenv("SENTRAI_OPERATOR", "erick")
+    code = client.post("/fleet/join-codes", json={"operator": "t"}).json()["code"]
+    client.post("/fleet/enrol", json={"code": code, "host": "shop-pc"})
+    lst = tmp_path / "recent.txt"
+    lst.write_text("# known bad\n" + "ab" * 32 + " miner\n" + "cd" * 32 + "\n")
+    code, out = run(client, "signatures", "import", str(lst))
+    assert code == 0 and "Added 2" in out
+    code, out = run(client, "signatures", "list")
+    assert code == 0 and "2 fingerprints" in out and "import:recent.txt 2" in out
+    assert run(client, "signatures", "remove", "--source", "import:recent.txt")[0] == 0
+    code, out = run(client, "jobs", "threats", "shop-pc")
+    assert code == 0 and "Nothing found" in out
+    code, out = run(client, "jobs", "quarantine", "shop-pc", "3f9c0a7d1e2b4c5a")
+    assert code == 0 and "Queued" in out
+    assert run(client, "jobs", "quarantine", "shop-pc")[0] != 0  # no finding id

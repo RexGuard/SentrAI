@@ -78,6 +78,8 @@ class ThreatWatch:
         self.scan_lock = threading.Lock()  # one file scan at a time
         self.last: dict[str, Any] | None = None
         self._files: dict[str, dict[str, Any]] = {}  # finding id -> finding (with real path)
+        self.signatures: Any = None  # the shared fingerprint list (signatures.py), set by main.py
+        self.recent: dict[str, list[dict[str, Any]]] = {}  # host -> what its file watch sent lately
 
     def _db(self) -> Any:
         """The database the state and quarantine sit next to (None: the data root's core/ folder)."""
@@ -91,7 +93,23 @@ class ThreatWatch:
         cfg = dict(profile.get("threat_scan") or {})
         if not cfg.get("paths") and os.environ.get("SENTRAI_THREAT_PATHS"):
             cfg["paths"] = [p for p in os.environ["SENTRAI_THREAT_PATHS"].split(os.pathsep) if p.strip()]
+        if self.signatures is not None:  # the panel's own scan checks the shared list too
+            shared = self.signatures.hashes()
+            cfg["known_bad_sha256"] = list(cfg.get("known_bad_sha256") or []) + shared["sha256"]
+            cfg["known_bad_md5"] = list(cfg.get("known_bad_md5") or []) + shared["md5"]
         return cfg
+
+    def share(self, sha256: str | None, name: str, where: str, by: str) -> bool:
+        """A file a person locked away becomes known-bad on every machine (shared reputation)."""
+        if self.signatures is None or not sha256:
+            return False
+        return bool(self.signatures.add([(sha256, name)], f"quarantine on {where}"[:60], by)["added"])
+
+    def record_watch(self, host: str, findings: list[dict[str, Any]], keep: int = 50) -> None:
+        with self.lock:
+            now = time.strftime("%Y-%m-%dT%H:%M:%S")
+            rows = [{**f, "seen_at": now} for f in findings] + self.recent.get(host, [])
+            self.recent[host] = rows[:keep]
 
     def every_s(self) -> float:
         cfg = self.config()
@@ -232,6 +250,7 @@ class ThreatWatch:
             raise ValueError(f"could not move the file ({type(e).__name__}); SentrAI may lack write access there")
         os.chmod(qdir / f"{qid}.bin", 0o400)  # cannot be run from quarantine
         shown = hide_home(str(src), procscan._homes())
+        self.share(f["sha256"], f.get("label") or src.name, "the panel", operator)
         self.core.scribe.record(self.core.name, "file_quarantined", {
             "operator": operator, "file": shown, "sha256": f["sha256"], "finding": meta["finding"],
             "quarantine_id": qid, "reason": reason or None,

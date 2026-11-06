@@ -84,6 +84,26 @@ sudo sentrai jobs list --host shop-pc
 sudo sentrai deps scan                # the panel server's own packages
 ```
 
+## Antivirus: lock a file away, the shared fingerprint list
+
+See [The agent's antivirus](antivirus.html) for what each machine watches on its own.
+
+```bash
+sudo sentrai jobs threats shop-pc                       # what its file watch found lately, with ids
+sudo sentrai jobs quarantine shop-pc 3f9c0a7d1e2b4c5a   # lock that file away (id from `threats` or a scan)
+sudo sentrai jobs list --host shop-pc                   # the quarantine id (q-...) is in the result
+sudo sentrai jobs restore shop-pc q-1a2b3c4d            # put it back (a false alarm)
+
+sudo sentrai signatures list                            # how many known-bad fingerprints, and from where
+sudo sentrai signatures add 9f86d0...0a08 --name "miner seen at a customer"
+sudo sentrai signatures import recent.csv               # a MalwareBazaar export, a ClamAV .hdb/.hsb, or one hash per line
+sudo sentrai signatures remove --source import:recent.csv
+sudo sentrai signatures remove 9f86d0...0a08            # a false alarm
+```
+
+A file locked away on any machine joins the fingerprint list by itself, so the same file is flagged
+on every other machine within about 30 minutes.
+
 ## Backups
 
 ```bash

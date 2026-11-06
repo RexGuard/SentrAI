@@ -21,10 +21,12 @@ from __future__ import annotations
 
 import fnmatch
 import hashlib
+import math
 import os
 import re
 import time
 import zipfile
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -50,6 +52,20 @@ SCRIPT_EXT = {".sh", ".bash", ".zsh", ".bat", ".cmd", ".ps1", ".psm1", ".vbs", "
 CONFIG_EXT = {".yml", ".yaml", ".conf", ".cfg", ".ini", ".properties", ".service", ".timer", ".desktop",
               ".htaccess", ".env", ".txt", ".json", ".toml", ".xml"}
 ARCHIVE_EXT = {".jar"}
+# Programs. Only their first bytes and their fingerprint are read: never the whole file as text.
+PROGRAM_EXT = {".exe", ".dll", ".scr", ".com", ".pif", ".msi", ".sys", ".so", ".elf", ".bin", ".run", ".hta",
+               ".jse", ".vbe", ".wsf", ".lnk", ".cpl", ".appimage"}
+# Files that should never be a program. A program dressed as one of these is a classic trick.
+LOOKS_HARMLESS_EXT = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".ico", ".svg", ".pdf", ".doc", ".docx",
+                      ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".csv", ".rtf", ".mp3", ".mp4", ".wav", ".avi",
+                      ".mov", ".css", ".woff", ".woff2", ".ttf"}
+# Run when opened on Windows (the last part of a double extension like invoice.pdf.exe).
+RUNS_WHEN_OPENED = {".exe", ".scr", ".com", ".pif", ".bat", ".cmd", ".vbs", ".vbe", ".js", ".jse", ".wsf", ".hta",
+                    ".lnk", ".cpl", ".msi", ".ps1"}
+# Folders where people's uploads or temporary files land: a program there is out of place.
+UPLOAD_DIRS = {"uploads", "upload", "media", "images", "img", "tmp", "temp", "attachments", "avatars", "wp-content",
+               "shm"}
+HEAD_BYTES = 4096
 # Extensionless files are read when they start with "#!" (scripts) or sit in a cron folder.
 CRON_DIRS = ("cron", "cron.d", "cron.hourly", "cron.daily", "crontabs")
 
@@ -241,6 +257,10 @@ def _wanted(f: Path) -> str | None:
     ext = f.suffix.lower()
     if ext in ARCHIVE_EXT:
         return "jar"
+    if ext in PROGRAM_EXT and ext not in (".bin", ".run"):
+        return "program"
+    if ext in LOOKS_HARMLESS_EXT:
+        return "harmless"  # only its first bytes are read, to catch a program in disguise
     if ext in SCRIPT_EXT or ext in CONFIG_EXT or name in (".htaccess", ".user.ini", "crontab", ".bashrc", ".profile"):
         return "text"
     if not ext or ext in (".bin", ".run"):
@@ -329,7 +349,72 @@ def _read(f: Path, max_bytes: int) -> bytes | None:
         return None
 
 
+def program_type(head: bytes) -> str | None:
+    """'Windows program', 'Linux program' or 'Mac program' from a file's first bytes, else None."""
+    if head[:2] == b"MZ" and len(head) >= 0x40:
+        off = int.from_bytes(head[0x3C:0x40], "little")
+        if off + 4 <= len(head) and head[off:off + 4] == b"PE\0\0":
+            return "Windows program"
+        return "Windows program" if off < 0x400 else None
+    if head[:4] == b"\x7fELF":
+        return "Linux program"
+    if head[:4] in (b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe", b"\xfe\xed\xfa\xcf", b"\xfe\xed\xfa\xce"):
+        return "Mac program"
+    return None
+
+
+def entropy(data: bytes) -> float:
+    """Bits per byte, 0 to 8. Packed, encrypted or compressed data is near 8; text is 4 to 5."""
+    if not data:
+        return 0.0
+    n = len(data)
+    return -sum(c / n * math.log2(c / n) for c in Counter(data).values())
+
+
+def _double_extension(name: str) -> bool:
+    """invoice.pdf.exe, photo.jpg.scr: a harmless-looking name with a runnable ending."""
+    parts = name.lower().rsplit(".", 2)
+    return len(parts) == 3 and f".{parts[2]}" in RUNS_WHEN_OPENED and f".{parts[1].strip()}" in LOOKS_HARMLESS_EXT
+
+
+def _in_upload_dir(f: Path) -> bool:
+    return any(p.lower() in UPLOAD_DIRS for p in f.parts[:-1][-4:])
+
+
+def heuristics(f: Path, data: bytes, base: dict[str, Any]) -> list[dict[str, Any]]:
+    """Guesses about files no signature knows: a program dressed as a picture or document, a double
+    extension, a program in an upload folder, a packed program. Read from the first bytes only."""
+    out: list[dict[str, Any]] = []
+    head = data[:HEAD_BYTES]
+    ptype = program_type(head)
+    ext = f.suffix.lower()
+
+    def hit(key: str, severity: str, label: str) -> None:
+        out.append({**base, "key": key, "kind": "disguised" if key != "packed-program" else "obfuscation",
+                    "severity": severity, "label": label, "line": None, "snippet": ""})
+
+    if ptype and ext in LOOKS_HARMLESS_EXT:
+        hit("program-in-disguise", "critical", f"a {ptype} pretending to be a {ext} file")
+    if _double_extension(f.name):
+        hit("double-extension", "high", "harmless-looking name that runs a program when opened")
+    if ptype and ext not in LOOKS_HARMLESS_EXT and _in_upload_dir(f):
+        hit("program-in-uploads", "high", f"a {ptype} in an upload or temporary folder")
+    if ptype and len(data) >= 4096 and entropy(data[:262144]) > 7.4:
+        hit("packed-program", "medium", f"a packed or encrypted {ptype} (often used to hide malware)")
+    return out
+
+
+def _head(f: Path) -> bytes:
+    try:
+        with open(f, "rb") as fh:
+            return fh.read(HEAD_BYTES)
+    except OSError:
+        return b""
+
+
 def scan_file(f: Path, kind: str, max_bytes: int, bad_hashes: set[str], homes: list[str]) -> list[dict[str, Any]]:
+    if kind == "harmless" and not program_type(_head(f)):
+        return []  # a real picture or document: nothing more is read
     data = _read(f, max_bytes)
     if data is None:
         return []
@@ -337,9 +422,12 @@ def scan_file(f: Path, kind: str, max_bytes: int, bad_hashes: set[str], homes: l
     shown = hide_home(str(f), homes)
     base = {"path": shown, "real_path": str(f), "sha256": digest, "size": len(data)}
     out: list[dict[str, Any]] = []
-    if digest in bad_hashes:
+    md5 = hashlib.md5(data, usedforsecurity=False).hexdigest() if any(len(h) == 32 for h in bad_hashes) else ""
+    if digest in bad_hashes or (md5 and md5 in bad_hashes):
         out.append({**base, "key": "known-bad-hash", "kind": "known_malware", "severity": "critical",
                     "label": "file matches a known malware fingerprint", "line": None, "snippet": ""})
+    if kind in ("program", "harmless") or (kind == "maybe" and program_type(data[:HEAD_BYTES])):
+        return out + heuristics(f, data, base)
     if kind == "jar":
         return out + _scan_jar(f, base)
     if kind == "maybe" and not (data.startswith(b"#!") or f.parent.name.lower() in CRON_DIRS):
@@ -384,7 +472,8 @@ def scan(roots: Iterable[str], cfg: dict[str, Any] | None = None) -> dict[str, A
     started = time.time()
     homes = procscan._homes()
     max_bytes = int(float(cfg.get("max_file_mb", MAX_FILE_BYTES / 1024 / 1024)) * 1024 * 1024)
-    bad = {h.lower() for h in cfg.get("known_bad_sha256") or [] if isinstance(h, str)}
+    bad = {h.lower() for h in (cfg.get("known_bad_sha256") or []) + (cfg.get("known_bad_md5") or [])
+           if isinstance(h, str)}
     files, over = walk(roots, cfg.get("allow") or [])
     findings: list[dict[str, Any]] = []
     missing = [hide_home(r, homes) for r in roots if not Path(os.path.expanduser(r)).exists()]
