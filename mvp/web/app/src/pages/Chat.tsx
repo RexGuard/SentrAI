@@ -23,8 +23,8 @@ export type Incident = { id: string; status: string; category?: string; acked?: 
 /** Only what the suggestion buttons and the "Talk about" list need, not every incident's whole timeline. */
 export const INCIDENT_FIELDS = 'status,category,acked,actions,host'
 
-const STARTERS = ['What is happening right now?', 'Which incident should I deal with first?', 'Why did you block the last IP address?']
-const FOLLOW_UPS = [...STARTERS, 'Is anything waiting for my approval?', 'What changed in the last hour?', 'Is any machine offline?']
+const STARTERS = ['What did I miss?', 'Which incident should I deal with first?', 'Am I protected? Run a safety drill']
+const FOLLOW_UPS = [...STARTERS, 'What is happening right now?', 'Is anything waiting for my approval?', 'What changed in the last hour?', 'Is any machine offline?']
 const NOT_INCIDENT = ['watch_log', 'quarantine_file', 'backup_now', 'machine_owner', 'ping_owner']
 const NEEDS: Record<string, 'decide' | 'ack' | 'mine' | 'contain'> = { approve: 'decide', reject: 'decide', ack: 'ack', mine: 'mine', rollback: 'contain', keep: 'contain', permanent: 'contain', make_permanent: 'contain' }
 
@@ -66,6 +66,39 @@ async function decide(decision: string, incident: string, inc: Incident | undefi
   else if (decision === 'mine') await api(`/incidents/${id}/mine`, { body: { operator: op } })
   else if (decision === 'rollback') await api(`/incidents/${id}/rollback`, { body: { operator: op, justification: why || 'Rolled back by operator after chat' } })
   else await api(`/incidents/${id}/permanent`, { body: { operator: op, justification: why || 'Made permanent by operator after chat' } })
+}
+
+/** GET /chat/briefing: what SentrAI handled by itself and what needs a person (core app/briefing.py). */
+type BriefItem = { incident: string; title: string; computer?: string | null; did?: string; fix_check?: string | null; overdue?: boolean }
+type Briefing = { headline: string; protection: string; handled: BriefItem[]; needs_you: BriefItem[]; handled_count: number; needs_you_count: number }
+
+/** Shown when the chat opens, before anyone types: Sentry speaks first, like a colleague catching you up. */
+export function BriefingCard({ onAsk }: { onAsk: (q: string) => void }) {
+  const [b, setB] = useState<Briefing | null>(null)
+  useEffect(() => { api<Briefing>('/chat/briefing').then(setB).catch(() => setB(null)) }, [])
+  if (!b) return null
+  const row = (x: BriefItem, tail: string) => (
+    <li key={x.incident}>
+      <button className="text-left underline-offset-2 hover:underline" onClick={() => onAsk(`Tell me about ${x.incident} in plain words`)}>
+        {x.title}{x.computer ? ` on ${x.computer}` : ''}
+      </button>
+      <span className="text-muted"> · {tail}</span>
+    </li>
+  )
+  return (
+    <section aria-label="Since you last looked" className="space-y-2 rounded-md border border-line bg-surface-2 p-3">
+      <p className="font-semibold">{b.headline}</p>
+      {b.protection === 'off' && <p className="text-sm">Protection is paused: SentrAI is only watching. SentrAI's team can switch it back on.</p>}
+      {b.needs_you.length > 0 && (
+        <div><p className="text-sm text-soft">Needs you</p>
+          <ul className="list-disc space-y-0.5 pl-5 text-sm">{b.needs_you.slice(0, 3).map((x) => row(x, x.overdue ? 'past its time limit' : 'waiting for your OK'))}</ul></div>
+      )}
+      {b.handled.length > 0 && (
+        <div><p className="text-sm text-soft">SentrAI handled by itself</p>
+          <ul className="list-disc space-y-0.5 pl-5 text-sm">{b.handled.slice(0, 3).map((x) => row(x, [x.did, x.fix_check].filter(Boolean).join(', ')))}</ul></div>
+      )}
+    </section>
+  )
 }
 
 const time = (ts?: string) => (ts ? new Date(ts).toLocaleTimeString() : '')
@@ -197,7 +230,8 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
           <div className={(compact ? 'min-h-0 flex-1 ' : 'h-[28rem] ') + 'chat-log space-y-4 overflow-y-auto rounded-lg border border-line bg-surface p-4'} role="log" aria-live="polite" aria-label="Conversation" tabIndex={0}>
             {!messages.length && (
               <div className="space-y-2">
-                <p>Hi, I'm {assistant}. Ask me about incidents, why I acted, or what to do next. Or pick one of these to start:</p>
+                <p>Hi, I'm {assistant}. Here is where things stand. Ask me anything, or pick one of these:</p>
+                <BriefingCard onAsk={(q) => void ask(q)} />
                 <div className="flex flex-wrap gap-2">{STARTERS.map((q) => <button key={q} className={chip} onClick={() => void ask(q)}>{q}</button>)}</div>
               </div>
             )}
