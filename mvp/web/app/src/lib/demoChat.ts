@@ -38,6 +38,16 @@ function answer(question: string, incident: string | null): { text: string; look
     return { looked: ['sign-ins on aegis-web'], text:
       `I'm seeing a burst of failed sign-ins on your student portal from 203.0.113.45. It isn't a risk yet, but I'm watching it. If it keeps going, it will show up as a risk for you in a few seconds.` }
   }
+  if (/drill|protected|really working|is sentrai working/.test(q)) {
+    return { looked: ['safety drill'], text:
+      `**Passed.** I sent 4 pretend attacks through a private copy of SentrAI's detection: someone guessing passwords, a break-in attempt through the website's search box, someone looking for weak spots, and someone using a fake password SentrAI planted as bait. **SentrAI spotted all 4.**\n\n` +
+      `Protection is on, SentrAI may block attackers on its own in an emergency, and all your computers are reporting in.\n\n` +
+      `_This was only a drill: nothing was blocked, opened or sent._` }
+  }
+  if (/what did i miss|catch me up|overnight|last night/.test(q)) {
+    return { looked: ['briefing'], text:
+      `**Nothing needs you.** Overnight SentrAI handled the usual background noise by itself (a few strangers probing your website), and it checked afterwards that each block worked.\n\nYour computers are online and protected.` }
+  }
   if (/summar|week/.test(q)) {
     return { looked: ['this week\'s risks'], text:
       `**A quiet week.** Nothing needs a person right now. I handled the usual background noise on my own (scans and a few bad sign-ins), and every one of those blocks can be undone from the risk list.\n\nYour computers are online and protected.` }

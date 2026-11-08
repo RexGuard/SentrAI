@@ -13,7 +13,7 @@ import { useSession } from '../lib/session'
 import { Blocks, CopyButton, Text } from '../lib/Rich'
 import { backToQuestion, turns } from '../lib/turns'
 import { MemoryPanel, ShareDialog, SharedView, type ShareInfo } from '../lib/CyanideTeam'
-import { INCIDENT_FIELDS, SuggestionCard, loadMachines, suggestionOpen, type ChatMachine, type Incident, type Message } from './Chat'
+import { BriefingCard, INCIDENT_FIELDS, SuggestionCard, loadMachines, suggestionOpen, type ChatMachine, type Incident, type Message } from './Chat'
 
 type History = { assistant?: string; model?: string; messages: Message[] }
 
@@ -21,6 +21,7 @@ const STARTERS = [
   { q: 'Are we safe right now?', icon: ShieldQuestion },
   { q: 'What needs my attention today?', icon: ListChecks },
   { q: 'Summarise this week for me in plain words', icon: BarChart3 },
+  { q: 'Is SentrAI really working? Run a safety drill', icon: Zap },
 ]
 // Past conversations, kept in this browser: the core keeps one running chat log, and each conversation here is the
 // list of its message ids in that log. A conversation whose messages the core has since dropped says so.
@@ -331,6 +332,7 @@ export default function Manager() {
           <h1 className="text-center text-3xl font-light tracking-tight sm:text-[2.25rem]">{greeting()}{first ? `, ${first}` : ''}. Where should we start?</h1>
           <div className="w-full max-w-2xl">{box}</div>
           {note && <p role="alert" className="text-sm text-bad">{note}</p>}
+          <div className="w-full max-w-2xl"><BriefingCard onAsk={(q) => void ask(q)} /></div>
           <ul className="w-full max-w-2xl space-y-1 px-2">
             {STARTERS.map(({ q, icon: Icon }) => (
               <li key={q}><button className="mgr-starter" disabled={asking} onClick={() => void ask(q)}><Icon size={15} aria-hidden /> {q}</button></li>))}

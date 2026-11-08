@@ -944,6 +944,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def clear_chat() -> dict[str, Any]:
         return chat.clear()
 
+    # Sentry's proactive side (briefing.py): what needs you and what SentrAI handled by itself, and the
+    # safety drill. Both read-only; the drill goes on the audit trail.
+    @app.get("/chat/briefing")
+    def get_chat_briefing(hours: float = Query(24.0, gt=0, le=744)) -> dict[str, Any]:
+        return chat.briefing(hours=hours)
+
+    @app.post("/chat/drill")
+    def post_chat_drill(request: Request) -> dict[str, Any]:
+        account = getattr(request.state, "account", None)
+        return chat.drill(by=(account or {}).get("email") or "dashboard")
+
     # Process scan: read-only, suggests log files; an operator approves each one by id.
     @app.post("/system/scan")
     def post_scan(body: Optional[ScanIn] = None) -> dict[str, Any]:

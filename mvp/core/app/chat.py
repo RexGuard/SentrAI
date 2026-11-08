@@ -24,6 +24,7 @@ import time
 from collections import Counter
 from typing import Any, Callable
 
+from . import briefing as brief
 from .config import Settings  # noqa: F401  (puts mvp/ on sys.path, for sentrai_llm)
 from .saguaro import AGENT_OWNER, Saguaro
 from .summary import PLAIN_ACTIONS, plain_names, plain_title
@@ -42,6 +43,10 @@ DECISIONS = ("ack", "approve", "reject", "rollback", "make_permanent")
 DECISION_TEXT = {"ack": "Acknowledge", "approve": "Approve & patch", "reject": "Reject",
                  "rollback": "Roll back", "make_permanent": "Make permanent"}
 BACKUP_WORDS = re.compile(r"(?i)\b(back ?ups?|backed up|restore|restoring)\b")
+DRILL_WORDS = re.compile(r"(?i)\b(drill|test (my|our|the) (protection|security|defen[cs]es?)|am i (really )?protected|"
+                         r"(is|does) (sentrai|it|the protection) (really )?(work|working)|fire drill|practice attack)\b")
+MISSED_WORDS = re.compile(r"(?i)\b(what did i miss|while i was (away|out|gone|asleep)|since (yesterday|last night|this morning|"
+                          r"i (last )?(looked|logged in|checked))|overnight|last night|briefing|catch me up)\b")
 SCAN_WORDS = re.compile(r"(?i)\b(scan|processes|log (files|folders|sources)|what (should|to) (i )?(monitor|watch))\b")
 # The name people see for the chat assistant. The core agent behind it keeps its own name in the audit log.
 ASSISTANT = os.getenv("SENTRAI_ASSISTANT_NAME", "Sentry").strip() or "Sentry"
@@ -252,6 +257,10 @@ conclude it was their customer list, or that it was not, because they fear it.
 - Done versus proposed: an incident's status says what has happened. "contained" or an address on the \
 blocklist means SentrAI already acted. "open" means nothing has been done yet: its recommended_action is only \
 a proposal waiting for their OK, so say "SentrAI suggests ...", never that it is already in place.
+- Say how sure SentrAI is, in words, when it matters: get_incident gives how_sure ("certain: a decoy was \
+touched", "sure: it matched a known attack pattern", "not sure: a person should look"). Never give a percentage.
+- After SentrAI blocked something it checks later whether the block worked (an action's "check": worked, \
+disruption). Say "SentrAI checked afterwards and the block worked", or plainly that it did not and what is next.
 - Do not blame a person. An account name shows which login was used, not who typed; say so when they ask who \
 did it.
 - If personal data (customers, patients, students, donors) may have been exposed, say calmly that SentrAI's \
@@ -287,6 +296,14 @@ ones already watched. Describe each in plain words ("the website's visitor log")
 - To check for signs of a break-in that already happened, call scan_threats. When a finding looks real, call \
 suggest_quarantine; their button moves the file out of harm's way (it can be put back). Say plainly that it may \
 be a false alarm and what the file seems to be.
+- "What did I miss?", "catch me up", "anything overnight?": call get_briefing. Lead with what needs them, \
+then what SentrAI handled by itself, in one or two sentences each.
+- Questions about a time ("what happened last night", "Tuesday at 3pm", "between 9 and 11"): call get_timeline \
+with from and to as ISO times worked out from the current time given with the question. Say what happened in time \
+order, in everyday words; a show_table helps when there are many entries.
+- "Am I protected?", "is SentrAI working?", "test my protection": call run_drill. It sends pretend attacks through a \
+private copy of SentrAI's detection and checks protection, computers, earlier fixes and backups. Nothing is blocked \
+or opened and no alert goes out; say so. Say what passed, then any problem, and that SentrAI's team can fix it.
 - To check backups, call get_backups (when the last one ran, whether it worked, when the next is due). When \
 there is no recent backup, or before a risky clean-up, call suggest_backup; their button takes one. You cannot \
 restore files: say to use the Backups page, where restored files go into a separate folder unless they choose \
@@ -371,6 +388,24 @@ TOOLS: list[dict[str, Any]] = [
          "finding_id": {"type": "string", "description": "A finding id from scan_threats, like t1."},
          "reason": {"type": "string", "description": "One sentence: why this file looks hostile."}},
          "required": ["finding_id", "reason"], "additionalProperties": False}},
+    {"name": "get_briefing", "description": "What SentrAI handled by itself and what still needs a person, since a "
+         "time (default the last 24 hours). Open incidents that need a decision are always listed. Each handled item "
+         "says what SentrAI did and whether its after-action check found the fix worked.",
+     "input_schema": {"type": "object", "properties": {
+         "hours": {"type": "number", "description": "How far back, in hours (default 24)."}},
+         "required": [], "additionalProperties": False}},
+    {"name": "get_timeline", "description": "What happened between two times: incidents opened, what SentrAI did, "
+         "decisions people made and checks, oldest first. Times are ISO 8601 with offset; work them out from the "
+         "current time given with the question. Optionally one computer.",
+     "input_schema": {"type": "object", "properties": {
+         "from": {"type": "string"}, "to": {"type": "string"},
+         "computer": {"type": "string", "description": "A computer's name or host, or empty for all."}},
+         "required": ["from", "to"], "additionalProperties": False}},
+    {"name": "run_drill", "description": "Safety drill: sends pretend attacks (password guessing, a website attack, "
+         "probing for weak spots, a planted decoy password) through a private copy of SentrAI's detection and reports "
+         "which were spotted; also checks protection is on, SentrAI may act on its own, every computer reports, "
+         "earlier fixes worked and backups are fresh. Opens nothing, blocks nothing, sends no alert.",
+     "input_schema": {"type": "object", "properties": {}, "required": [], "additionalProperties": False}},
     {"name": "get_backups", "description": "Backup settings and the list of backups: when each was made, by whom, "
                                            "how many files, whether it passed its check, and when the next is due.",
      "input_schema": {"type": "object", "properties": {}, "required": [], "additionalProperties": False}},
@@ -454,7 +489,7 @@ TOOLS: list[dict[str, Any]] = [
 
 POINTER = re.compile(r"(?i)\b(button|chip|question)s? (below|under)|\bbelow\b")
 LOOKUP_TOOLS = {"get_overview", "get_incident", "get_machine", "explain", "get_audit", "get_blocklist", "get_profile", "scan_system",
-                "scan_threats", "get_backups"}
+                "scan_threats", "get_backups", "get_briefing", "get_timeline", "run_drill"}
 
 
 def default_chat_provider() -> sentrai_llm.Provider | None:
@@ -523,6 +558,20 @@ class OperatorChat:
             "operator": operator, "message": message_id, "vote": vote, "note": note,
             "question": str(out.get("question") or "")[:300], "source": out.get("source"),
             "summary": f"{operator} rated an answer {vote or 'unrated'}"})
+        return out
+
+    def briefing(self, hours: float = 24.0, since: Any = None) -> dict[str, Any]:
+        """What SentrAI handled by itself and what needs a person (briefing.py). Read-only."""
+        return brief.briefing(self.core, self.names(), since=since, hours=hours)
+
+    def drill(self, by: str = "dashboard") -> dict[str, Any]:
+        """The safety drill (briefing.py): read-only, and kept on the audit trail."""
+        out = brief.drill(self.core, self.names(), self.backups)
+        self.core.scribe.record(self.core.name, "safety_drill", {
+            "operator": by, "passed": out["passed"], "verdict": out["verdict"],
+            "spotted": sum(1 for x in out["attacks"] if x["spotted"]), "attacks": len(out["attacks"]),
+            "problems": [x["check"] for x in out["checks"] if not x["ok"]],
+            "summary": f"{by} ran a safety drill: {'passed' if out['passed'] else 'needs attention'}"})
         return out
 
     def clear(self) -> dict[str, Any]:
@@ -688,6 +737,7 @@ class OperatorChat:
             name = self.names().get(machine) or machine
             lines.append(f"The operator has one computer selected: {name} (host {machine}). Answer only about this "
                          f"computer. Its incidents right now:\n{lean_json(self._machine(machine)['incidents'])}")
+        lines.append(f"Current time: {self.core.clock.now_iso()}")
         lines.append(f"Operator: {text}")
         return "\n".join(lines)
 
@@ -745,7 +795,8 @@ class OperatorChat:
                 else:  # the same line again: count it instead of repeating it
                     same["times"] = same.get("times", 1) + 1
             timeline = inc.get("timeline") or []
-            out = {**inc, "latest_events": events, "timeline": timeline[-TIMELINE_IN_LOOKUP:]}
+            out = {**inc, "how_sure": brief.how_sure(inc), "latest_events": events,
+                   "timeline": timeline[-TIMELINE_IN_LOOKUP:]}
             if len(timeline) > TIMELINE_IN_LOOKUP:
                 out["older_timeline_entries"] = len(timeline) - TIMELINE_IN_LOOKUP
             return lean_json(out)
@@ -807,6 +858,17 @@ class OperatorChat:
             if not any(x.get("finding_id") == fid for x in suggestions):
                 suggestions.append(s)
             return "Button shown to the operator. The file is moved only if they press it."
+        if name == "get_briefing":
+            looked_at.append("briefing")
+            return lean_json(self.briefing(hours=float(a.get("hours") or 24)))
+        if name == "get_timeline":
+            comp = str(a.get("computer") or "").strip()
+            host = self._host_of(comp) if comp else None
+            looked_at.append("what happened " + "then" + (f" on {self.names().get(host) or host}" if host else ""))
+            return lean_json(brief.timeline(c, self.names(), a.get("from"), a.get("to"), host))
+        if name == "run_drill":
+            looked_at.append("safety drill")
+            return lean_json(self.drill(by=str(rich.get("by") or "dashboard")))
         if name == "get_backups":
             if self.backups is None:
                 raise ValueError("backups are not available")
@@ -1032,6 +1094,10 @@ class OperatorChat:
             rich["blocks"].append(table("What I remember", ["Fact", "Taught by", "When"],
                                         [[f["text"], f["by"], f["at"][:10]] for f in facts]))
             return f"I remember **{len(facts)} thing{'' if len(facts) == 1 else 's'}** the team told me."
+        if DRILL_WORDS.search(text) and not INCIDENT_ID.search(text):
+            return self._fallback_drill(looked_at, rich)
+        if MISSED_WORDS.search(text) and not INCIDENT_ID.search(text):
+            return self._fallback_briefing(looked_at, suggestions, rich)
         if WEEK_WORDS.search(text) and not INCIDENT_ID.search(text):
             return self._fallback_week(looked_at, rich)
         if self.backups is not None and BACKUP_WORDS.search(text):
@@ -1119,6 +1185,41 @@ class OperatorChat:
             parts.append("**What the team told me:**\n" + "\n".join(f"- {t}" for t in told[:5]))
         parts.append(NO_AI_NOTE)
         return "\n\n".join(parts)
+
+    def _fallback_drill(self, looked_at: list[str], rich: dict[str, Any]) -> str:
+        looked_at.append("safety drill")
+        d = self.drill(by=str(rich.get("by") or "dashboard"))
+        rich["blocks"].append(table("Pretend attacks", ["Pretend attack", "Spotted?"],
+                                    [[x["attack"], "Yes" if x["spotted"] else "No"] for x in d["attacks"]]))
+        rich["blocks"].append(table("Ready to protect you?", ["Check", "OK?", "Details"],
+                                    [[x["check"], "Yes" if x["ok"] else "No", x["detail"]] for x in d["checks"]]))
+        rich["followups"][:] = ["Do I need to do anything?", "What did I miss?"]
+        problems = [x for x in d["checks"] if not x["ok"]]
+        lines = [f"**{d['verdict']}**"]
+        if problems:
+            lines.append("\n".join(f"- {x['check']}: {x['detail']}" for x in problems[:3])
+                         + "\n\nSentrAI's team can sort that out for you.")
+        lines.append("_This was only a drill: nothing was blocked, opened or sent._")
+        return "\n\n".join(lines + [NO_AI_NOTE])
+
+    def _fallback_briefing(self, looked_at: list[str], suggestions: list[dict[str, str]], rich: dict[str, Any]) -> str:
+        looked_at.append("briefing")
+        b = self.briefing()
+        lines = [f"**{b['headline']}**"]
+        if b["needs_you"]:
+            lines.append("Needs you:\n" + "\n".join(f"- {x['title']} ({x['incident']})" + (", past its time limit"
+                                                                                        if x["overdue"] else "")
+                                                    for x in b["needs_you"][:3]))
+            for x in b["needs_you"][:3]:
+                self._next_steps(str(x["incident"]), suggestions)
+        if b["handled"]:
+            lines.append("SentrAI handled by itself:\n" + "\n".join(
+                f"- {x['title']} ({x['incident']}): {x['did']}" + (f", {x['fix_check']}" if x["fix_check"] else "")
+                for x in b["handled"][:3]))
+        if b["protection"] == "off":
+            lines.append("**Protection is paused**, so SentrAI is only watching. Ask SentrAI's team to switch it back on.")
+        rich["followups"][:] = ["Is SentrAI really working?", "Summarise this week for me"]
+        return "\n\n".join(lines + [NO_AI_NOTE])
 
     def _machine_in(self, text: str) -> str | None:
         """A computer named in the question ("... for RexGuard Machine"), by its given name or host."""

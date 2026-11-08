@@ -155,6 +155,43 @@ Thumbs up or down on one of Sentry's answers. Kept on the message and written to
 
 **Errors**: `400` bad vote, `404` no such answer.
 
+## Briefing and safety drill
+
+Sentry's proactive side. Both are read-only and need the same sign-in as the chat.
+
+### `GET /chat/briefing`
+
+What SentrAI handled by itself and what still needs a person, for the last `hours` (default 24, at most 744).
+Open incidents that need a decision are always listed, however old. The chat page shows this when it opens.
+
+```json
+{"headline": "1 thing needs you; SentrAI handled 2 by itself.", "protection": "on", "band": "amber",
+ "since": "2026-11-07T12:00:00+08:00", "now": "2026-11-08T12:00:00+08:00",
+ "handled_count": 2, "needs_you_count": 1, "decided_by_people": 0,
+ "fixes_checked": {"worked": 2, "did_not_work": 0},
+ "handled": [{"incident": "RSK-2026-081", "title": "Password guessing", "severity": "high", "status": "contained",
+              "computer": "Shop website", "how_sure": "sure: it matched a known attack pattern",
+              "did": "blocked an address", "fix_check": "checked: it worked", "until": "2026-11-09T09:14:00+08:00"}],
+ "needs_you": [{"incident": "RSK-2026-084", "title": "...", "suggested": "...", "overdue": false, "...": "..."}]}
+```
+
+`fix_check` is what the after-action check found: `check pending`, `checked: it worked`, `did not work`,
+`worked, may be getting in the way of real users` or `could not be checked`.
+
+### `POST /chat/drill`
+
+Runs the safety drill. Pretend attacks (password guessing, a website attack, probing for weak spots, a planted decoy
+password) go through a private, throw-away copy of SentrAI's detection rules: nothing is opened, blocked or sent,
+and live detection is not affected. It also checks that protection is on, SentrAI may act on its own, every computer
+is reporting, earlier fixes worked and backups are fresh. Each run goes on the audit trail as `safety_drill`.
+
+```json
+{"passed": true, "verdict": "Passed. SentrAI spotted every pretend attack and everything around it is ready.",
+ "attacks": [{"attack": "Someone guessing passwords on your sign-in page", "spotted": true, "as": "Password guessing"}],
+ "checks": [{"check": "Protection is switched on", "ok": true, "detail": "SentrAI can block attackers"}],
+ "took_ms": 3, "note": "A drill only: ..."}
+```
+
 ## Memory
 
 What the team taught Sentry: standing instructions and remembered facts. Sentry reads both before every answer.

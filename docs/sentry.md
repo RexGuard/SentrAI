@@ -28,6 +28,27 @@ Sentry follows these rules unless your team says otherwise:
 - **It only suggests.** Approve, undo, back up and quarantine are always buttons you press, shown below the
   answer. Chat never changes anything by itself.
 
+## What Sentry does before you ask
+
+Ideas taken from network assistants that work ahead of the person (HPE Aruba's Marvis among them), cut down to what a
+business owner with no IT team needs. All of it is read-only, like the rest of the chat.
+
+- **It speaks first.** When the chat opens, Sentry shows a short briefing: what needs you, and what SentrAI handled by
+  itself, each with whether SentrAI checked afterwards that the fix worked. Tap an item to ask about it.
+  "What did I miss?" gives the same in chat. API: [`GET /chat/briefing`](api/chat.html#get-chatbriefing).
+- **Safety drill.** "Am I protected?" or "Run a safety drill" sends four pretend attacks (password guessing, a website
+  attack, someone looking for weak spots, a planted fake password being used) through a private, throw-away copy of
+  SentrAI's detection, and says which were spotted. It also checks that protection is on, SentrAI may act on its own,
+  every computer is reporting, earlier fixes worked and backups are fresh. Nothing is opened, blocked or sent, and live
+  detection is untouched. Each drill goes on the audit trail. API: [`POST /chat/drill`](api/chat.html#post-chatdrill).
+- **What happened then.** "What happened last night?" or "Tuesday between 9 and 11" looks up incidents, what SentrAI
+  did and what people decided in that window, in time order.
+- **How sure.** Sentry says in words how sure SentrAI is ("certain: a decoy was touched", "sure: it matched a known
+  attack pattern", "not sure: a person should look"), never as a percentage.
+
+Left out on purpose: fixing things without asking (decisions stay with the owner, or with the AI agent a computer is
+given to), and fake traffic against real servers (the drill stays inside SentrAI).
+
 ## How it is tested
 
 `mvp/eval/sentry_sim.py` has Claude play business owners and managers with no IT team (a bakery owner,
