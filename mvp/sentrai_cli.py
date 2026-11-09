@@ -24,6 +24,9 @@ On the panel (installed as /usr/local/bin/sentrai, runs as the service account):
     sudo sentrai incidents list [--all] | show ID | approve ID... | reject ID... --why W | rollback ID... | keep ID...
                            | resolve ID --note N
     sudo sentrai ideas list [--all] | planned ID... | done ID... | dismiss ID... | open ID...  [--note N]
+    sudo sentrai coach status | setup --regions sg,my [--checks-done] [--notice-shared] [--names on|off]
+                       | apps on|off APP... | person EMAIL [--name N] [--group G] [--region R] [--reach R]
+                       | data EMAIL | erase EMAIL | sample [--clear] | notice > notice.md
     sudo sentrai protection on|off [--reason R]
     sudo sentrai team list | invite EMAIL [--role admin] | role EMAIL ROLE | remove EMAIL | reset EMAIL | withdraw EMAIL
     sudo sentrai api GET|POST PATH [JSON]                 any other core endpoint (docs/api/)
@@ -551,6 +554,66 @@ def cmd_ideas(call: Call, a: argparse.Namespace) -> Any:
     return out if a.json else out.get("message", out)
 
 
+def cmd_coach(call: Call, a: argparse.Namespace) -> Any:
+    """Security Coach: which work apps it reads, the regions' checklists, the people it coaches."""
+    if a.action == "status":
+        out = call("GET", "/ui/coach")
+        if a.json:
+            return out
+        s, t = out["settings"], out["team"]
+        apps = ", ".join(x["name"] for x in out["apps"] if x["key"] in s["apps_on"]) or "none"
+        lines = [("On: recording and coaching." if out["ready"] else "Off: " + out["why_not_ready"]),
+                 f"Apps: {apps}", f"Regions: {', '.join(s['regions']) or 'none'}   names shown: "
+                 f"{'yes' if s['show_names'] else 'team totals only'}   file names kept: {'yes' if s['file_names'] else 'no'}",
+                 f"People: {t['people']} ({t['notice_confirmed']} confirmed the notice)   last 30 days: "
+                 f"{t['moments_30d']} risky moments, {t['fixed_30d']} fixed, {t['urgent_open']} urgent open, "
+                 f"{t['lessons_done']} lessons done",
+                 f"Kept: activity {out['kept']['activity']}, notes {out['kept']['notes']} (Privacy page)"]
+        return "\n".join(lines)
+    if a.action == "setup":
+        body: dict[str, Any] = {"operator": operator_name()}
+        if a.regions:
+            body["regions"] = [r.strip().lower() for r in a.regions.split(",") if r.strip()]
+        if a.checks_done:
+            regions = body.get("regions") or call("GET", "/ui/coach")["settings"]["regions"]
+            info = {r["key"]: r for r in call("GET", "/ui/coach")["regions"]}
+            body["region_checks"] = {r: list(range(len(info[r]["checks"]))) for r in regions if r in info}
+        if a.notice_shared:
+            body["notice_shared"] = True
+        if a.names:
+            body["show_names"] = a.names == "on"
+        out = call("POST", "/ui/coach/settings", body)
+        return out if a.json else ("Coach is on." if out["ready"] else "Saved. Still off: " + out["why_not_ready"])
+    if a.action == "apps":
+        if a.state not in ("on", "off") or not a.items:
+            raise CliError("sentrai coach apps on|off APP ...  (google, microsoft, okta, slack, ...)")
+        cur = set(call("GET", "/ui/coach")["settings"]["apps_on"])
+        cur = cur | set(a.items) if a.state == "on" else cur - set(a.items)
+        out = call("POST", "/ui/coach/settings", {"apps_on": sorted(cur), "operator": operator_name()})
+        return out if a.json else "Apps on: " + (", ".join(out["settings"]["apps_on"]) or "none")
+    if a.action == "sample":
+        out = call("POST", "/ui/coach/sample", {"clear": bool(a.clear), "operator": operator_name()})
+        if a.json:
+            return out
+        return ("Sample people and activity removed." if a.clear else
+                f"Added 3 sample people and {out['added']['moments']} risky moments. Remove: sentrai coach sample --clear")
+    if a.action == "notice":
+        return call("GET", "/ui/coach/notice.md")
+    if not a.state or "@" not in a.state:
+        raise CliError(f"whose? sentrai coach {a.action} EMAIL")
+    if a.action == "person":
+        body = {"email": a.state}
+        for k in ("name", "group", "region", "reach"):
+            if getattr(a, k) is not None:
+                body[k] = getattr(a, k)
+        out = call("POST", "/ui/coach/people", body)
+        return out if a.json else f"Saved {out['person']['email']}."
+    if a.action == "data":
+        return call("GET", f"/ui/coach/people/{a.state}/data")
+    out = call("POST", f"/ui/coach/people/{a.state}/erase", {})
+    return out if a.json else "Erased: " + ", ".join(f"{v} {k}" for k, v in out["erased"].items())
+
+
 def cmd_switch(path: str) -> Callable[[Call, argparse.Namespace], Any]:
     def run(call: Call, a: argparse.Namespace) -> Any:
         out = call("POST", path, {"on": a.state == "on", "operator": operator_name(), "reason": a.reason or ""})
@@ -693,6 +756,19 @@ def parser() -> argparse.ArgumentParser:
     ide.add_argument("ids", nargs="*")
     ide.add_argument("--all", action="store_true", help="list: done and dismissed ones too")
     ide.add_argument("--note", help="planned/done/dismiss: a short note kept with the idea")
+    co = add("coach", cmd_coach, "Security Coach: work apps it reads, regions' checklists, people it coaches")
+    co.add_argument("action", choices=["status", "setup", "apps", "person", "data", "erase", "sample", "notice"])
+    co.add_argument("state", nargs="?", help="apps: on or off · person, data, erase: the work email")
+    co.add_argument("items", nargs="*", help="apps: google, microsoft, okta, slack, zoom, dropbox, box, github, ...")
+    co.add_argument("--regions", help="setup: where staff work, e.g. sg,my,eu (sentrai coach status lists them)")
+    co.add_argument("--checks-done", action="store_true", help="setup: every region's checklist is done")
+    co.add_argument("--notice-shared", action="store_true", help="setup: staff have the notice (sentrai coach notice)")
+    co.add_argument("--names", choices=["on", "off"], help="setup: show people's names to Owners and Admins")
+    co.add_argument("--name")
+    co.add_argument("--group")
+    co.add_argument("--region")
+    co.add_argument("--reach", choices=["email", "slack", "teams"])
+    co.add_argument("--clear", action="store_true", help="sample: remove the sample people and activity")
     for name, path, what in (("protection", "/protection", "protection on, or watch only"),):
         sw = add(name, cmd_switch(path), what)
         sw.add_argument("state", choices=["on", "off"])

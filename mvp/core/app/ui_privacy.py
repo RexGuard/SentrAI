@@ -7,7 +7,8 @@ HR can hand out (GET /ui/privacy/notice.md).
 
 The retention periods are the organisation's policy. SentrAI shows how old the oldest record of each kind is and
 flags what is past its period; it does not delete anything on its own (the audit record is a hash chain, so it is
-archived whole, never trimmed line by line). The policy lives in privacy.json (sentrai_paths "core.privacy") and
+archived whole, never trimmed line by line). The one exception is the Security Coach (coach.py): its activity
+records and coaching notes are deleted automatically when their period here runs out, so those two need a period. The policy lives in privacy.json (sentrai_paths "core.privacy") and
 every change goes on the audit record.
 """
 from __future__ import annotations
@@ -46,6 +47,14 @@ KINDS: list[dict[str, Any]] = [
      "months": 24},
     {"key": "backups", "what": "Backups", "about": "Copies of the folders you chose, which may hold personal data.",
      "why": "To recover after an attack such as ransomware.", "months": None},
+    {"key": "coach_activity", "what": "Work app activity (Security Coach)", "about": "Risky actions in the work apps "
+     "the admin connected: work email, app, kind of action, time, sign-in country, device type. Never the text of "
+     "emails, chats or files; file names only if the admin turns them on.", "why": "To teach each person right after "
+     "a risky action.", "months": 1, "min": 0, "max": 3, "deletes": True},
+    {"key": "coach_notes", "what": "Coaching notes and lesson progress", "about": "The notes each person got, their "
+     "answers (fixed, that was me, not me) and the lessons they finished.", "why": "So lessons get deeper when the "
+     "same slip happens again, and people can see their progress.", "months": 12, "min": 1, "max": 24,
+     "deletes": True},
     {"key": "ai", "what": "Questions to the AI", "about": "When an AI model is set up, chat questions and incident "
      "details are sent to that provider to get an answer.", "why": "To explain threats and suggest fixes.", "months": 0},
 ]
@@ -86,8 +95,12 @@ class PrivacyPolicy:
         for key, v in (body.get("months") or {}).items():
             if key not in KEYS:
                 raise ValueError(f"Unknown kind of data: {key}")
-            if v is not None and (not isinstance(v, int) or isinstance(v, bool) or not 0 <= v <= MAX_MONTHS):
-                raise ValueError(f"Keep {key} for 0 to {MAX_MONTHS} months, or leave it empty for 'while it exists'.")
+            k = next(k for k in KINDS if k["key"] == key)
+            lo, hi = k.get("min", 0), k.get("max", MAX_MONTHS)
+            if k.get("deletes") and v is None:
+                raise ValueError(f"{k['what']} needs a period: {lo} to {hi} months.")
+            if v is not None and (not isinstance(v, int) or isinstance(v, bool) or not lo <= v <= hi):
+                raise ValueError(f"Keep {key} for {lo} to {hi} months, or leave it empty for 'while it exists'.")
             months[key] = v
         out = {"organisation": org, "contact": contact, "months": months,
                "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "updated_by": by}
@@ -121,7 +134,7 @@ def _age_days(ts: Any, now: float) -> int | None:
     return None if t is None else max(0, int((now - t) // 86400))
 
 
-def page(core: Any, policy: PrivacyPolicy, ai_on: bool) -> dict[str, Any]:
+def page(core: Any, policy: PrivacyPolicy, ai_on: bool, coach_on: bool = False) -> dict[str, Any]:
     p = policy.load()
     now = core.clock.now()
     with core.lock:
@@ -136,7 +149,11 @@ def page(core: Any, policy: PrivacyPolicy, ai_on: bool) -> dict[str, Any]:
         who = SEE["people"] if k["key"] == "accounts" else SEE["export"]
         if k["key"] == "ai":
             who = "Sent to the AI provider you chose on Configuration." if ai_on else "No AI model is set up, so nothing is sent."
-        rows.append({**k, "months": months, "kept": _kept(months), "who": who, "oldest_days": age, "over": over})
+        if k["key"].startswith("coach_"):
+            who = ("Owner and Admin accounts see team totals; names only for urgent moments or if the admin turns "
+                   "names on. Each person can see their own.")
+        rows.append({**k, "months": months, "kept": _kept(months), "who": who, "oldest_days": age, "over": over,
+                     "in_use": coach_on or not k["key"].startswith("coach_")})
     return {"policy": p, "kinds": rows, "over": [r["key"] for r in rows if r["over"]], "ai_on": ai_on,
             "roles": {r: sorted(acc.PERMISSIONS[r]) for r in acc.ROLES}}
 
@@ -151,7 +168,7 @@ def notice(data: dict[str, Any]) -> str:
              "SentrAI records some information about how systems are used, including by staff. This notice explains "
              "what is recorded, why, who can see it and how long it is kept.", "",
              "| What is recorded | Why | How long it is kept |", "| --- | --- | --- |"]
-    lines += [f"| {k['what']}: {k['about']} | {k['why']} | {k['kept']} |" for k in data["kinds"]]
+    lines += [f"| {k['what']}: {k['about']} | {k['why']} | {k['kept']} |" for k in data["kinds"] if k.get("in_use", True)]
     lines += ["", "## Who can see it", "",
               "Only people with a dashboard account: Owners and Admins (who can also change settings and act) and "
               "Auditors (who can only look and download reports). Alerts go to the people on duty by message or email.",
@@ -172,10 +189,10 @@ def notice(data: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def install(app: FastAPI, core: Any, policy: PrivacyPolicy, ai_on: Any) -> None:
+def install(app: FastAPI, core: Any, policy: PrivacyPolicy, ai_on: Any, coach_on: Any = lambda: False) -> None:
     @app.get("/ui/privacy")
     def get_privacy() -> dict[str, Any]:
-        return page(core, policy, bool(ai_on()))
+        return page(core, policy, bool(ai_on()), bool(coach_on()))
 
     @app.post("/ui/privacy")
     def post_privacy(request: Request, body: dict = Body(...)) -> dict[str, Any]:
@@ -189,9 +206,9 @@ def install(app: FastAPI, core: Any, policy: PrivacyPolicy, ai_on: Any) -> None:
             raise HTTPException(400, str(e)) from e
         core.scribe.record(core.name, "privacy_policy_changed", {"operator": who, "months": saved["months"],
                                                                  "organisation": saved["organisation"]})
-        return page(core, policy, bool(ai_on()))
+        return page(core, policy, bool(ai_on()), bool(coach_on()))
 
     @app.get("/ui/privacy/notice.md", response_class=PlainTextResponse)
     def get_notice() -> PlainTextResponse:
-        return PlainTextResponse(notice(page(core, policy, bool(ai_on()))), media_type="text/markdown; charset=utf-8",
+        return PlainTextResponse(notice(page(core, policy, bool(ai_on()), bool(coach_on()))), media_type="text/markdown; charset=utf-8",
                                  headers={"Content-Disposition": 'attachment; filename="sentrai-staff-notice.md"'})

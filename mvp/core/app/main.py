@@ -24,7 +24,8 @@ import sentrai_accounts as acc  # noqa: E402
 from .reports import build_report, render_markdown, render_pdf
 from . import summary as client_summary
 from . import auth as auth_cookie
-from . import ui_analytics, ui_approvals, ui_tuning, ui_audit, ui_incidents, ui_limits, ui_machine, ui_machines, ui_overview, ui_report, ui_routing, ui_settings, ui_setup, ui_team, ui_recovery, ui_privacy, ui_risks, ui_feedback
+from . import ui_analytics, ui_approvals, ui_tuning, ui_audit, ui_incidents, ui_limits, ui_machine, ui_machines, ui_overview, ui_report, ui_routing, ui_settings, ui_setup, ui_team, ui_recovery, ui_privacy, ui_risks, ui_feedback, ui_coach
+from . import coach as coach_mod
 from . import ai, anchor, apidocs, backup_copies, chat_memory, depscan, feature_ideas, fleet, hardware, integrations, jobs, procscan, signatures, webhook
 from .extensions import ExtensionError
 from . import chat as chat_mod
@@ -533,8 +534,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ui_analytics.install(app, core, ui_analytics.Playbooks(
         sentrai_paths.path("core.playbooks", core.settings.db_path.parent, migrate=False), lambda: chat.provider))
     ui_tuning.install(app, core)
-    ui_privacy.install(app, core, ui_privacy.PrivacyPolicy(
-        sentrai_paths.path("core.privacy", core.settings.db_path.parent, migrate=False)), lambda: chat.provider is not None)
+    privacy_policy = ui_privacy.PrivacyPolicy(sentrai_paths.path("core.privacy", core.settings.db_path.parent, migrate=False))
+    coach = coach_mod.Coach(sentrai_paths.path("core.coach", core.settings.db_path.parent, migrate=False),
+                            months=lambda key: privacy_policy.load()["months"].get(key), clock=core.clock.now)
+    ui_privacy.install(app, core, privacy_policy, lambda: chat.provider is not None,
+                       lambda: bool(coach.settings()["notice_shared"]))
+    ui_coach.install(app, core, coach, lambda: (privacy_policy.load()["organisation"], privacy_policy.load()["contact"]))
     ui_feedback.install(app, core, ui_feedback.Inbox(
         sentrai_paths.path("core.feedback", core.settings.db_path.parent, migrate=False)))
     ui_recovery.install(app, core, ui_recovery.Ticks(

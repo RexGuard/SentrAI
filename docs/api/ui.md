@@ -294,13 +294,13 @@ What made the most incidents and alerts in the last 7 days, and what would quiet
 
 The Privacy page: what SentrAI records about people, why, who can see it, how long the organisation keeps it, and how old the oldest record is.
 
-**Returns** `policy` (`organisation`, `contact`, `months` per kind, `updated_at`, `updated_by`), `kinds` (`key`, `what`, `about`, `why`, `months`, `kept`, `who`, `oldest_days`, `over`), `over` (kinds older than their period), `ai_on` and `roles` (each role's permissions). SentrAI flags data past its period; it does not delete it on its own.
+**Returns** `policy` (`organisation`, `contact`, `months` per kind, `updated_at`, `updated_by`), `kinds` (`key`, `what`, `about`, `why`, `months`, `kept`, `who`, `oldest_days`, `over`, `in_use`), `over` (kinds older than their period), `ai_on` and `roles` (each role's permissions). SentrAI flags data past its period; it does not delete it on its own, except the Security Coach's two kinds (`coach_activity`, 0 to 3 months, and `coach_notes`, 1 to 24 months), which are deleted when their period runs out.
 
 ### `POST /ui/privacy`
 
 Save the privacy policy. Owner or Admin only; the change goes on the audit record (`privacy_policy_changed`).
 
-**Body** `{"organisation": "...", "contact": "...", "months": {"events": 6, "accounts": null}}` (0 to 120 months, `null` = while it exists). **Returns** the page as `GET /ui/privacy`. `400` for an unknown kind or a period out of range, `403` for an Auditor.
+**Body** `{"organisation": "...", "contact": "...", "months": {"events": 6, "accounts": null}}` (0 to 120 months, `null` = while it exists; the coach's kinds have their own range and need a period). **Returns** the page as `GET /ui/privacy`. `400` for an unknown kind or a period out of range, `403` for an Auditor.
 
 ### `GET /ui/privacy/notice.md`
 
@@ -316,6 +316,54 @@ The recovery checklist for one incident: five phases (stop it, lock the doors, p
 Tick a step off (or untick it). Needs the `act` permission; written to the audit record as `recovery_step`. Nothing is done on a machine.
 
 **Body** `{"incident": "INC-...", "step": "secure-1", "done": true}` **Returns** the plan as `GET /ui/recovery`. `400` for a step not in the plan, `404` for an unknown incident.
+
+## Security Coach
+
+The coach teaches each member of staff right after a risky action in a work app (Google Workspace, Microsoft 365 and others). Nothing is recorded until the regions' checklists are ticked and the staff notice is marked as shared. Only the apps, kinds of action and people the admin chose are kept, with a fixed set of fields: never message or file contents, file names only if turned on, sign-in addresses reduced to a country. Changing anything needs the `configure` right (Owner or Admin); `403` for an Auditor.
+
+### `GET /ui/coach`
+
+The Coach page. **Returns** `settings` (`apps_on`, `kinds_on`, `groups_off`, `regions`, `region_checks`, `show_names`, `file_names`, `notice_shared`, ...), `ready` and `why_not_ready`, `apps` (the catalogue: `key`, `name`, `covers`, `wave`, `sees`, `needs`, `status` = `sample` or `planned`), `kinds`, `regions` (`key`, `name`, `law`, `consent`, `checks`), `team` (totals for the last 30 days, `by_group`, `top` lessons), `moments` (open ones, urgent first; `who` is "A team member" unless the moment is urgent or names are turned on), `people` (only when names are on), `kept` and `has_sample`. Records past their retention period are deleted first.
+
+### `POST /ui/coach/settings`
+
+Change any of the settings above. On the audit record as `coach_settings_changed`. **Body** e.g. `{"apps_on": ["google"], "regions": ["sg"], "region_checks": {"sg": [0, 1, 2]}, "notice_shared": true}`. **Returns** the page. `400` for an unknown app, kind or region.
+
+### `GET /ui/coach/lessons`
+
+The lesson library: `lessons` (`id`, `title`, `card`, `steps`, `questions` without the answers, `deeper`).
+
+### `POST /ui/coach/people`
+
+Add or change a person. **Body** `{"email": "...", "name": "...", "group": "...", "region": "sg", "reach": "email|slack|teams", "coaching": true, "notice_confirmed": true}`. **Returns** `person`.
+
+### `GET /ui/coach/people/{email}/data`
+
+Everything the coach holds about one person, for them to see or download: `person` (with `level`), `activity`, `moments`, `notes`, `kept`. `404` when it holds nothing.
+
+### `POST /ui/coach/people/{email}/erase`
+
+Delete everything about one person. On the audit record as `coach_person_erased` (counts only). **Returns** `erased` counts.
+
+### `POST /ui/coach/events`
+
+What connectors send. **Body** `{"events": [{"person": "a@acme.com", "app": "google", "kind": "file_shared_public", "ts": 1800000000, "file_type": "spreadsheet", "country": "SG", "device": "phone"}]}` (up to 500). Other fields are dropped. **Returns** `recorded`, `moments`, `dropped`, `why_dropped`, `urgent` (each also goes on the audit record as `coach_urgent`). `409` while the coach is not switched on.
+
+### `POST /ui/coach/moments/{moment_id}`
+
+The person's answer to a note. **Body** `{"answer": "fixed|was_me|not_me|reported|dismissed"}`. `not_me` raises the moment to urgent. **Returns** `moment`.
+
+### `POST /ui/coach/lessons/{lesson_id}/answer`
+
+Mark a lesson's two-question check. **Body** `{"person": "a@acme.com", "answers": [1, 0]}`. **Returns** `passed`, `right`, `level`, `tip`.
+
+### `POST /ui/coach/sample`
+
+Add three made-up people and a day of made-up activity (Google and Microsoft) to try the coach, or `{"clear": true}` to remove them. Needs the coach switched on. **Returns** `added` or `cleared`, and the page.
+
+### `GET /ui/coach/notice.md`
+
+The Security Coach notice for staff, built from the live settings and the Privacy page's organisation and contact. Markdown, as a download.
 
 ## Configuration
 
