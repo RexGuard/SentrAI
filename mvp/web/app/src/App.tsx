@@ -41,6 +41,7 @@ const Collector = page(() => pipeline().then((m) => ({ default: m.Collector })))
 const Responder = page(() => pipeline().then((m) => ({ default: m.Responder })))
 const Tuning = page(() => import('./pages/Tuning'))
 const Privacy = page(() => import('./pages/Privacy'))
+const Coach = page(() => import('./pages/Coach'))
 const Overview = page(() => import('./pages/Overview'))
 const Report = page(() => import('./pages/Report'))
 const Contact = page(() => import('./pages/Contact'))
@@ -112,6 +113,7 @@ function Gate() {
         <Route path="/analytics" element={<Analytics />} />
         <Route path="/tuning" element={<Tuning />} />
         <Route path="/privacy" element={<Privacy />} />
+        <Route path="/coach" element={<Coach />} />
         <Route path="*" element={<Navigate to="/command" replace />} />
       </Route>
     </Routes>
