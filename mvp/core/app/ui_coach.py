@@ -27,7 +27,8 @@ def _need(request: Request, what: str) -> None:
         raise HTTPException(403, f"Only an Owner or Admin can {what}.")
 
 
-def install(app: FastAPI, core: Any, coach: cm.Coach, org: Callable[[], tuple[str, str]]) -> None:
+def install(app: FastAPI, core: Any, coach: cm.Coach, org: Callable[[], tuple[str, str]],
+            after_erase: Callable[[str], dict[str, int]] | None = None) -> None:
     def fail(e: Exception) -> HTTPException:
         return HTTPException(400, str(e))
 
@@ -83,6 +84,8 @@ def install(app: FastAPI, core: Any, coach: cm.Coach, org: Callable[[], tuple[st
             gone = coach.erase_person(email)
         except cm.CoachError as e:
             raise fail(e) from e
+        if after_erase:  # the phone app's password, sign-ins and phone checks go too
+            gone = {**gone, **{f"app_{k}": v for k, v in after_erase(email).items()}}
         core.scribe.record(core.name, "coach_person_erased", {"operator": _who(request), **gone})
         return {"erased": gone}
 

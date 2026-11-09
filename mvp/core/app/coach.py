@@ -75,13 +75,17 @@ APPS: list[dict[str, Any]] = [
      "sees": "Sign-ins and sharing.", "needs": "Zoho One or Workplace admin access."},
     {"key": "xero", "name": "Xero", "covers": "Accounts", "wave": 3,
      "sees": "Sign-ins and new connected apps.", "needs": "Adviser or admin access."},
+    {"key": "phone", "name": "SentrAI phone app", "covers": "Android phones", "wave": 1,
+     "sees": "Only yes or no answers from the phone check: screen lock, updates, apps from outside the app store, "
+             "apps that can read the screen, developer settings. Never messages, photos, browsing or app names.",
+     "needs": "Staff install the SentrAI app and sign in with the invite from this page."},
     {"key": "browser", "name": "SentrAI browser helper", "covers": "Chrome and Edge", "wave": 3,
      "sees": "Only one thing: a known bad or look-alike website being opened. It warns before the page loads.",
      "needs": "Installed by the admin through Google or Microsoft device management."},
 ]
 APP_KEYS = {a["key"] for a in APPS}
 for _a in APPS:
-    _a["status"] = "sample" if _a["wave"] == 1 else "planned"
+    _a["status"] = "live" if _a["key"] == "phone" else "sample" if _a["wave"] == 1 else "planned"
 
 # --------------------------------------------------------------------------- lessons
 # Each lesson: a short card (what happened, why it matters, what to do) and two quick questions.
@@ -277,6 +281,59 @@ LESSONS: dict[str, dict[str, Any]] = {
         "steps": ["Close the page. Don't enter anything.", "If you typed a password there, change it now and tell IT."],
         "questions": [_q("Which is the look-alike?", ["microsoft.com", "rnicrosoft.com"], 1),
                       _q("You typed your password on a fake page. Next?", ["Change it and tell IT", "Nothing"], 0)]},
+    "phone-lock": {
+        "title": "Lock your phone",
+        "card": "A phone with no screen lock opens for anyone who picks it up: your work email, chats and files "
+                "with it.",
+        "steps": ["Set a PIN of 6 digits or more, or a fingerprint or face unlock.",
+                  "Set the screen to lock after a minute or less."],
+        "questions": [_q("Who can read your work email on a phone with no lock?", ["Only you", "Anyone holding it"],
+                         1),
+                      _q("Which is the better lock?", ["A 6-digit PIN or fingerprint", "A swipe"], 0)]},
+    "phone-updates": {
+        "title": "Keep your phone up to date",
+        "card": "Updates close holes that attackers already know how to use. A phone months behind is an easy "
+                "target, even if you are careful.",
+        "steps": ["Open Settings, then System, then Software update, and install what is waiting.",
+                  "Turn on automatic updates."],
+        "questions": [_q("Why do updates matter for security?", ["They close known holes", "They only add emojis"],
+                         0),
+                      _q("Best time to install an update?", ["As soon as it arrives", "Never"], 0)]},
+    "phone-apps": {
+        "title": "Get apps from the Play Store",
+        "card": "Apps from websites, chats or file shares skip Google's checks. Fake versions of real apps are a "
+                "common way to steal passwords and bank codes.",
+        "steps": ["Remove apps you don't recognise or no longer use.",
+                  "Install new apps only from the Play Store or your company's app list."],
+        "questions": [_q("Someone sends you an app file in a chat. What do you do?",
+                         ["Install it", "Don't install it, find the app in the Play Store"], 1),
+                      _q("Where should work apps come from?", ["The Play Store or the company's list",
+                                                                "Any website"], 0)]},
+    "phone-screen-readers": {
+        "title": "Apps that can read your screen",
+        "card": "Some apps ask for \"accessibility\" access. That lets them read everything on screen and tap for "
+                "you, including codes and passwords. Scam apps ask for it all the time.",
+        "steps": ["Open Settings, then Accessibility, and turn off apps you don't need there.",
+                  "Only allow it for apps you trust and actually use for accessibility."],
+        "questions": [_q("What can an app with accessibility access do?", ["Read your screen and tap for you",
+                                                                         "Only change the font size"], 0),
+                      _q("An app you just installed asks for it. What do you do?",
+                         ["Say no unless you really need it", "Always allow it"], 0)]},
+    "phone-dev-mode": {
+        "title": "Turn off developer settings",
+        "card": "USB debugging lets a computer plugged into your phone read and install things. It's for app "
+                "makers, and most people never need it.",
+        "steps": ["Open Settings, then System, then Developer options, and turn off USB debugging.",
+                  "If you don't make apps, turn Developer options off."],
+        "questions": [_q("Who needs USB debugging on?", ["People making apps", "Everyone"], 0),
+                      _q("Is it safe to leave on when charging at public places?", ["Yes", "No"], 1)]},
+    "phone-rooted": {
+        "title": "This phone's safety locks are off",
+        "card": "The phone has been changed to let apps go around Android's safety locks (rooted). Any app can then "
+                "read other apps' data, including work email.",
+        "steps": ["Talk to IT before using work apps on this phone.", "Restore the phone's normal software."],
+        "questions": [_q("What does rooting a phone remove?", ["Android's safety locks", "Nothing important"], 0),
+                      _q("Who should you tell?", ["IT", "Nobody"], 0)]},
 }
 
 # --------------------------------------------------------------------------- kinds of risky moment
@@ -318,6 +375,19 @@ KINDS: dict[str, dict[str, Any]] = {
                     "space", "fix": None, "lesson": "outside-guests"},
     "bad_site_opened": {"group": "Browsing", "level": "fix_soon", "title": "opened a known scam or look-alike "
                         "website", "fix": None, "lesson": "bad-website"},
+    "phone_no_lock": {"you": "your phone has no screen lock", "group": "Phone", "level": "fix_soon", "title": "has no screen lock on their phone",
+                      "fix": "Set a screen lock", "lesson": "phone-lock"},
+    "phone_out_of_date": {"you": "your phone is months behind on updates", "group": "Phone", "level": "fix_soon", "title": "has a phone that is months behind on "
+                          "updates", "fix": "Update the phone", "lesson": "phone-updates"},
+    "phone_outside_apps": {"you": "your phone has apps from outside the Play Store", "group": "Phone", "level": "tip", "title": "has apps on their phone from outside the "
+                           "Play Store", "fix": "Review the apps", "lesson": "phone-apps"},
+    "phone_screen_readers": {"you": "an app from outside the Play Store can read your phone's screen", "group": "Phone", "level": "fix_soon", "title": "has an app from outside the Play "
+                             "Store that can read the phone's screen", "fix": "Review screen access",
+                             "lesson": "phone-screen-readers"},
+    "phone_dev_mode": {"you": "your phone has USB debugging turned on", "group": "Phone", "level": "tip", "title": "has USB debugging turned on",
+                       "fix": "Turn it off", "lesson": "phone-dev-mode"},
+    "phone_rooted": {"you": "your phone's safety locks are off (it is rooted)", "group": "Phone", "level": "urgent", "title": "uses a phone whose safety locks are off "
+                     "(rooted)", "fix": None, "lesson": "phone-rooted"},
 }
 # Sign-in moments are urgent when the person says "not me".
 
@@ -326,6 +396,7 @@ FILE_TYPES = {"spreadsheet": "a spreadsheet", "document": "a document", "present
               "pdf": "a PDF", "folder": "a folder", "image": "a picture", "video": "a video", "code": "some code",
               "file": "a file"}
 DEVICES = ("computer", "phone", "tablet", "unknown")
+REACH = ("email", "slack", "teams", "app")  # "app": the SentrAI phone app
 
 # --------------------------------------------------------------------------- regions
 # The checklist an admin ticks before coaching starts for staff in that region. `consent`: nothing about a person
@@ -506,8 +577,8 @@ class Coach:
             if "coaching" in body:
                 cur["coaching"] = bool(body["coaching"])
             if "reach" in body:
-                if body["reach"] not in ("email", "slack", "teams"):
-                    raise CoachError("Reach people by email, slack or teams.")
+                if body["reach"] not in REACH:
+                    raise CoachError("Reach people by " + ", ".join(REACH) + ".")
                 cur["reach"] = body["reach"]
             if body.get("notice_confirmed") is True and not cur.get("notice_confirmed_at"):
                 cur["notice_confirmed_at"] = _now_iso(self._clock())
@@ -672,7 +743,9 @@ class Coach:
         first = (person.get("name") or "").split(" ")[0] or "there"
         app = next(a["name"] for a in APPS if a["key"] == m["app"])
         where = f" from {rec['country']}" if rec.get("country") and m["group"] == "Sign-in" else ""
+        you = KINDS[m["kind"]].get("you")
         lines = [f"Hi {first}, quick one from SentrAI about {app}.",
+                 f"Your phone check found that {you}." if you else
                  f"It looks like you {m['title']}{where}." if m["kind"] not in ("phishing_blocked",)
                  else f"You {m['title']}. Nothing to fix, nice work not falling for it.",
                  lesson["card"]]
@@ -820,6 +893,52 @@ class Coach:
                 "team": team, "moments": open_moments, "people": roster,
                 "kept": {"activity": self._kept("coach_activity"), "notes": self._kept("coach_notes")},
                 "has_sample": any(p.get("sample") for p in people.values())}
+
+    # ------------------------------------------------------------------ the phone app (mobile.py)
+    def person(self, email: str) -> dict[str, Any] | None:
+        with self._lock:
+            return self._load()["people"].get(_email(email))
+
+    def for_phone(self, email: str) -> dict[str, Any]:
+        """What one person sees in the app: their notes (newest first), open moments and progress. Notes the
+        person can now see are marked as delivered through the app."""
+        email = _email(email)
+        self.prune()
+        with self._lock:
+            data = self._load()
+            person = data["people"].get(email)
+            if not person:
+                return {"in_coach": False}
+            confirmed = bool(person.get("notice_confirmed_at"))
+            notes = [n for n in data["notes"] if n["person"] == email]
+            changed = False
+            if confirmed:
+                for n in notes:
+                    if n["status"] in ("ready to send", "held for notice"):
+                        n["status"], n["sent_via"], n["sent_at"] = "sent", "app", _now_iso(self._clock())
+                        n.pop("held_reason", None)
+                        changed = True
+            if changed:
+                self._save(data)
+            moments = {m["id"]: m for m in data["moments"] if m["person"] == email}
+        ok, _ = self.ready(data["settings"])
+        out_notes = []
+        for n in sorted(notes, key=lambda n: -n["ts"])[:30] if confirmed else []:
+            m = moments.get(n["moment"]) or {}
+            out_notes.append({"id": n["id"], "moment": n["moment"], "at": n["at"], "text": n["text"],
+                              "buttons": n["buttons"], "lesson": n["lesson"], "lesson_done": n["lesson_done"],
+                              "level": m.get("level", "tip"), "level_word": LEVEL_WORDS[m.get("level", "tip")],
+                              "status": m.get("status", "new"), "fix": m.get("fix"), "kind": m.get("kind", "")})
+        return {"in_coach": True, "coaching_on": ok and person.get("coaching", True), "name": person.get("name", ""),
+                "notice_confirmed": confirmed, "level": level_of(int(person.get("points") or 0)),
+                "points": int(person.get("points") or 0), "lessons_done": person.get("lessons_done") or [],
+                "notes": out_notes,
+                "open": sum(1 for m in moments.values() if m["status"] in ("new", "needs help"))}
+
+    def moment_person(self, moment_id: str) -> str | None:
+        with self._lock:
+            m = next((x for x in self._load()["moments"] if x["id"] == moment_id), None)
+        return m["person"] if m else None
 
     def lessons(self) -> list[dict[str, Any]]:
         return [{"id": k, "title": v["title"], "card": v["card"], "steps": v["steps"],

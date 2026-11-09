@@ -24,7 +24,8 @@ import sentrai_accounts as acc  # noqa: E402
 from .reports import build_report, render_markdown, render_pdf
 from . import summary as client_summary
 from . import auth as auth_cookie
-from . import ui_analytics, ui_approvals, ui_tuning, ui_audit, ui_incidents, ui_limits, ui_machine, ui_machines, ui_overview, ui_report, ui_routing, ui_settings, ui_setup, ui_team, ui_recovery, ui_privacy, ui_risks, ui_feedback, ui_coach
+from . import ui_analytics, ui_approvals, ui_tuning, ui_audit, ui_incidents, ui_limits, ui_machine, ui_machines, ui_overview, ui_report, ui_routing, ui_settings, ui_setup, ui_team, ui_recovery, ui_privacy, ui_risks, ui_feedback, ui_coach, ui_mobile
+from . import mobile as mobile_mod
 from . import coach as coach_mod
 from . import ai, anchor, apidocs, backup_copies, chat_memory, depscan, feature_ideas, fleet, hardware, integrations, jobs, procscan, signatures, webhook
 from .extensions import ExtensionError
@@ -371,8 +372,10 @@ AGENT_ROUTES = frozenset({("POST", "/events"), ("POST", "/heartbeat"), ("GET", "
 # the token before it shows anything (apidocs.py; /openapi.json itself needs the token). A report opens
 # with the signed link from its alert (?sig=). Every other endpoint needs "Authorization: Bearer <token>"
 # or the X-SentrAI-Token header; the token is SENTRAI_API_TOKEN from the setup wizard.
-OPEN_PATHS = frozenset({"/health", "/blocklist", "/docs", "/fleet/enrol"})
-OPEN_ROUTES = frozenset({("GET", "/health"), ("GET", "/blocklist"), ("POST", "/fleet/enrol")})  # in /openapi.json
+# The phone app's sign-in (ui_mobile.py) is open too: it checks its own email, password and code.
+OPEN_PATHS = frozenset({"/health", "/blocklist", "/docs", "/fleet/enrol", *(p for _, p in ui_mobile.OPEN_ROUTES)})
+OPEN_ROUTES = frozenset({("GET", "/health"), ("GET", "/blocklist"), ("POST", "/fleet/enrol"),
+                         *ui_mobile.OPEN_ROUTES})  # in /openapi.json
 TOKEN_HEADER = "x-sentrai-token"
 OLD_TOKEN_HEADER = "x-cactai-token"  # sent by scripts written before the CactAI -> SentrAI rename
 
@@ -467,6 +470,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     backups.after_make = seal_panel_backup
     machine_health = hardware.Health(core.clock.now, core.clock.iso)
     staff = StaffReports(core, lambda: chat.provider)  # follows /ai/reload
+    phones = mobile_mod.Mobile(sentrai_paths.path("core.mobile", core_dir, migrate=False), clock=core.clock.now)
 
     def require_token(request: Request) -> None:
         path = request.url.path
@@ -499,6 +503,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             machines.seen(agent)
             request.state.agent = agent
             return
+        request.state.phone = None
+        if sent.startswith(mobile_mod.KEY_PREFIX):
+            phone = phones.session(sent, acc.session_stamp)
+            if phone is None:
+                raise HTTPException(status_code=401, detail="Signed out. Sign in on the SentrAI app again.",
+                                    headers={"WWW-Authenticate": "Bearer"})
+            if not path.startswith("/mobile/"):
+                raise HTTPException(status_code=403, detail="a phone app key only reaches /mobile/*")
+            request.state.phone = phone
+            return
+        if path.startswith("/mobile/") and (request.method, path) not in ui_mobile.OPEN_ROUTES:
+            raise HTTPException(status_code=401, detail="Sign in on the SentrAI app first.",
+                                headers={"WWW-Authenticate": "Bearer"})
         if path.startswith("/auth/"):
             return  # the web dashboard's sign-in: each of these checks its own cookie (auth.py)
         if not sent and (account := auth_cookie.check_cookie_request(request)) is not None:
@@ -539,7 +556,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                             months=lambda key: privacy_policy.load()["months"].get(key), clock=core.clock.now)
     ui_privacy.install(app, core, privacy_policy, lambda: chat.provider is not None,
                        lambda: bool(coach.settings()["notice_shared"]))
-    ui_coach.install(app, core, coach, lambda: (privacy_policy.load()["organisation"], privacy_policy.load()["contact"]))
+    coach_org = lambda: (privacy_policy.load()["organisation"], privacy_policy.load()["contact"])  # noqa: E731
+    ui_coach.install(app, core, coach, coach_org, after_erase=phones.forget)
+    ui_mobile.install(app, core, coach, phones, staff, coach_org,
+                      lambda: coach_mod.notice(coach.overview(), *coach_org()))
     ui_feedback.install(app, core, ui_feedback.Inbox(
         sentrai_paths.path("core.feedback", core.settings.db_path.parent, migrate=False)))
     ui_recovery.install(app, core, ui_recovery.Ticks(

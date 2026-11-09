@@ -3,7 +3,7 @@
 // pick the apps, see team totals and open moments, and browse the lessons. Names stay hidden unless a moment is
 // urgent or the admin turns names on. The core enforces all of this (core/app/coach.py); the page only shows it.
 import { useCallback, useEffect, useState } from 'react'
-import { AlertTriangle, BookOpen, CheckCircle2, Download, FlaskConical, GraduationCap, Trash2 } from 'lucide-react'
+import { AlertTriangle, BookOpen, CheckCircle2, Download, FlaskConical, GraduationCap, Smartphone, Trash2 } from 'lucide-react'
 import { api, ApiError } from '../lib/api'
 import { btn } from '../lib/ui'
 import { useSession } from '../lib/session'
@@ -22,6 +22,9 @@ const card = 'rounded-lg border border-line bg-surface p-4'
 const pill: Record<Moment['level'], string> = { urgent: 'border-bad text-bad', fix_soon: 'border-warn text-warn', tip: 'border-line text-soft' }
 const appName = (apps: App[], key: string) => apps.find((a) => a.key === key)?.name ?? key
 
+type Phones = { phones: { id: string; email: string; kind: string; device: string; last_at: string }[]; team: { phones_checked: number; all_good: number; by_problem: Record<string, number> } }
+type Invite = { code: string; email: string; expires_at: string; steps: string[] }
+
 export default function Coach() {
   const { can } = useSession()
   const off = !can('configure')
@@ -29,10 +32,13 @@ export default function Coach() {
   const [lessons, setLessons] = useState<Lesson[]>([])
   const [error, setError] = useState('')
   const [note, setNote] = useState('')
+  const [phones, setPhones] = useState<Phones | null>(null)
+  const [inviteFor, setInviteFor] = useState('')
+  const [invite, setInvite] = useState<Invite | null>(null)
   const load = useCallback(async () => {
     try {
-      const [p, l] = await Promise.all([api<Page>('/ui/coach'), api<{ lessons: Lesson[] }>('/ui/coach/lessons')])
-      setPage(p); setLessons(l.lessons); setError('')
+      const [p, l, ph] = await Promise.all([api<Page>('/ui/coach'), api<{ lessons: Lesson[] }>('/ui/coach/lessons'), api<Phones>('/ui/mobile')])
+      setPage(p); setLessons(l.lessons); setPhones(ph); setError('')
     } catch (e) { setError(e instanceof ApiError ? e.message : 'Could not reach SentrAI.') }
   }, [])
   useEffect(() => { void load() }, [load])
@@ -48,6 +54,11 @@ export default function Coach() {
       setPage(await api<Page>('/ui/coach/sample', { body: { clear } }))
       setNote(clear ? 'Sample people and activity removed.' : 'Added three made-up people and a day of made-up activity. Remove them any time.')
     } catch (e) { setError(e instanceof ApiError ? e.message : 'Could not add sample data.') }
+  }
+  const makeInvite = async () => {
+    setError(''); setNote(''); setInvite(null)
+    try { setInvite(await api<Invite>('/ui/mobile/invites', { body: { email: inviteFor.trim() } })) }
+    catch (e) { setError(e instanceof ApiError ? e.message : 'Could not make the invite.') }
   }
   const answer = async (m: Moment, a: string) => {
     try { await api(`/ui/coach/moments/${m.id}`, { body: { answer: a } }); await load() }
@@ -192,6 +203,22 @@ export default function Coach() {
                   </tr>))}
               </tbody>
             </table>
+          </div>)}
+      </div>
+
+      <div className={card}>
+        <h2 className="mb-2 flex items-center gap-2 font-semibold"><Smartphone size={16} aria-hidden /> 5. Phone app</h2>
+        <p className="mb-2 text-sm text-muted">Staff get their notes and lessons on their Android phone, and the app checks the phone itself (screen lock, updates, risky apps). Only yes or no answers leave the phone. Tick “SentrAI phone app” under Work apps to turn its findings into notes.</p>
+        {phones && <p className="mb-2 text-sm text-soft">{phones.phones.length} {phones.phones.length === 1 ? 'phone is' : 'phones are'} signed in · {phones.team.phones_checked} checked, {phones.team.all_good} with nothing to fix.</p>}
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="text-sm">Work email of someone on the list<input type="email" value={inviteFor} disabled={off} onChange={(e) => setInviteFor(e.target.value)} className="mt-1 block w-72 max-w-full rounded-md border border-line bg-transparent px-2 py-1" placeholder="name@yourcompany.com" /></label>
+          <button className={btn} disabled={off || !inviteFor.includes('@')} onClick={() => void makeInvite()}>Make an app invite</button>
+        </div>
+        {invite && (
+          <div className="mt-3 rounded-md border border-line-soft p-3 text-sm" role="status">
+            <p>Invite for {invite.email}: <code className="text-base font-semibold">{invite.code}</code> <span className="text-xs text-muted">(works once, until {new Date(invite.expires_at).toLocaleString()}; shown only now)</span></p>
+            <ol className="mt-2 list-decimal pl-5 text-soft">{invite.steps.map((x) => <li key={x}>{x}</li>)}</ol>
+            <p className="mt-1 text-xs text-muted">The panel address is the one you use for this website. Owners and admins sign in to the app with their usual email, password and authenticator code, no invite needed.</p>
           </div>)}
       </div>
 
