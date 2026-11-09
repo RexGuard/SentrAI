@@ -24,7 +24,7 @@ class PanelError(message: String, val status: Int) : IOException(message)
 class UntrustedPanel(val fingerprint: String) : IOException("This panel's certificate isn't from a known authority.")
 
 /**
- * Talks to the panel's /mobile/* endpoints over HTTPS only.
+ * Talks to the panel's mobile endpoints (/mobile/...) over HTTPS only.
  *
  * A panel with a certificate from a known authority just works. A panel with its own certificate (the installer
  * makes a self-signed one) is trusted only when its SHA-256 fingerprint matches [pin], which the person accepted
