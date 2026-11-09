@@ -55,6 +55,8 @@ GROUPS: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
      ("audit",)),
     ("Web sign-in", "auth", "Sign-in for the web dashboard: password, authenticator code and a session cookie.",
      ("auth",)),
+    ("Phone app", "mobile", "The SentrAI phone app: sign-in, a person's own coaching, the phone check and alerts.",
+     ("mobile",)),
     ("Web dashboard pages", "ui", "Ready-to-draw page data and bulk actions for the web dashboard.",
      ("ui",)),
 )

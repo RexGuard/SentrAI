@@ -24,6 +24,8 @@
   url: /docs/api/audit.html
 - title: Web sign-in
   url: /docs/api/auth.html
+- title: Phone app
+  url: /docs/api/mobile.html
 - title: Web dashboard pages
   url: /docs/api/ui.html
 - title: What SentrAI sends out

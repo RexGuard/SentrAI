@@ -123,6 +123,12 @@ working (see [Signed links](#signed-links)).
 Signing in to the dashboard, with an email, a password and an authenticator, is a separate thing:
 see [Signing in](../sign-in.html). The dashboard then calls this API with the token on your behalf.
 
+## Phone keys
+
+The [phone app](mobile.html) signs in with an email and password and gets a **phone key** (`sm_...`).
+It reaches only `/mobile/*`, and only the signed-in person's own things; every other endpoint answers
+`403`. `/mobile/*` does not take the API token.
+
 ## Machine keys
 
 A machine that joins a central panel gets its own **machine key** in exchange for a one-time join

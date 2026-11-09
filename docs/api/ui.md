@@ -323,7 +323,7 @@ The coach teaches each member of staff right after a risky action in a work app 
 
 ### `GET /ui/coach`
 
-The Coach page. **Returns** `settings` (`apps_on`, `kinds_on`, `groups_off`, `regions`, `region_checks`, `show_names`, `file_names`, `notice_shared`, ...), `ready` and `why_not_ready`, `apps` (the catalogue: `key`, `name`, `covers`, `wave`, `sees`, `needs`, `status` = `sample` or `planned`), `kinds`, `regions` (`key`, `name`, `law`, `consent`, `checks`), `team` (totals for the last 30 days, `by_group`, `top` lessons), `moments` (open ones, urgent first; `who` is "A team member" unless the moment is urgent or names are turned on), `people` (only when names are on), `kept` and `has_sample`. Records past their retention period are deleted first.
+The Coach page. **Returns** `settings` (`apps_on`, `kinds_on`, `groups_off`, `regions`, `region_checks`, `show_names`, `file_names`, `notice_shared`, ...), `ready` and `why_not_ready`, `apps` (the catalogue: `key`, `name`, `covers`, `wave`, `sees`, `needs`, `status` = `live`, `sample` or `planned`), `kinds`, `regions` (`key`, `name`, `law`, `consent`, `checks`), `team` (totals for the last 30 days, `by_group`, `top` lessons), `moments` (open ones, urgent first; `who` is "A team member" unless the moment is urgent or names are turned on), `people` (only when names are on), `kept` and `has_sample`. Records past their retention period are deleted first.
 
 ### `POST /ui/coach/settings`
 
@@ -335,7 +335,7 @@ The lesson library: `lessons` (`id`, `title`, `card`, `steps`, `questions` witho
 
 ### `POST /ui/coach/people`
 
-Add or change a person. **Body** `{"email": "...", "name": "...", "group": "...", "region": "sg", "reach": "email|slack|teams", "coaching": true, "notice_confirmed": true}`. **Returns** `person`.
+Add or change a person. **Body** `{"email": "...", "name": "...", "group": "...", "region": "sg", "reach": "email|slack|teams|app", "coaching": true, "notice_confirmed": true}`. **Returns** `person`.
 
 ### `GET /ui/coach/people/{email}/data`
 
@@ -343,7 +343,7 @@ Everything the coach holds about one person, for them to see or download: `perso
 
 ### `POST /ui/coach/people/{email}/erase`
 
-Delete everything about one person. On the audit record as `coach_person_erased` (counts only). **Returns** `erased` counts.
+Delete everything about one person, including their phone app password, sign-ins and phone checks. On the audit record as `coach_person_erased` (counts only). **Returns** `erased` counts (`app_password`, `app_sign_ins` and `app_checks` for the phone app).
 
 ### `POST /ui/coach/events`
 
@@ -364,6 +364,22 @@ Add three made-up people and a day of made-up activity (Google and Microsoft) to
 ### `GET /ui/coach/notice.md`
 
 The Security Coach notice for staff, built from the live settings and the Privacy page's organisation and contact. Markdown, as a download.
+
+## Phone app
+
+The panel's side of the [phone app](mobile.html): who is signed in on a phone, and app invites for staff.
+
+### `GET /ui/mobile`
+
+Signed-in phones: `phones` (`id`, `email`, `kind` = `staff` or `panel`, `device`, `created_at`, `last_at`, `checked_at`, `to_fix`), `team` (`phones_checked`, `all_good`, `by_problem`) and `show_names`. `to_fix` (how many things a phone's check found) is `null` unless the coach shows names.
+
+### `POST /ui/mobile/invites`
+
+A one-time app invite for a person already on the Security Coach's list. Valid 72 hours; a new one replaces the old. Needs `configure`; on the audit record as `phone_invite_created`. **Body** `{"email": "a@acme.com"}`. **Returns** `code` (shown once), `email`, `expires_at`, `organisation` and `steps` to pass on. `404` when the person is not on the coach's list.
+
+### `POST /ui/mobile/{sid}/sign-out`
+
+Sign one phone out (the person signs in again to use it). Its phone check is deleted. Needs `configure`; on the audit record as `phone_signed_out`. **Returns** `id`, `email`, `device`. `404` for an unknown phone.
 
 ## Configuration
 

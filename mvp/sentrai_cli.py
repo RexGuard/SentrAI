@@ -27,6 +27,7 @@ On the panel (installed as /usr/local/bin/sentrai, runs as the service account):
     sudo sentrai coach status | setup --regions sg,my [--checks-done] [--notice-shared] [--names on|off]
                        | apps on|off APP... | person EMAIL [--name N] [--group G] [--region R] [--reach R]
                        | data EMAIL | erase EMAIL | sample [--clear] | notice > notice.md
+                       | app-invite EMAIL | phones | phone-signout ID
     sudo sentrai protection on|off [--reason R]
     sudo sentrai team list | invite EMAIL [--role admin] | role EMAIL ROLE | remove EMAIL | reset EMAIL | withdraw EMAIL
     sudo sentrai api GET|POST PATH [JSON]                 any other core endpoint (docs/api/)
@@ -599,6 +600,22 @@ def cmd_coach(call: Call, a: argparse.Namespace) -> Any:
                 f"Added 3 sample people and {out['added']['moments']} risky moments. Remove: sentrai coach sample --clear")
     if a.action == "notice":
         return call("GET", "/ui/coach/notice.md")
+    if a.action == "phones":
+        out = call("GET", "/ui/mobile")
+        if a.json:
+            return out
+        t = out["team"]
+        lines = [f"{len(out['phones'])} phone sign-in(s). Phone checks: {t['phones_checked']}, all good: "
+                 f"{t['all_good']}."]
+        lines += [f"  {k}: {v}" for k, v in sorted(t["by_problem"].items())]
+        lines += [f"  {p['id']}  {p['email']}  {p['device']}  ({p['kind']}, last used {p['last_at']})"
+                  for p in out["phones"]]
+        return "\n".join(lines)
+    if a.action == "phone-signout":
+        if not a.state:
+            raise CliError("which phone? sentrai coach phone-signout ID  (sentrai coach phones lists them)")
+        out = call("POST", f"/ui/mobile/{a.state}/sign-out", {})
+        return out if a.json else f"Signed out {out['device']} ({out['email']})."
     if not a.state or "@" not in a.state:
         raise CliError(f"whose? sentrai coach {a.action} EMAIL")
     if a.action == "person":
@@ -610,6 +627,11 @@ def cmd_coach(call: Call, a: argparse.Namespace) -> Any:
         return out if a.json else f"Saved {out['person']['email']}."
     if a.action == "data":
         return call("GET", f"/ui/coach/people/{a.state}/data")
+    if a.action == "app-invite":
+        out = call("POST", "/ui/mobile/invites", {"email": a.state})
+        return out if a.json else (f"App invite for {out['email']}: {out['code']} (works once, until "
+                                   f"{out['expires_at']}).\n" + "\n".join(f"  {n}. {s}" for n, s in
+                                                                      enumerate(out["steps"], 1)))
     out = call("POST", f"/ui/coach/people/{a.state}/erase", {})
     return out if a.json else "Erased: " + ", ".join(f"{v} {k}" for k, v in out["erased"].items())
 
@@ -757,8 +779,10 @@ def parser() -> argparse.ArgumentParser:
     ide.add_argument("--all", action="store_true", help="list: done and dismissed ones too")
     ide.add_argument("--note", help="planned/done/dismiss: a short note kept with the idea")
     co = add("coach", cmd_coach, "Security Coach: work apps it reads, regions' checklists, people it coaches")
-    co.add_argument("action", choices=["status", "setup", "apps", "person", "data", "erase", "sample", "notice"])
-    co.add_argument("state", nargs="?", help="apps: on or off · person, data, erase: the work email")
+    co.add_argument("action", choices=["status", "setup", "apps", "person", "data", "erase", "sample", "notice",
+                                       "app-invite", "phones", "phone-signout"])
+    co.add_argument("state", nargs="?", help="apps: on or off · person, data, erase, app-invite: the work email · "
+                                             "phone-signout: the phone's id")
     co.add_argument("items", nargs="*", help="apps: google, microsoft, okta, slack, zoom, dropbox, box, github, ...")
     co.add_argument("--regions", help="setup: where staff work, e.g. sg,my,eu (sentrai coach status lists them)")
     co.add_argument("--checks-done", action="store_true", help="setup: every region's checklist is done")
@@ -767,7 +791,7 @@ def parser() -> argparse.ArgumentParser:
     co.add_argument("--name")
     co.add_argument("--group")
     co.add_argument("--region")
-    co.add_argument("--reach", choices=["email", "slack", "teams"])
+    co.add_argument("--reach", choices=["email", "slack", "teams", "app"])
     co.add_argument("--clear", action="store_true", help="sample: remove the sample people and activity")
     for name, path, what in (("protection", "/protection", "protection on, or watch only"),):
         sw = add(name, cmd_switch(path), what)
