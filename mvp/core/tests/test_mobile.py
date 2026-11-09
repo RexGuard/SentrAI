@@ -167,3 +167,15 @@ def test_cli(client):
     code, text = run("coach", "app-invite", "ann@acme.test")
     assert code == 0 and "App invite for ann@acme.test:" in text and "Install the SentrAI app" in text
     assert "0 phone sign-in(s)" in run("coach", "phones")[1]
+
+
+def test_new_phone_kinds_switch_on_for_saved_settings(tmp_path):
+    import json
+    from app import coach as cm
+    old = sorted(k for k in cm.KINDS if not k.startswith("phone_") and k != "meeting_open")  # admin turned one off
+    (tmp_path / "coach.json").write_text(json.dumps({"settings": {"kinds_on": old}}))
+    c = cm.Coach(tmp_path / "coach.json")
+    on = set(c.settings()["kinds_on"])
+    assert "phone_no_lock" in on and "meeting_open" not in on
+    c.save_settings({"kinds_on": [k for k in on if k != "phone_rooted"]}, "x")
+    assert "phone_rooted" not in cm.Coach(tmp_path / "coach.json").settings()["kinds_on"]

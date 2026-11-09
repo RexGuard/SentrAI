@@ -460,8 +460,10 @@ def level_of(points: int) -> dict[str, Any]:
             "next_at": None if i == len(LEVEL_NAMES) - 1 else (i + 1) * 30}
 
 
+# The kinds of moment before the phone app (9 Nov 2026): a saved list without "kinds_seen" knew only these.
+FIRST_KINDS = frozenset(k for k in KINDS if not k.startswith("phone_"))
 DEFAULTS: dict[str, Any] = {
-    "notice_shared": False, "notice_shared_at": None, "apps_on": [], "kinds_on": sorted(KINDS),
+    "notice_shared": False, "notice_shared_at": None, "apps_on": [], "kinds_on": sorted(KINDS), "kinds_seen": sorted(KINDS),
     "groups_off": [], "regions": [], "region_checks": {}, "show_names": False, "file_names": False,
     "updated_at": None, "updated_by": None,
 }
@@ -483,7 +485,13 @@ class Coach:
             data = json.loads(self.path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             data = {}
-        settings = {**DEFAULTS, **(data.get("settings") or {})}
+        saved = data.get("settings") or {}
+        settings = {**DEFAULTS, **saved}
+        if "kinds_on" in saved:  # kinds added in an update start switched on; ones the admin turned off stay off
+            seen = set(saved.get("kinds_seen") or FIRST_KINDS)
+            settings["kinds_on"] = list(saved["kinds_on"]) + [k for k in KINDS if k not in seen
+                                                              and k not in saved["kinds_on"]]
+            settings["kinds_seen"] = sorted(KINDS)
         return {"settings": settings, "people": data.get("people") or {}, "activity": data.get("activity") or [],
                 "moments": data.get("moments") or [], "notes": data.get("notes") or []}
 
