@@ -24,9 +24,10 @@ import sentrai_accounts as acc  # noqa: E402
 from .reports import build_report, render_markdown, render_pdf
 from . import summary as client_summary
 from . import auth as auth_cookie
-from . import ui_analytics, ui_approvals, ui_tuning, ui_audit, ui_incidents, ui_limits, ui_machine, ui_machines, ui_overview, ui_report, ui_routing, ui_settings, ui_setup, ui_team, ui_recovery, ui_privacy, ui_risks, ui_feedback, ui_coach, ui_mobile
+from . import ui_analytics, ui_approvals, ui_tuning, ui_audit, ui_incidents, ui_limits, ui_machine, ui_machines, ui_overview, ui_report, ui_routing, ui_settings, ui_setup, ui_team, ui_recovery, ui_privacy, ui_risks, ui_feedback, ui_coach, ui_mobile, ui_knowledge
 from . import mobile as mobile_mod
 from . import coach as coach_mod
+from . import knowledge as knowledge_mod
 from . import ai, anchor, apidocs, backup_copies, chat_memory, depscan, feature_ideas, fleet, hardware, integrations, jobs, procscan, signatures, webhook
 from .extensions import ExtensionError
 from . import chat as chat_mod
@@ -557,6 +558,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ui_privacy.install(app, core, privacy_policy, lambda: chat.provider is not None,
                        lambda: bool(coach.settings()["notice_shared"]))
     coach_org = lambda: (privacy_policy.load()["organisation"], privacy_policy.load()["contact"])  # noqa: E731
+    company = knowledge_mod.Knowledge(sentrai_paths.path("core.knowledge", core.settings.db_path.parent, migrate=False))
+    coach.knowledge = chat.knowledge = company  # the coach's notes and Sentry's answers follow the company's rules
+    ui_knowledge.install(app, core, company)
     ui_coach.install(app, core, coach, coach_org, after_erase=phones.forget)
     ui_mobile.install(app, core, coach, phones, staff, coach_org,
                       lambda: coach_mod.notice(coach.overview(), *coach_org()))

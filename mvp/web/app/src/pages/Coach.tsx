@@ -11,7 +11,7 @@ import Stat from '../lib/Stat'
 
 type App = { key: string; name: string; covers: string; wave: number; sees: string; needs: string; status: 'sample' | 'planned' }
 type Region = { key: string; name: string; law: string; consent: boolean; checks: string[] }
-type Moment = { id: string; app: string; kind: string; group: string; level: 'tip' | 'fix_soon' | 'urgent'; level_word: string; at: string; lesson: string; times: number; status: string; title: string; fix: string | null; who: string; sample: boolean }
+type Moment = { id: string; app: string; kind: string; group: string; level: 'tip' | 'fix_soon' | 'urgent'; level_word: string; at: string; lesson: string; times: number; status: string; title: string; fix: string | null; who: string; sample: boolean; company_rule: string | null }
 type Settings = { apps_on: string[]; kinds_on: string[]; regions: string[]; region_checks: Record<string, number[]>; show_names: boolean; file_names: boolean; notice_shared: boolean; notice_shared_at?: string }
 type Team = { people: number; notice_confirmed: number; moments_30d: number; urgent_open: number; fixed_30d: number; lessons_done: number; notes_ready: number; notes_held: number; by_group: Record<string, number>; top: { kind: string; count: number; lesson: string; title: string }[] }
 type Person = { email: string; name: string; group: string; notice_confirmed: boolean; level: { name: string; step: number; of: number }; lessons_done: number }
@@ -116,7 +116,7 @@ export default function Coach() {
                       <span className={'mr-2 inline-block rounded-full border px-2 py-0.5 text-xs ' + pill[m.level]}>{m.level_word}</span>
                       <b>{m.who}</b> {m.title}
                       <span className="block text-xs text-muted">{appName(page.apps, m.app)} · {m.at.slice(0, 16).replace('T', ' ')}{m.times > 1 ? ` · ${m.times} times recently` : ''}{m.status === 'needs help' ? ' · said it wasn’t them' : ''}{m.sample ? ' · sample' : ''}</span>
-                      <span className="block text-xs text-soft">Lesson sent: {lessons.find((l) => l.id === m.lesson)?.title ?? m.lesson}</span>
+                      <span className="block text-xs text-soft">Lesson sent: {lessons.find((l) => l.id === m.lesson)?.title ?? m.lesson}{m.company_rule ? ` · with your rule from “${m.company_rule}”` : ''}</span>
                     </div>
                     <div className="flex gap-2">
                       <button className={btn} disabled={off} onClick={() => void answer(m, 'fixed')}>Mark fixed</button>

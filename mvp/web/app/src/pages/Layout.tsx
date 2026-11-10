@@ -1,7 +1,7 @@
 import { Suspense, useEffect, useRef, useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import {
-  Briefcase, Eye, Gavel, GraduationCap, Headset, LayoutDashboard, Library, DatabaseBackup, FileText, Flag, Link2, Lock, LogOut, Moon,
+  BookMarked, Briefcase, Eye, Gavel, GraduationCap, Headset, LayoutDashboard, Library, DatabaseBackup, FileText, Flag, Link2, Lock, LogOut, Moon,
   ScrollText, Search, Server, Settings2, Siren, Sparkles, Sun, UserRound, Users, Bell as BellIcon, PanelLeftClose, PanelLeftOpen, type LucideIcon,
 } from 'lucide-react'
 import { api } from '../lib/api'
@@ -22,6 +22,7 @@ export const MENU: Group[] = [
     { to: '/command', label: 'Command Center', icon: LayoutDashboard },
     { to: '/staff', label: 'Staff Reports', icon: Flag },
     { to: '/coach', label: 'Security Coach', icon: GraduationCap },
+    { to: '/rules', label: 'Company Rules', icon: BookMarked },
   ] },
   { group: 'Monitoring', icon: Eye, items: [
     { to: '/machines', label: 'Computers', icon: Server },
@@ -38,6 +39,7 @@ export const SIMPLE_MENU: Group[] = [
   { group: 'At a Glance', icon: Briefcase, items: [
     { to: '/command', label: 'What Needs Me', icon: Siren },
     { to: '/coach', label: 'Teach My Team', icon: GraduationCap },
+    { to: '/rules', label: 'Our Rules', icon: BookMarked },
   ] },
   { group: 'Records', icon: Library, items: [
     { to: '/machines', label: 'Our Computers', icon: Server },

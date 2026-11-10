@@ -365,6 +365,34 @@ Add three made-up people and a day of made-up activity (Google and Microsoft) to
 
 The Security Coach notice for staff, built from the live settings and the Privacy page's organisation and contact. Markdown, as a download.
 
+## Company Rules
+
+What the company teaches SentrAI about itself: guides (policies, handbooks, how-tos) and quick facts. Sentry's answers, the Security Coach's notes and the phone app use them. Nothing is trained: SentrAI cuts each guide into short passages and looks up the few that match a question. Reading needs any role; changing needs `configure` (Owner or Admin), `403` for an Auditor. Changes go on the audit record with the guide's title and size, never its text.
+
+### `GET /ui/knowledge`
+
+**Returns** `guides` (`id`, `kind` file/text/link, `title`, `source`, `url`, `by`, `at`, `for_staff`, `chars`, `passages`), `facts` (`it_contact`, `report_how`, `allowed_apps`, `blocked_apps`, `systems` with `name`, `what`, `looks_after`, `importance` critical/important/normal, `extra`), `passages`, `empty` and `limits`.
+
+### `POST /ui/knowledge/guides`
+
+Teach a guide. **Body** a file `{"kind": "file", "name": "policy.docx", "content_base64": "..."}` (text, Markdown, CSV, HTML, Word .docx, PDF when pypdf is installed; up to 5 MB), typed text `{"kind": "text", "title": "...", "text": "..."}`, or a link `{"kind": "link", "url": "https://...", "title": "...", "text": "what it says"}` (never fetched). Add `"for_staff": false` to keep it from staff. A guide with the same title replaces the old one. On the audit record as `knowledge_added`. **Returns** the guide and `replaced`. `400` for an unreadable file, an empty text, or a link that isn't http(s).
+
+### `GET /ui/knowledge/guides/{gid}`
+
+One guide with its full `text`. `404` when there is none.
+
+### `DELETE /ui/knowledge/guides/{gid}`
+
+Forget a guide everywhere at once. On the audit record as `knowledge_removed`. **Returns** `removed`.
+
+### `POST /ui/knowledge/facts`
+
+Change the quick facts. **Body** any of `it_contact`, `report_how`, `allowed_apps` and `blocked_apps` (lists or comma-separated text), `systems` (the whole list), `extra`. On the audit record as `knowledge_facts_changed` (field names and counts). **Returns** the page. `400` when an app is on both lists.
+
+### `GET /ui/knowledge/ask`
+
+Try a question: `?q=can staff use WhatsApp&staff=true` (`staff`: only guides staff can see). **Returns** `found`, `text`, `passages` (`guide`, `title`, `text`, `url`), `help` (the IT contact) and `report_how`.
+
 ## Phone app
 
 The panel's side of the [phone app](mobile.html): who is signed in on a phone, and app invites for staff.

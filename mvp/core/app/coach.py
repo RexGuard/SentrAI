@@ -336,6 +336,36 @@ LESSONS: dict[str, dict[str, Any]] = {
                       _q("Who should you tell?", ["IT", "Nobody"], 0)]},
 }
 
+# What each kind of moment is about, in the words a company's own guide would likely use. The coach looks these up
+# in the company's rules (knowledge.py) and quotes the best match in the note.
+TOPICS: dict[str, str] = {
+    "file_shared_public": "sharing files links public anyone with the link",
+    "file_shared_personal": "sharing files personal email outside the company",
+    "bulk_shared_outside": "sharing files outside the company customers partners",
+    "mail_forward_outside": "email forwarding forward mail outside personal address",
+    "phishing_blocked": "phishing fake email suspicious message report",
+    "phishing_clicked": "phishing suspicious link attachment report click",
+    "app_access_granted": "apps approved software third party access account",
+    "two_step_off": "two step 2 step verification mfa authenticator sign in",
+    "sign_in_new_place": "travel sign in new device abroad country",
+    "sign_in_failed_many": "password locked out sign in reset",
+    "sign_in_risky": "account hacked compromised report sign in",
+    "bulk_download": "download export customer data copy files",
+    "repo_made_public": "code repository public github source code",
+    "secret_in_code": "passwords keys secrets code store",
+    "meeting_open": "meetings passcode zoom teams join",
+    "recording_public": "meeting recordings share public",
+    "guest_added": "guests outside people invite external",
+    "bad_site_opened": "websites scam phishing browsing",
+    "phone_no_lock": "phone mobile device screen lock pin passcode",
+    "phone_out_of_date": "phone mobile device updates update software",
+    "phone_outside_apps": "phone mobile apps install store approved",
+    "phone_screen_readers": "phone mobile apps accessibility permissions",
+    "phone_dev_mode": "phone mobile developer settings usb debugging",
+    "phone_rooted": "phone mobile rooted jailbroken device work apps",
+}
+APP_LIST_KINDS = frozenset({"app_access_granted", "phone_outside_apps", "phone_screen_readers"})
+
 # --------------------------------------------------------------------------- kinds of risky moment
 # kind -> level, plain title, why it matters, the fix button, the lesson.
 KINDS: dict[str, dict[str, Any]] = {
@@ -478,6 +508,7 @@ class Coach:
         self._months = months or (lambda k: {"coach_activity": 1, "coach_notes": 12}.get(k))
         self._clock = clock
         self._lock = threading.RLock()
+        self.knowledge: Any = None  # knowledge.Knowledge, set by main.py: the company's own rules for notes
 
     # ------------------------------------------------------------------ storage
     def _load(self) -> dict[str, Any]:
@@ -761,6 +792,8 @@ class Coach:
             lines.append(f"This is the {m['times']}{'nd' if m['times'] == 2 else 'rd' if m['times'] == 3 else 'th'} "
                          "time recently, so here's a slightly deeper tip.")
         lines.append("What to do: " + lesson["steps"][0])
+        rule, extra = self._company_rule(m["kind"])
+        lines.extend(extra)
         buttons = ([m["fix"]] if m["fix"] else []) + (["Yes, that was me", "No, that wasn't me"]
                                                       if m["group"] in ("Sign-in", "Mail") and m["kind"] not in
                                                       ("phishing_blocked", "phishing_clicked") else []) \
@@ -770,12 +803,35 @@ class Coach:
                 "at": m["at"], "reach": person.get("reach", "email"), "text": "\n\n".join(lines),
                 "buttons": buttons, "status": "held for notice" if held else "ready to send",
                 "lesson_done": False}
+        if rule:
+            note["company_rule"] = rule
         if held:
             note["held_reason"] = "The person hasn't confirmed the staff notice yet. Their first message will be " \
                                   "the notice, then this."
         if m.get("sample"):
             note["sample"] = True
         return note
+
+    def _company_rule(self, kind: str) -> tuple[dict[str, str] | None, list[str]]:
+        """The company's own rule for this kind of moment, from the guides it taught SentrAI (if any)."""
+        kb = self.knowledge
+        if kb is None:
+            return None, []
+        try:
+            facts = kb.facts()
+            hit = kb.best(TOPICS.get(kind, kind.replace("_", " ")), staff=True)
+        except (OSError, ValueError):
+            return None, []
+        lines, rule = [], None
+        if hit and hit["guide"] != "facts":
+            from .knowledge import quote
+            lines.append(f"Your company's rule (from \"{hit['title']}\"): {quote(hit['text'])}")
+            rule = {"guide": hit["guide"], "title": hit["title"]}
+        if kind in APP_LIST_KINDS and facts.get("allowed_apps"):
+            lines.append("Apps your company has approved: " + ", ".join(facts["allowed_apps"][:12]) + ".")
+        if facts.get("it_contact"):
+            lines.append(f"Questions? Ask {facts['it_contact']}.")
+        return rule, lines
 
     def respond(self, moment_id: str, answer: str, by: str = "") -> dict[str, Any]:
         """The person's answer to a note: fixed, was_me, not_me (raises it to urgent) or reported."""
@@ -870,9 +926,11 @@ class Coach:
                 return p.get("name") or m["person"]
             return "A team member"
 
+        rules = {n["moment"]: n["company_rule"] for n in data["notes"] if n.get("company_rule")}
         open_moments = [{**{k: m[k] for k in ("id", "app", "kind", "group", "level", "at", "lesson", "times",
                                               "status", "title", "fix")},
-                         "who": who(m), "level_word": LEVEL_WORDS[m["level"]], "sample": bool(m.get("sample"))}
+                         "who": who(m), "level_word": LEVEL_WORDS[m["level"]], "sample": bool(m.get("sample")),
+                         "company_rule": (rules.get(m["id"]) or {}).get("title")}
                         for m in sorted(data["moments"], key=lambda m: (LEVELS.index(m["level"]) * -1, -m["ts"]))
                         if m["status"] in ("new", "needs help")][:50]
         team = {"people": len(people), "coaching_on": sum(1 for p in people.values() if p.get("coaching", True)),
@@ -936,7 +994,8 @@ class Coach:
             out_notes.append({"id": n["id"], "moment": n["moment"], "at": n["at"], "text": n["text"],
                               "buttons": n["buttons"], "lesson": n["lesson"], "lesson_done": n["lesson_done"],
                               "level": m.get("level", "tip"), "level_word": LEVEL_WORDS[m.get("level", "tip")],
-                              "status": m.get("status", "new"), "fix": m.get("fix"), "kind": m.get("kind", "")})
+                              "status": m.get("status", "new"), "fix": m.get("fix"), "kind": m.get("kind", ""),
+                              "company_rule": n.get("company_rule")})
         return {"in_coach": True, "coaching_on": ok and person.get("coaching", True), "name": person.get("name", ""),
                 "notice_confirmed": confirmed, "level": level_of(int(person.get("points") or 0)),
                 "points": int(person.get("points") or 0), "lessons_done": person.get("lessons_done") or [],
