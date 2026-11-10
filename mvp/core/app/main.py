@@ -24,7 +24,8 @@ import sentrai_accounts as acc  # noqa: E402
 from .reports import build_report, render_markdown, render_pdf
 from . import summary as client_summary
 from . import auth as auth_cookie
-from . import ui_analytics, ui_approvals, ui_tuning, ui_audit, ui_incidents, ui_limits, ui_machine, ui_machines, ui_overview, ui_report, ui_routing, ui_settings, ui_setup, ui_team, ui_recovery, ui_privacy, ui_risks, ui_feedback, ui_coach, ui_mobile, ui_knowledge, ui_readiness
+from . import ui_analytics, ui_approvals, ui_tuning, ui_audit, ui_incidents, ui_limits, ui_machine, ui_machines, ui_overview, ui_report, ui_routing, ui_settings, ui_setup, ui_team, ui_recovery, ui_privacy, ui_risks, ui_feedback, ui_coach, ui_mobile, ui_knowledge, ui_readiness, ui_websites
+from . import websites as websites_mod
 from . import mobile as mobile_mod
 from . import coach as coach_mod
 from . import knowledge as knowledge_mod
@@ -569,6 +570,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     company = knowledge_mod.Knowledge(sentrai_paths.path("core.knowledge", core.settings.db_path.parent, migrate=False))
     coach.knowledge = chat.knowledge = company  # the coach's notes and Sentry's answers follow the company's rules
     ui_knowledge.install(app, core, company)
+    company_sites = websites_mod.Websites(
+        sentrai_paths.path("core.websites", core.settings.db_path.parent, migrate=False), clock=core.clock.now,
+        record=lambda rtype, data: core.scribe.record(core.name, rtype, data))
+    chat.websites = company_sites  # Sentry's website check: only sites the company proved it owns
+    ui_websites.install(app, company_sites)
     ui_coach.install(app, core, coach, coach_org, after_erase=phones.forget)
     ui_mobile.install(app, core, coach, phones, staff, coach_org,
                       lambda: coach_mod.notice(coach.overview(), *coach_org()))
@@ -596,6 +602,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.discovery = discovery
     app.state.threats = threats
     app.state.backups = backups
+    app.state.websites = company_sites
     app.state.copies = copies
     app.state.fleet = machines
     app.state.jobs = machine_jobs

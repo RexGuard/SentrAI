@@ -47,6 +47,8 @@ DRILL_WORDS = re.compile(r"(?i)\b(drill|test (my|our|the) (protection|security|d
                          r"(is|does) (sentrai|it|the protection) (really )?(work|working)|fire drill|practice attack)\b")
 MISSED_WORDS = re.compile(r"(?i)\b(what did i miss|while i was (away|out|gone|asleep)|since (yesterday|last night|this morning|"
                           r"i (last )?(looked|logged in|checked))|overnight|last night|briefing|catch me up)\b")
+WEBSITE_WORDS = re.compile(r"(?i)\b(web ?sites?|web ?page|our site|my site|the site|domain|spf|dmarc|https|"
+                           r"ssl|certificate)\b")
 SCAN_WORDS = re.compile(r"(?i)\b(scan|processes|log (files|folders|sources)|what (should|to) (i )?(monitor|watch))\b")
 # The name people see for the chat assistant. The core agent behind it keeps its own name in the audit log.
 ASSISTANT = os.getenv("SENTRAI_ASSISTANT_NAME", "Sentry").strip() or "Sentry"
@@ -299,6 +301,16 @@ ones already watched. Describe each in plain words ("the website's visitor log")
 - To check for signs of a break-in that already happened, call scan_threats. When a finding looks real, call \
 suggest_quarantine; their button moves the file out of harm's way (it can be put back). Say plainly that it may \
 be a false alarm and what the file seems to be.
+- "Is my website safe?", "check my website", "can hackers get into my site?": call get_website_check for the \
+latest results, or check_website to look again now (it takes about 20 seconds). It is an outside look at the \
+company's own websites only: the same things any stranger online can see, never signing in or sending forms. \
+Lead with the grade and the one thing to fix first, say what someone could do with it in everyday words, then \
+show the findings with show_table (columns: How serious, What we saw, What to do). Say that SentrAI's team or \
+whoever built the site can fix it, and that each finding has a ready-made note to give them (the "fix_prompt" \
+in the result, which you may quote for the one to fix first). Anything "not checked" was not looked at: never call \
+it passed. A clean grade means the quick look saw nothing wrong, not that the site cannot be broken into. When \
+they name a website that is not on the company's list, do not check it: say SentrAI only checks websites the \
+company owns, and SentrAI's team can add theirs once they prove they own it. Never check anyone else's site.
 - "What did I miss?", "catch me up", "anything overnight?": call get_briefing. Lead with what needs them, \
 then what SentrAI handled by itself, in one or two sentences each.
 - Questions about a time ("what happened last night", "Tuesday at 3pm", "between 9 and 11"): call get_timeline \
@@ -391,6 +403,20 @@ TOOLS: list[dict[str, Any]] = [
          "finding_id": {"type": "string", "description": "A finding id from scan_threats, like t1."},
          "reason": {"type": "string", "description": "One sentence: why this file looks hostile."}},
          "required": ["finding_id", "reason"], "additionalProperties": False}},
+    {"name": "get_website_check", "description": "The company's own websites and the latest outside check of each: "
+         "grade, what was found (how serious, what we saw, what someone could do, how to fix, a ready-made fix note) "
+         "and what could not be checked. Reads saved results; sends nothing to any website.",
+     "input_schema": {"type": "object", "properties": {
+         "domain": {"type": "string", "description": "One of the company's websites, or empty for all."}},
+         "required": [], "additionalProperties": False}},
+    {"name": "check_website", "description": "Look at one of the company's own websites from the outside now, like "
+         "a stranger online would (at most 12 requests, about 20 seconds): https and certificate, security "
+         "settings, cookies, secret keys left in public code, settings files and code history left public, and "
+         "whether strangers can send email in the company's name (SPF, DMARC). Only websites on the company's list "
+         "whose ownership is proven; anything else is refused.",
+     "input_schema": {"type": "object", "properties": {
+         "domain": {"type": "string", "description": "The website, e.g. example.com. Empty: the only one there is."}},
+         "required": ["domain"], "additionalProperties": False}},
     {"name": "get_briefing", "description": "What SentrAI handled by itself and what still needs a person, since a "
          "time (default the last 24 hours). Open incidents that need a decision are always listed. Each handled item "
          "says what SentrAI did and whether its after-action check found the fix worked.",
@@ -500,7 +526,8 @@ TOOLS: list[dict[str, Any]] = [
 
 POINTER = re.compile(r"(?i)\b(button|chip|question)s? (below|under)|\bbelow\b")
 LOOKUP_TOOLS = {"get_overview", "get_incident", "get_machine", "explain", "get_audit", "get_blocklist", "get_profile", "scan_system",
-                "scan_threats", "get_backups", "get_briefing", "get_timeline", "run_drill", "search_company_rules"}
+                "scan_threats", "get_backups", "get_briefing", "get_timeline", "run_drill", "search_company_rules",
+                "get_website_check", "check_website"}
 
 
 def default_chat_provider() -> sentrai_llm.Provider | None:
@@ -537,6 +564,7 @@ class OperatorChat:
         self.memory: Any = None  # chat_memory.Memory, set by chat_memory.install
         self.knowledge: Any = None  # knowledge.Knowledge, set by main.py: the company's own rules and guides
         self.ideas: Any = None  # feature_ideas.Ideas, set by feature_ideas.install
+        self.websites: Any = None  # websites.Websites, set by main.py: the company's own websites and their checks
         self.off_reason: str | None = None  # why there is no model (set by main.py and /ai/reload)
         self.lock = threading.Lock()
         self.history: list[dict[str, Any]] = []
@@ -760,7 +788,8 @@ class OperatorChat:
                   suggestions: list[dict[str, str]], rich: dict[str, list[Any]] | None = None) -> tuple[str, str, bool]:
         try:
             out = self._dispatch(call.name, call.input, looked_at, suggestions, rich)
-            return call.id, out[:MAX_TOOL_CHARS * (2 if call.name in ("scan_system", "scan_threats") else 1)], False
+            return call.id, out[:MAX_TOOL_CHARS * (2 if call.name in ("scan_system", "scan_threats", "check_website",
+                                                                             "get_website_check") else 1)], False
         except (KeyError, ValueError, TypeError) as e:
             return call.id, f"{type(e).__name__}: {e}", True
 
@@ -861,6 +890,8 @@ class OperatorChat:
             if not any(x.get("file_id") == s["file_id"] for x in suggestions):
                 suggestions.append(s)
             return "Button shown to the operator. The collector watches it only if they press it."
+        if name in ("get_website_check", "check_website"):
+            return self._website_tool(name, str(a.get("domain") or "").strip(), looked_at, rich)
         if name == "scan_threats":
             if self.threats is None:
                 raise ValueError("threat scanning is not available")
@@ -1132,6 +1163,8 @@ class OperatorChat:
             return self._fallback_week(looked_at, rich)
         if self.backups is not None and BACKUP_WORDS.search(text):
             return self._fallback_backups(looked_at, suggestions)
+        if self.websites is not None and WEBSITE_WORDS.search(text) and not INCIDENT_ID.search(text):
+            return self._fallback_website(text, looked_at, rich)
         if self.discovery is not None and SCAN_WORDS.search(text):
             return self._fallback_scan(looked_at, suggestions)
         if CLEANUP_WORDS.search(text) and not INCIDENT_ID.search(text) and not incident:
@@ -1360,6 +1393,89 @@ class OperatorChat:
         rich["followups"][:] = ["Are we safe right now?", "What needs my attention today?"]
         lines.append(NO_AI_NOTE)
         return "\n\n".join(lines)
+
+    # --------------------------------------------------------------- website check
+    def _pick_site(self, said: str, fresh: bool) -> str:
+        """The company website a question means. Raises websites.WebsiteError when it is not one of theirs."""
+        from . import websites as ws
+        names = [s["domain"] for s in self.websites.overview()["sites"]]
+        if said:
+            return ws.clean_domain(said)  # check()/latest() refuse anything not on the list
+        pool = self.websites.checkable() if fresh else names
+        if len(pool) == 1:
+            return pool[0]
+        if not names:
+            raise ws.WebsiteError("No website is on the company's list yet. SentrAI's team can add it once the "
+                                  "company proves it owns it (sentrai websites add DOMAIN).")
+        raise ws.WebsiteError("Which website? The company's list: " + ", ".join(names) + ".")
+
+    def _website_tool(self, name: str, domain: str, looked_at: list[str], rich: dict[str, Any]) -> str:
+        from . import websites as ws
+        if self.websites is None:
+            raise ValueError("the website check is not available on this server")
+        if name == "get_website_check":
+            looked_at.append("website check results")
+            sites = self.websites.overview()["sites"]
+            if domain:
+                want = ws.clean_domain(domain)
+                sites = [x for x in sites if x["domain"] == want]
+                if not sites:
+                    return (f"{want} is not one of the company's websites, so SentrAI does not check it. SentrAI's "
+                            "team can add it once the company proves it owns it.")
+            out = {"sites": [{"domain": x["domain"], "ownership_proven": x["verified"],
+                              "last_checked": (x["last"] or {}).get("checked_at"),
+                              "grades_over_time": x["grades"][-5:]} for x in sites],
+                   "latest_untrusted_site_data": [ws.for_model(r) for r in self.websites.latest(domain or None)]}
+            return json.dumps(out, default=str)
+        try:
+            site = self._pick_site(domain, fresh=True)
+            looked_at.append(f"website check of {site}")
+            result = self.websites.check(site, f"{self.core.name} (chat)")
+        except ws.WebsiteError as e:
+            return f"Not checked: {e}"
+        first = next((f for f in result["findings"] if f["id"] == result.get("fix_first")), None)
+        out = ws.for_model(result)
+        if first:
+            out["fix_first_note_for_their_web_person"] = first["fix_prompt"]
+        return json.dumps(out, default=str)
+
+    def _fallback_website(self, text: str, looked_at: list[str], rich: dict[str, Any]) -> str:
+        from . import websites as ws
+        said = next((w for w in re.findall(r"\b(?:https?://)?((?:[a-z0-9-]+\.)+[a-z]{2,})\b", text.lower())), "")
+        fresh = bool(re.search(r"(?i)\b(check|scan|test|look at|again|now)\b", text))
+        try:
+            site = self._pick_site(said, fresh)
+            if fresh:
+                looked_at.append(f"website check of {site}")
+                result = self.websites.check(site, f"{self.core.name} (chat)")
+            else:
+                looked_at.append("website check results")
+                found = self.websites.latest(site)
+                if not found:
+                    looked_at.append(f"website check of {site}")
+                    result = self.websites.check(site, f"{self.core.name} (chat)")
+                else:
+                    result = found[0]
+        except ws.WebsiteError as e:
+            return f"{e}\n\n{NO_AI_NOTE}"
+        lines = [f"**{result['domain']}**: {result['headline']}"]
+        first = next((f for f in result["findings"] if f["id"] == result.get("fix_first")), None)
+        if first:
+            lines.append(f"\n**Fix first: {first['title']}.** {first['saw']} {first['risk']}\n\nWhat to do: "
+                         f"{first['fix']} SentrAI's team or whoever built the site can do this. A note you can give "
+                         f"them:\n\n> {first['fix_prompt']}")
+        if result.get("fixed_since"):
+            lines.append("\nFixed since the last check: " + "; ".join(result["fixed_since"][:5]) + ".")
+        if result["findings"]:
+            rich["blocks"].append(table(f"What the check of {result['domain']} found",
+                                        ["How serious", "What we saw", "What to do"],
+                                        [[f["severity_word"], f["title"], f["fix"]] for f in result["findings"][:20]]))
+        if result.get("not_checked"):
+            lines.append("\nNot checked this time: " + ", ".join(result["not_checked"][:6]) + ".")
+        lines.append(f"\n_{result['note']}_ (checked {str(result['checked_at'])[:16].replace('T', ' ')} UTC)")
+        rich["followups"][:] = ["Check my website again", "What should I fix first?"]
+        lines.append("\n" + NO_AI_NOTE)
+        return "\n".join(lines)
 
     def _fallback_scan(self, looked_at: list[str], suggestions: list[dict[str, str]]) -> str:
         looked_at.append("running processes")

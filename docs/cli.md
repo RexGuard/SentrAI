@@ -105,6 +105,25 @@ sudo sentrai signatures remove 9f86d0...0a08            # a false alarm
 A file locked away on any machine joins the fingerprint list by itself, so the same file is flagged
 on every other machine within about 30 minutes.
 
+## Website check: the company's own websites, from the outside
+
+Sentry can look at the company's website the way a stranger online would (certificate, security settings,
+cookies, keys left in public code, `.env` and `.git` left public, SPF and DMARC) and explain what it found in
+plain words, with a ready-made note for whoever builds the site. It only checks websites on this list, and only
+once the company has proven it owns them. The proof is read again before every check, so leave it in place.
+
+```bash
+sudo sentrai websites add shop.example.com     # prints the TXT record (or file) that proves ownership
+sudo sentrai websites verify shop.example.com  # after the record is published (DNS can take a few minutes)
+sudo sentrai websites check shop.example.com   # at most 12 requests to the site, about 20 seconds
+sudo sentrai websites show shop.example.com    # the latest result, with what was fixed since the last one
+sudo sentrai websites list
+sudo sentrai websites remove shop.example.com
+```
+
+A sub-domain of a proven domain (blog.example.com under example.com) counts as proven. The owner can then just
+ask Sentry "is my website safe?".
+
 ## Backups
 
 ```bash
