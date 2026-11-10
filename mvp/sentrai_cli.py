@@ -32,6 +32,7 @@ On the panel (installed as /usr/local/bin/sentrai, runs as the service account):
                        [--about TEXT] | show ID | remove ID | ask QUESTION... | facts [--it-contact C]
                        [--report-how H] [--allowed A,B] [--blocked A,B] | system NAME [--what W] [--looks-after P]
                        [--importance critical|important|normal] | system NAME --remove
+    sudo sentrai websites list | add DOMAIN | verify DOMAIN | check DOMAIN | show DOMAIN | remove DOMAIN
     sudo sentrai protection on|off [--reason R]
     sudo sentrai team list | invite EMAIL [--role admin] | role EMAIL ROLE | remove EMAIL | reset EMAIL | withdraw EMAIL
     sudo sentrai api GET|POST PATH [JSON]                 any other core endpoint (docs/api/)
@@ -462,6 +463,56 @@ def cmd_signatures(call: Call, a: argparse.Namespace) -> Any:
         return out if a.json else f"Removed {out.get('removed')} fingerprint(s). Machines pick up the change within 30 minutes."
     return out if a.json else (f"Added {out.get('added')} ({out.get('known')} already known, {out.get('refused')} not "
                                f"fingerprints); the list has {out.get('count')}. Machines pick it up within 30 minutes.")
+
+
+def cmd_websites(call: Call, a: argparse.Namespace) -> Any:
+    """The company's own websites: prove ownership, then let Sentry look at them from the outside."""
+    op = operator_name()
+    if a.action != "list" and not a.domain:
+        raise CliError(f"which website? sentrai websites {a.action} DOMAIN")
+    d = urllib.parse.quote(a.domain or "", safe="")
+    if a.action == "list":
+        out = call("GET", "/ui/websites")
+        if a.json:
+            return out
+        rows = [[s["domain"], "yes" if s["verified"] else "NO", (s["last"] or {}).get("grade") or "-",
+                 ((s["last"] or {}).get("checked_at") or "never")[:16]] for s in out.get("sites", [])]
+        return table(rows, ["Website", "Proven", "Grade", "Last checked"]) if rows else \
+            "No websites yet. Add one: sentrai websites add example.com"
+    if a.action == "add":
+        out = call("POST", "/ui/websites", {"domain": a.domain, "operator": op})
+        if a.json or out.get("verified"):
+            return out if a.json else f"{out['domain']} is on the list and already proven ({out['verified_by']})."
+        p = out["proof"]
+        return (f"Added {out['domain']}. Before it can be checked, prove the company owns it (either one):\n"
+                f"  DNS:  TXT record on {p['dns_name']}  =  {p['dns_value']}\n"
+                f"  File: {p['file_url']}  containing only  {p['file_text']}\n"
+                f"Keep it published (it is read before every check), then: sentrai websites verify {out['domain']}")
+    if a.action == "verify":
+        out = call("POST", f"/ui/websites/{d}/verify", {"operator": op})
+        if a.json:
+            return out
+        if out.get("found"):
+            return f"{out['domain']} is proven by {out['found']}. Check it: sentrai websites check {out['domain']}"
+        raise CliError(f"no proof found yet for {out['domain']}. {out['proof']['how']} "
+                       "(DNS changes can take a few minutes to show.)")
+    if a.action == "remove":
+        out = call("DELETE", f"/ui/websites/{d}")
+        return out if a.json else f"Removed {out['removed']}; Sentry will not check it any more."
+    out = call("POST", f"/ui/websites/{d}/check", {"operator": op}) if a.action == "check" \
+        else call("GET", f"/ui/websites/{d}")
+    if a.json:
+        return out
+    rows = [[f["id"], f["severity_word"], f["title"], f.get("detail", "")[:70]] for f in out.get("findings", [])]
+    lines = [f"{out['domain']}  grade {out['grade']} ({out['score']}/100)  {out['checked_at']}  "
+             f"{out['requests']} requests", out["headline"]]
+    if rows:
+        lines += ["", table(rows, ["Id", "How serious", "Finding", "Evidence"])]
+    if out.get("not_checked"):
+        lines += ["", "Not checked: " + ", ".join(out["not_checked"])]
+    if out.get("fixed_since"):
+        lines += ["Fixed since last time: " + "; ".join(out["fixed_since"])]
+    return "\n".join(lines)
 
 
 def cmd_backups(call: Call, a: argparse.Namespace) -> Any:
@@ -926,6 +977,9 @@ def parser() -> argparse.ArgumentParser:
     ru.add_argument("--looks-after", help="system: who looks after it")
     ru.add_argument("--importance", choices=["critical", "important", "normal"])
     ru.add_argument("--remove", action="store_true", help="system: forget this system")
+    we = add("websites", cmd_websites, "the company's own websites: prove ownership, check them from outside")
+    we.add_argument("action", choices=["list", "add", "verify", "check", "show", "remove"])
+    we.add_argument("domain", nargs="?")
     for name, path, what in (("protection", "/protection", "protection on, or watch only"),):
         sw = add(name, cmd_switch(path), what)
         sw.add_argument("state", choices=["on", "off"])

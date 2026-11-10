@@ -397,6 +397,34 @@ Change the quick facts. **Body** any of `it_contact`, `report_how`, `allowed_app
 
 Try a question: `?q=can staff use WhatsApp&staff=true` (`staff`: only guides staff can see). **Returns** `found`, `text`, `passages` (`guide`, `title`, `text`, `url`), `help` (the IT contact) and `report_how`.
 
+## Website check
+
+An outside look at the company's own websites, like a stranger online would see them (app/websites.py). A website is checked only after it is added and the company proves it owns it with a DNS TXT record (`sentrai-site-verification=TOKEN`) or a file at `/.well-known/sentrai-site-verification.txt` holding `TOKEN`. The proof is read again before every check; a sub-domain of a proven domain counts as proven. Addresses that resolve to private or other non-public networks are refused. One check makes at most 12 requests to the site, spaced out, never signs in or sends a form, never follows a redirect off the domain, and stops early when the site slows down or refuses. DNS (SPF, DMARC) is read through a public DNS-over-HTTPS resolver (`SENTRAI_DOH_URL`, default Cloudflare). Values it finds (keys, `.env` lines) are never stored in full. Sentry uses it through the chat tools `get_website_check` and `check_website`; `sentrai websites` is the command line.
+
+### `GET /ui/websites`
+
+**Returns** `sites` (`domain`, `added_by`, `added_ts`, `verified`, `verified_by` dns/file/"part of DOMAIN", `verified_ts`, `proof` with `dns_name`, `dns_value`, `file_url`, `file_text`, `how`, `last` with `checked_at`, `grade`, `score`, `headline`, `partial`, and `grades` over time) and `max_requests`.
+
+### `POST /ui/websites`
+
+Add one of the company's websites. Needs Owner or Admin. **Body** `{"domain": "example.com"}` (a full address is cut to its host name; number addresses are refused). On the audit record as `website_added`. **Returns** the site as in the list, with its `proof` instructions. `400` for something that is not a domain.
+
+### `GET /ui/websites/{domain}`
+
+The latest check of one website. **Returns** `domain`, `checked_at`, `by`, `grade` (A to F, or `?` when not enough could be read to grade it), `score` (0 to 100), `partial`, `stopped`, `requests`, `headline`, `fix_first`, `findings` (`id`, `key`, `check`, `severity` urgent/high/medium/low/info, `severity_word`, `title`, `saw`, `detail`, `risk`, `fix`, `fix_prompt` a note to give whoever builds the site, `where`), `checks` (`key`, `label`, `status` ok/problem/not_checked, `note`), `not_checked`, `note`, and after a second check `compared_with`, `fixed_since`, `new_since`. `404` when it is not on the list or not checked yet.
+
+### `POST /ui/websites/{domain}/verify`
+
+Look for the proof of ownership now. Needs Owner or Admin. On the audit record as `website_verified` when found. **Returns** the site and `found` (`dns`, `file` or null). `400` when it is not on the list or does not point to a public address.
+
+### `POST /ui/websites/{domain}/check`
+
+Check one website now (up to about 20 seconds). On the audit record as `website_check` (grade and counts, no findings text). **Returns** the check as in `GET /ui/websites/{domain}`. `400` when it is not on the list, its ownership is not proven (or the proof was taken down), it is being checked already, or it does not point to a public address.
+
+### `DELETE /ui/websites/{domain}`
+
+Take a website off the list, with its results. Needs Owner or Admin. On the audit record as `website_removed`. **Returns** `removed`. `404` when it is not on the list.
+
 ## Phone app
 
 The panel's side of the [phone app](mobile.html): who is signed in on a phone, and app invites for staff.
