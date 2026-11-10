@@ -28,6 +28,10 @@ On the panel (installed as /usr/local/bin/sentrai, runs as the service account):
                        | apps on|off APP... | person EMAIL [--name N] [--group G] [--region R] [--reach R]
                        | data EMAIL | erase EMAIL | sample [--clear] | notice > notice.md
                        | app-invite EMAIL | phones | phone-signout ID
+    sudo sentrai rules list | add FILE [--title T] [--not-for-staff] | text TITLE --about TEXT | link URL [--title T]
+                       [--about TEXT] | show ID | remove ID | ask QUESTION... | facts [--it-contact C]
+                       [--report-how H] [--allowed A,B] [--blocked A,B] | system NAME [--what W] [--looks-after P]
+                       [--importance critical|important|normal] | system NAME --remove
     sudo sentrai protection on|off [--reason R]
     sudo sentrai team list | invite EMAIL [--role admin] | role EMAIL ROLE | remove EMAIL | reset EMAIL | withdraw EMAIL
     sudo sentrai api GET|POST PATH [JSON]                 any other core endpoint (docs/api/)
@@ -44,6 +48,7 @@ import json
 import os
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any, Callable
@@ -555,6 +560,85 @@ def cmd_ideas(call: Call, a: argparse.Namespace) -> Any:
     return out if a.json else out.get("message", out)
 
 
+def cmd_rules(call: Call, a: argparse.Namespace) -> Any:
+    """Company Rules: the guides, policies and quick facts this company taught SentrAI."""
+    who = operator_name()
+    if a.action == "list":
+        out = call("GET", "/ui/knowledge")
+        if a.json:
+            return out
+        f = out["facts"]
+        lines = [f"{len(out['guides'])} guide{'' if len(out['guides']) == 1 else 's'}:"]
+        lines += [f"  {g['id']}  {g['title']}  ({g['kind']}, {g['passages']} passages"
+                  + ("" if g["for_staff"] else ", not shown to staff") + ")" for g in out["guides"]] or ["  (none yet)"]
+        lines += ["Quick facts:",
+                  f"  IT contact:   {f['it_contact'] or '-'}", f"  How to report: {f['report_how'] or '-'}",
+                  f"  Allowed apps: {', '.join(f['allowed_apps']) or '-'}",
+                  f"  Not allowed:  {', '.join(f['blocked_apps']) or '-'}"]
+        lines += [f"  System: {x['name']} ({x['importance']})" + (f", {x['what']}" if x["what"] else "")
+                  + (f", looked after by {x['looks_after']}" if x["looks_after"] else "") for x in f["systems"]]
+        return "\n".join(lines)
+    if a.action in ("add", "text", "link"):
+        if not a.target:
+            raise CliError({"add": "which file? sentrai rules add policy.docx",
+                            "text": "sentrai rules text TITLE --about \"the rule\"",
+                            "link": "sentrai rules link https://intranet/policy --about \"what it says\""}[a.action])
+        body: dict[str, Any] = {"operator": who, "for_staff": not a.not_for_staff}
+        if a.title:
+            body["title"] = a.title
+        if a.action == "add":
+            import base64
+            path = Path(a.target)
+            if not path.is_file():
+                raise CliError(f"no file {a.target}")
+            body |= {"kind": "file", "name": path.name, "content_base64": base64.b64encode(path.read_bytes()).decode()}
+        elif a.action == "text":
+            if not a.about:
+                raise CliError("say the rule with --about \"...\"")
+            body |= {"kind": "text", "title": a.title or a.target, "text": a.about}
+        else:
+            body |= {"kind": "link", "url": a.target, "text": a.about or ""}
+        out = call("POST", "/ui/knowledge/guides", body)
+        return out if a.json else (f"{'Updated' if out['replaced'] else 'Learned'} \"{out['title']}\" ({out['id']}, "
+                                   f"{out['passages']} passages).")
+    if a.action in ("show", "remove"):
+        if not a.target:
+            raise CliError(f"which guide? sentrai rules {a.action} ID  (sentrai rules list shows ids)")
+        if a.action == "show":
+            out = call("GET", f"/ui/knowledge/guides/{a.target}")
+            return out if a.json else f"{out['title']} ({out['source']})\n\n{out['text']}"
+        out = call("DELETE", f"/ui/knowledge/guides/{a.target}")
+        return out if a.json else f"Removed \"{out['removed']['title']}\". Sentry and the coach no longer use it."
+    if a.action == "ask":
+        q = " ".join(([a.target] if a.target else []) + list(a.words or []))
+        if not q:
+            raise CliError("sentrai rules ask \"can staff use WhatsApp?\"")
+        out = call("GET", "/ui/knowledge/ask?" + urllib.parse.urlencode({"q": q}))
+        if a.json:
+            return out
+        return "\n\n".join([out["text"]] + [f"[{h['title']}] {h['text']}" for h in out["passages"]]
+                            + ([out["help"]] if out["help"] else []))
+    if a.action == "facts":
+        body = {"operator": who}
+        for key, val in (("it_contact", a.it_contact), ("report_how", a.report_how), ("allowed_apps", a.allowed),
+                         ("blocked_apps", a.blocked)):
+            if val is not None:
+                body[key] = val
+        out = call("POST", "/ui/knowledge/facts", body) if len(body) > 1 else call("GET", "/ui/knowledge")
+        return out if a.json else cmd_rules(call, argparse.Namespace(**{**vars(a), "action": "list"}))
+    if a.action == "system":
+        if not a.target:
+            raise CliError("sentrai rules system NAME [--what W] [--looks-after P] [--importance critical]")
+        systems = [x for x in call("GET", "/ui/knowledge")["facts"]["systems"] if x["name"].lower() != a.target.lower()]
+        if not a.remove:
+            systems.append({"name": a.target, "what": a.what or "", "looks_after": a.looks_after or "",
+                            "importance": a.importance or "normal"})
+        call("POST", "/ui/knowledge/facts", {"operator": who, "systems": systems})
+        return f"{'Removed' if a.remove else 'Saved'} {a.target}. SentrAI knows {len(systems)} important system" + \
+            ("" if len(systems) == 1 else "s") + "."
+    raise CliError("sentrai rules list | add | text | link | show | remove | ask | facts | system")
+
+
 def cmd_coach(call: Call, a: argparse.Namespace) -> Any:
     """Security Coach: which work apps it reads, the regions' checklists, the people it coaches."""
     if a.action == "status":
@@ -793,6 +877,22 @@ def parser() -> argparse.ArgumentParser:
     co.add_argument("--region")
     co.add_argument("--reach", choices=["email", "slack", "teams", "app"])
     co.add_argument("--clear", action="store_true", help="sample: remove the sample people and activity")
+    ru = add("rules", cmd_rules, "Company Rules: guides, policies and quick facts SentrAI follows for this company")
+    ru.add_argument("action", choices=["list", "add", "text", "link", "show", "remove", "ask", "facts", "system"])
+    ru.add_argument("target", nargs="?", help="add: a file · text: a title · link: the address · show, remove: the "
+                                              "guide's id · ask: the question · system: its name")
+    ru.add_argument("words", nargs="*", help="ask: the rest of the question")
+    ru.add_argument("--title")
+    ru.add_argument("--about", help="text: the rule itself · link: what the page says, in a few lines")
+    ru.add_argument("--not-for-staff", action="store_true", help="add, text, link: Sentry uses it, staff don't see it")
+    ru.add_argument("--it-contact", help="facts: who staff ask for IT or security help")
+    ru.add_argument("--report-how", help="facts: how staff report something suspicious")
+    ru.add_argument("--allowed", help="facts: apps staff may use, comma separated")
+    ru.add_argument("--blocked", help="facts: apps staff must not use, comma separated")
+    ru.add_argument("--what", help="system: what it is for")
+    ru.add_argument("--looks-after", help="system: who looks after it")
+    ru.add_argument("--importance", choices=["critical", "important", "normal"])
+    ru.add_argument("--remove", action="store_true", help="system: forget this system")
     for name, path, what in (("protection", "/protection", "protection on, or watch only"),):
         sw = add(name, cmd_switch(path), what)
         sw.add_argument("state", choices=["on", "off"])

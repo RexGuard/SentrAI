@@ -120,6 +120,20 @@ problem is not raised again until it has been fixed and comes back.
 reporter and `channel: "app"`. **Body** `{"text": "...", "where": "front desk"}`. **Returns** the report
 as its reporter sees it.
 
+## Company rules
+
+### `GET /mobile/company`
+
+The company's quick facts for staff: `it_contact`, `report_how`, `allowed_apps`, `blocked_apps`, and `guides`
+(`id`, `title`, `url`) staff can see.
+
+### `POST /mobile/ask`
+
+A question about the company's rules, answered from its own guides (no AI model needed). **Body**
+`{"question": "Can I use WhatsApp for work?"}`. **Returns** as
+[`GET /ui/knowledge/ask`](ui.html#get-uiknowledgeask); staff only get guides marked for staff. The audit
+record notes that a question was asked and whether anything matched, never the question.
+
 ## Owners
 
 ### `GET /mobile/alerts`
