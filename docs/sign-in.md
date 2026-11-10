@@ -97,32 +97,8 @@ $t = python sentrai_config.py token
 Invoke-RestMethod http://127.0.0.1:8000/incidents -Headers @{ Authorization = "Bearer $t" }
 ```
 
-## Coming next: team accounts
+## Upgrading from the old single sign-in
 
-> **Not on the main version yet.** This part describes a change still under review
-> ([pull request #53](https://github.com/RexGuard/SentrAI/pull/53)). Until it is merged, the
-> single sign-in above is how the dashboard works.
-
-The shared email and password become personal accounts, so every approval shows who made it.
-
-1. **Create the Owner account.** A new machine opens on *Create your Owner account*. It asks for
-   a one-time **setup code**, printed by `run.ps1` / `run.sh`, `python sentrai_config.py admin` or
-   `sudo sentrai-admin`. A setup code lasts 24 hours.
-2. **Add an authenticator app.** Scan the QR code with any authenticator app (Google
-   Authenticator, Microsoft Authenticator, 1Password and the like), then type the 6-digit code.
-3. **Save the recovery codes.** You get 8 one-time codes for when your phone is lost. Keep them
-   somewhere other than the server.
-4. **Invite your team.** On the new **Team** page, make an invite link for each person. Links last
-   72 hours. Each person picks a password of their own and adds their own authenticator.
-
-Every sign-in is then email, password and a 6-digit code. There are three roles:
-
-| Role | Can |
-| --- | --- |
-| Owner | everything, including adding and removing Owners |
-| Admin | everything except changing Owners |
-| Auditor | look at everything, change nothing |
-
-Each sign-in shows when and from where your previous one happened, so a sign-in you did not make
-stands out. An existing sign-in moves over by itself: it becomes the Owner, and adds an
-authenticator at its next sign-in.
+A panel set up before team accounts had one shared email and password. It moves over by itself: that
+sign-in becomes the Owner, and adds an authenticator at its next sign-in. Then invite everyone else
+from the **Team** page, as above.

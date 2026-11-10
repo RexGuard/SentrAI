@@ -75,6 +75,18 @@ def test_too_many_wrong_codes_locks_enrolment(panel):
     assert panel.post("/fleet/enrol", json={"code": code, "host": "x"}, headers={"Authorization": ""}).status_code == 429
 
 
+def test_wrong_codes_lock_only_the_address_that_sent_them(tmp_path):
+    f = fleet.Fleet(tmp_path / "fleet.json")
+    for _ in range(fleet.MAX_BAD_CODES):
+        with pytest.raises(fleet.FleetError):
+            f.enrol("AAAA-BBBB-CCCC", "x", "203.0.113.9")
+    code = f.join_code("erick")["code"]
+    with pytest.raises(fleet.FleetError) as e:
+        f.enrol(code, "x", "203.0.113.9")
+    assert e.value.status == 429
+    assert f.enrol(code, "x", "198.51.100.4")["host"] == "x"
+
+
 def test_agent_key_only_reaches_its_own_routes(panel):
     key = join(panel)["key"]
     h = as_agent(key)

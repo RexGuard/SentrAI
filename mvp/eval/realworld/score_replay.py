@@ -76,8 +76,24 @@ def _ts(ev: dict[str, Any]) -> float:
     return datetime.fromisoformat(ev["timestamp"]).timestamp()
 
 
+# The replay has no internet: the crawler in the dataset stands for a real Googlebot, whose address checks out
+# (reverse DNS on googlebot.com, pointing back to the same address). Any other address claiming to be a bot fails.
+REPLAY_DNS = {"192.0.2.200": "crawl-192-0-2-200.googlebot.com"}
+
+
+def _replay_dns(ip: str) -> tuple[str, set[str]]:
+    return (REPLAY_DNS[ip], {ip}) if ip in REPLAY_DNS else ("", set())
+
+
 def predictors(core) -> dict[str, Callable[[], Callable[[dict], str]]]:
-    ClassifierChain, FallbackClassifier, RulesClassifier, RulesEngine, _ = core
+    ClassifierChain, FallbackClassifier, RulesClassifier, Engine, _ = core
+
+    def RulesEngine():  # noqa: N802  (stands in for the class)
+        try:
+            from app.rules import BotCheck
+        except ImportError:  # an older core without the crawler check
+            return Engine()
+        return Engine(good_bot=BotCheck(lookup=_replay_dns))
 
     def rules_only():
         r = RulesClassifier(RulesEngine())

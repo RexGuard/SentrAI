@@ -57,6 +57,24 @@ def owner_row(o: dict | None, contacts: dict[str, str]) -> dict | None:
             **({} if cid in contacts else {"missing": True})}
 
 
+def blocking_row(agent: Any, has_agent: bool) -> dict[str, Any] | None:
+    """Whether blocks on this machine really change its firewall, as the Machines page shows it.
+
+    None for a machine with no agent (the panel itself, or one only named in logs). "unknown" for an agent too old
+    to say (update it), "dry_run" when it only logs the commands, "on" when it really blocks."""
+    if not has_agent:
+        return None
+    if not isinstance(agent, dict):
+        return {"state": "unknown", "word": "Not known", "backend": None, "version": None,
+                "detail": "This machine's agent is too old to say whether it really blocks. Update it."}
+    on = bool(agent.get("enforce"))
+    return {"state": "on" if on else "dry_run", "word": "Blocking" if on else "Not blocking yet",
+            "backend": agent.get("backend"), "version": agent.get("version"),
+            "detail": ("Blocks really change this machine's firewall." if on else
+                       "Dry run: SentrAI decides blocks for this machine but its agent only writes them down. "
+                       "Turn real blocking on once its log looks right.")}
+
+
 def build(found: list[dict], agents: list[dict], risk: dict, panel: bool, name: str, now: datetime,
           names: dict[str, str] | None = None, owners: dict[str, dict] | None = None,
           contacts: dict[str, str] | None = None) -> list[dict]:
@@ -70,7 +88,8 @@ def build(found: list[dict], agents: list[dict], risk: dict, panel: bool, name: 
                  "index": None if idx is None else max(0.0, min(100.0, float(idx))),
                  "band": risk.get("band") or band_for(idx), "threshold": threshold,
                  "monitor_only": bool(risk.get("monitor_only")), "open": 0, "contained": 0, "blocked": 0,
-                 "last_seen": "", "services": [], "hardware": hardware_line(None), "sessions": None, "owner": None}]
+                 "last_seen": "", "services": [], "hardware": hardware_line(None), "sessions": None, "owner": None,
+                 "blocking": None}]
     live = {str(a.get("host")): a for a in agents if isinstance(a, dict) and not a.get("revoked_at")}
     rows, seen = [], set()
     for m in found:
@@ -96,13 +115,13 @@ def build(found: list[dict], agents: list[dict], risk: dict, panel: bool, name: 
                          for x in m.get("services") or [] if isinstance(x, dict) and x.get("name")][:4],
             "hardware": hardware_line(m.get("hardware")) if online else hardware_line(None),
             "sessions": int(m["sessions"]) if isinstance(m.get("sessions"), (int, float)) else None,
-            "owner": owner_row(owners.get(host), contacts)})
+            "owner": owner_row(owners.get(host), contacts), "blocking": blocking_row(m.get("agent"), bool(agent))})
     for host, agent in live.items():
         if host not in seen:
             rows.append({"name": names.get(host, host), "host": host, "place": "Agent", "online": False, "waiting": True, "index": None,
                          "band": "unknown", "threshold": threshold, "monitor_only": False, "open": 0, "contained": 0,
                          "blocked": 0, "last_seen": "never", "services": [], "hardware": hardware_line(None),
-                         "sessions": None, "owner": owner_row(owners.get(host), contacts)})
+                         "sessions": None, "owner": owner_row(owners.get(host), contacts), "blocking": None})
     rows.sort(key=lambda r: (-(r["index"] or 0), r["name"]))
     return rows
 
@@ -135,7 +154,8 @@ def still_removed(removed: dict | None) -> bool:
     return bool(removed)
 
 
-def install(app: FastAPI, core: Any, machines: fleet.Fleet, health: Any) -> None:
+def install(app: FastAPI, core: Any, machines: fleet.Fleet, health: Any) -> Any:
+    """Adds the endpoints; returns the machine list's builder (the readiness check reads it too)."""
     @app.get("/ui/machines")
     def get_machines_page() -> dict[str, Any]:
         risk = core.risk(history=0, host=None)
@@ -153,7 +173,8 @@ def install(app: FastAPI, core: Any, machines: fleet.Fleet, health: Any) -> None
             "panel": panel, "machines": rows, "joined": agent_rows(agents) if panel else [],
             "stats": {"machines": len(rows), "online": online, "offline": len(rows) - online,
                       "need_a_look": sum(1 for r in rows if r["open"] or r["band"] in ("red", "critical")),
-                      "blocks": sum(r["blocked"] for r in rows)},
+                      "blocks": sum(r["blocked"] for r in rows),
+                      "dry_run": sum(1 for r in rows if (r.get("blocking") or {}).get("state") == "dry_run")},
             "panel_info": fleet.panel_info(), "band_words": BAND_WORD,
             "contacts": [{"id": cid, "name": n} for cid, n in contacts.items()], "agent_name": AGENT_OWNER,
             "removed": [{"host": h, "at": v.get("at"), "by": v.get("by")} for h, v in sorted(gone.items())] if panel else [],
@@ -178,3 +199,5 @@ def install(app: FastAPI, core: Any, machines: fleet.Fleet, health: Any) -> None
         pin = info["pin"] if url.startswith("https://") else None
         return {"code": made["code"], "expires_at": made["expires_at"], "https": url.startswith("https://"),
                 "pin": pin, "commands": join_commands(url, made["code"], made.get("name"), pin)}
+
+    return get_machines_page

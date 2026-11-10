@@ -627,7 +627,8 @@ class OperatorChat:
                     log.warning("chat model failed: %s", e)
                     source = "fallback"
                     suggestions.clear(); rich["blocks"].clear(); rich["followups"].clear()
-                    answer = "_(The AI helper is not answering right now, so here is the short version.)_\n\n"
+                    answer = (f"_({e} Here is the short version.)_\n\n" if isinstance(e, sentrai_llm.BudgetError)
+                              else "_(The AI helper is not answering right now, so here is the short version.)_\n\n")
                     answer += self._fallback(text, incident, looked_at, suggestions, rich, files, machine)
                 if source == "ai" and not answer.strip():
                     # The model only pressed tools and wrote nothing: never show an empty "(no answer)".

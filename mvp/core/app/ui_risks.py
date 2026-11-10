@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException, Query
 
 from .agents import next_steps
 from .rules import TRIPWIRE_REASONS
-from .ui_approvals import can, category_label, handled, span_label
+from .ui_approvals import can, category_label, handled, span_label, written_down_only
 from .ui_incidents import OPEN_STATUSES, SEVERITY_RANK, age_hours, attention
 
 LEVELS = ("critical", "high", "medium", "low")
@@ -212,6 +212,7 @@ def bubble(members: list[dict], wave: str = "") -> dict[str, Any]:
         "open_for": span_label(age_hours(first) * 3600), "hours": round(age_hours(first), 2),
         "overdue": any(i.get("sla_breached") and not i.get("acked") and not handled(i) for i in members),
         "status": str(first.get("status")), "acked": bool(first.get("acked")),
+        "written_down": all(written_down_only(i) for i in members),
         "needs": reasons,
         "what_happened": plain_happened(first, len(sources) if wave else 0),
         "meaning": MEANING.get(cat, "Something unusual happened that SentrAI could not act on alone."),

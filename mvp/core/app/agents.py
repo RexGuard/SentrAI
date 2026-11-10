@@ -273,7 +273,8 @@ class Needle(Agent):
     def __init__(self, min_confidence: float, allowlist: set[str], protected_ips: set[str],
                  protected_users: set[str] | None = None, protected_nets: set[str] | None = None,
                  min_severity: str = "high", min_points: float = 0.0, auto_actions: set[str] | None = None,
-                 max_auto_per_hour: int | None = None, admin_address: Callable[[str], str | None] | None = None) -> None:
+                 max_auto_per_hour: int | None = None, admin_address: Callable[[str], str | None] | None = None,
+                 really_done: Callable[[str], bool] | None = None) -> None:
         self.min_confidence = min_confidence
         self.allowlist = allowlist
         self.protected_ips = protected_ips
@@ -288,6 +289,10 @@ class Needle(Agent):
         # how many automatic actions any rolling hour may hold (None = no cap).
         self.auto_actions = auto_actions
         self.max_auto_per_hour = max_auto_per_hour
+        # Whether an action type really changes something here (a block, a lock, a webhook or an extension), or
+        # is only written down. One only written down never runs on its own, so "already handled by SentrAI"
+        # only ever lists real fixes. None: every type counts as real (tests, old callers).
+        self.really_done = really_done
 
     def below_bar(self, incident: dict[str, Any]) -> str | None:
         """Why this incident on its own is not serious enough for autonomous containment, or None."""
@@ -315,6 +320,8 @@ class Needle(Agent):
                    else "protected account" if p.type == "lock_user" and protect.user_matches(p.target, self.protected_users)
                    else "major action: a person must approve it" if autonomous and self.auto_actions is not None
                    and p.type not in self.auto_actions
+                   else "only written down here (nothing carries it out): a person decides" if autonomous
+                   and self.really_done is not None and not self.really_done(p.type)
                    else None)
             if why:
                 denied.append({"type": p.type, "target": p.target, "why": why})

@@ -78,6 +78,11 @@ every address you manage that machine from, just as on the panel. A rerun keeps 
 runs set: `--protect` adds to the addresses already kept, and enforcing stays on until you pass
 `--dry-run` (`-DryRun` on Windows) to go back to only logging.
 
+You can also switch it from the panel, without the installer: open the machine and press **Turn
+real blocking on**, or run `sudo sentrai machines blocking HOST on` (`off` goes back to a dry run and
+lifts the blocks the agent had put in place). The Machines page says *Not blocking yet* for every
+machine still on a dry run. A later `--enforce` or `--dry-run` from the installer wins over the panel.
+
 ## Installer options
 
 | Linux | Windows | What it does |

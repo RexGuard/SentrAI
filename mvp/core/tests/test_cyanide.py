@@ -97,7 +97,8 @@ def test_no_plan_falls_back_to_saguaro_playbook(make):
     attack(core)
     inc = core.get_incident("RSK-2026-081")
     assert "planned_by" not in inc
-    assert {a["type"] for a in inc["actions"]} == {"block_ip", "rate_limit"}  # admin is never auto-locked
+    # admin is never auto-locked, and a written-down-only rate limit waits for a person
+    assert {a["type"] for a in inc["actions"]} == {"block_ip"}
     assert any(t["kind"] == "cyanide_fallback" for t in inc["timeline"])
 
 

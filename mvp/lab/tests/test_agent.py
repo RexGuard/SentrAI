@@ -287,3 +287,27 @@ def test_job_loop_picks_up_runs_and_reports(tmp_path, monkeypatch):
     monkeypatch.setattr(tasks.requests, "Session", Session)
     tasks.job_loop({"panel": "https://p", "key": "sa_x.k"}, True, tmp_path, stop, every_s=0, log=lambda s: None)
     assert sent and sent[0]["id"] == "j-1" and sent[0]["ok"] is True
+
+
+def test_panel_can_switch_blocking_and_the_installer_wins_later(monkeypatch):
+    monkeypatch.setenv("SENTRAI_FIREWALL_ENFORCE", "0")
+    data: dict = {}
+    assert agent.enforce_setting(data) is False
+    agent.choose_enforce(data, True)
+    assert agent.enforce_setting(data) is True
+    monkeypatch.setenv("SENTRAI_FIREWALL_ENFORCE", "1")  # a later --enforce on the machine
+    assert agent.enforce_setting(data) is True
+    monkeypatch.setenv("SENTRAI_FIREWALL_ENFORCE", "0")
+    agent.choose_enforce(data, True)
+    monkeypatch.setenv("SENTRAI_FIREWALL_ENFORCE", "dry")  # a later --dry-run
+    assert agent.enforce_setting(data) is False
+
+
+def test_back_to_a_dry_run_lifts_the_blocks_first():
+    calls, run = recorder()
+    e = agent.Enforcer("iptables", True, {"127.0.0.1"}, runner=run)
+    e.sync({"203.0.113.9"})
+    assert "203.0.113.9" in e.applied
+    assert e.set_enforce(False) and not e.set_enforce(False)
+    assert any(c[:2] == ["iptables", "-D"] and "203.0.113.9" in c for c in calls)
+    assert agent.agent_state(e)["enforce"] is False

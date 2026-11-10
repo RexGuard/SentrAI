@@ -309,7 +309,7 @@ class Saguaro(Agent):
         self.needle = Needle(s.needle_min_confidence, self.responders.allowlist, s.protected_ips, s.protected_users,
                              s.protected_nets, s.contain_min_severity, s.contain_min_points,
                              auto_actions=s.auto_actions, max_auto_per_hour=s.max_auto_actions_per_hour,
-                             admin_address=self.admins.known_address)
+                             admin_address=self.admins.known_address, really_done=self.really_done)
         self.watchdog = Watchdog(s.watchdog_silence_s)
         self.scribe = Scribe(self.audit, self.clock)
         self.integrity = IntegrityGuard(self.audit, s.integrity_check_s, s.clock_jump_s)
@@ -381,6 +381,14 @@ class Saguaro(Agent):
         }
 
     # ------------------------------------------------------------ extensions
+    def really_done(self, action_type: str) -> bool:
+        """True when an action type really changes something (the blocklist, a webhook, an extension), False
+        when it is only written down (the built-in rate limit, WAF rule, kill process and ACL playbooks)."""
+        try:
+            return self.responders.for_type(action_type) is not self._simulated
+        except ValueError:
+            return False
+
     def _enforced_by(self, action_type: str) -> Responder:
         """The responder that really puts an action type in force: the last one below the webhook."""
         return next((r for r in reversed(self.responders.all) if action_type in r.actions
@@ -1677,8 +1685,11 @@ class Saguaro(Agent):
         """The business limits on protective actions, as in force now."""
         s = self.settings
         return {
-            "auto_actions": sorted(s.auto_actions & self.responders.allowlist),
-            "needs_a_person": sorted(self.responders.allowlist - s.auto_actions),
+            # Only real fixes run on their own: a type that is only written down waits for a person (Countersign).
+            "auto_actions": sorted(t for t in s.auto_actions & self.responders.allowlist if self.really_done(t)),
+            "needs_a_person": sorted(t for t in self.responders.allowlist
+                                     if t not in s.auto_actions or not self.really_done(t)),
+            "recorded_only": sorted(t for t in self.responders.allowlist if not self.really_done(t)),
             "ttl_hours": {t: s.ttl_for(t) for t in sorted(self.responders.allowlist)},
             "max_ttl_hours": s.max_ttl_hours,
             "max_auto_actions_per_hour": s.max_auto_actions_per_hour,
@@ -2209,11 +2220,14 @@ class Saguaro(Agent):
                 out["host"] = host
             return out
 
-    def set_services(self, host: str, services: list[dict[str, Any]]) -> dict[str, Any]:
-        """What runs on a machine (its agent reports it every minute): name, port, protocol, process."""
+    def set_services(self, host: str, services: list[dict[str, Any]],
+                     agent: dict[str, Any] | None = None) -> dict[str, Any]:
+        """What runs on a machine (its agent reports it every minute): name, port, protocol, process; and
+        `agent`, whether that agent really blocks or only logs (a dry run), and its version."""
         with self.lock:
             self._host_seen.setdefault(host, self.clock.now())
-            self._host_services[host] = {"services": services[:200], "at": self.clock.iso(self.clock.now())}
+            self._host_services[host] = {"services": services[:200], "at": self.clock.iso(self.clock.now()),
+                                         **({"agent": dict(agent)} if agent is not None else {})}
             return {"ok": True, "services": len(self._host_services[host]["services"])}
 
     def _services_with_incidents(self, host: str, incs: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -2256,6 +2270,7 @@ class Saguaro(Agent):
                     "silent": h in silent,
                     "services": self._services_with_incidents(h, incs),
                     "services_at": (self._host_services.get(h) or {}).get("at"),
+                    "agent": (self._host_services.get(h) or {}).get("agent"),  # enforce/backend/version, None: unknown
                     "sessions": self.admins.live_count(h, now),  # people signed in right now (admins.py)
                 })
             out.sort(key=lambda m: (-m["risk_index"], m["host"]))

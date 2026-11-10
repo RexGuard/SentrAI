@@ -374,6 +374,25 @@ def run_job(job: dict[str, Any], data_dir: Path) -> tuple[bool, dict[str, Any] |
         return False, None, f"{type(exc).__name__}: {exc}"[:400]
 
 
+BLOCKING_JOBS = ("blocking_on", "blocking_off")
+
+
+def switch_blocking(job: dict[str, Any], data: dict[str, Any]) -> tuple[bool, dict[str, Any] | None, str | None]:
+    """The panel asked this machine to really block (blocking_on) or go back to a dry run (blocking_off).
+
+    Kept next to the machine's key; the block loop picks it up within a few seconds (agent.enforce_setting).
+    A later --enforce or --dry-run given to the installer on this machine wins again."""
+    from agent import agent as core_agent  # here, not at the top: agent.py starts this loop
+
+    try:
+        on = job["kind"] == "blocking_on"
+        core_agent.choose_enforce(data, on)
+        core_agent.save(data)
+        return True, {"enforce": on}, None
+    except Exception as exc:  # report it to the panel rather than kill the agent
+        return False, None, f"{type(exc).__name__}: {exc}"[:400]
+
+
 def next_job(data: dict[str, Any], session: requests.Session, verify: Any) -> dict[str, Any] | None:
     try:
         r = session.get(f"{data['panel']}/fleet/jobs/next", headers={"Authorization": f"Bearer {data['key']}"},
@@ -420,7 +439,7 @@ def job_loop(data: dict[str, Any], verify: Any, data_dir: Path, stop: threading.
         job = next_job(data, session, verify)
         if job:
             log(f"panel asked for a {job['kind'].replace('_', ' ')} ({job['id']})")
-            ok, result, error = run_job(job, data_dir)
+            ok, result, error = switch_blocking(job, data) if job["kind"] in BLOCKING_JOBS else run_job(job, data_dir)
             sent = send_result(data, session, verify, job["id"], ok, result, error)
             log(f"{job['id']} {'done' if ok else 'failed: ' + str(error)}{'' if sent else ' (could not tell the panel)'}")
             if ok and job["kind"] == "backup":

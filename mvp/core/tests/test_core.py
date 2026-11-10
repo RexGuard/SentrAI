@@ -70,10 +70,11 @@ def test_threshold_triggers_autonomous_block(client):
     assert incs["RSK-2026-082"]["category"] == "sql_injection"
     assert all(i["status"] == "contained" for i in incs.values())
     bl = client.get("/blocklist").json()
-    # admin is an admin account: never auto-locked, so only the IP block and rate limit apply.
+    # admin is an admin account: never auto-locked. A rate limit is only written down here (nothing carries it
+    # out), so SentrAI does not take it on its own either: only the real IP block applies.
     assert "203.0.113.45" in bl["ips"] and bl["users"] == []
     acts = incs["RSK-2026-081"]["actions"]
-    assert {a["type"] for a in acts} == {"block_ip", "rate_limit"}
+    assert {a["type"] for a in acts} == {"block_ip"}
     assert all(a["mode"] == "autonomous" and a["approved_by"] == "Countersign" and a["status"] == "active" for a in acts)
     assert all(len(a["snapshot_hash"]) == 64 and a["verified"] for a in acts)
     assert r["risk_index"] < 80  # contained incidents no longer count

@@ -64,12 +64,23 @@ def can(inc: dict) -> dict[str, bool]:
             "mine": status in ACTIVE and str(inc.get("category") or "") == ADMIN_CATEGORY}
 
 
+WRITTEN_DOWN = "recorded (simulated)"  # an action's "enforcement" when nothing carries it out (responders.py)
+
+
+def written_down_only(inc: dict) -> bool:
+    """Every fix in force on this incident is only written down (a rate limit or WAF rule with no webhook or
+    extension to carry it out): SentrAI recorded it but nothing on the machines changed."""
+    acts = [a for a in inc.get("actions") or [] if isinstance(a, dict) and a.get("status") in ("active", "permanent")]
+    return bool(acts) and all(a.get("enforcement") == WRITTEN_DOWN for a in acts)
+
+
 def handled(inc: dict) -> bool:
     """SentrAI already dealt with it on its own: contained, the block is still in force, and nothing about it needs
     a person. These leave the active lists (risk bubbles, the bell, approvals, open incidents) but stay in the
     Activity Log and under "Already handled", where they can still be undone. Kept on the active lists instead:
     a block that failed its after-action check (did not work, or may be hurting real users), one that was rolled
-    back or ran out, a "was this you?" root sign-in, and one the AI was unsure about."""
+    back or ran out, a "was this you?" root sign-in, one the AI was unsure about, and one whose fixes are only
+    written down (nothing carries them out)."""
     if str(inc.get("status") or "") != "contained" or inc.get("needs_review"):
         return False
     if str(inc.get("category") or "") == ADMIN_CATEGORY:
@@ -77,6 +88,8 @@ def handled(inc: dict) -> bool:
     acts = [a for a in inc.get("actions") or [] if isinstance(a, dict)]
     if not any(a.get("status") in ("active", "permanent") for a in acts):
         return False
+    if written_down_only(inc):
+        return False  # nothing was really changed: it stays in front of a person
     for a in acts:
         check = a.get("check") or {}
         if a.get("status") in ("active", "permanent") and (check.get("worked") is False or check.get("disruption") is True):

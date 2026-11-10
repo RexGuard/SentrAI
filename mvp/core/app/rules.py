@@ -8,7 +8,9 @@ that when the threshold is hit the whole window is attached to the incident.
 from __future__ import annotations
 
 import re
+import socket
 import threading
+import time
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -149,8 +151,56 @@ SCANNER_UA = re.compile(
     re.I,
 )
 SQLMAP_UA = re.compile(r"\bsqlmap\b", re.I)
-# Crawlers that legitimately hit many dead links; they do not count toward a 404 burst.
-GOOD_BOT_UA = re.compile(r"\b(googlebot|bingbot|applebot|duckduckbot|yandexbot|baiduspider|uptimerobot|pingdom|statuscake|better ?uptime)\b", re.I)
+# Search crawlers that legitimately hit many dead links; they do not count toward a 404 burst. Anyone can
+# write "Googlebot" in a request, so the address must also check out: its reverse DNS name ends with the
+# crawler's own domain and that name points back to the same address (the check the search engines publish).
+GOOD_BOT_UA = re.compile(r"\b(googlebot|bingbot|applebot|yandexbot|baiduspider)\b", re.I)
+GOOD_BOT_DOMAINS = {"googlebot": (".googlebot.com", ".google.com", ".googleusercontent.com"),
+                    "bingbot": (".search.msn.com",), "applebot": (".applebot.apple.com",),
+                    "yandexbot": (".yandex.ru", ".yandex.net", ".yandex.com"),
+                    "baiduspider": (".baidu.com", ".baidu.jp")}
+BOT_CHECK_TIMEOUT_S = 2.0
+BOT_CHECK_TTL_S = 3600.0
+
+
+def _dns_names(ip: str) -> tuple[str, set[str]]:
+    """Reverse name of ip, and the addresses that name points to ("" and empty when either lookup fails)."""
+    try:
+        name = socket.gethostbyaddr(ip)[0]
+        return name, {a[4][0] for a in socket.getaddrinfo(name, None)}
+    except (OSError, UnicodeError):
+        return "", set()
+
+
+class BotCheck:
+    """Forward-confirmed reverse DNS for crawler addresses, cached, with a short time limit per lookup."""
+
+    def __init__(self, lookup=_dns_names, clock=time.monotonic) -> None:
+        self.lookup, self.clock = lookup, clock
+        self._seen: dict[tuple[str, str], tuple[bool, float]] = {}
+        self._lock = threading.Lock()
+
+    def __call__(self, user_agent: str, ip: str | None) -> bool:
+        m = GOOD_BOT_UA.search(user_agent or "")
+        if not m or not ip:
+            return False
+        bot = m.group(1).lower()
+        now = self.clock()
+        with self._lock:
+            hit = self._seen.get((bot, ip))
+            if hit and now - hit[1] < BOT_CHECK_TTL_S:
+                return hit[0]
+        out: list[tuple[str, set[str]]] = []
+        t = threading.Thread(target=lambda: out.append(self.lookup(ip)), daemon=True)
+        t.start()
+        t.join(BOT_CHECK_TIMEOUT_S)
+        name, back = out[0] if out else ("", set())
+        ok = bool(name) and name.lower().rstrip(".").endswith(GOOD_BOT_DOMAINS[bot]) and ip in back
+        with self._lock:
+            if len(self._seen) > 5000:
+                self._seen.clear()
+            self._seen[(bot, ip)] = (ok, now)
+        return ok
 HARMLESS_PATH = re.compile(
     r"^/(favicon\.ico|robots\.txt|sitemap[^/]*\.xml|apple-touch-icon[^/]*\.png|ads\.txt|humans\.txt"
     r"|\.well-known/(acme-challenge/|security\.txt|change-password|openid|apple-app|assetlinks|mta-sts))",
@@ -281,7 +331,9 @@ class RulesEngine:
     def __init__(self, brute_force_count: int = 5, window_s: float = 60.0, export_rows_threshold: int = 100,
                  ssh_count: int = 5, ssh_window_s: float = 600.0,
                  scan_4xx_count: int = 10, scan_window_s: float = 120.0, ssh_probe_count: int = 3,
-                 slow_count: int = 20, slow_window_s: float = 86400.0, ssh_slow_count: int = 10) -> None:
+                 slow_count: int = 20, slow_window_s: float = 86400.0, ssh_slow_count: int = 10,
+                 good_bot: "BotCheck | None" = None) -> None:
+        self.good_bot = good_bot or BotCheck()
         self.brute_force_count = brute_force_count
         self.window_s = window_s
         self.export_rows_threshold = export_rows_threshold
@@ -519,7 +571,7 @@ class RulesEngine:
         status = http.status or 0
         src = http.src_ip or event.get("src_ip")
         if 400 <= status < 500 and status != 401 and src and not HARMLESS_PATH.match(http.path) \
-                and not GOOD_BOT_UA.search(http.user_agent):
+                and not self.good_bot(http.user_agent, src):
             ts = _event_ts(event, now)
             with self._lock:
                 ids = _window_add(self._http_4xx[src], ts, str(event.get("event_id")), self.scan_window_s)

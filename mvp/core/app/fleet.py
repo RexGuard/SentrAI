@@ -29,8 +29,11 @@ KEY_PREFIX = "sa_"
 CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no 0/O or 1/I to misread
 CODE_TTL_S = 24 * 3600.0
 HOST_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$")
-# Wrong join codes: after this many in the window, enrolment refuses everyone until the window passes.
+# Wrong join codes: after this many from one address in the window, that address is refused until the window
+# passes (other addresses can still join). A much higher ceiling across all addresses stops guessing spread
+# over many addresses; codes are 12 random characters, so neither is ever reached by honest mistakes.
 MAX_BAD_CODES = 10
+MAX_BAD_CODES_ALL = 200
 BAD_CODE_WINDOW_S = 600.0
 
 
@@ -93,7 +96,7 @@ class Fleet:
         self.path = path
         self.clock = clock
         self.lock = threading.Lock()
-        self._bad: list[float] = []
+        self._bad: dict[str, list[float]] = {}
         self._data: dict[str, Any] = {"codes": {}, "agents": {}}
         try:
             loaded = json.loads(path.read_text(encoding="utf-8"))
@@ -131,15 +134,17 @@ class Fleet:
         return sum(1 for c in self._data["codes"].values() if c["expires_ts"] > now)
 
     # -------------------------------------------------------------- enrolment
-    def enrol(self, code: str, host: str) -> dict[str, Any]:
+    def enrol(self, code: str, host: str, address: str = "local") -> dict[str, Any]:
         now = self.clock()
         with self.lock:
-            self._bad = [t for t in self._bad if now - t < BAD_CODE_WINDOW_S]
-            if len(self._bad) >= MAX_BAD_CODES:
+            self._bad = {a: kept for a, ts in self._bad.items()
+                         if (kept := [t for t in ts if now - t < BAD_CODE_WINDOW_S])}
+            if len(self._bad.get(address, ())) >= MAX_BAD_CODES or \
+                    sum(len(ts) for ts in self._bad.values()) >= MAX_BAD_CODES_ALL:
                 raise FleetError("too many wrong join codes; try again in a few minutes", 429)
             entry = self._data["codes"].get(_hash(normalise_code(code)))
             if entry is None or entry["expires_ts"] <= now:
-                self._bad.append(now)
+                self._bad.setdefault(address, []).append(now)
                 raise FleetError("join code is wrong, used or expired; make a new one on the panel", 403)
             host = entry.get("name") or (host or "").strip()
             if not HOST_RE.match(host):

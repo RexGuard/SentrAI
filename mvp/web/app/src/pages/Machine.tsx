@@ -8,11 +8,13 @@ import { useFilters, type Filter } from '../lib/Filters'
 import { MachineFixes } from '../lib/Fixes'
 import { PackagesTab, ServicesTab, SignedInTab, type Details } from './MachineDetails'
 import { ask } from '../lib/notice'
+import type { Blocking } from './Machines'
 
 type Machine = {
   name: string; host: string; place: string; online: boolean; waiting: boolean; index: number | null; band: string; threshold: number
   monitor_only: boolean; open: number; contained: number; blocked: number; last_seen: string; services: string[]
   hardware: { cpu: number | null; memory: number | null; disk: number | null }; sessions: number | null
+  blocking: Blocking | null
 }
 type Overview = { machines: Machine[]; band_words: Record<string, string> }
 type Inc = { id: string; category?: string; severity?: string; status?: string; opened_at?: string; summary?: string }
@@ -120,6 +122,14 @@ export default function MachinePage() {
             <button className={btn} disabled={off} title={offWhy} onClick={() => void queue('threat_scan', `Asked ${host} to scan for threats`)}><ShieldCheck size={14} aria-hidden /> Scan for threats</button>
             <button className={btn} disabled={off} title={offWhy} onClick={() => void queue('backup', `Asked ${host} to back up`)}><DatabaseBackup size={14} aria-hidden /> Back up now</button>
           </div>
+          {m.blocking && m.blocking.state !== 'on' && (
+            <div role="note" className="flex flex-wrap items-center gap-3 rounded-lg border border-warn bg-surface p-4">
+              <p className="min-w-0 flex-1 text-sm"><span className="font-medium text-warn">{m.blocking.word}.</span> {m.blocking.detail}</p>
+              {m.blocking.state === 'dry_run' && (
+                <button className={btn} disabled={off || !can('configure')} title={!can('configure') ? 'Only an Owner or Admin can turn real blocking on.' : offWhy}
+                  onClick={async () => { if (await ask({ title: `Turn real blocking on for ${m.name}?`, body: "SentrAI's blocks will change this machine's firewall from now on. Addresses you protected are never blocked. You can go back to a dry run from the command line.", confirm: 'Turn blocking on' }) !== null) void queue('blocking_on', `Asked ${host} to really block from now on`) }}>
+                  <ShieldCheck size={14} aria-hidden /> Turn real blocking on</button>)}
+            </div>)}
           <div role="tablist" aria-label="Machine" className="flex flex-wrap gap-2">
             {TABS.map((t) => <button key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)}
               className={'rounded-md px-3 py-1.5 text-sm ' + (tab === t ? 'bg-surface-3 text-ink' : 'text-soft hover:bg-surface-2')}>{t}{t === 'Incidents' && incs.length ? ` (${incs.length})` : ''}</button>)}
@@ -128,7 +138,7 @@ export default function MachinePage() {
             {tab === 'Overview' && (
               <dl className="grid grid-cols-2 gap-4 text-sm lg:grid-cols-4">
                 {([['Incidents', m.open || m.contained ? [m.open && `${m.open} open`, m.contained && `${m.contained} contained`].filter(Boolean).join(' · ') : 'None'],
-                  ['Blocks in force', m.blocked ? String(m.blocked) : 'None'], ['Signed in', m.sessions == null ? '-' : m.sessions ? String(m.sessions) : 'Nobody'], ['Last seen', m.last_seen],
+                  ['Blocks in force', m.blocked ? String(m.blocked) + (m.blocking?.state === 'dry_run' ? ' (dry run)' : '') : 'None'], ['Signed in', m.sessions == null ? '-' : m.sessions ? String(m.sessions) : 'Nobody'], ['Last seen', m.last_seen],
                   ['CPU', pct(m.hardware.cpu)], ['Memory', pct(m.hardware.memory)], ['Disk', pct(m.hardware.disk)]] as [string, string][]).map(([k, v]) => (
                   <div key={k}><dt className="text-xs uppercase tracking-wide text-muted">{k}</dt><dd className="text-lg font-medium">{v}</dd></div>))}
               </dl>
@@ -161,7 +171,8 @@ export default function MachinePage() {
             {tab === 'Agent' && (agent ? (
               <div className="space-y-3">
                 <dl className="grid grid-cols-2 gap-3 text-sm lg:grid-cols-4">
-                  {([['Id', agent.agent_id], ['Joined', dt(agent.joined_at)], ['Invited by', agent.invited_by || '-'], ['Last call-in', dt(agent.last_seen)]] as [string, string][]).map(([k, v]) => (
+                  {([['Id', agent.agent_id], ['Joined', dt(agent.joined_at)], ['Invited by', agent.invited_by || '-'], ['Last call-in', dt(agent.last_seen)],
+                    ['Blocks', m.blocking ? m.blocking.word + (m.blocking.backend ? ` (${m.blocking.backend})` : '') : '-'], ['Version', m.blocking?.version || '-']] as [string, string][]).map(([k, v]) => (
                     <div key={k}><dt className="text-xs uppercase tracking-wide text-muted">{k}</dt><dd className="break-all font-medium">{v}</dd></div>))}
                 </dl>
                 <button className={btn} disabled={!can('configure')} title={can('configure') ? 'Stop accepting this machine’s key; it has to join again' : 'Your role can read everything but change nothing.'}
