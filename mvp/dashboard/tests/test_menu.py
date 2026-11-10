@@ -162,7 +162,8 @@ def test_ai_settings_fetch_the_models_and_save_the_pick(fake_core, models_api, t
     next(b for b in at.button if "Save settings" in b.label).click().run()
     assert not at.exception, at.exception
     assert json.loads(path.read_text())["ai"] == {"SENTRAI_LLM_PROVIDER": "compatible", "SENTRAI_LLM_API_KEY": "k",
-                                                  "SENTRAI_LLM_BASE_URL": models_api, "SENTRAI_LLM_MODEL": "small-model"}
+                                                  "SENTRAI_LLM_BASE_URL": models_api, "SENTRAI_LLM_MODEL": "small-model",
+                                                  "SENTRAI_AI_MONTHLY_BUDGET_USD": "25"}  # the AI section's spending cap
 
     at.text_input(key="cfg_SENTRAI_LLM_API_KEY").set_value("wrong").run()
     next(b for b in at.button if "Fetch models" in b.label).click().run()

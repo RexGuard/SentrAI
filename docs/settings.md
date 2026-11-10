@@ -148,6 +148,14 @@ team command line:
 sudo sentrai settings set ANTHROPIC_API_KEY=...
 ```
 
+The AI helper has a monthly spending cap, USD 25 by default. Once it is used up, SentrAI answers
+from its fixed playbooks until the 1st of the next month. `sudo sentrai status` shows what this
+month has cost so far. Change the cap (0 turns it off) with:
+
+```bash
+sudo sentrai settings set SENTRAI_AI_MONTHLY_BUDGET_USD=50
+```
+
 **Jev** (TypeSafe System One) is a separate, fast AI step that labels log lines the rules miss. It
 turns on when its key is saved:
 
@@ -176,7 +184,7 @@ These settings set the limits:
 
 | Setting | Default | What it does |
 |---|---|---|
-| `AUTO_ACTIONS` | `block_ip,rate_limit,waf_rule` | what SentrAI may do without asking. Anything else, like locking an account, waits for a person |
+| `AUTO_ACTIONS` | `block_ip,rate_limit,waf_rule` | what SentrAI may do without asking. Anything else, like locking an account, waits for a person. A type that nothing on your computers carries out yet (no agent, webhook or integration for it) also waits for a person |
 | `MAX_AUTO_ACTIONS_PER_HOUR` | `10` | at most this many actions on its own in any hour; after that a person decides |
 | `MAX_TTL_HOURS` | `24` | no temporary action lasts longer than this |
 | `ACTION_TTL_HOURS` | none | hours per type, for example `lock_user=1,block_ip=4` |

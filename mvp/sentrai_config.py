@@ -225,6 +225,8 @@ SECTIONS = (
         Field("SENTRAI_LLM_API_KEY", "API key", secret=True),
         Field("SENTRAI_LLM_BASE_URL", "Base URL (only for another OpenAI-compatible service)"),
         Field("SENTRAI_LLM_MODEL", "Model name, blank for the provider's default"),
+        Field("SENTRAI_AI_MONTHLY_BUDGET_USD", "Most the AI helper may spend in one month, in US dollars (then it "
+              "answers from fixed playbooks until the 1st; 0 = no cap)", "25", float, advanced=True),
     )),
     Section("access", "6. Access", "The token the parts of SentrAI use to talk to the core. "
             "People sign in with their own accounts (dashboard Team page).", (

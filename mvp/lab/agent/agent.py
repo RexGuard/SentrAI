@@ -180,6 +180,22 @@ class Enforcer:
         self._ready = False
         self._checked = False  # the saved list is only a hint until the firewall itself was checked
 
+    def set_enforce(self, on: bool) -> bool:
+        """Switch between really blocking and only logging, while running. True when it changed.
+
+        Going to a dry run takes this agent's blocks out of the firewall first, so none is left behind that
+        the dry run would no longer remove. Either way the next sync puts every block back in the new mode."""
+        if on == self.enforce:
+            return False
+        if not on and self.backend is not None:
+            for ip in sorted(self.applied):
+                self._remove(ip)
+        self.enforce = on
+        self._ready = False
+        self._checked = False
+        self.log.append("blocks now really change the firewall" if on else "blocks are a dry run again (only logged)")
+        return True
+
     def _run(self, args: list[str], probe: bool = False) -> int:
         if not self.enforce:
             self.log.append("dry run: " + " ".join(args))
@@ -237,9 +253,47 @@ class Enforcer:
         return {"added": added, "removed": removed}
 
 
+def _env_enforce() -> str:
+    return os.environ.get("SENTRAI_FIREWALL_ENFORCE", "0").strip().lower()
+
+
+def enforce_setting(data: dict[str, Any]) -> bool:
+    """Whether blocks really change the firewall: SENTRAI_FIREWALL_ENFORCE, unless the panel switched it since.
+
+    The panel's choice (a "blocking on/off" job, kept in the agent file) holds only while the setting here is
+    still what it was when the panel chose: a later --enforce or --dry-run on this machine wins again."""
+    env = _env_enforce()
+    chosen = data.get("enforce_override")
+    if isinstance(chosen, dict) and chosen.get("env") == env:
+        return bool(chosen.get("on"))
+    return env in ("1", "true", "yes", "on")
+
+
+def choose_enforce(data: dict[str, Any], on: bool) -> None:
+    """The panel asked for real blocking (on) or a dry run (off): remember it next to the key."""
+    data["enforce_override"] = {"on": bool(on), "env": _env_enforce(), "at": int(time.time())}
+
+
+def installed_version() -> str | None:
+    """The installed code's commit (the VERSION file sentrai-update writes), short, or None from a checkout."""
+    try:
+        for line in (MVP_DIR / "VERSION").read_text(encoding="utf-8").splitlines():
+            if line.startswith("commit=") and line[7:].strip():
+                return line[7:].strip()[:12]
+    except OSError:
+        pass
+    return None
+
+
+def agent_state(enforcer: "Enforcer") -> dict[str, Any]:
+    """What the panel shows about this agent: really blocking or a dry run, which firewall, which version."""
+    return {"enforce": bool(enforcer.enforce and enforcer.backend), "backend": enforcer.backend,
+            "version": installed_version()}
+
+
 def make_enforcer(data: dict[str, Any], runner: firewall.Runner = firewall.run_command) -> Enforcer:
     backend = firewall.resolve_backend(os.environ.get("SENTRAI_FIREWALL", "auto"))
-    enforce = os.environ.get("SENTRAI_FIREWALL_ENFORCE", "0").strip().lower() in ("1", "true", "yes", "on")
+    enforce = enforce_setting(data)
     protected = (protect.split(os.environ.get("PROTECTED_IPS", "127.0.0.1,::1,localhost"))
                  | protect.split(os.environ.get("INFRA_ALLOWLIST", "")) | panel_ips(data["panel"]))
     return Enforcer(backend, enforce, protected, runner, applied=data.get("blocked"), last_ok=data.get("last_ok"),
@@ -268,12 +322,17 @@ def fetch_blocklist(data: dict[str, Any], session: requests.Session) -> set[str]
 
 
 def report_services(data: dict[str, Any], session: requests.Session,
-                    found: Callable[[], list[dict[str, Any]]] | None = None) -> bool:
-    """Tell the panel what runs on this machine (names and ports only). True when it was accepted."""
+                    found: Callable[[], list[dict[str, Any]]] | None = None,
+                    state: dict[str, Any] | None = None) -> bool:
+    """Tell the panel what runs on this machine (names and ports only), and whether this agent really
+    blocks or only logs (`state`, agent_state). True when it was accepted."""
     from agent import services
 
+    body: dict[str, Any] = {"services": (found or services.listening)()}
+    if state is not None:
+        body["agent"] = state
     try:
-        r = session.post(f"{data['panel']}/fleet/services", json={"services": (found or services.listening)()},
+        r = session.post(f"{data['panel']}/fleet/services", json=body,
                          headers={"Authorization": f"Bearer {data['key']}"}, timeout=5,
                          verify=getattr(session, "verify", True))
     except requests.RequestException:
@@ -313,8 +372,12 @@ def enforce_loop(data: dict[str, Any], enforcer: Enforcer, stop: threading.Event
     reader = reader or hardware.Reader()
     next_services = next_hardware = 0.0
     while not stop.is_set():
+        # Only once the panel has chosen (tasks.py) does the loop switch modes; until then the start-up choice holds.
+        if isinstance(data.get("enforce_override"), dict) and enforcer.set_enforce(enforce_setting(data)):
+            next_services = 0.0  # tell the panel straight away
         if time.monotonic() >= next_services:
-            next_services = time.monotonic() + (SERVICES_EVERY_S if report_services(data, session) else poll_s * 2)
+            sent = report_services(data, session, state=agent_state(enforcer))
+            next_services = time.monotonic() + (SERVICES_EVERY_S if sent else poll_s * 2)
         if time.monotonic() >= next_hardware:
             report_hardware(data, session, reader.read())  # a missed reading is simply skipped
             next_hardware = time.monotonic() + HARDWARE_EVERY_S

@@ -11,6 +11,10 @@ only their id, size and checksum come back.
 A quarantine names only a finding id that machine reported itself (a threat scan or its file watch),
 and its undo only the quarantine id: the agent looks the file up in its own list.
 
+Blocking on / off switches the machine between really changing its firewall and only logging the
+command (the dry run every new agent starts in). The agent keeps that choice next to its key; a later
+--enforce or --dry-run given to the installer on the machine wins again.
+
 A package update names only a finding id from that machine's own last dependency scan (and an undo
 only the update's id): the agent looks up the package, place and fixed version itself, so the panel
 cannot make a machine install anything that scan did not find.
@@ -32,7 +36,8 @@ from typing import Any
 
 KINDS = {"threat_scan": "Threat scan", "backup": "Backup", "dep_scan": "Dependency scan",
          "dep_update": "Package update", "dep_rollback": "Package update undo",
-         "quarantine": "Quarantine", "restore": "Quarantine undo"}
+         "quarantine": "Quarantine", "restore": "Quarantine undo",
+         "blocking_on": "Turn real blocking on", "blocking_off": "Back to a dry run"}
 PARAM = {"dep_update": ("finding", re.compile(r"^[0-9a-f]{16}$")),
          "dep_rollback": ("update", re.compile(r"^u-[0-9a-f]{8}$")),
          "quarantine": ("finding", re.compile(r"^[0-9a-f]{16}$")),   # a finding id from the machine's own list
@@ -188,6 +193,11 @@ def check_params(kind: str, params: dict[str, Any] | None) -> dict[str, Any] | N
 
 
 # ---------------------------------------------------------------- results
+def clean_blocking(result: dict[str, Any]) -> dict[str, Any]:
+    """A blocking on/off job only says which way it switched."""
+    return {"enforce": bool(result.get("enforce"))}
+
+
 def clean_scan(result: dict[str, Any]) -> dict[str, Any]:
     """Keep only what the panel shows from a machine's threat scan (the agent already hides homes
     and masks secrets; this drops anything else it might send)."""

@@ -18,6 +18,7 @@ export type RiskAction = { verb: string; label: string; hint: string }
 export type Risk = {
   id: string; ids: string[]; wave: string; incident: string; title: string; category: string; severity: Level
   host: string; source: string; owner: string; open_for: string; hours: number; overdue: boolean; status: string
+  written_down?: boolean  // its fix is only recorded: nothing on the machines carries it out yet
   needs: string[]; what_happened: string; meaning: string; fix: string; steps: string[]; unsure: boolean
   actions: RiskAction[]; inc: { id: string; status: string; category: string; acked: boolean; actions: { status?: string }[] }
 }
@@ -169,7 +170,10 @@ export function RiskDetail({ r, protectionOn, onClose, onDone }: { r: Risk; prot
   const many = r.ids.length > 1
   // The demo copy shows a fixed answer the team has checked; the real console shows the core's fix.
   const vetted = DEMO && !isLiveRisk(r.id) ? DEMO_FIXES[r.category] : undefined
-  const fix = vetted ?? (r.fix ? (r.status === 'contained' ? `SentrAI already did this for you. ${r.fix} Keep it, or undo it if it was a false alarm.` : r.fix) : '')
+  const fix = vetted ?? (r.fix ? (r.status === 'contained'
+    ? (r.written_down ? `SentrAI wrote this fix down, but nothing on your computers carries it out yet: ${r.fix} SentrAI's team will put it in place, or undo it if it was a false alarm.`
+      : `SentrAI already did this for you. ${r.fix} Keep it, or undo it if it was a false alarm.`)
+    : r.fix) : '')
 
   useEffect(() => {
     box.current?.focus()

@@ -15,7 +15,7 @@ activity log under `cli:<your login>`. You don't need to know the token or the a
 finds both itself.
 
 ```bash
-sudo sentrai status          # protection, machines, what waits for a person
+sudo sentrai status          # protection, machines, what waits for a person, what is still to set up, AI spend
 sudo sentrai --help          # every command
 sudo sentrai settings --help # one command's options
 ```
@@ -72,6 +72,7 @@ sudo sentrai machines list
 sudo sentrai machines join-code --name shop-pc      # prints the command to run on the new machine
 sudo sentrai machines rename shop-pc "Front desk"
 sudo sentrai machines delete old-laptop              # revokes its key, keeps its history
+sudo sentrai machines blocking shop-pc on            # the agent really changes the firewall (off = dry run)
 sudo sentrai machines agents                         # agent ids and keys; revoke AGENT_ID
 
 sudo sentrai jobs scan shop-pc        # threat scan

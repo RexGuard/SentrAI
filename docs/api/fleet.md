@@ -159,6 +159,10 @@ it next to the machine's open incidents. Each report replaces the last one.
 | `proto` | string | `tcp` or `udp` |
 | `process` | string | the program's name |
 
+`agent` (optional) is how the agent itself runs: `enforce` (true when it really changes the firewall,
+false on a dry run), `backend` (`nftables`, `iptables`, `netsh` or empty) and `version` (the installed
+commit). The Machines page shows *Not blocking yet* from it.
+
 ```json
 {"services": [{"name": "nginx", "port": 443, "proto": "tcp", "process": "nginx"},
               {"name": "sshd", "port": 22, "proto": "tcp", "process": "sshd"}]}
@@ -263,7 +267,7 @@ Queues a job. Written to the audit trail (`machine_job_queued`).
 | Field | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `host` | string, required | | a joined machine |
-| `kind` | string, required | | `threat_scan`, `backup`, `dep_scan`, `dep_update`, `dep_rollback`, `quarantine` or `restore` |
+| `kind` | string, required | | `threat_scan`, `backup`, `dep_scan`, `dep_update`, `dep_rollback`, `quarantine`, `restore`, `blocking_on` (the agent really changes the firewall) or `blocking_off` (back to a dry run: it lifts its own blocks and only logs) |
 | `operator` | string | `operator` | who asked |
 | `params` | object | | `dep_update`: `{"finding": "<id>"}`, a finding of the machine's latest dependency scan whose `update` is `safe`; `dep_rollback`: `{"update": "u-<id>"}`, an update made there; `quarantine`: `{"finding": "<id>"}`, a finding id that machine reported (a threat scan's or its file watch's); `restore`: `{"item": "q-<id>"}`, a file that machine quarantined. Other jobs take none |
 

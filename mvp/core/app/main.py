@@ -24,7 +24,7 @@ import sentrai_accounts as acc  # noqa: E402
 from .reports import build_report, render_markdown, render_pdf
 from . import summary as client_summary
 from . import auth as auth_cookie
-from . import ui_analytics, ui_approvals, ui_tuning, ui_audit, ui_incidents, ui_limits, ui_machine, ui_machines, ui_overview, ui_report, ui_routing, ui_settings, ui_setup, ui_team, ui_recovery, ui_privacy, ui_risks, ui_feedback, ui_coach, ui_mobile, ui_knowledge
+from . import ui_analytics, ui_approvals, ui_tuning, ui_audit, ui_incidents, ui_limits, ui_machine, ui_machines, ui_overview, ui_report, ui_routing, ui_settings, ui_setup, ui_team, ui_recovery, ui_privacy, ui_risks, ui_feedback, ui_coach, ui_mobile, ui_knowledge, ui_readiness
 from . import mobile as mobile_mod
 from . import coach as coach_mod
 from . import knowledge as knowledge_mod
@@ -256,8 +256,16 @@ class ServiceIn(BaseModel):
     process: Optional[str] = Field(None, max_length=64)
 
 
+class AgentStateIn(BaseModel):
+    """How the machine's agent blocks: really (enforce) or only logging (a dry run), and its version."""
+    enforce: bool = False
+    backend: Optional[str] = Field(None, max_length=20)
+    version: Optional[str] = Field(None, max_length=40)
+
+
 class ServicesIn(BaseModel):
     services: list[ServiceIn] = Field(default_factory=list, max_length=200)
+    agent: Optional[AgentStateIn] = None  # agents from 10 Nov 2026 on; older ones leave it out
 
 
 class UsageIn(BaseModel):
@@ -576,7 +584,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ui_routing.install(app, core)
     ui_limits.install(app)
     ui_settings.install(app, lambda: (ai.reload(core, chat), core.extensions.reload()))
-    ui_machines.install(app, core, machines, machine_health)
+    machines_page = ui_machines.install(app, core, machines, machine_health)
+    ui_readiness.install(app, core, machines_page, backups)
     ui_machine.install(app, core, machine_jobs)
     ui_setup.install(app, lambda q, o, a: chat.interpret_setup(q, o, a), lambda: (ai.reload(core, chat), core.extensions.reload()))
     ui_report.install(app, core, staff)
@@ -1261,9 +1270,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return fleet.panel_info()
 
     @app.post("/fleet/enrol")
-    def post_enrol(body: EnrolIn) -> dict[str, Any]:
+    def post_enrol(body: EnrolIn, request: Request) -> dict[str, Any]:
         try:
-            out = machines.enrol(body.code, body.host)
+            out = machines.enrol(body.code, body.host, auth_cookie._address(request))
         except fleet.FleetError as exc:
             raise fleet_error(exc)
         core.scribe.record(core.name, "machine_joined", {"agent_id": out["agent_id"], "host": out["host"]})
@@ -1393,7 +1402,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             host = request.state.agent["host"]
         if not host:
             raise HTTPException(status_code=400, detail="which machine? (?host=)")
-        return core.set_services(host, [x.model_dump() for x in body.services])
+        return core.set_services(host, [x.model_dump() for x in body.services],
+                                 body.agent.model_dump() if body.agent is not None else None)
 
     @app.post("/fleet/hardware")
     def post_hardware(request: Request, body: HardwareIn, host: Optional[str] = Query(None, max_length=63)) -> dict[str, Any]:
@@ -1498,6 +1508,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         result = None
         if body.ok and body.result is not None:
             clean = {"threat_scan": jobs.clean_scan, "backup": jobs.clean_backup, "dep_scan": jobs.clean_deps,
+                     "blocking_on": jobs.clean_blocking, "blocking_off": jobs.clean_blocking,
                      "dep_update": jobs.clean_dep_change, "dep_rollback": jobs.clean_dep_change,
                      "quarantine": jobs.clean_quarantine, "restore": jobs.clean_quarantine}.get(kind or "")
             result = clean(body.result) if clean else None

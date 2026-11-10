@@ -128,19 +128,36 @@ def cmd_status(call: Call, a: argparse.Namespace) -> Any:
     prot = call("GET", "/protection")
     risks = call("GET", "/ui/risks")
     machines = call("GET", "/ui/machines")
-    out = {"protection": prot, "risks": risks, "machines": machines.get("stats", {})}
+    try:
+        ready = call("GET", "/ui/readiness")
+    except CliError:  # a panel older than the readiness check
+        ready = None
+    out = {"protection": prot, "risks": risks, "machines": machines.get("stats", {}), "readiness": ready}
     if a.json:
         return out
     s = machines.get("stats", {})
     levels = ", ".join(f"{lv['severity']} {lv['count']}" for lv in risks.get("levels", []))
-    return "\n".join([
+    lines = [
         f"Protection: {prot.get('protection')}"
         f"   Active blocks: {len(prot.get('active_actions') or [])}",
         f"Machines:   {s.get('machines', 0)} ({s.get('online', 0)} online, {s.get('offline', 0)} offline,"
-        f" {s.get('need_a_look', 0)} need a look)",
+        f" {s.get('need_a_look', 0)} need a look"
+        + (f", {s['dry_run']} not blocking yet" if s.get("dry_run") else "") + ")",
         f"Waiting:    {levels}",
         risks.get("headline", ""),
-    ])
+    ]
+    if ready:
+        lines += ["", f"Readiness:  {ready.get('headline', '')}"]
+        for c in ready.get("checks") or []:
+            lines.append(f"  [{'x' if c.get('ok') else ' '}] {c.get('title')}: {c.get('detail')}")
+            if c.get("fix_cli"):
+                lines.append(f"        fix: {c['fix_cli']}")
+        if (spend := ready.get("ai_spend")):
+            cap = spend.get("budget_usd") or 0
+            lines.append(f"AI helper:  USD {spend.get('usd', 0):.2f} spent in {spend.get('month')}"
+                         + (f" of USD {cap:g}" if cap > 0 else " (no monthly cap)")
+                         + (" - budget used up, answering from playbooks" if 0 < cap <= spend.get("usd", 0) else ""))
+    return "\n".join(lines)
 
 
 def _settings(call: Call) -> dict:
@@ -310,9 +327,14 @@ def cmd_machines(call: Call, a: argparse.Namespace) -> Any:
         words = m.get("band_words", {})
         rows = [[r.get("name"), r.get("host"), "online" if r.get("online") else ("waiting" if r.get("waiting") else "offline"),
                  "off" if r.get("monitor_only") else "on", f"{r.get('index') or 0:.0f} {words.get(r.get('band'), '')}",
-                 r.get("open"), r.get("blocked"), owner_cell(r.get("owner")), r.get("last_seen") or ""]
+                 r.get("open"), r.get("blocked"), (r.get("blocking") or {}).get("word") or "-",
+                 owner_cell(r.get("owner")), r.get("last_seen") or ""]
                 for r in m.get("machines", [])]
-        out = table(rows, ["Name", "Host", "State", "Protection", "Risk", "Open", "Blocks", "Owner", "Last seen"])
+        out = table(rows, ["Name", "Host", "State", "Protection", "Risk", "Open", "Blocks", "Blocking", "Owner",
+                           "Last seen"])
+        if m.get("stats", {}).get("dry_run"):
+            out += ("\n\nNot blocking yet = a dry run: blocks are only written down on that machine."
+                    "\nTurn real blocking on with: sentrai machines blocking HOST on")
         gone = m.get("removed") or []
         if gone:
             out += "\n\nDeleted (hidden): " + ", ".join(str(g.get("host")) for g in gone) \
@@ -339,6 +361,15 @@ def cmd_machines(call: Call, a: argparse.Namespace) -> Any:
         out = call("POST", f"/ui/machines/{a.host}/owner", {**body, "operator": op})
     elif a.action == "ping":
         out = call("POST", f"/ui/machines/{a.host}/ping", {"operator": op})
+    elif a.action == "blocking":
+        if a.name not in ("on", "off"):
+            raise CliError("say on (really change the firewall) or off (back to a dry run): "
+                             "sentrai machines blocking HOST on")
+        out = call("POST", "/fleet/jobs", {"host": a.host, "kind": f"blocking_{a.name}", "operator": op})
+        if a.json:
+            return out
+        return (f"Asked {a.host} to {'really block from now on' if a.name == 'on' else 'go back to a dry run'} "
+                f"({out.get('id')}). Its agent picks this up within about 15 seconds.")
     elif a.action == "revoke":
         out = call("POST", f"/fleet/agents/{a.host}/revoke", {"operator": op})
         return out if a.json else f"Key revoked for {out.get('host')}."
@@ -821,10 +852,12 @@ def parser() -> argparse.ArgumentParser:
     i.add_argument("action", choices=["list", "on", "off", "test", "reload"])
     i.add_argument("name", nargs="?")
     m = add("machines", cmd_machines, "joined computers")
-    m.add_argument("action", choices=["list", "agents", "rename", "delete", "restore", "revoke", "join-code", "owner", "ping"])
+    m.add_argument("action", choices=["list", "agents", "rename", "delete", "restore", "revoke", "join-code", "owner", "ping",
+                                      "blocking"])
     m.add_argument("host", nargs="?", help="host name (revoke: agent id)")
     m.add_argument("name", nargs="?", help="rename: the new name (blank goes back to the host name) · "
-                                           "owner: the person responsible (a Routing contact id or name)")
+                                           "owner: the person responsible (a Routing contact id or name) · "
+                                           "blocking: on (really change its firewall) or off (back to a dry run)")
     m.add_argument("--agent", action="store_true", help="owner: the AI agent answers for it and handles its alerts")
     m.add_argument("--backup", help="owner --agent: the person it hands decisions to (a Routing contact)")
     m.add_argument("--clear", action="store_true", help="owner: nobody; the Routing rules decide again")

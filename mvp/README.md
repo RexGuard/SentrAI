@@ -154,6 +154,7 @@ behind an arrow.
 | `SENTRAI_HW_CPU_PCT` / `SENTRAI_HW_MEM_PCT` / `SENTRAI_HW_DISK_PCT` / `SENTRAI_HW_TEMP_C` | `90` / `90` / `90` / `85` | core: those limits; CPU, memory and heat must stay over for `SENTRAI_HW_FOR_MIN` (`5`) minutes |
 | `AUTO_ACTIONS` | `block_ip,rate_limit,waf_rule` | core: action types SentrAI may take on its own; any other type waits for a person |
 | `MAX_AUTO_ACTIONS_PER_HOUR` | `10` | core: automatic actions allowed in any rolling hour; past it a person decides |
+| `SENTRAI_AI_MONTHLY_BUDGET_USD` | `25` | every part: most the AI helper may spend in a calendar month (UTC), counted in `core/ai-usage.json`; past it answers come from fixed playbooks; `0` = no cap |
 | `MAX_TTL_HOURS` / `ACTION_TTL_HOURS` | `24` / unset | core: longest any temporary action lasts; per-type hours such as `lock_user=1,block_ip=4` |
 | `CHECK_AFTER_MIN` / `SENTRAI_HEALTH_URL` | `10` / unset | core: minutes after an action to check it worked and did no harm; a page that must keep answering meanwhile |
 | `UNDO_RETRY_S` / `UNDO_RETRIES` | `60` / `3` | core: how often and how many times a failed undo is retried before a person is asked |

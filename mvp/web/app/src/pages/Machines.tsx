@@ -12,21 +12,24 @@ type Machine = {
   name: string; host: string; place: string; online: boolean; waiting: boolean; index: number | null; band: string
   threshold: number; monitor_only: boolean; open: number; contained: number; blocked: number; last_seen: string
   services: string[]; hardware: { cpu: number | null; memory: number | null; disk: number | null }; sessions: number | null
-  owner: Owner | null
+  owner: Owner | null; blocking: Blocking | null
 }
+/** Whether blocks really change the machine's firewall: "dry_run" until someone turns real blocking on. */
+export type Blocking = { state: 'on' | 'dry_run' | 'unknown'; word: string; backend: string | null; version: string | null; detail: string }
 /** Who answers for a machine and gets its alerts: a person from Routing, or the AI agent (with a person as backup). */
 type Owner = { kind: 'person' | 'agent'; name: string; contact: string; backup: string; backup_name: string; missing?: boolean }
 type Contact = { id: string; name: string }
 type Page = {
   panel: boolean; machines: Machine[]; panel_info: { panel_url: string; pin: string }
-  stats: { machines: number; online: number; offline: number; need_a_look: number; blocks: number }
+  stats: { machines: number; online: number; offline: number; need_a_look: number; blocks: number; dry_run?: number }
   band_words: Record<string, string>; contacts: Contact[]; agent_name: string
 }
 type Made = { code: string; expires_at: string; https: boolean; pin: string | null; commands: { linux: string; windows: string } }
 
 // One fixed grid for every row, after Erick's sketch: name (with rename), status, risk level, actions.
 const ROW = 'grid items-center gap-x-6 gap-y-2 grid-cols-[minmax(0,1fr)_auto] md:grid-cols-[minmax(12rem,2fr)_minmax(9rem,1fr)_7rem_7rem]'
-const stateWord = (m: Machine) => (m.waiting ? 'Waiting' : !m.online ? 'Offline' : m.monitor_only ? 'Protection off' : 'Protected')
+const stateWord = (m: Machine) => (m.waiting ? 'Waiting' : !m.online ? 'Offline' : m.monitor_only ? 'Protection off'
+  : m.blocking?.state === 'dry_run' ? 'Not blocking yet' : 'Protected')
 const FILTERS: Filter<Machine>[] = [
   { key: 'state', label: 'State', get: stateWord },
   { key: 'risk', label: 'Risk', get: (m) => riskOf(m.index).word },
@@ -46,6 +49,7 @@ function Status({ m }: { m: Machine }) {
   const word = stateWord(m)
   const [Icon, tone, detail] = word === 'Protected' ? [ShieldCheck, 'text-ok', 'Watched and protected.']
     : word === 'Protection off' ? [ShieldOff, 'text-warn', 'Watched and reported on, but nothing is blocked on it.']
+    : word === 'Not blocking yet' ? [Shield, 'text-warn', m.blocking?.detail ?? 'Blocks are only written down on this machine.']
     : word === 'Waiting' ? [Shield, 'text-warn', 'It has joined but has not sent anything yet.']
     : [ShieldOff, 'text-muted', m.last_seen ? `Last heard from ${m.last_seen}.` : 'It has not reported in.']
   return <span className={'inline-flex items-center gap-1.5 text-sm ' + tone} title={detail}><Icon size={15} aria-hidden />{word}</span>

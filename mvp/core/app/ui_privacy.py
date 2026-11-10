@@ -56,7 +56,7 @@ KINDS: list[dict[str, Any]] = [
      "same slip happens again, and people can see their progress.", "months": 12, "min": 1, "max": 24,
      "deletes": True},
     {"key": "ai", "what": "Questions to the AI", "about": "When an AI model is set up, chat questions and incident "
-     "details are sent to that provider to get an answer.", "why": "To explain threats and suggest fixes.", "months": 0},
+     "details (log lines, addresses, account names) are sent to that provider as they are, to get an answer.", "why": "To explain threats and suggest fixes.", "months": 0},
 ]
 KEYS = {k["key"] for k in KINDS}
 SEE = {
@@ -182,8 +182,10 @@ def notice(data: dict[str, Any]) -> str:
               f"You can ask to see the personal data SentrAI holds about you, or ask questions about this notice: "
               f"{contact}.", ""]
     if data["ai_on"]:
-        lines += ["Some incident details are sent to an outside AI provider to explain threats. Passwords and keys "
-                  "are never sent.", ""]
+        lines += ["To explain threats, SentrAI sends chat questions and incident details (such as log lines, "
+                  "addresses, account and computer names) to an outside AI provider. SentrAI never sends its own "
+                  "settings, sign-in passwords or keys, but it does not remove anything from the log lines it "
+                  "sends: if a log line holds a password or personal detail, the provider sees it.", ""]
     lines += ["_This notice is a starting point. Check it with your data protection officer against the PDPA and "
               "your own IT and HR policies before you share it._", ""]
     return "\n".join(lines)

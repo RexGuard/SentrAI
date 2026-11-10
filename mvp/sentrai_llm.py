@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -43,6 +44,114 @@ BASE_URL = {"anthropic": "https://api.anthropic.com", "openai": "https://api.ope
 
 class LLMError(Exception):
     """The provider could not give a usable answer (network, key, refusal, bad output)."""
+
+
+# ----------------------------------------------------- monthly AI spending cap
+# Every model call goes through a provider's _create, so this is the one place that counts what the AI
+# helper costs. Before a call: refuse with plain words once this month's budget is used. After a call:
+# add its price (from the token counts the service sends back) to a small file shared by every part.
+BUDGET_ENV = "SENTRAI_AI_MONTHLY_BUDGET_USD"
+DEFAULT_BUDGET_USD = 25.0
+USAGE_ENV = "SENTRAI_AI_USAGE_FILE"
+# US dollars per million tokens: (input, output). Longest matching name prefix wins; unknown models use
+# FALLBACK_PRICE so a cap still holds. Cache reads cost a tenth of input, cache writes 1.25x.
+PRICES: dict[str, tuple[float, float]] = {
+    "claude-fable-5-1": (10.0, 50.0), "claude-fable": (8.0, 40.0),
+    "claude-opus-5-5": (4.0, 20.0), "claude-opus": (5.0, 25.0),
+    "claude-sonnet": (2.0, 10.0), "claude-haiku": (0.10, 0.50),
+    "gpt-5-mini": (0.25, 2.0), "gpt-5": (1.25, 10.0), "deepseek": (0.30, 1.20),
+}
+FALLBACK_PRICE = (5.0, 25.0)
+_meter_lock = threading.Lock()
+
+
+class BudgetError(LLMError):
+    """This month's AI budget is used up; the words are for the person asking."""
+
+
+def budget_usd() -> float:
+    """This month's cap in US dollars; 0 (or less) turns the cap off."""
+    try:
+        return float(os.environ.get(BUDGET_ENV, "") or DEFAULT_BUDGET_USD)
+    except ValueError:
+        return DEFAULT_BUDGET_USD
+
+
+def _usage_file() -> str:
+    if os.environ.get(USAGE_ENV):
+        return os.environ[USAGE_ENV]
+    import sentrai_paths
+    return str(sentrai_paths.path("core.ai_usage"))
+
+
+def _month() -> str:
+    return time.strftime("%Y-%m", time.gmtime())
+
+
+def price(model: str, usage: Any) -> float:
+    """What one answer cost, in US dollars, from the usage the service reported (0 when it reported none)."""
+    if usage is None:
+        return 0.0
+    inp, out = next((v for k, v in sorted(PRICES.items(), key=lambda kv: -len(kv[0])) if (model or "").startswith(k)),
+                    FALLBACK_PRICE)
+
+    def n(name: str) -> float:
+        v = getattr(usage, name, None)
+        return float(v) if isinstance(v, (int, float)) else 0.0
+
+    if hasattr(usage, "prompt_tokens"):  # OpenAI and compatible services
+        tokens_in, tokens_out, read, wrote = n("prompt_tokens"), n("completion_tokens"), 0.0, 0.0
+    else:
+        tokens_in, tokens_out = n("input_tokens"), n("output_tokens")
+        read, wrote = n("cache_read_input_tokens"), n("cache_creation_input_tokens")
+    return (tokens_in * inp + tokens_out * out + read * inp * 0.1 + wrote * inp * 1.25) / 1_000_000
+
+
+def spent_this_month() -> dict[str, Any]:
+    """{"month", "usd", "calls", "budget_usd"} for the AI helper this calendar month (UTC)."""
+    row: dict[str, Any] = {"month": _month(), "usd": 0.0, "calls": 0}
+    try:
+        with open(_usage_file(), encoding="utf-8") as f:
+            saved = json.load(f)
+        if isinstance(saved, dict) and saved.get("month") == row["month"]:
+            row["usd"], row["calls"] = float(saved.get("usd") or 0), int(saved.get("calls") or 0)
+    except (OSError, ValueError, TypeError):
+        pass
+    row["budget_usd"] = budget_usd()
+    return row
+
+
+def over_budget_words(row: dict[str, Any]) -> str:
+    return (f"SentrAI's AI helper has used this month's budget (USD {row['budget_usd']:g}). It is back on the 1st, "
+            "or SentrAI's team can raise the budget.")
+
+
+def _check_budget() -> None:
+    cap = budget_usd()
+    if cap <= 0:
+        return
+    row = spent_this_month()
+    if row["usd"] >= cap:
+        raise BudgetError(over_budget_words(row))
+
+
+def _record(model: str, r: Any) -> None:
+    cost = price(model, getattr(r, "usage", None))
+    if cost <= 0:
+        return
+    try:
+        with _meter_lock:
+            row = spent_this_month()
+            row.pop("budget_usd", None)
+            row["usd"], row["calls"] = round(row["usd"] + cost, 6), row["calls"] + 1
+            path = _usage_file()
+            os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+            tmp = f"{path}.{os.getpid()}.tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(row, f)
+            os.replace(tmp, path)
+    except Exception:  # counting must never break an answer
+        pass
 
 
 @dataclass
@@ -257,10 +366,13 @@ class AnthropicProvider(Provider):
         self.client, self.model, self.effort = client, model, effort
 
     def _create(self, **kw: Any) -> Any:
+        _check_budget()
         try:
-            return self.client.messages.create(model=self.model, max_tokens=16000, **kw)
+            r = self.client.messages.create(model=self.model, max_tokens=16000, **kw)
         except Exception as e:  # SDK errors vary by version; the caller only needs "it failed"
             raise LLMError(f"{type(e).__name__}: {e}") from e
+        _record(self.model, r)
+        return r
 
     def complete_json(self, system: str, user: str, schema: dict[str, Any]) -> dict[str, Any]:
         r = self._create(system=system, messages=[{"role": "user", "content": user}],
@@ -321,10 +433,13 @@ class OpenAIProvider(Provider):
         self.client, self.name, self.model = client, name, model
 
     def _create(self, **kw: Any) -> Any:
+        _check_budget()
         try:
-            return self.client.chat.completions.create(model=self.model, **kw)
+            r = self.client.chat.completions.create(model=self.model, **kw)
         except Exception as e:
             raise LLMError(f"{type(e).__name__}: {e}") from e
+        _record(self.model, r)
+        return r
 
     def complete_json(self, system: str, user: str, schema: dict[str, Any]) -> dict[str, Any]:
         if self.name == "openai":  # strict JSON schema output
