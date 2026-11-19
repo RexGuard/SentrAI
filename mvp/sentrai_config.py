@@ -225,6 +225,13 @@ SECTIONS = (
         Field("SENTRAI_LLM_API_KEY", "API key", secret=True),
         Field("SENTRAI_LLM_BASE_URL", "Base URL (only for another OpenAI-compatible service)"),
         Field("SENTRAI_LLM_MODEL", "Model name, blank for the provider's default"),
+        Field("SENTRAI_LLM_SECOND_PROVIDER", "Second provider: takes over on its own when the first one fails "
+              "(no credit, rejected key, busy or down); blank for none", advanced=True),
+        Field("SENTRAI_LLM_SECOND_API_KEY", "Second provider: API key (blank uses its own variable, such as "
+              "DEEPSEEK_API_KEY)", secret=True, advanced=True),
+        Field("SENTRAI_LLM_SECOND_MODEL", "Second provider: model name, blank for its default", advanced=True),
+        Field("SENTRAI_LLM_SECOND_BASE_URL", "Second provider: base URL (only for another OpenAI-compatible "
+              "service)", advanced=True),
         Field("SENTRAI_AI_MONTHLY_BUDGET_USD", "Most the AI helper may spend in one month, in US dollars (then it "
               "answers from fixed playbooks until the 1st; 0 = no cap)", "25", float, advanced=True),
     )),

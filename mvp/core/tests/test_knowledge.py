@@ -116,8 +116,10 @@ def test_endpoints_audit_chat_coach_and_phone(client):
     assert "forwards work email to a personal address" in reply["text"] and "Policy" in reply["text"]
     # ... and a model gets a lookup tool whose answer is marked as company-written data
     chat = client.app.state.chat
-    out = chat._dispatch("search_company_rules", {"query": "travel abroad"}, [], [], {"blocks": [], "followups": []})
-    assert "<company_rules_untrusted>" in out and "Tell Maria" in out
+    import sentrai_llm
+    _, out, err = chat._run_tool(sentrai_llm.ToolCall("t1", "search_company_rules", {"query": "travel abroad"}),
+                                 [], [], {"blocks": [], "followups": []}, "c0de")
+    assert not err and out.startswith("[[SENTRAI_DATA code=c0de ") and "Tell Maria" in out
 
     # the coach's notes quote the company's own rule and its IT contact
     client.post("/ui/coach/settings", json={"regions": ["sg"], "region_checks": {"sg": [0, 1, 2]},

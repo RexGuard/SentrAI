@@ -1204,6 +1204,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def ai_reload() -> dict[str, Any]:
         return ai.reload(core, chat)
 
+    @app.post("/ai/rests/reset")
+    def ai_reset_rests() -> dict[str, Any]:
+        """Forget which AI provider is resting (after a key was replaced or credit was added)."""
+        return ai.reset_rests(core, chat)
+
     @app.post("/ai/test")
     def ai_test(body: Optional[AITestIn] = None) -> dict[str, Any]:
         return ai.test(core, chat, body.model_dump() if body else None)

@@ -37,6 +37,17 @@ Changing a value that a preset sets (marked `[preset]` in `settings show`) turns
 *Advanced*: the business owner's panel then says "Your values were set by hand". Pick a preset again to go
 back. Most settings need a restart: `sudo systemctl restart sentrai.target`.
 
+## AI helper: the first provider and a second one in reserve
+
+```bash
+sudo sentrai ai status      # which provider answers now, the second one, and any rest with its last error
+sudo sentrai ai test        # one real request to each provider
+sudo sentrai ai reset       # forget the rests after a key was replaced or credit added
+```
+
+Set the second provider with `sudo sentrai settings set SENTRAI_LLM_SECOND_PROVIDER=deepseek
+SENTRAI_LLM_SECOND_API_KEY=...` (see [settings](settings.md)).
+
 ## Fewer false alarms and safety limits
 
 ```bash

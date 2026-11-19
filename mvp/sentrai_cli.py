@@ -48,6 +48,7 @@ import getpass
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -159,6 +160,36 @@ def cmd_status(call: Call, a: argparse.Namespace) -> Any:
                          + (f" of USD {cap:g}" if cap > 0 else " (no monthly cap)")
                          + (" - budget used up, answering from playbooks" if 0 < cap <= spend.get("usd", 0) else ""))
     return "\n".join(lines)
+
+
+def _ai_lines(out: dict) -> list[str]:
+    lines = [f"AI helper:  {out.get('chat') or 'off'}" + (f" ({out['off_reason']})" if out.get("off_reason") else "")]
+    for p in out.get("providers") or []:
+        state = "resting until " + time.strftime("%H:%M", time.localtime(p["rest_until"])) if p.get("resting") else \
+            "in use" if p.get("in_use") else "ready"
+        lines.append(f"  {p.get('role', ''):6} {p.get('provider')}:{p.get('model')}  {state}"
+                     + (f"  last error: {p['last_error'][:120]}" if p.get("last_error") else ""))
+    if len(out.get("providers") or []) == 1:
+        lines.append("  No second provider. Add one so Sentry keeps answering when the first fails:\n"
+                     "  sudo sentrai settings set SENTRAI_LLM_SECOND_PROVIDER=deepseek SENTRAI_LLM_SECOND_API_KEY=...")
+    return lines
+
+
+def cmd_ai(call: Call, a: argparse.Namespace) -> Any:
+    if a.action == "test":
+        out = call("POST", "/ai/test")
+        if a.json:
+            return out
+        rows = [out] + list(out.get("second") or [])
+        return "\n".join(f"{'first ' if i == 0 else 'second'} {r.get('provider')}:{r.get('model')}  "
+                         + (f"ok ({r.get('ms')} ms)" if r.get("ok") else f"FAILED: {r.get('error')}"
+                            + (f"\n        {r['hint']}" if r.get("hint") else ""))
+                         for i, r in enumerate(rows))
+    out = call("POST", "/ai/rests/reset") if a.action == "reset" else call("GET", "/ai")
+    if a.json:
+        return out
+    return "\n".join((["Rests forgotten: every provider is tried again."] if a.action == "reset" else [])
+                     + _ai_lines(out))
 
 
 def _settings(call: Call) -> dict:
@@ -887,6 +918,8 @@ def parser() -> argparse.ArgumentParser:
         return sp
 
     add("status", cmd_status, "protection, machines and what waits for a person")
+    ai = add("ai", cmd_ai, "the AI helper: which provider answers, the second one in reserve, rests and a test")
+    ai.add_argument("action", choices=["status", "test", "reset"])
     s = add("settings", cmd_settings, "show or change any setting, including the ones the panel hides")
     s.add_argument("action", choices=["show", "get", "set", "preset"])
     s.add_argument("rest", nargs="*", help="show: SECTION · get: NAME · set: NAME=VALUE ... · preset: NAME")

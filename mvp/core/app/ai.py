@@ -7,6 +7,7 @@ code Cyanide plans with, so a pass means Cyanide can plan and a failure says why
 from __future__ import annotations
 
 import os
+import time
 from typing import Any
 
 from .config import sentrai_config  # the setup wizard's module (config.py puts mvp/ on sys.path)
@@ -38,7 +39,26 @@ def status(core: Saguaro, chat: Any) -> dict[str, Any]:
             "planner": core.planner_status() if hasattr(core, "planner_status") else "fixed playbooks",
             "chat": chat.status, "online": provider is not None,
             "provider": provider.name if provider else name, "model": provider.model if provider else None,
-            "key_source": sentrai_llm.key_source(name) if name else None, "off_reason": why_off()}
+            "key_source": sentrai_llm.key_source(name) if name else None, "off_reason": why_off(),
+            "providers": providers(provider)}
+
+
+def providers(provider: Any) -> list[dict[str, Any]]:
+    """The first provider and the second one in reserve (when set), with whether each is resting and why."""
+    if isinstance(provider, sentrai_llm.FallbackProvider):
+        return provider.status()
+    if provider is None:
+        return []
+    st = sentrai_llm.HEALTH.get(provider.label)
+    until = float(st.get("rest_until") or 0)
+    return [{"provider": provider.name, "model": provider.model, "role": "first", "in_use": True,
+             "resting": until > time.time(), "rest_until": until or None, "last_error": st.get("last_error") or None}]
+
+
+def reset_rests(core: Saguaro, chat: Any) -> dict[str, Any]:
+    """Forget every provider's rest (after a key was replaced or credit was added), then show the status."""
+    sentrai_llm.HEALTH.reset()
+    return status(core, chat)
 
 
 def reload(core: Saguaro, chat: Any) -> dict[str, Any]:

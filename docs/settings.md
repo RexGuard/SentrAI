@@ -156,6 +156,25 @@ month has cost so far. Change the cap (0 turns it off) with:
 sudo sentrai settings set SENTRAI_AI_MONTHLY_BUDGET_USD=50
 ```
 
+Add a **second provider** so Sentry keeps answering when the first one runs out of credit, has its key
+rejected, or is busy or down. It takes over on its own and the first one is tried again after a rest (1,
+then 5, then 30 minutes):
+
+```bash
+sudo sentrai settings set SENTRAI_LLM_SECOND_PROVIDER=deepseek SENTRAI_LLM_SECOND_API_KEY=...
+sudo sentrai ai status      # which one answers now, and which is resting and why
+sudo sentrai ai test        # one real request to each
+sudo sentrai ai reset       # after fixing a key or adding credit: try the first one again now
+```
+
+`SENTRAI_LLM_SECOND_MODEL` and `SENTRAI_LLM_SECOND_BASE_URL` work like their first-provider versions. Both
+providers count towards the same monthly cap.
+
+Text from outside (log lines, attached files, company guides, staff reports, website answers) reaches the
+AI sealed between two lines that carry a fresh random code for each message, and any copy of the marker
+inside the text is removed first. Text an attacker wrote can't close its block early and pass itself off
+as SentrAI's own words.
+
 **Jev** (TypeSafe System One) is a separate, fast AI step that labels log lines the rules miss. It
 turns on when its key is saved:
 
