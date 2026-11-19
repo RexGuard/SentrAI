@@ -17,11 +17,17 @@ provider SENTRAI_LLM_PROVIDER names (a provider's own variable above still wins 
 "auto" (the default) takes the first provider whose own key is set, in the order above.
 SENTRAI_LLM_MODEL overrides the provider's default model; ``list_models()`` asks the provider
 which models the key can use.
+
+A second provider (SENTRAI_LLM_SECOND_PROVIDER, with SENTRAI_LLM_SECOND_API_KEY, _MODEL and _BASE_URL)
+takes over on its own when the first one fails: out of credit, a rejected key, busy or down. A provider
+that fails is rested for 1, then 5, then 30 minutes (see ``Health``), and every part of SentrAI on
+this server shares what was learned through a small file, so a restart does not forget it.
 """
 from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import time
 import urllib.error
@@ -44,6 +50,10 @@ BASE_URL = {"anthropic": "https://api.anthropic.com", "openai": "https://api.ope
 
 class LLMError(Exception):
     """The provider could not give a usable answer (network, key, refusal, bad output)."""
+
+
+class ServiceError(LLMError):
+    """The AI service itself failed (no answer at all): another provider may still answer."""
 
 
 # ----------------------------------------------------- monthly AI spending cap
@@ -209,8 +219,38 @@ def from_env(effort: str = "medium", timeout_s: float = 120.0) -> "Provider | No
     name = provider_name()
     if name is None:
         return None
-    return build(name, api_key(name), os.getenv("SENTRAI_LLM_MODEL"), os.getenv("SENTRAI_LLM_BASE_URL"),
-                 effort=effort, timeout_s=timeout_s)
+    first = build(name, api_key(name), os.getenv("SENTRAI_LLM_MODEL"), os.getenv("SENTRAI_LLM_BASE_URL"),
+                  effort=effort, timeout_s=timeout_s)
+    second = second_from_env(effort, timeout_s)
+    return FallbackProvider([first, second]) if second is not None else first
+
+
+SECOND_ENV = "SENTRAI_LLM_SECOND_PROVIDER"
+
+
+def second_name() -> str | None:
+    """The second provider, when one is set and has a key (its own SENTRAI_LLM_SECOND_API_KEY, else the
+    provider's own variable such as DEEPSEEK_API_KEY)."""
+    name = os.getenv(SECOND_ENV, "").strip().lower()
+    if name not in PROVIDERS:
+        return None
+    return name if (os.getenv("SENTRAI_LLM_SECOND_API_KEY") or os.getenv(KEY_ENV[name])) else None
+
+
+def second_from_env(effort: str = "medium", timeout_s: float = 120.0) -> "Provider | None":
+    """The second provider from the environment, or None. A second provider that cannot be built (a missing
+    package or model name) is left out with a warning in the log: it must never stop the first one."""
+    name = second_name()
+    if name is None:
+        return None
+    try:
+        return build(name, os.getenv("SENTRAI_LLM_SECOND_API_KEY") or os.getenv(KEY_ENV[name]),
+                     os.getenv("SENTRAI_LLM_SECOND_MODEL") or None, os.getenv("SENTRAI_LLM_SECOND_BASE_URL") or None,
+                     effort=effort, timeout_s=timeout_s)
+    except LLMError as e:
+        import logging
+        logging.getLogger(__name__).warning("Second AI provider %s left out: %s", name, e)
+        return None
 
 
 def build(name: str, key: str | None, model: str | None = None, base_url: str | None = None,
@@ -244,6 +284,9 @@ def check(provider: "Provider") -> dict[str, Any]:
 
     Returns {"ok", "provider", "model", "ms", "error", "hint"}.
     """
+    if isinstance(provider, FallbackProvider):  # test each one on its own, so a working second does not hide the first
+        first, *rest = provider.members
+        return {**check(first), "second": [check(m) for m in rest]}
     started = time.monotonic()
     error = None
     try:
@@ -370,7 +413,7 @@ class AnthropicProvider(Provider):
         try:
             r = self.client.messages.create(model=self.model, max_tokens=16000, **kw)
         except Exception as e:  # SDK errors vary by version; the caller only needs "it failed"
-            raise LLMError(f"{type(e).__name__}: {e}") from e
+            raise ServiceError(f"{type(e).__name__}: {e}") from e
         _record(self.model, r)
         return r
 
@@ -437,7 +480,7 @@ class OpenAIProvider(Provider):
         try:
             r = self.client.chat.completions.create(model=self.model, **kw)
         except Exception as e:
-            raise LLMError(f"{type(e).__name__}: {e}") from e
+            raise ServiceError(f"{type(e).__name__}: {e}") from e
         _record(self.model, r)
         return r
 
@@ -500,6 +543,219 @@ class _OpenAIConversation(Conversation):
         for i, out, err in results:
             self.messages.append({"role": "tool", "tool_call_id": i, "content": f"ERROR: {out}" if err else out})
         return self._step()
+
+
+# ------------------------------------------------- second provider, with rests
+HEALTH_ENV = "SENTRAI_AI_HEALTH_FILE"
+REST_S = (60.0, 300.0, 1800.0)  # 1st, 2nd, then every later rest: a busy service recovers fast, a broken one is left
+SOFT_TRIES = 3                  # busy / down / timed out this many times in a row before a rest
+# Errors that will not fix themselves in a minute: rest at once.
+_HARD = re.compile(r"insufficient_quota|credit|billing|spending limit|usage limit|payment|authentication|"
+                   r"invalid x-api-key|incorrect api key|invalid api key|permission|not_found|\b40[134]\b", re.I)
+
+
+def is_hard_failure(error: str) -> bool:
+    """True for a failure that needs a person (no credit, a rejected key, an unknown model)."""
+    return bool(_HARD.search(error or ""))
+
+
+class Health:
+    """Which providers are resting, shared by every part of SentrAI through one small file.
+
+    Per provider ("name:model"): fails in a row, how many rests so far, when the rest ends and the last error.
+    A success clears the fails in a row; the rest count goes back to 0 only after a success too.
+    """
+
+    def __init__(self, path: str | None = None, clock: Any = time.time) -> None:
+        self._path, self.clock = path, clock
+        self._lock = threading.Lock()
+        self._state: dict[str, dict[str, Any]] = {}
+        self._mtime: float | None = None
+
+    def path(self) -> str:
+        if self._path:
+            return self._path
+        if os.environ.get(HEALTH_ENV):
+            return os.environ[HEALTH_ENV]
+        import sentrai_paths
+        return str(sentrai_paths.path("core.ai_health"))
+
+    def _load(self) -> None:  # another part may have written since: read again when the file changed
+        try:
+            m = os.path.getmtime(self.path())
+            if m != self._mtime:
+                with open(self.path(), encoding="utf-8") as f:
+                    data = json.load(f)
+                self._state = {str(k): dict(v) for k, v in data.items() if isinstance(v, dict)} \
+                    if isinstance(data, dict) else {}
+                self._mtime = m
+        except (OSError, ValueError, TypeError):
+            pass
+
+    def _save(self) -> None:
+        try:
+            path = self.path()
+            os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+            tmp = f"{path}.{os.getpid()}.tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(self._state, f, indent=1, sort_keys=True)
+            os.replace(tmp, path)
+            self._mtime = os.path.getmtime(path)
+        except Exception:  # remembering must never break an answer
+            pass
+
+    def get(self, label: str) -> dict[str, Any]:
+        with self._lock:
+            self._load()
+            return dict(self._state.get(label) or {})
+
+    def resting(self, label: str) -> bool:
+        return float(self.get(label).get("rest_until") or 0) > self.clock()
+
+    def passed(self, label: str) -> None:
+        with self._lock:
+            self._load()
+            if self._state.get(label, {}).get("fails") or self._state.get(label, {}).get("rests"):
+                self._state[label] = {"fails": 0, "rests": 0, "rest_until": 0, "last_ok": self.clock(),
+                                      "last_error": self._state[label].get("last_error", "")}
+                self._save()
+
+    def failed(self, label: str, error: str) -> bool:
+        """Count one failure; True when it starts a rest."""
+        with self._lock:
+            self._load()
+            st = self._state.setdefault(label, {"fails": 0, "rests": 0, "rest_until": 0})
+            st["fails"] = int(st.get("fails") or 0) + 1
+            st["last_error"], st["last_at"] = str(error)[:300], self.clock()
+            rest = is_hard_failure(error) or st["fails"] >= SOFT_TRIES
+            if rest:
+                n = int(st.get("rests") or 0)
+                st["rest_until"] = self.clock() + REST_S[min(n, len(REST_S) - 1)]
+                st["rests"], st["fails"] = n + 1, 0
+            self._save()
+            return rest
+
+    def reset(self, label: str | None = None) -> None:
+        """Forget the rests (after the key or credit was fixed); None forgets every provider."""
+        with self._lock:
+            self._load()
+            if label is None:
+                self._state = {}
+            else:
+                self._state.pop(label, None)
+            self._save()
+
+
+HEALTH = Health()
+
+
+class FallbackProvider(Provider):
+    """The first provider, with others in reserve that take over on their own when it fails.
+
+    A provider that is resting is skipped. When every provider is resting, they are still tried in order
+    (soonest rest end first): an answer that might fail beats no answer. Only failures of the service itself
+    move on to the next one. A used-up monthly budget does not (the cap counts every provider together),
+    and neither does a bad answer (the next question tries again).
+    """
+
+    def __init__(self, members: list[Provider], health: Health | None = None) -> None:
+        if not members:
+            raise ValueError("FallbackProvider needs at least one provider")
+        self.members, self.health = list(members), health or HEALTH
+        self.active: Provider = self.members[0]
+
+    # The first provider's name and model, unless another one answered last: what the panel shows as "in use".
+    @property
+    def name(self) -> str:  # type: ignore[override]
+        return self.active.name
+
+    @property
+    def model(self) -> str:  # type: ignore[override]
+        return self.active.model
+
+    @model.setter
+    def model(self, value: str) -> None:  # chat and Cyanide pick their own model: it applies to the first provider
+        self.members[0].model = value
+
+    @property
+    def label(self) -> str:
+        return self.active.label + " (second: " + ", ".join(m.label for m in self.members if m is not self.active) + ")"
+
+    def order(self) -> list[Provider]:
+        ready = [m for m in self.members if not self.health.resting(m.label)]
+        resting = sorted((m for m in self.members if m not in ready),
+                         key=lambda m: float(self.health.get(m.label).get("rest_until") or 0))
+        return ready + resting
+
+    def status(self) -> list[dict[str, Any]]:
+        """Each provider, in order, with whether it is resting and why (for the panel and the CLI)."""
+        out = []
+        for i, m in enumerate(self.members):
+            st = self.health.get(m.label)
+            until = float(st.get("rest_until") or 0)
+            out.append({"provider": m.name, "model": m.model, "role": "first" if i == 0 else "second",
+                        "in_use": m is self.active, "resting": until > self.health.clock(),
+                        "rest_until": until or None, "last_error": st.get("last_error") or None})
+        return out
+
+    def run(self, call: Any) -> Any:
+        """call(provider) on each provider in order until one answers."""
+        last: LLMError | None = None
+        for m in self.order():
+            try:
+                out = call(m)
+            except BudgetError:
+                raise
+            except ServiceError as e:
+                last = e
+                self.health.failed(m.label, str(e))
+                continue
+            self.health.passed(m.label)
+            self.active = m
+            return out
+        raise last or LLMError("no AI provider answered")
+
+    def complete_json(self, system: str, user: str, schema: dict[str, Any]) -> dict[str, Any]:
+        return self.run(lambda m: m.complete_json(system, user, schema))
+
+    def conversation(self, system: str, tools: list[dict[str, Any]]) -> Conversation:
+        return _FallbackConversation(self, system, tools)
+
+
+class _FallbackConversation(Conversation):
+    """Moves to the next provider only on the first message: each provider keeps its own message format, so a
+    conversation that has started stays with the provider that answered it (a later failure ends that answer and
+    is counted, and the next question starts on a provider that works)."""
+
+    def __init__(self, p: FallbackProvider, system: str, tools: list[dict[str, Any]]) -> None:
+        self.p, self.system, self.tools = p, system, tools
+        self.inner: Conversation | None = None
+        self.member: Provider | None = None
+
+    def send_user(self, text: str, images: list[dict[str, str]] | None = None) -> Turn:
+        if self.inner is not None:
+            return self._step(lambda c: c.send_user(text, images=images) if images else c.send_user(text))
+
+        def first(m: Provider) -> Turn:
+            convo = m.conversation(self.system, self.tools)
+            turn = convo.send_user(text, images=images) if images else convo.send_user(text)
+            self.inner, self.member = convo, m
+            return turn
+        return self.p.run(first)
+
+    def send_tool_results(self, results: list[tuple[str, str, bool]]) -> Turn:
+        if self.inner is None:
+            raise LLMError("tool results before the first message")
+        return self._step(lambda c: c.send_tool_results(results))
+
+    def _step(self, call: Any) -> Turn:
+        assert self.inner is not None and self.member is not None
+        try:
+            turn = call(self.inner)
+        except ServiceError as e:
+            self.p.health.failed(self.member.label, str(e))
+            raise
+        return turn
 
 
 def _parse_json(text: str) -> dict[str, Any]:

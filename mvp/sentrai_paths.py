@@ -165,6 +165,9 @@ ENTRIES: dict[str, Entry] = {e.key: e for e in (
     Entry("core.ai_usage", "core", "ai-usage.json", "what the AI helper cost this month (a total and a count, "
           "no questions or answers), checked against SENTRAI_AI_MONTHLY_BUDGET_USD", "Cyanide", "SENTRAI_AI_USAGE_FILE",
           optional=True),
+    Entry("core.ai_health", "core", "ai-health.json", "which AI provider is resting after failures, until when and "
+          "the last error (no questions or answers), so a second provider takes over", "Cyanide", "SENTRAI_AI_HEALTH_FILE",
+          optional=True),
     Entry("core.chat_memory", "core", "chat-memory.json", "what the team taught Cyanide: standing instructions and "
           "remembered facts (Manager view)", "Cyanide", optional=True),
     Entry("core.feature_ideas", "core", "feature-ideas.json", "things people asked Sentry for that SentrAI can't do "

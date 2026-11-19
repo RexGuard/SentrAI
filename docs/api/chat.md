@@ -302,7 +302,8 @@ Which AI model the running core uses, or why it uses none.
   "provider": null,
   "model": null,
   "key_source": null,
-  "off_reason": "CYANIDE_ENABLED=0 turns the AI model off"
+  "off_reason": "CYANIDE_ENABLED=0 turns the AI model off",
+  "providers": []
 }
 ```
 
@@ -314,6 +315,11 @@ Which AI model the running core uses, or why it uses none.
 | `provider`, `model` | which one |
 | `key_source` | the name of the setting the key came from, such as `ANTHROPIC_API_KEY`, never the key |
 | `off_reason` | why there is no model, or `null` |
+| `providers` | the first provider and, when `SENTRAI_LLM_SECOND_PROVIDER` is set, the second one in reserve: `role` (`first` or `second`), `provider`, `model`, `in_use`, `resting` (skipped after failures), `rest_until` (Unix time) and `last_error` |
+
+When the first provider fails (no credit, a rejected key, busy or down), the second one answers on its
+own. A provider is rested after one failure that needs a person (no credit, a rejected key, an unknown
+model) or after three busy or down answers in a row: 1 minute, then 5, then 30. A success ends the rests.
 
 ### `POST /ai/reload`
 
@@ -321,6 +327,13 @@ Reads the saved AI settings again and rebuilds the planner and the chat's model,
 Configuration page calls it after saving.
 
 **Returns** the same as `GET /ai`, after the reload.
+
+### `POST /ai/rests/reset`
+
+Forgets every provider's rest, so the next question tries the first provider again. Use it after a key
+was replaced or credit was added (`sudo sentrai ai reset`).
+
+**Returns** the same as `GET /ai`.
 
 ### `POST /ai/test`
 
@@ -353,4 +366,6 @@ no credit left, no connection), for example:
 {"ok": false, "provider": "anthropic", "model": null, "ms": 0, "error": "enter the API key first", "hint": null, "tested": "form"}
 ```
 
-A failed test is still status `200`: the answer is in `ok`.
+A failed test is still status `200`: the answer is in `ok`. With a second provider set and no body,
+each provider is tested on its own (so a working second one cannot hide a broken first one), and the
+second one's result is in `second`, a list in the same shape.
