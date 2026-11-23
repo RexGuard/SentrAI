@@ -19,7 +19,7 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query
 
-from . import coverage
+from . import coverage, lessons
 from .agents import next_steps
 from .rules import TRIPWIRE_REASONS
 from .ui_approvals import can, category_label, handled, span_label, written_down_only
@@ -309,6 +309,13 @@ def install(app: FastAPI, core: Any) -> None:
         out: dict[str, Any] = {"levels": levels, "headline": headline(levels, cov), "watching": cov,
                                "protection_on": not core.protection().get("monitor_only", False),
                                "handled_count": len(done), "groups": groups(incidents, done)}
+        store = getattr(core, "lessons", None)
+        learned = store.confirmed(everything) if store is not None and severity else {}
+        by_id = {str(i.get("id")): i for i in everything} if learned else {}
+        for b in rows if learned else []:
+            lesson = learned.get(lessons.key_of(by_id.get(b["incident"], {})) or "")
+            if lesson:  # a lesson a person confirmed: still shown, labelled "seen before"
+                b["seen_before"] = lesson["words"]
         if severity == "all":
             out["rows"] = sorted(rows, key=lambda b: b["hours"])
         elif severity:

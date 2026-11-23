@@ -10,9 +10,11 @@ import { allQuiet, type Watching } from '../lib/Risks'
 type Row = {
   id: string; what: string; host: string; severity: string; status: string; owner: string; open_for: string; opened?: string
   needs: string[]; target: string; points: number; attacker: string; summary: string
-  risk?: Risk
+  risk?: Risk; length?: Length
   can: { decide: boolean; ack: boolean; contain_controls: boolean; mine: boolean }
 }
+type Length = { usual: number; usual_words: string; max: number; choices: number[]
+  suggested: { hours: number; words: string; because: string } | null }
 type Risk = { level: 'low' | 'medium' | 'high'; word: string; score: number; reasons: string[] }
 type Page = {
   headline: string; total: number; rows: Row[]; groups: { name: string; rows: Row[] }[]
@@ -21,6 +23,7 @@ type Page = {
 type Verb = 'approve' | 'reject' | 'rollback' | 'keep' | 'mine'
 
 const READ_ONLY = 'Your role can read everything but change nothing.'
+const hoursText = (h: number) => (h < 1 ? `${Math.round(h * 60)} minutes` : `${h} hour${h === 1 ? '' : 's'}`)
 const sevColor: Record<string, string> = { critical: 'text-crit', high: 'text-bad', medium: 'text-warn', low: 'text-ok' }
 const riskStyle: Record<Risk['level'], string> = {
   low: 'border-ok/40 text-ok', medium: 'border-warn/40 text-warn', high: 'border-bad/40 text-bad',
@@ -39,7 +42,7 @@ function RiskTag({ risk }: { risk?: Risk }) {
 
 function Actions({ rows, page, onRun, onGroup, extra }: {
   rows: Row[]; page: Page; extra?: React.ReactNode
-  onRun: (verb: Verb, ids: string[], why: string) => Promise<void>
+  onRun: (verb: Verb, ids: string[], why: string, hours?: number) => Promise<void>
   onGroup?: (ids: string[]) => void
 }) {
   const { can } = useSession()
@@ -50,6 +53,9 @@ function Actions({ rows, page, onRun, onGroup, extra }: {
   const contain = rows.filter((r) => !r.can.decide && r.can.contain_controls)
   const off = !can('act')
   const ids = (xs: Row[]) => xs.map((r) => r.id)
+  const len = decide.length === 1 ? decide[0].length : undefined
+  const [hours, setHours] = useState<number | null>(null)
+  const picked = hours ?? len?.suggested?.hours ?? len?.usual
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap gap-2">
@@ -57,9 +63,18 @@ function Actions({ rows, page, onRun, onGroup, extra }: {
         {decide.length > 0 && <>
           <button className={btnPrimary} disabled={off || !page.protection_on}
             title={off ? READ_ONLY : !page.protection_on ? 'Protection is off (monitor only): turn it on in Configuration to apply a hotpatch.' : undefined}
-            onClick={() => void onRun('approve', ids(decide), '')}><Check size={14} aria-hidden /> Approve {decide.length}</button>
+            onClick={() => void onRun('approve', ids(decide), '', len && picked !== len.usual ? picked : undefined)}><Check size={14} aria-hidden /> Approve {decide.length}</button>
+          {len && (
+            <label className="inline-flex items-center gap-2 text-sm text-soft">
+              for
+              <select value={picked} onChange={(e) => setHours(Number(e.target.value))} disabled={off}
+                className="rounded-md border border-line bg-surface-2 px-2 py-1 text-ink">
+                {len.choices.map((h) => <option key={h} value={h}>{hoursText(h)}{h === len.usual ? ' (usual)' : ''}{h === len.suggested?.hours ? ' (suggested)' : ''}</option>)}
+              </select>
+            </label>)}
           <button className={btn} disabled={off} title={off ? READ_ONLY : undefined} onClick={() => setAsking(asking === 'reject' ? null : 'reject')}><X size={14} aria-hidden /> Reject {decide.length}</button>
         </>}
+        {len?.suggested && hours === null && <span className="basis-full text-xs text-muted">{len.suggested.because}</span>}
         {contain.length > 0 && <>
           <button className={btn} disabled={off} title={off ? READ_ONLY : undefined} onClick={() => void onRun('rollback', ids(contain), '')}><Undo2 size={14} aria-hidden /> Roll back {contain.length}</button>
           <button className={btn} disabled={off} title={off ? READ_ONLY : undefined} onClick={() => setAsking(asking === 'keep' ? null : 'keep')}><Pin size={14} aria-hidden /> Keep {contain.length}</button>
@@ -170,9 +185,9 @@ export default function Approvals({ embedded = false }: { embedded?: boolean }) 
   }, [by, sort])
   useEffect(() => { void load(); const t = setInterval(() => void load(), 10000); return () => clearInterval(t) }, [load])
 
-  const run = async (verb: Verb, ids: string[], justification: string) => {
+  const run = async (verb: Verb, ids: string[], justification: string, hours?: number) => {
     try {
-      const r = await api<{ message: string }>('/ui/approvals/bulk', { body: { verb, ids, justification } })
+      const r = await api<{ message: string }>('/ui/approvals/bulk', { body: { verb, ids, justification, ...(hours ? { hours } : {}) } })
       setNote(r.message); setPicked(new Set()); await load()
     } catch (e) { setNote(e instanceof ApiError ? e.message : 'That did not go through.') }
   }

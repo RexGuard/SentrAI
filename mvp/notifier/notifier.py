@@ -223,8 +223,8 @@ def run_console(core: Core, poll: float, once: bool = False, copies: list[tuple[
     print("🛡️ SentrAI notifier · CONSOLE mode (add the Telegram extension for alerts with buttons)")
     print(f"   polling {core.base_url}/notifications/pending every {poll:g} s. Ctrl+C to stop.")
     email_cfg, email = email_from_env()
-    print(f"   email alerts to {', '.join(email_cfg.recipients)} via {email_cfg.host}" if email_cfg
-          else "   email alerts off (set SMTP_HOST + ALERT_EMAIL_TO to turn them on)")
+    print(f"   email alerts to {email_cfg.describe()}" if email_cfg
+          else "   email alerts off (set SMTP_HOST to turn them on)")
     if copies:
         print(f"   a copy of each alert goes to {', '.join(name for name, _ in copies)}")
     send = with_copies(with_email(console_sender(), "console", email, always=True), copies or [])

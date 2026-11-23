@@ -8,8 +8,13 @@ Telegram or the console as before):
   SMTP_USER            login name, blank for servers without login
   SMTP_PASSWORD        login password or app password  (never hardcode it)
   ALERT_EMAIL_FROM     sender address (default SMTP_USER)
-  ALERT_EMAIL_TO       recipients, comma-separated
+  ALERT_EMAIL_TO       recipients, comma-separated (blank: the people routed to each alert, else the panel's
+                       Owner and Admin accounts, unless SENTRAI_ALERT_OWNERS=off)
   SENTRAI_EMAIL_MODE    backup: only when Telegram fails (default) | always: next to Telegram
+
+Out of the box (no SMTP_HOST of the company's own): a mail relay the SentrAI team runs for every company,
+SENTRAI_RELAY_SMTP_HOST / _PORT / _SECURITY / _USER / _PASSWORD and SENTRAI_RELAY_FROM. These have their own
+names on purpose: a company that sets its own SMTP_HOST never gets the relay's login sent to its server.
 
 Email has no buttons, so each message points the operator to the dashboard to act.
 """
@@ -48,16 +53,22 @@ class EmailConfig:
     mode: str = "backup"
     dashboard_url: str = DEFAULT_DASHBOARD
     timeout: float = 15.0
+    relay: bool = False      # SentrAI's own mail relay, not the company's server
+    to_owners: bool = True   # with nobody routed and no ALERT_EMAIL_TO: the panel's Owner and Admin accounts
 
     @classmethod
     def from_env(cls, env: "dict[str, str] | None" = None) -> "EmailConfig | None":
         """The SMTP settings, or None when email is not set up (console mode for email)."""
         e = os.environ if env is None else env
         host = e.get("SMTP_HOST", "").strip()
+        relay = not host and bool(e.get("SENTRAI_RELAY_SMTP_HOST", "").strip())
+        p = "SENTRAI_RELAY_SMTP_" if relay else "SMTP_"
+        host = e.get(p + "HOST", "").strip()
         recipients = tuple(a.strip() for a in e.get("ALERT_EMAIL_TO", "").split(",") if a.strip())
-        if not host or not recipients:
+        to_owners = e.get("SENTRAI_ALERT_OWNERS", "on").strip().lower() not in ("0", "off", "no", "false")
+        if not host or not (recipients or to_owners):
             return None
-        security = e.get("SMTP_SECURITY", "starttls").strip().lower() or "starttls"
+        security = e.get(p + "SECURITY", "starttls").strip().lower() or "starttls"
         if security not in SECURITY:
             log.warning("SMTP_SECURITY=%r is not one of %s; using starttls", security, "/".join(SECURITY))
             security = "starttls"
@@ -66,17 +77,20 @@ class EmailConfig:
             log.warning("SENTRAI_EMAIL_MODE=%r is not one of %s; using backup", mode, "/".join(MODES))
             mode = "backup"
         try:
-            port = int(e.get("SMTP_PORT", "").strip() or (465 if security == "ssl" else 587))
+            port = int(e.get(p + "PORT", "").strip() or (465 if security == "ssl" else 587))
         except ValueError:
             port = 465 if security == "ssl" else 587
-        user = e.get("SMTP_USER", "").strip()
-        return cls(host=host, port=port, security=security, user=user, password=e.get("SMTP_PASSWORD", ""),
-                   sender=e.get("ALERT_EMAIL_FROM", "").strip() or user or f"sentrai@{host}",
+        user = e.get(p + "USER", "").strip()
+        sender = (e.get("SENTRAI_RELAY_FROM", "") if relay else e.get("ALERT_EMAIL_FROM", "")).strip()
+        return cls(host=host, port=port, security=security, user=user, password=e.get(p + "PASSWORD", ""),
+                   sender=sender or user or f"sentrai@{host}", relay=relay, to_owners=to_owners,
                    recipients=recipients, mode=mode,
                    dashboard_url=e.get("SENTRAI_DASHBOARD_URL", "").strip() or DEFAULT_DASHBOARD)
 
     def describe(self) -> str:
-        return (f"{', '.join(self.recipients)} via {self.host}:{self.port} ({self.security}), "
+        who = ", ".join(self.recipients) or ("the people routed to each alert, else the Owner and Admin accounts"
+                                             if self.to_owners else "nobody")
+        return (f"{who} via {'SentrAI mail relay ' if self.relay else ''}{self.host}:{self.port} ({self.security}), "
                 + ("next to Telegram" if self.mode == "always" else "when Telegram fails"))
 
 
@@ -200,10 +214,12 @@ def _email_html(f: dict, rows: list[tuple[str, str]], act: str, note: str, dashb
 
 
 def recipients_for(cfg: EmailConfig, notification: dict) -> tuple[str, ...]:
-    """The routed people's emails (the core's routing contacts), else ALERT_EMAIL_TO."""
+    """The routed people's emails (the core's routing contacts), else ALERT_EMAIL_TO, else the panel's Owner
+    and Admin accounts the core lists on each alert (`owners`), so alerts reach someone with no setup at all."""
     routed = tuple(dict.fromkeys(str(d.get("email")).strip() for d in notification.get("deliver_to") or []
                                  if isinstance(d, dict) and str(d.get("email") or "").strip()))
-    return routed or cfg.recipients
+    owners = tuple(dict.fromkeys(str(x).strip() for x in notification.get("owners") or [] if str(x or "").strip()))
+    return routed or cfg.recipients or (owners if cfg.to_owners else ())
 
 
 def build_message(cfg: EmailConfig, notification: dict, incident: dict | None, risk: dict | None) -> EmailMessage:
@@ -246,6 +262,9 @@ def email_sender(cfg: EmailConfig, **factories) -> Callable[[dict, "dict | None"
 
     def send(n: dict, incident: dict | None, risk: dict | None) -> str:
         counter["n"] += 1
+        if not recipients_for(cfg, n):
+            log.info("%s not emailed: nobody to send it to (no routing email, ALERT_EMAIL_TO or account)", n.get("id"))
+            return "email-skipped"
         msg = build_message(cfg, n, incident, risk)
         msg_id = send_email(cfg, msg, **factories)
         log.info("delivered %s by email to %s (%s)", n.get("id"), msg["To"], msg_id)

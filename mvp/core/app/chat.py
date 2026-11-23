@@ -29,7 +29,7 @@ from . import outside_text
 from .config import Settings  # noqa: F401  (puts mvp/ on sys.path, for sentrai_llm)
 from .saguaro import AGENT_OWNER, Saguaro
 from .summary import PLAIN_ACTIONS, plain_names, plain_title
-from . import approval_risk, coverage
+from . import approval_risk, coverage, fix_length
 from .ui_approvals import handled
 
 import sentrai_llm  # noqa: E402
@@ -270,6 +270,10 @@ touched", "sure: it matched a known attack pattern", "not sure: a person should 
 what its words say (no computer reports in, or which ones went quiet), because SentrAI cannot see there.
 - When they ask why SentrAI did not act by itself, use get_incident's countersign: waited_because lists, in \
 plain words, each question Countersign (SentrAI's safety check) answered no.
+- get_incident's seen_before means a person confirmed this kind of alert from that network is normal for them, \
+backed by the incidents it lists. Say so plainly, still treat the alert seriously, and never promise it is safe.
+- How long a fix lasts: get_incident's fix_length gives the usual length, the limit, and a suggestion when they \
+picked the same other length the last times. They can pick a length when they approve on the Approvals page.
 - When they ask whether to approve, use get_incident's risk_to_approve: its word ("Low risk to approve", "Check \
 before approving", "Look closely first") and one or two of its reasons. It is about what a yes could break, not \
 how bad the attack is.
@@ -883,6 +887,16 @@ class OperatorChat:
             timeline = inc.get("timeline") or []
             out = {**inc, "how_sure": brief.how_sure(inc), "latest_events": events,
                    "timeline": timeline[-TIMELINE_IN_LOOKUP:]}
+            if getattr(c, "lessons", None) is not None and (lesson := c.lessons.match(inc, c.list_incidents(host=None))):
+                out["seen_before"] = {"words": lesson["words"], "evidence": lesson["evidence"],
+                                      "confirmed_by": lesson.get("by"), "confirmed_at": lesson.get("at")}
+            if inc.get("status") in ("open", "acknowledged") and hasattr(c, "planned_fixes"):
+                fixes = [p for p in c.planned_fixes([iid]).get(iid) or [] if p.get("allowed")]
+                if fixes:
+                    usual = max(c.settings.ttl_for(p["type"]) for p in fixes)
+                    out["fix_length"] = {"usual": fix_length.words(usual), "limit": fix_length.words(c.settings.max_ttl_hours),
+                                         "suggested": fix_length.suggest(inc, c.list_incidents(host=None), usual,
+                                                                         c.settings.max_ttl_hours)}
             if inc.get("status") in ("open", "acknowledged", "contained") and hasattr(c, "planned_fixes"):
                 seen = approval_risk.seen_on_map(c.list_incidents(host=None)).get(str(inc.get("src_ip") or ""), ())
                 out["risk_to_approve"] = approval_risk.score(inc, c.planned_fixes([iid]).get(iid), seen)

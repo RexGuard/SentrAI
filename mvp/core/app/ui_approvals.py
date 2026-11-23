@@ -11,7 +11,7 @@ from typing import Any
 
 from fastapi import Body, FastAPI, HTTPException, Query, Request
 
-from . import approval_risk, coverage
+from . import approval_risk, coverage, fix_length, lessons
 from .config import sentrai_config as cfg
 from .saguaro import BadRequestError, ConflictError
 
@@ -139,7 +139,7 @@ def needs(inc: dict) -> list[str]:
     return why
 
 
-def row(inc: dict, risk: dict | None = None) -> dict[str, Any]:
+def row(inc: dict, risk: dict | None = None, length: dict | None = None) -> dict[str, Any]:
     opened = parse_ts(inc.get("opened_at"))
     age = (datetime.now(opened.tzinfo) - opened).total_seconds() if opened else 0.0
     acts = [a for a in inc.get("actions") or [] if isinstance(a, dict) and a.get("target")]
@@ -153,6 +153,7 @@ def row(inc: dict, risk: dict | None = None) -> dict[str, Any]:
         "points": contribution(inc), "can": can(inc), "attacker": attacker(inc),
         "summary": inc.get("summary") or inc.get("reason") or "",
         **({"risk": risk} if risk is not None else {}),
+        **({"length": length} if length is not None else {}),
     }
 
 
@@ -163,8 +164,31 @@ def risks(core: Any, waiting: list[dict], everything: list[dict]) -> dict[str, d
     """The risk tag of each waiting approval (approval_risk.py), by incident id."""
     planned = core.planned_fixes([str(i.get("id")) for i in waiting]) if hasattr(core, "planned_fixes") else {}
     seen = approval_risk.seen_on_map(everything)
-    return {str(i.get("id")): approval_risk.score(i, planned.get(str(i.get("id"))), seen.get(str(i.get("src_ip") or ""), ()))
+    store = getattr(core, "lessons", None)
+    learned = store.confirmed(everything) if store is not None else {}
+    return {str(i.get("id")): approval_risk.score(i, planned.get(str(i.get("id"))), seen.get(str(i.get("src_ip") or ""), ()),
+                                                  learned.get(lessons.key_of(i) or ""))
             for i in waiting}
+
+
+def lengths(core: Any, waiting: list[dict], everything: list[dict]) -> dict[str, dict]:
+    """For each open one to decide: its fixes' usual length, the lengths a person may pick, and SentrAI's
+    suggestion from what they picked for the same kind before (fix_length.py)."""
+    s = getattr(core, "settings", None)
+    if s is None or not hasattr(core, "planned_fixes"):
+        return {}
+    decide = [i for i in waiting if can(i)["decide"] and not can(i)["mine"]]
+    planned = core.planned_fixes([str(i.get("id")) for i in decide])
+    out = {}
+    for i in decide:
+        fixes = [p for p in planned.get(str(i.get("id"))) or [] if p.get("allowed", True)]
+        if not fixes:
+            continue
+        usual = max(s.ttl_for(p["type"]) for p in fixes)
+        out[str(i.get("id"))] = {"usual": usual, "usual_words": fix_length.words(usual), "max": s.max_ttl_hours,
+                                 "choices": fix_length.choices(s.max_ttl_hours, usual),
+                                 "suggested": fix_length.suggest(i, everything, usual, s.max_ttl_hours)}
+    return out
 
 
 def low_risk_ids(waiting: list[dict], tags: dict[str, dict]) -> list[str]:
@@ -238,10 +262,11 @@ def install(app: FastAPI, core: Any) -> None:
         everything = core.list_incidents(host=None)
         waiting = pending(everything)
         tags = risks(core, waiting, everything)
+        long = lengths(core, waiting, everything)
         if sort == "risk":
             waiting.sort(key=lambda i: (not can(i)["decide"], tags[str(i.get("id"))]["score"]))
         made, rest = saved_groups(waiting, cfg.approval_groups())
-        tagged = lambda i: row(i, tags.get(str(i.get("id"))))  # noqa: E731
+        tagged = lambda i: row(i, tags.get(str(i.get("id"))), long.get(str(i.get("id"))))  # noqa: E731
         low = low_risk_ids(waiting, tags)
         if brief:
             return {"headline": headline(waiting), "total": len(waiting), "rows": [tagged(i) for i in rest[:brief]],
@@ -277,6 +302,11 @@ def install(app: FastAPI, core: Any) -> None:
         """Approve, reject, roll back, keep or "this was me" for several incidents; each is audited on its own."""
         verb, op = str(body.get("verb") or ""), operator(request, body)
         ids, why = [str(i) for i in body.get("ids") or []], str(body.get("justification") or "").strip()
+        hours = body.get("hours")
+        if hours is not None and verb != "approve":
+            raise HTTPException(400, "a length only goes with approve")
+        if hours is not None and (bad := fix_length.check(hours, core.settings.max_ttl_hours)):
+            raise HTTPException(400, bad)
         if verb not in ("approve", "reject", "rollback", "keep", "mine"):
             raise HTTPException(400, "verb is approve, reject, rollback, keep or mine")
         if verb == "reject" and not why:
@@ -299,7 +329,8 @@ def install(app: FastAPI, core: Any) -> None:
                 if verb in ("approve", "reject"):
                     if allowed["ack"]:
                         core.ack(iid, op, "dashboard")
-                    core.decision(iid, op, verb, why or f"Approved as a group of {len(ids)} from the dashboard")
+                    core.decision(iid, op, verb, why or f"Approved as a group of {len(ids)} from the dashboard",
+                                  *([float(hours)] if verb == "approve" and hours is not None else []))
                 elif verb == "rollback":
                     core.rollback(iid, op, why or f"Rolled back as a group of {len(ids)} by operator from dashboard")
                 elif verb == "keep":

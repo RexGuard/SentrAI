@@ -56,7 +56,7 @@ def fake_smtp(monkeypatch):
 
 def test_no_smtp_settings_means_email_off():
     assert EmailConfig.from_env({}) is None
-    assert EmailConfig.from_env({"SMTP_HOST": "smtp.example.test"}) is None  # no recipients
+    assert EmailConfig.from_env({"SMTP_HOST": "smtp.example.test", "SENTRAI_ALERT_OWNERS": "off"}) is None  # nobody
     assert EmailConfig.from_env({"ALERT_EMAIL_TO": "soc@example.test"}) is None  # no server
 
 
@@ -162,3 +162,26 @@ def test_routed_alerts_go_to_the_owner_not_the_whole_list():
                              {"name": "Amir again", "email": "amir@example.test"}]}
     assert recipients_for(cfg, routed) == ("amir@example.test",)
     assert recipients_for(cfg, {"deliver_to": [{"name": "Lee"}]}) == ("soc@example.test",)
+
+
+def test_no_recipients_set_goes_to_the_owner_accounts():
+    from emailer import recipients_for
+    cfg = EmailConfig.from_env({"SMTP_HOST": "smtp.example.test"})
+    assert cfg is not None and cfg.recipients == () and cfg.to_owners
+    owners = {"owners": ["owner@acme.test", "admin@acme.test", "owner@acme.test"]}
+    assert recipients_for(cfg, owners) == ("owner@acme.test", "admin@acme.test")
+    assert recipients_for(cfg, {**owners, "deliver_to": [{"email": "amir@example.test"}]}) == ("amir@example.test",)
+    send = email_sender(cfg)
+    assert send(NOTE, INCIDENT, None) == "email-skipped" and FakeSMTP.sent == []  # nobody at all: nothing sent
+    send({**NOTE, **owners}, INCIDENT, None)
+    assert FakeSMTP.sent[-1][1]["To"] == "owner@acme.test, admin@acme.test"
+
+
+def test_the_sentrai_mail_relay_is_used_only_without_a_company_server():
+    relay = {"SENTRAI_RELAY_SMTP_HOST": "relay.sentrai.test", "SENTRAI_RELAY_SMTP_USER": "relay",
+             "SENTRAI_RELAY_SMTP_PASSWORD": "relay-pw", "SENTRAI_RELAY_FROM": "alerts@sentrai.test"}
+    cfg = EmailConfig.from_env(relay)
+    assert cfg.relay and cfg.host == "relay.sentrai.test" and cfg.sender == "alerts@sentrai.test"
+    assert cfg.password == "relay-pw" and "relay" in cfg.describe()
+    own = EmailConfig.from_env(relay | {"SMTP_HOST": "mail.acme.test", "SMTP_USER": "acme"})
+    assert not own.relay and own.host == "mail.acme.test" and own.password == ""  # never the relay's login

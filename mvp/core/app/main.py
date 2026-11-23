@@ -24,6 +24,7 @@ import sentrai_accounts as acc  # noqa: E402
 from .reports import build_report, render_markdown, render_pdf
 from . import summary as client_summary
 from . import coverage
+from . import lessons as lessons_mod
 from . import auth as auth_cookie
 from . import ui_analytics, ui_approvals, ui_tuning, ui_audit, ui_incidents, ui_limits, ui_machine, ui_machines, ui_overview, ui_report, ui_routing, ui_settings, ui_setup, ui_team, ui_recovery, ui_privacy, ui_risks, ui_feedback, ui_coach, ui_mobile, ui_knowledge, ui_readiness, ui_websites
 from . import websites as websites_mod
@@ -62,6 +63,7 @@ class DecisionIn(BaseModel):
     operator: str
     decision: str
     justification: Optional[str] = None
+    hours: Optional[float] = None  # approve: how long the fix lasts (fix_length.check)
 
 
 class OperatorIn(BaseModel):
@@ -583,6 +585,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         record=lambda rtype, data: core.scribe.record(core.name, rtype, data))
     chat.websites = company_sites  # Sentry's website check: only sites the company proved it owns
     ui_websites.install(app, company_sites)
+    # Lessons backed by incidents (lessons.py): the approvals, the risk bubbles, Sentry and the AI planner read them.
+    core.lessons = lessons_mod.Lessons(sentrai_paths.path("core.lessons", core.settings.db_path.parent, migrate=False),
+                                       clock=core.clock.now)
+    lessons_mod.install(app, core, core.lessons)
+    core.account_emails = lambda: [p["email"] for p in acc.people()
+                                   if p.get("role") in ("owner", "admin") and p.get("email")]
     ui_coach.install(app, core, coach, coach_org, after_erase=phones.forget)
     ui_mobile.install(app, core, coach, phones, staff, coach_org,
                       lambda: coach_mod.notice(coach.overview(), *coach_org()))
@@ -601,7 +609,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         lambda kind, data: core.scribe.record(core.name, kind, data))
     machines_page = ui_machines.install(app, core, machines, machine_health)
     core.watching = lambda: coverage.of(machines_page())  # "all quiet" only when the computers report in (coverage.py)
-    ui_readiness.install(app, core, machines_page, backups)
+    ui_readiness.install(app, core, machines_page, backups,
+                         lambda: [p["email"] for p in acc.people() if p.get("role") in ("owner", "admin")])
     ui_machine.install(app, core, machine_jobs)
     ui_setup.install(app, lambda q, o, a: chat.interpret_setup(q, o, a), lambda: (ai.reload(core, chat), core.extensions.reload()))
     ui_report.install(app, core, staff)
@@ -698,7 +707,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/incidents/{iid}/decision")
     def post_decision(iid: str, body: DecisionIn) -> dict[str, Any]:
-        return _verb(core.decision, iid, body.operator, body.decision.strip().lower(), body.justification)
+        return _verb(core.decision, iid, body.operator, body.decision.strip().lower(), body.justification, body.hours)
 
     @app.post("/incidents/{iid}/rollback")
     def post_rollback(iid: str, body: OperatorIn) -> dict[str, Any]:

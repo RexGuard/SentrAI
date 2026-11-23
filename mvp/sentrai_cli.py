@@ -692,8 +692,34 @@ def cmd_incidents(call: Call, a: argparse.Namespace) -> Any:
         return out if a.json else f"{a.ids[0]} resolved."
     if a.action == "reject" and not a.why:
         raise CliError("a reason is needed to reject: --why \"...\"")
+    if a.hours is not None and a.action != "approve":
+        raise CliError("--hours only goes with approve")
     out = call("POST", "/ui/approvals/bulk", {"verb": BULK[a.action], "ids": a.ids, "operator": op,
-                                              "justification": a.why or ""})
+                                              "justification": a.why or "",
+                                              **({"hours": a.hours} if a.hours is not None else {})})
+    return out if a.json else out.get("message", out)
+
+
+def cmd_lessons(call: Call, a: argparse.Namespace) -> Any:
+    """Lessons SentrAI learned about this company, each with the incidents behind it (core/app/lessons.py)."""
+    if a.action == "list":
+        out = call("GET", "/ui/lessons")
+        if a.json:
+            return out
+        rows = out.get("lessons") or []
+        if not rows:
+            return (f"No lessons yet. SentrAI suggests one when staff close the same kind of alert from one network as "
+                    f"not a threat {out.get('min_evidence', 2)} times (in {out.get('keep_days', 90)} days).")
+        blocks = [f"{r['key']}  [{r['state']}]" + (f"  by {r['by']} {r.get('at', '')}" if r.get("by") else "")
+                  + f"\n    {r['words']}" for r in rows]
+        tip = "\n\nAnswer one: sentrai lessons yes KEY (normal for us) | no KEY (keep treating as an attack)"
+        return "\n".join(blocks) + (tip if out.get("suggested") else "")
+    if not a.key:
+        raise CliError("which lesson? (sentrai lessons list)")
+    if a.action == "forget":
+        out = call("POST", "/ui/lessons/forget", {"key": a.key})
+    else:
+        out = call("POST", "/ui/lessons/decide", {"key": a.key, "yes": a.action == "yes"})
     return out if a.json else out.get("message", out)
 
 
@@ -1040,6 +1066,10 @@ def parser() -> argparse.ArgumentParser:
     n.add_argument("--why", help="reject: the reason (also saved for the others)")
     n.add_argument("--note", help="resolve: what was done")
     n.add_argument("--why-risk", action="store_true", help="waiting: the reasons behind each risk tag")
+    n.add_argument("--hours", type=float, help="approve: how long the fix lasts (within MAX_TTL_HOURS)")
+    ls = add("lessons", cmd_lessons, "lessons SentrAI learned from how staff closed alerts, with the incidents behind them")
+    ls.add_argument("action", choices=["list", "yes", "no", "forget"])
+    ls.add_argument("key", nargs="?", help="the lesson, as listed (kind|network)")
     fb = add("feedback", cmd_feedback, "messages sent with the panel's Contact Us form")
     fb.add_argument("action", choices=["list", "done", "open"])
     fb.add_argument("ids", nargs="*")

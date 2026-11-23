@@ -35,8 +35,10 @@ def built_in(core: Any) -> list[dict[str, Any]]:
                     "detail": f"Sends {', '.join(hook.actions)} to {urlsplit(hook.url).netloc}" if hook else
                               "Set a URL to hand blocks to another system.",
                     "last_error": hook.last_error if hook else None},
-        "email": {"configured": bool(os.getenv("SMTP_HOST") and os.getenv("ALERT_EMAIL_TO")),
-                  "detail": "Handled by the notifier."},
+        "email": {"configured": bool(os.getenv("SMTP_HOST") or os.getenv("SENTRAI_RELAY_SMTP_HOST")),
+                  "detail": "Handled by the notifier: to ALERT_EMAIL_TO, or the people routed to each alert, or the "
+                            "Owner and Admin accounts." + (" Sent through SentrAI's mail relay."
+                                                           if not os.getenv("SMTP_HOST") and os.getenv("SENTRAI_RELAY_SMTP_HOST") else "")},
     }
     return [{"name": k, **BUILT_IN[k], "built_in": True, "added": True, "added_by": "built_in", "running": True,
              "testable": False, "last_ok": None, "last_error": None, "error": None, "source": "built_in",
