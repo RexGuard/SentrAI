@@ -109,6 +109,13 @@ python sentrai_paths.py json      # the map as JSON
 `run.sh`, `run.ps1` and the installers run `index` for you. On a server, simply read
 `/var/lib/sentrai/INDEX.md` (`sudo less /var/lib/sentrai/INDEX.md`).
 
+## The hosted service
+
+`sentrai_hosted.py` (see [docs/hosted.md](../docs/hosted.md)) keeps many companies on one server. Its own root,
+`SENTRAI_HOSTED_HOME` (default `/var/lib/sentrai-hosted`), holds `companies.json` (each company's name, local
+port and status), `companies/<name>/` (that company's data root, laid out exactly like the tree above, plus
+`run/core.log`) and `removed/` (the folders of removed companies, set aside, never deleted).
+
 ## Not data
 
 - Service settings: `/etc/sentrai/sentrai.env`, `agent.env` and the dashboard certificate in

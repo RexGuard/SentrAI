@@ -10,6 +10,7 @@ from typing import Any, Callable
 
 from fastapi import Body, FastAPI, HTTPException
 
+from . import hosted
 from .config import sentrai_config as cfg
 
 
@@ -63,6 +64,8 @@ def install(app: FastAPI, reload_after_save: Callable[[], Any]) -> None:
             text = str(raw).strip()
             if f.secret and not text:
                 continue
+            if text != values.get(f.env, "") and (why := hosted.setting_refused(f.env, text)) is not None:
+                raise HTTPException(403, f"{f.prompt}: {why}")
             if not cfg.valid(f, text):
                 bad.append(f.prompt)
             else:

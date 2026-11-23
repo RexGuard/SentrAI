@@ -61,6 +61,9 @@ To keep SentrAI running on a Linux server, install it as services instead of usi
 `sudo ./deploy/install-panel.sh --protect <your admin IP>`. It opens the dashboard over HTTPS to that IP
 only and prints the address and the sign-in. See [deploy/README.md](deploy/README.md).
 
+To run SentrAI for many companies on one server, each with its own core, data folder and web address
+(`acme.sentrai.pro`), use `python sentrai_hosted.py`: see [docs/hosted.md](../docs/hosted.md).
+
 ## Configuration
 
 ### First-run setup

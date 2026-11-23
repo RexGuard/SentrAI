@@ -25,8 +25,8 @@ from typing import Any
 import uvicorn
 
 from . import fleet
+from .agent_routes import AGENT_OPEN  # the hosted gateway (mvp/web/gateway.py) applies the same list
 
-AGENT_OPEN = frozenset({("POST", "/fleet/enrol"), ("GET", "/health")})
 
 
 def agents_only(app: Any, routes: frozenset[tuple[str, str]]) -> Any:
