@@ -27,7 +27,8 @@ On the panel (installed as /usr/local/bin/sentrai, runs as the service account):
     sudo sentrai coach status | setup --regions sg,my [--checks-done] [--notice-shared] [--names on|off]
                        | apps on|off APP... | person EMAIL [--name N] [--group G] [--region R] [--reach R]
                        | data EMAIL | erase EMAIL | sample [--clear] | notice > notice.md
-                       | app-invite EMAIL | phones | phone-signout ID
+                       | app-invite EMAIL | phones | phone-signout ID | connectors | read [google|microsoft]
+                       | send   (setup --email-notes on|off: email each note to staff reached by email)
     sudo sentrai rules list | add FILE [--title T] [--not-for-staff] | text TITLE --about TEXT | link URL [--title T]
                        [--about TEXT] | show ID | remove ID | ask QUESTION... | facts [--it-contact C]
                        [--report-how H] [--allowed A,B] [--blocked A,B] | system NAME [--what W] [--looks-after P]
@@ -856,7 +857,8 @@ def cmd_coach(call: Call, a: argparse.Namespace) -> Any:
         apps = ", ".join(x["name"] for x in out["apps"] if x["key"] in s["apps_on"]) or "none"
         lines = [("On: recording and coaching." if out["ready"] else "Off: " + out["why_not_ready"]),
                  f"Apps: {apps}", f"Regions: {', '.join(s['regions']) or 'none'}   names shown: "
-                 f"{'yes' if s['show_names'] else 'team totals only'}   file names kept: {'yes' if s['file_names'] else 'no'}",
+                 f"{'yes' if s['show_names'] else 'team totals only'}   file names kept: {'yes' if s['file_names'] else 'no'}"
+                 f"   notes by email: {'yes' if s.get('email_notes') else 'no'}",
                  f"People: {t['people']} ({t['notice_confirmed']} confirmed the notice)   last 30 days: "
                  f"{t['moments_30d']} risky moments, {t['fixed_30d']} fixed, {t['urgent_open']} urgent open, "
                  f"{t['lessons_done']} lessons done",
@@ -874,6 +876,8 @@ def cmd_coach(call: Call, a: argparse.Namespace) -> Any:
             body["notice_shared"] = True
         if a.names:
             body["show_names"] = a.names == "on"
+        if a.email_notes:
+            body["email_notes"] = a.email_notes == "on"
         out = call("POST", "/ui/coach/settings", body)
         return out if a.json else ("Coach is on." if out["ready"] else "Saved. Still off: " + out["why_not_ready"])
     if a.action == "apps":
@@ -891,6 +895,35 @@ def cmd_coach(call: Call, a: argparse.Namespace) -> Any:
                 f"Added 3 sample people and {out['added']['moments']} risky moments. Remove: sentrai coach sample --clear")
     if a.action == "notice":
         return call("GET", "/ui/coach/notice.md")
+    if a.action == "send":
+        out = call("POST", "/ui/coach/notes/send", {"operator": operator_name()})
+        if a.json:
+            return out
+        if out.get("skipped"):
+            return out["skipped"]
+        text = f"Emailed {out['notes']} note(s) to {out['sent']} person(s)." if out["sent"] else "No notes waiting."
+        return text + (f" {out['failed']} failed: {out['error']}" if out["failed"] else "")
+    if a.action in ("connectors", "read"):
+        if a.action == "read":
+            if a.state not in (None, "google", "microsoft"):
+                raise CliError("sentrai coach read [google|microsoft]  (leave it out for both)")
+            out = call("POST", "/ui/coach/connectors/read", {"app": a.state, "operator": operator_name()})
+        else:
+            out = call("GET", "/ui/coach/connectors")
+        if a.json:
+            return out
+        lines = []
+        for app, r in (out.get("results") or {}).items():
+            lines.append(f"{app}: " + (r.get("skipped") or ("failed: " + r["error"] if r.get("error") else
+                                       f"read {r['records']} risky action(s), {r['moments']} new moment(s), "
+                                       f"{r['dropped']} left out")))
+        for c in out["connectors"]:
+            state = ("not connected. Set: " + c["setup"]) if not c["configured"] else (
+                "connected" + ("" if c["switched_on"] else ", but switched off (sentrai coach apps on " + c["app"] + ")"))
+            last = f"  last read {c['last_ok']}" if c["last_ok"] else ""
+            err = f"  last error: {c['last_error']}" if c["last_error"] else ""
+            lines.append(f"{c['name']}: {state}{last}{err}")
+        return "\n".join(lines)
     if a.action == "phones":
         out = call("GET", "/ui/mobile")
         if a.json:
@@ -1081,14 +1114,15 @@ def parser() -> argparse.ArgumentParser:
     ide.add_argument("--note", help="planned/done/dismiss: a short note kept with the idea")
     co = add("coach", cmd_coach, "Security Coach: work apps it reads, regions' checklists, people it coaches")
     co.add_argument("action", choices=["status", "setup", "apps", "person", "data", "erase", "sample", "notice",
-                                       "app-invite", "phones", "phone-signout"])
+                                       "app-invite", "phones", "phone-signout", "connectors", "read", "send"])
     co.add_argument("state", nargs="?", help="apps: on or off · person, data, erase, app-invite: the work email · "
-                                             "phone-signout: the phone's id")
+                                             "phone-signout: the phone's id · read: google or microsoft")
     co.add_argument("items", nargs="*", help="apps: google, microsoft, okta, slack, zoom, dropbox, box, github, ...")
     co.add_argument("--regions", help="setup: where staff work, e.g. sg,my,eu (sentrai coach status lists them)")
     co.add_argument("--checks-done", action="store_true", help="setup: every region's checklist is done")
     co.add_argument("--notice-shared", action="store_true", help="setup: staff have the notice (sentrai coach notice)")
     co.add_argument("--names", choices=["on", "off"], help="setup: show people's names to Owners and Admins")
+    co.add_argument("--email-notes", choices=["on", "off"], help="setup: email each note to staff reached by email")
     co.add_argument("--name")
     co.add_argument("--group")
     co.add_argument("--region")

@@ -24,6 +24,7 @@ a server that keeps watch around the clock.
 | Sign in, invite your team, or reset a sign-in | [Signing in](sign-in.html) | |
 | Change thresholds, alerts or protected IPs, or tell SentrAI who your administrators are | [Settings](settings.html) | |
 | Change how the Sentry chat assistant talks to your team | [How Sentry talks](sentry.html) | |
+| Connect the Security Coach to Google Workspace or Microsoft 365 | [Security Coach connections](coach-connectors.html) | about 10 minutes |
 | Run setup, tuning and control from the server, as the SentrAI team | [Team command line](cli.html) | |
 | Fix a port clash, a missing package or a blocked dashboard | [Troubleshooting](troubleshooting.html) | |
 | Call SentrAI from your own scripts and tools | [API reference](api/index.html) | |

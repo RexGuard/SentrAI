@@ -36,11 +36,13 @@ DAY = 86400.0
 MONTH = 30.4 * DAY
 REPEAT_WINDOW = 90 * DAY  # a slip again within this window gets the next, deeper lesson
 MAX_EVENTS = 500  # per call
+RELEASE_HELD_DAYS = 7  # notes held for the notice that become ready once the person confirms it
 LEVELS = ("tip", "fix_soon", "urgent")
 LEVEL_WORDS = {"tip": "Tip", "fix_soon": "Fix soon", "urgent": "Urgent"}
 
 # --------------------------------------------------------------------------- the apps SentrAI can connect to
-# status: "sample" = only sample data until its connector ships; "planned" = in a later wave.
+# status: "sample" = only sample data until its connector ships; "planned" = in a later wave. Google and Microsoft
+# become "live" on the Coach page once SentrAI's team connects them (coach_connectors.py, ui_coach.py).
 APPS: list[dict[str, Any]] = [
     {"key": "google", "name": "Google Workspace", "covers": "Gmail, Drive, Meet, Google sign-in", "wave": 1,
      "sees": "Sign-ins, file sharing, mail forwarding rules, apps given access to the account, blocked phishing.",
@@ -495,7 +497,7 @@ FIRST_KINDS = frozenset(k for k in KINDS if not k.startswith("phone_"))
 DEFAULTS: dict[str, Any] = {
     "notice_shared": False, "notice_shared_at": None, "apps_on": [], "kinds_on": sorted(KINDS), "kinds_seen": sorted(KINDS),
     "groups_off": [], "regions": [], "region_checks": {}, "show_names": False, "file_names": False,
-    "updated_at": None, "updated_by": None,
+    "email_notes": False, "updated_at": None, "updated_by": None,
 }
 
 
@@ -583,7 +585,7 @@ class Coach:
                     checks[r] = sorted({int(t) for t in ticks or [] if isinstance(t, int) and not isinstance(t, bool)
                                         and 0 <= t < n})
                 s["region_checks"] = checks
-            for flag in ("show_names", "file_names"):
+            for flag in ("show_names", "file_names", "email_notes"):
                 if flag in body:
                     s[flag] = bool(body[flag])
             if "notice_shared" in body:
@@ -621,6 +623,11 @@ class Coach:
                 cur["reach"] = body["reach"]
             if body.get("notice_confirmed") is True and not cur.get("notice_confirmed_at"):
                 cur["notice_confirmed_at"] = _now_iso(self._clock())
+                since = self._clock() - RELEASE_HELD_DAYS * 86400  # older held notes stay in the app only
+                for n in data["notes"]:
+                    if n["person"] == email and n["status"] == "held for notice" and n["ts"] >= since:
+                        n["status"] = "ready to send"
+                        n.pop("held_reason", None)
             if body.get("notice_confirmed") is False:
                 cur["notice_confirmed_at"] = None
             if body.get("sample"):
@@ -775,6 +782,40 @@ class Coach:
         data["moments"].append(moment)
         data["notes"].append(self._note(moment, person, rec))
         return moment
+
+    def outbox(self, max_people: int = 50) -> list[dict[str, Any]]:
+        """The notes to email now, one entry per person ({email, name, notes}): only when the owner switched email
+        notes on and the coach may record, only people reached by email who confirmed the notice, never sample
+        notes. Held notes stay held."""
+        with self._lock:
+            data = self._load()
+            s = data["settings"]
+            if not s.get("email_notes") or not self.ready(s)[0]:
+                return []
+            out: dict[str, dict[str, Any]] = {}
+            for n in sorted(data["notes"], key=lambda n: n["ts"]):
+                person = data["people"].get(n["person"])
+                if (n["status"] != "ready to send" or n.get("sample") or not person
+                        or person.get("reach", "email") != "email" or not person.get("notice_confirmed_at")):
+                    continue
+                if n["person"] not in out and len(out) >= max_people:
+                    continue
+                out.setdefault(n["person"], {"email": n["person"], "name": person.get("name") or "", "notes": []})
+                out[n["person"]]["notes"].append({k: n.get(k) for k in ("id", "text", "buttons", "lesson", "at")})
+            return list(out.values())
+
+    def mark_sent(self, note_ids: list[str], via: str) -> int:
+        """Mark these notes as sent (by email, Slack, ...). Returns how many changed."""
+        ids, n = set(note_ids), 0
+        with self._lock:
+            data = self._load()
+            for note in data["notes"]:
+                if note["id"] in ids and note["status"] == "ready to send":
+                    note["status"], note["sent_via"], note["sent_at"] = "sent", via, _now_iso(self._clock())
+                    n += 1
+            if n:
+                self._save(data)
+        return n
 
     def _note(self, m: dict[str, Any], person: dict[str, Any], rec: dict[str, Any]) -> dict[str, Any]:
         """The message the person gets: kind, short, one clear next step. Held until they've seen the notice."""

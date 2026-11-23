@@ -240,6 +240,19 @@ SECTIONS = (
         Field("SENTRAI_API_TOKEN", "Core API token (shared by the collector, dashboard and Telegram bot)",
               secret=True, generated=True),
     )),
+    Section("coach", "7. Security Coach connections", "Read-only connections to the company's Google Workspace "
+            "and Microsoft 365 activity logs, set up by SentrAI's team (docs/coach-connectors.md).", (
+        Field("COACH_GOOGLE_CLIENT_ID", "Google Workspace: OAuth client ID", advanced=True),
+        Field("COACH_GOOGLE_CLIENT_SECRET", "Google Workspace: OAuth client secret", secret=True, advanced=True),
+        Field("COACH_GOOGLE_REFRESH_TOKEN", "Google Workspace: refresh token from the super admin's one-time "
+              "sign-in (scope admin.reports.audit.readonly)", secret=True, advanced=True),
+        Field("COACH_GOOGLE_DOMAIN", "Google Workspace: the company's email domain, such as example.com",
+              advanced=True),
+        Field("COACH_MS_TENANT_ID", "Microsoft 365: directory (tenant) ID", advanced=True),
+        Field("COACH_MS_CLIENT_ID", "Microsoft 365: application (client) ID", advanced=True),
+        Field("COACH_MS_CLIENT_SECRET", "Microsoft 365: client secret (AuditLog.Read.All, admin-consented)",
+              secret=True, advanced=True),
+    )),
 )
 _KINDS = {"int": int, "float": float}
 
@@ -597,7 +610,8 @@ def wizard(ask: Callable[[str], str] | None = None, ask_secret: Callable[[str], 
         if section is next(iter(EXTENSION_SECTIONS.values()), None):
             say("\nExtensions: outside services SentrAI can work with. Each one is off while its key is "
                 "blank. A key turns it on; the dashboard's Extensions page adds and removes them.")
-        say(f"\n{section.title}: {section.about}")
+        if not all(f.advanced for f in section.fields):  # a section of advanced settings only is never asked
+            say(f"\n{section.title}: {section.about}")
         # an extension's key first: its other questions only matter once it has one
         for f in sorted(section.fields, key=lambda f: f.env not in section.on_when):
             if f.env in PRESET_FIELDS and not advanced:

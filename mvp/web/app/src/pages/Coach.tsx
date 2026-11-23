@@ -9,10 +9,10 @@ import { btn } from '../lib/ui'
 import { useSession } from '../lib/session'
 import Stat from '../lib/Stat'
 
-type App = { key: string; name: string; covers: string; wave: number; sees: string; needs: string; status: 'sample' | 'planned' }
+type App = { key: string; name: string; covers: string; wave: number; sees: string; needs: string; status: 'live' | 'ready' | 'sample' | 'planned'; connection?: string }
 type Region = { key: string; name: string; law: string; consent: boolean; checks: string[] }
 type Moment = { id: string; app: string; kind: string; group: string; level: 'tip' | 'fix_soon' | 'urgent'; level_word: string; at: string; lesson: string; times: number; status: string; title: string; fix: string | null; who: string; sample: boolean; company_rule: string | null }
-type Settings = { apps_on: string[]; kinds_on: string[]; regions: string[]; region_checks: Record<string, number[]>; show_names: boolean; file_names: boolean; notice_shared: boolean; notice_shared_at?: string }
+type Settings = { apps_on: string[]; kinds_on: string[]; regions: string[]; region_checks: Record<string, number[]>; show_names: boolean; file_names: boolean; email_notes: boolean; notice_shared: boolean; notice_shared_at?: string }
 type Team = { people: number; notice_confirmed: number; moments_30d: number; urgent_open: number; fixed_30d: number; lessons_done: number; notes_ready: number; notes_held: number; by_group: Record<string, number>; top: { kind: string; count: number; lesson: string; title: string }[] }
 type Person = { email: string; name: string; group: string; notice_confirmed: boolean; level: { name: string; step: number; of: number }; lessons_done: number }
 type Page = { settings: Settings; ready: boolean; why_not_ready: string; apps: App[]; regions: Region[]; team: Team; moments: Moment[]; people: Person[] | null; kept: { activity: string; notes: string }; has_sample: boolean }
@@ -174,10 +174,15 @@ export default function Coach() {
                 <b>{a.name}</b> <span className="text-xs text-muted">{a.covers}</span>
                 <span className="block text-soft">{a.sees}</span>
                 <span className="block text-xs text-muted">{a.needs}</span>
-                <span className="mt-1 inline-block rounded-full border border-line px-2 py-0.5 text-xs text-muted">{a.status === 'sample' ? 'Live connection coming next' : `Planned, wave ${a.wave}`}</span>
+                <span className={`mt-1 inline-block rounded-full border px-2 py-0.5 text-xs ${a.status === 'live' ? 'border-ok text-ok' : 'border-line text-muted'}`}>{a.status === 'live' ? 'Live' : a.status === 'ready' ? 'Ready to connect' : a.status === 'sample' ? 'Live connection coming next' : `Planned, wave ${a.wave}`}</span>
+                {a.connection && <span className={`mt-1 block text-xs ${a.connection.startsWith('Last read failed') ? 'text-bad' : 'text-muted'}`}>{a.connection}</span>}
               </span>
             </label>))}
         </div>
+        <label className="mt-3 flex items-start gap-2 text-sm">
+          <input type="checkbox" className="mt-1 accent-[var(--accent)]" disabled={off} checked={s.email_notes} onChange={() => void save({ email_notes: !s.email_notes })} />
+          <span>Email coaching notes<span className="block text-xs text-muted">Each person reached by email gets their notes by email, at most 3 at a time, once they have confirmed the staff notice. The emails have no links. Off: notes wait in the phone app.</span></span>
+        </label>
       </div>
 
       <div className={card}>
