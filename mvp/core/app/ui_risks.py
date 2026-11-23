@@ -19,6 +19,7 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query
 
+from . import coverage
 from .agents import next_steps
 from .rules import TRIPWIRE_REASONS
 from .ui_approvals import can, category_label, handled, span_label, written_down_only
@@ -219,6 +220,8 @@ def bubble(members: list[dict], wave: str = "") -> dict[str, Any]:
         "fix": plain_fix(first),
         "steps": first.get("next_steps") or next_steps(first),
         "unsure": bool(first.get("needs_review")),
+        # Countersign's no answers (agents.py review): why SentrAI did not act on its own, in plain words.
+        "waited_because": list((first.get("countersign") or {}).get("waited_because") or []),
         "actions": actions(members),
         # For the chat's suggestion buttons (Chat.tsx SuggestionCard): enough to tell what is still possible.
         "inc": {"id": str(first.get("id")), "status": str(first.get("status")), "category": cat,
@@ -281,10 +284,11 @@ def groups(open_incidents: list[dict], done: list[dict]) -> dict[str, list[dict[
             "machine": by(lambda i: str(i.get("host") or "Unknown computer"))}
 
 
-def headline(levels: list[dict[str, Any]]) -> str:
+def headline(levels: list[dict[str, Any]], cov: dict[str, Any] | None = None) -> str:
     total = sum(lv["count"] for lv in levels)
     if not total:
-        return "Nothing needs a person right now. All quiet at the gate."
+        return coverage.quiet_headline("Nothing needs a person right now. All quiet at the gate.",
+                                       "Nothing needs a person right now.", cov)
     first = next(lv for lv in levels if lv["count"])
     return (f"{total} thing{'s' if total != 1 else ''} need{'' if total != 1 else 's'} a person. "
             f"Start with {first['severity'].capitalize()}.")
@@ -301,7 +305,8 @@ def install(app: FastAPI, core: Any) -> None:
         done = [i for i in everything if handled(i)]
         rows = bubbles(incidents)
         levels = summary(rows, incidents)
-        out: dict[str, Any] = {"levels": levels, "headline": headline(levels),
+        cov = coverage.safe(getattr(core, "watching", None))
+        out: dict[str, Any] = {"levels": levels, "headline": headline(levels, cov), "watching": cov,
                                "protection_on": not core.protection().get("monitor_only", False),
                                "handled_count": len(done), "groups": groups(incidents, done)}
         if severity == "all":

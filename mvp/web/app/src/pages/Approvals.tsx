@@ -5,6 +5,7 @@ import { btn, btnPrimary } from '../lib/ui'
 import { useSession } from '../lib/session'
 import { useFilters, useShowMore, type Filter } from '../lib/Filters'
 import { ask } from '../lib/notice'
+import { allQuiet, type Watching } from '../lib/Risks'
 
 type Row = {
   id: string; what: string; host: string; severity: string; status: string; owner: string; open_for: string; opened?: string
@@ -15,7 +16,7 @@ type Row = {
 type Risk = { level: 'low' | 'medium' | 'high'; word: string; score: number; reasons: string[] }
 type Page = {
   headline: string; total: number; rows: Row[]; groups: { name: string; rows: Row[] }[]
-  grouped: { name: string; rows: Row[] }[]; protection_on: boolean; low_risk?: string[]
+  grouped: { name: string; rows: Row[] }[]; protection_on: boolean; low_risk?: string[]; watching?: Watching | null
 }
 type Verb = 'approve' | 'reject' | 'rollback' | 'keep' | 'mine'
 
@@ -216,7 +217,9 @@ export default function Approvals({ embedded = false }: { embedded?: boolean }) 
       )}
       {error && <p role="alert" className="rounded-md border border-line bg-surface p-3 text-bad">{error}</p>}
       {note && <p role="status" className="rounded-md border border-line bg-surface p-3">{note}</p>}
-      {page && page.total === 0 && <p className="rounded-lg border border-line bg-surface p-4 text-ok">Nothing waiting for a decision. All quiet at the gate.</p>}
+      {page && page.total === 0 && (allQuiet(page.watching)
+        ? <p className="rounded-lg border border-line bg-surface p-4 text-ok">Nothing waiting for a decision. All quiet at the gate.</p>
+        : <p className="rounded-lg border border-warn bg-surface p-4 text-warn">Nothing waiting for a decision. {page.watching?.words}</p>)}
       {page && page.total > 0 && (
         <>
           <p className="font-medium">{page.headline}</p>

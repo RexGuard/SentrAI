@@ -3,10 +3,10 @@
 // full list under the cards, so old links and bookmarks keep working.
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { CheckCircle2, CircleAlert, X } from 'lucide-react'
+import { CheckCircle2, CircleAlert, CircleHelp, X } from 'lucide-react'
 import { api, ApiError } from '../lib/api'
 import { onDemoChange } from '../lib/demo'
-import { RiskTable, SeverityBubbles, type Risks } from '../lib/Risks'
+import { allQuiet, RiskTable, SeverityBubbles, type Risks } from '../lib/Risks'
 
 const TABS = [
   { key: 'approvals', label: 'Approve Many at Once', Page: lazy(() => import('./Approvals')) },
@@ -14,7 +14,7 @@ const TABS = [
   { key: 'review', label: 'Risk Review', Page: lazy(() => import('./Review')) },
 ] as const
 
-type Readiness = { ready: boolean; missing: number; headline: string; checks: { key: string; ok: boolean; title: string; detail: string; fix: string }[] }
+type Readiness = { ready: boolean; missing: number; headline: string; checks: { key: string; ok: boolean; state?: 'ok' | 'missing' | 'not_checked'; title: string; detail: string; fix: string }[] }
 
 /** What is still missing before SentrAI fully protects this business (ui_readiness.py). Hidden once all is ready,
  *  and on a panel too old to answer, so it never gets in the way of the risks. */
@@ -37,7 +37,9 @@ function ReadinessCard() {
         <ul className="mt-3 space-y-2">
           {r.checks.map((c) => (
             <li key={c.key} className="flex items-start gap-2 text-sm">
-              {c.ok ? <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-ok" aria-label="Ready" /> : <CircleAlert size={16} className="mt-0.5 shrink-0 text-warn" aria-label="Not ready" />}
+              {c.ok ? <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-ok" aria-label="Ready" />
+                : c.state === 'not_checked' ? <CircleHelp size={16} className="mt-0.5 shrink-0 text-muted" aria-label="Not checked" />
+                : <CircleAlert size={16} className="mt-0.5 shrink-0 text-warn" aria-label="Not ready" />}
               <span><span className="font-medium">{c.title}.</span> <span className="text-soft">{c.detail}{c.fix ? ` ${c.fix}` : ''}</span></span>
             </li>))}
         </ul>)}
@@ -62,6 +64,9 @@ export default function Command() {
       {error && <p role="alert" className="rounded-md border border-line bg-surface p-3 text-bad">{error}</p>}
       <ReadinessCard />
       <SeverityBubbles data={risks} />
+      {risks && !allQuiet(risks.watching) && (
+        <p role="status" className="flex items-start gap-2 rounded-md border border-warn bg-surface p-3 text-sm">
+          <CircleAlert size={16} className="mt-0.5 shrink-0 text-warn" aria-hidden /> {risks.watching?.words} Empty cards here do not mean you are safe.</p>)}
       {!!risks?.handled_count && (
         <p className="text-sm text-soft">SentrAI already blocked {risks.handled_count} risk{risks.handled_count === 1 ? '' : 's'} on its own, so {risks.handled_count === 1 ? 'it is' : 'they are'} not counted above. Each list shows them under "Already handled", where you can undo one if it was a false alarm.</p>)}
       <RiskTable data={risks} />

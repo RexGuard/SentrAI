@@ -39,12 +39,14 @@ def alert_channels(values: dict[str, str], added: Callable[[str], bool]) -> list
 
 def checks(protection: str, machines: dict[str, Any], channels: list[str], backup: dict[str, Any] | None,
            now: float) -> list[dict[str, Any]]:
-    """The readiness lines, in the order an owner should fix them. Each: key, ok, title, detail, fix, fix_cli."""
+    """The readiness lines, in the order an owner should fix them. Each: key, ok, state, title, detail, fix,
+    fix_cli. state is "ok", "missing" or "not_checked" (SentrAI could not look); ok is True only for "ok", so a
+    line nobody could check is never shown as ready. backup "unreadable": the backup folder could not be read."""
     out: list[dict[str, Any]] = []
 
-    def add(key: str, ok: bool, title: str, detail: str, fix_cli: str) -> None:
-        out.append({"key": key, "ok": ok, "title": title, "detail": detail, "fix": "" if ok else TEAM,
-                    "fix_cli": "" if ok else fix_cli})
+    def add(key: str, ok: bool | None, title: str, detail: str, fix_cli: str) -> None:
+        out.append({"key": key, "ok": ok is True, "state": "ok" if ok else "not_checked" if ok is None else "missing",
+                    "title": title, "detail": detail, "fix": "" if ok else TEAM, "fix_cli": "" if ok else fix_cli})
 
     on = protection == "on"
     add("protection", on, "Protection is switched on",
@@ -66,7 +68,9 @@ def checks(protection: str, machines: dict[str, Any], channels: list[str], backu
                   ("Only practising (a dry run) on: " + ", ".join(dry[:5]) + ". Blocks there are written down but "
                    "not made.") if dry else "",
                   ("Too old to say: " + ", ".join(old[:5]) + ".") if old else "") if x))
-    add("blocking", not dry and not old, "Blocks really stop attackers", detail,
+    if not rows:
+        detail = "Not checked: no computer has reported yet, so SentrAI cannot tell whether blocks there work."
+    add("blocking", None if not rows else not dry and not old, "Blocks really stop attackers", detail,
         "sudo sentrai machines blocking HOST on" if dry else "sudo sentrai-update   # on that computer")
 
     add("alerts", bool(channels), "Someone is told when it matters",
@@ -74,7 +78,10 @@ def checks(protection: str, machines: dict[str, Any], channels: list[str], backu
         "Alerts only show here on the panel. Nobody is told at night or when the panel is closed.",
         "sudo sentrai settings set SMTP_HOST=... ALERT_EMAIL_TO=...   # or: sentrai integrations on telegram")
 
-    if backup is not None:
+    if backup == "unreadable":
+        add("backup", None, "There is a recent backup", "Not checked: SentrAI could not read its backup folder.",
+            "sudo sentrai backups list")
+    elif backup is not None:
         last = next((b for b in backup.get("backups") or [] if b.get("reason") != "before_restore"), None)
         age = now - float(last.get("created_ts") or 0) if last else None
         ok = bool(last) and not backup.get("overdue") and age is not None and age < briefing.BACKUP_STALE_S
@@ -87,9 +94,17 @@ def checks(protection: str, machines: dict[str, Any], channels: list[str], backu
 
 def summary(lines: list[dict[str, Any]]) -> dict[str, Any]:
     missing = [c for c in lines if not c["ok"]]
-    return {"ready": not missing, "missing": len(missing), "checks": lines,
-            "headline": "SentrAI is fully set up and protecting you." if not missing else
-            f"{len(missing)} thing{'s' if len(missing) != 1 else ''} still to set up before SentrAI fully protects you."}
+    unchecked = sum(1 for c in missing if c.get("state") == "not_checked")
+    todo = len(missing) - unchecked
+    if not missing:
+        headline = "SentrAI is fully set up and protecting you."
+    elif not todo:
+        headline = f"{unchecked} thing{'s' if unchecked != 1 else ''} SentrAI could not check yet, so it cannot say you are fully protected."
+    else:
+        headline = (f"{todo} thing{'s' if todo != 1 else ''} still to set up before SentrAI fully protects you"
+                    + (f", and {unchecked} it could not check." if unchecked else "."))
+    return {"ready": not missing, "missing": len(missing), "not_checked": unchecked, "checks": lines,
+            "headline": headline}
 
 
 def install(app: FastAPI, core: Any, machines_page: Callable[[], dict[str, Any]], backups: Any) -> None:
@@ -98,7 +113,7 @@ def install(app: FastAPI, core: Any, machines_page: Callable[[], dict[str, Any]]
         try:
             st = backups.status() if backups is not None else None
         except Exception:  # noqa: BLE001  a broken backup folder must not break the Command Center
-            st = None
+            st = "unreadable"  # shown as not checked, never left out (a missing line would read as ready)
         try:
             values = cfg.read()
         except Exception:  # noqa: BLE001

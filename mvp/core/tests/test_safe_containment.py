@@ -101,3 +101,35 @@ def test_audit_keeps_only_a_summary_of_raw_lines():
     assert len(s["raw"]) == 203 and s["raw"].endswith("...") and s["raw_len"] == len(line)
     assert len(s["raw_sha256"]) == 64
     assert raw_summary("a\x00b")["raw"] == "a b"
+
+
+def test_countersign_answers_every_question_in_plain_words():
+    needle = _needle()
+    props = [Proposal("block_ip", "203.0.113.45", "test")]
+    yes = needle.review(_incident(), props, 90, 80)
+    assert yes.approved and all(q["yes"] for q in yes.questions)
+    assert [q["key"] for q in yes.questions] == ["sure", "confident", "risk", "evidence", "serious", "allowed"]
+    no = needle.review(_incident(severity="medium", needs_review=True), props, 50, 80)
+    said_no = {q["key"] for q in no.questions if not q["yes"]}
+    assert not no.approved and said_no == {"sure", "risk", "serious"}  # every reason, not only the first
+    assert no.reasoning.startswith("DENY:") and "needs review" in no.reasoning  # the record still leads with the first
+    assert all("%" not in q["answer"] for q in no.questions)
+    private = needle.review(_incident(), [Proposal("block_ip", "192.168.1.50", "test")], 90, 80)
+    assert not private.approved and "private network" in next(q["answer"] for q in private.questions if q["key"] == "allowed")
+    assert private.denied  # the fixes held back are listed when they were the reason
+
+
+def test_the_incident_keeps_why_sentrai_waited(client):
+    client.post("/events", json=ev(30, "GET /search?q=<script>alert(1)</script> 200", ip="198.51.100.7",
+                                   user=None, source="flask_access"))
+    brute_force(client)
+    client.post("/events", json=ev(10, "GET /search?q=' OR 1=1 -- 200", source="flask_access"))
+    incs = {i["category"]: i for i in client.get("/incidents").json()}
+    xss = incs["xss"]["countersign"]
+    assert not xss["acted"] and any("not serious enough" in w for w in xss["waited_because"])
+    assert incs["brute_force"]["countersign"]["acted"] and incs["brute_force"]["countersign"]["waited_because"] == []
+    rows = client.get("/ui/risks?severity=all").json()["rows"]
+    row = next(r for r in rows if r["incident"] == incs["xss"]["id"])
+    assert row["waited_because"] == xss["waited_because"]
+    rec = [r for r in client.core.audit.records() if r["type"] == "needle_review" and r["data"]["incident"] == incs["xss"]["id"]]
+    assert rec and {"key": "serious", "yes": False} in rec[-1]["data"]["questions"]

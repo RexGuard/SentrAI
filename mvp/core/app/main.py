@@ -23,6 +23,7 @@ import sentrai_paths
 import sentrai_accounts as acc  # noqa: E402
 from .reports import build_report, render_markdown, render_pdf
 from . import summary as client_summary
+from . import coverage
 from . import auth as auth_cookie
 from . import ui_analytics, ui_approvals, ui_tuning, ui_audit, ui_incidents, ui_limits, ui_machine, ui_machines, ui_overview, ui_report, ui_routing, ui_settings, ui_setup, ui_team, ui_recovery, ui_privacy, ui_risks, ui_feedback, ui_coach, ui_mobile, ui_knowledge, ui_readiness, ui_websites
 from . import websites as websites_mod
@@ -596,8 +597,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ui_overview.install(app, core, machines, machine_health, lambda: core.extensions.reload())
     ui_routing.install(app, core)
     ui_limits.install(app)
-    ui_settings.install(app, lambda: (ai.reload(core, chat), core.extensions.reload()))
+    ui_settings.install(app, lambda: (ai.reload(core, chat), core.extensions.reload()),
+                        lambda kind, data: core.scribe.record(core.name, kind, data))
     machines_page = ui_machines.install(app, core, machines, machine_health)
+    core.watching = lambda: coverage.of(machines_page())  # "all quiet" only when the computers report in (coverage.py)
     ui_readiness.install(app, core, machines_page, backups)
     ui_machine.install(app, core, machine_jobs)
     ui_setup.install(app, lambda q, o, a: chat.interpret_setup(q, o, a), lambda: (ai.reload(core, chat), core.extensions.reload()))
