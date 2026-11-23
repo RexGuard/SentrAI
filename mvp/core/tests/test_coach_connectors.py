@@ -200,3 +200,76 @@ def test_settings_are_advanced_secrets_and_the_wizard_never_asks():
 @pytest.mark.parametrize("os_name,device", [("iOS 18", "phone"), ("Windows 10", "computer"), ("", "unknown")])
 def test_device_words(os_name, device):
     assert cc._device(os_name) == device
+
+
+# --------------------------------------------------------------------------- coaching notes by email
+from app import coach_mail  # noqa: E402
+
+MAIL = {"host": "smtp.acme.test", "port": "587", "security": "starttls", "user": "", "password": "",
+        "sender": "coach@acme.test", "relay": ""}
+
+
+def test_notes_are_emailed_only_when_switched_on_and_confirmed(tmp_path):
+    c = coach(tmp_path)
+    c.upsert_person({"email": "ann@acme.test", "notice_confirmed": True})
+    c.upsert_person({"email": "bob@acme.test", "reach": "slack", "notice_confirmed": True})
+    c.ingest([{"person": "ann@acme.test", "app": "google", "kind": "file_shared_public", "ts": NOW - 60 * i}
+              for i in range(5)] + [{"person": "bob@acme.test", "app": "google", "kind": "two_step_off"}])
+    sent, audit = [], []
+    org = lambda: ("Acme", "privacy@acme.test")  # noqa: E731
+    off = coach_mail.send_due(c, org, MAIL, lambda m, s: sent.append(m))
+    assert "switched off" in off["skipped"] and sent == []
+    c.save_settings({"email_notes": True}, "owner@acme.test")
+    out = coach_mail.send_due(c, org, MAIL, lambda m, s: sent.append(m), record=lambda t, d: audit.append((t, d)))
+    assert out == {"sent": 1, "notes": coach_mail.MAX_NOTES, "failed": 0}  # Bob is reached by Slack
+    [msg] = sent
+    assert msg["To"] == "ann@acme.test" and msg["Subject"] == "3 quick security tips from Acme"
+    body = msg.get_content()
+    assert "http" not in body and "no links on purpose" in body and "privacy@acme.test" in body
+    assert audit == [("coach_notes_emailed", {"by": "schedule", "people": 1, "notes": 3, "failed": 0, "relay": False})]
+    again = coach_mail.send_due(c, org, MAIL, lambda m, s: sent.append(m))
+    assert again["notes"] == 2 and len(sent) == 2  # the rest next round, never the same note twice
+    assert coach_mail.send_due(c, org, MAIL, lambda m, s: sent.append(m)) == {"sent": 0, "notes": 0, "failed": 0}
+
+
+def test_held_notes_wait_for_the_notice_and_failures_keep_them(tmp_path):
+    c = coach(tmp_path)
+    c.save_settings({"email_notes": True}, "owner@acme.test")
+    c.ingest([{"person": "ann@acme.test", "app": "google", "kind": "sign_in_risky", "ts": NOW - 60}])
+    org = lambda: ("Acme", "")  # noqa: E731
+    assert c.outbox() == []  # held until Ann confirms the notice
+    c.upsert_person({"email": "ann@acme.test", "notice_confirmed": True})
+    [entry] = c.outbox()
+
+    def broken(m, s):
+        raise OSError("connection refused")
+
+    out = coach_mail.send_due(c, org, MAIL, broken)
+    assert out["failed"] == 1 and "refused" in out["error"] and len(c.outbox()) == 1
+    sent = []
+    coach_mail.send_due(c, org, MAIL, lambda m, s: sent.append(m))
+    assert "If this wasn't you" in sent[0].get_content() and c.outbox() == []
+
+
+def test_mail_settings_use_the_relay_only_without_the_company_server():
+    assert coach_mail.mail_settings({}) is None
+    relay = coach_mail.mail_settings({"SENTRAI_RELAY_SMTP_HOST": "relay.sentrai.test", "SENTRAI_RELAY_SMTP_USER": "r",
+                                      "SENTRAI_RELAY_SMTP_PASSWORD": "rp", "SENTRAI_RELAY_FROM": "coach@sentrai.test"})
+    assert relay["host"] == "relay.sentrai.test" and relay["password"] == "rp" and relay["relay"]
+    own = coach_mail.mail_settings({"SMTP_HOST": "mail.acme.test", "SMTP_SECURITY": "ssl",
+                                    "SENTRAI_RELAY_SMTP_HOST": "relay.sentrai.test",
+                                    "SENTRAI_RELAY_SMTP_PASSWORD": "rp"})
+    assert own["host"] == "mail.acme.test" and own["port"] == "465" and own["password"] == "" and not own["relay"]
+
+
+def test_send_endpoint_and_cli(client):
+    r = client.post("/ui/coach/notes/send", json={})
+    assert r.status_code == 200 and "switched off" in r.json()["skipped"]
+    import sentrai_cli as cli
+    from .test_cli import through
+    buf = StringIO()
+    assert cli.main(["coach", "setup", "--email-notes", "on"], call=through(client), out=buf) == 0
+    assert client.get("/ui/coach").json()["settings"]["email_notes"] is True
+    buf = StringIO()
+    assert cli.main(["coach", "send"], call=through(client), out=buf) == 0
+    assert "No notes waiting" in buf.getvalue()

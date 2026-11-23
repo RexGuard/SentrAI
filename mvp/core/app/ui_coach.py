@@ -13,6 +13,7 @@ from fastapi.responses import PlainTextResponse
 
 from .config import sentrai_config  # noqa: F401  (config.py puts mvp/ on sys.path)
 from . import coach as cm
+from . import coach_mail
 import sentrai_accounts as acc  # noqa: E402
 
 
@@ -77,6 +78,13 @@ def install(app: FastAPI, core: Any, coach: cm.Coach, org: Callable[[], tuple[st
     def get_connectors() -> dict[str, Any]:
         """Google Workspace and Microsoft 365: connected or not, switched on, the last read."""
         return {"connectors": connectors.status() if connectors is not None else []}
+
+    @app.post("/ui/coach/notes/send")
+    def send_notes(request: Request, body: dict = Body(default={})) -> dict[str, Any]:
+        """Email the notes that are ready now instead of at the next 15-minute round."""
+        _need(request, "send the coach's notes")
+        return coach_mail.send_due(coach, org, record=lambda t, d: core.scribe.record(core.name, t, d),
+                                   by=_who(request, body))
 
     @app.post("/ui/coach/connectors/read")
     def read_now(request: Request, body: dict = Body(default={})) -> dict[str, Any]:

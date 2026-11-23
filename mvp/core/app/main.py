@@ -30,7 +30,7 @@ from . import ui_analytics, ui_approvals, ui_tuning, ui_audit, ui_incidents, ui_
 from . import websites as websites_mod
 from . import mobile as mobile_mod
 from . import coach as coach_mod
-from . import coach_connectors
+from . import coach_connectors, coach_mail
 from . import knowledge as knowledge_mod
 from . import agent_routes, ai, hosted, anchor, apidocs, backup_copies, chat_memory, depscan, feature_ideas, fleet, hardware, integrations, jobs, procscan, signatures, webhook
 from .extensions import ExtensionError
@@ -433,15 +433,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     log.exception("weekly website re-check of %s failed", domain)
 
     async def coach_reader() -> None:
-        """Read the connected work apps' activity logs for the Security Coach every POLL_MINUTES."""
+        """Every POLL_MINUTES: read the connected work apps' activity logs for the Security Coach, then email the
+        notes that are ready (when the owner switched email notes on)."""
         while True:
             await asyncio.sleep(coach_connectors.POLL_MINUTES * 60)
-            if not connectors.live():
-                continue
             try:
-                await asyncio.to_thread(connectors.poll)
+                if connectors.live():
+                    await asyncio.to_thread(connectors.poll)
+                if coach.settings().get("email_notes"):
+                    await asyncio.to_thread(coach_mail.send_due, coach, coach_org, None, coach_mail.send,
+                                            lambda rtype, data: core.scribe.record(core.name, rtype, data))
             except Exception:
-                log.exception("coach connector poll failed")
+                log.exception("coach connector read or note emails failed")
 
     @contextlib.asynccontextmanager
     async def lifespan(_: FastAPI):

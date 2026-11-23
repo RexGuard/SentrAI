@@ -77,6 +77,22 @@ log is read.
 Mail forwarding rules in Microsoft 365 are in the Office 365 Management Activity API, not in Graph, and are not
 read yet.
 
+## Notes by email
+
+The coach's notes reach each person in the SentrAI phone app. To email them too, the owner ticks **Email coaching
+notes** on the Coach page (or `sudo sentrai coach setup --email-notes on`). Then every 15 minutes each person whose
+way to reach them is email, and who confirmed the staff notice, gets one email with up to 3 of their notes that
+are ready, oldest first. The rest go in the next round. Notes held for the notice wait until the person confirms
+it (notes from the last 7 days are then sent). Sample notes are never emailed.
+
+The emails have no links on purpose: staff are taught not to trust links in unexpected security emails. They use
+the same mail server as the alerts: the company's own `SMTP_*` settings, or SentrAI's mail relay when the company
+has none. A failed send keeps the notes for the next round.
+
+```bash
+sudo sentrai coach send    # email the notes that are ready now
+```
+
 ## Checking a connection
 
 ```bash

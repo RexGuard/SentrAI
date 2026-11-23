@@ -156,6 +156,8 @@ sudo sentrai settings set COACH_MS_TENANT_ID=... COACH_MS_CLIENT_ID=... COACH_MS
 sudo sentrai coach apps on google microsoft
 sudo sentrai coach connectors        # connected or not, switched on, the last read and its error
 sudo sentrai coach read [google|microsoft]   # read now instead of waiting
+sudo sentrai coach setup --email-notes on      # email each note to staff reached by email (no links)
+sudo sentrai coach send                      # email the notes that are ready now
 ```
 
 ## Backups
