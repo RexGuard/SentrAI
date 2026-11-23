@@ -152,7 +152,8 @@ def cmd_status(call: Call, a: argparse.Namespace) -> Any:
     if ready:
         lines += ["", f"Readiness:  {ready.get('headline', '')}"]
         for c in ready.get("checks") or []:
-            lines.append(f"  [{'x' if c.get('ok') else ' '}] {c.get('title')}: {c.get('detail')}")
+            mark = "x" if c.get("ok") else "?" if c.get("state") == "not_checked" else " "
+            lines.append(f"  [{mark}] {c.get('title')}: {c.get('detail')}")
             if c.get("fix_cli"):
                 lines.append(f"        fix: {c['fix_cli']}")
         if (spend := ready.get("ai_spend")):
@@ -201,6 +202,14 @@ def _fields(data: dict) -> dict[str, dict]:
     return {f["env"]: f for s in data["sections"] for f in s["fields"]}
 
 
+def secret_text(f: dict) -> str:
+    """A secret as the panel shows it: "(set, ends in a1b2)", never the value."""
+    if not f.get("is_set"):
+        return "(empty)"
+    hint = str(f.get("hint") or "")
+    return f"(set, ends in {hint[1:]})" if hint.startswith("…") else "(set)"
+
+
 def cmd_settings(call: Call, a: argparse.Namespace) -> Any:
     data = _settings(call)
     if a.action == "show":
@@ -214,7 +223,7 @@ def cmd_settings(call: Call, a: argparse.Namespace) -> Any:
             for f in s["fields"]:
                 if not a.all and not f["is_set"] and not f["value"]:
                     continue
-                value = ("(set)" if f["is_set"] else "(empty)") if f["secret"] or f["generated"] else f["value"]
+                value = secret_text(f) if f["secret"] or f["generated"] else f["value"]
                 mark = " [preset]" if f["preset_field"] else ""
                 lines.append(f"  {f['env']:<30} {value}{mark}   # {f['prompt']}")
         return "\n".join(lines).strip() or f"no section named {a.section!r}"
@@ -222,7 +231,7 @@ def cmd_settings(call: Call, a: argparse.Namespace) -> Any:
         f = _fields(data).get(a.name)
         if not f:
             raise CliError(f"{a.name} is not a setting (sentrai settings show --all lists them)")
-        return f if a.json else ("(secret: set)" if f["is_set"] else "(secret: empty)") if f["secret"] else f["value"]
+        return f if a.json else ("secret " + secret_text(f)) if f["secret"] else f["value"]
     if a.action == "set":
         values = pairs(a.values)
         known = _fields(data)

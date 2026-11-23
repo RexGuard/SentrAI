@@ -24,6 +24,7 @@ import time
 from datetime import datetime
 from typing import Any, Callable
 
+from . import coverage
 from .classifier import default_chain
 from .rules import RulesEngine
 from .summary import PLAIN_ACTIONS, plain_names, plain_title
@@ -127,6 +128,7 @@ def briefing(core: Any, names: dict[str, str] | None = None, since: Any = None, 
                   "overdue": bool(i.get("sla_breached") and not i.get("acked"))}
                  for i in needs_you[:MAX_ITEMS]]
     risk = core.risk(history=0)
+    cov = coverage.safe(getattr(core, "watching", None))
     if needs_you:
         n = len(needs_you)
         headline = f"{n} thing{'s' if n != 1 else ''} need{'s' if n == 1 else ''} you"
@@ -135,14 +137,14 @@ def briefing(core: Any, names: dict[str, str] | None = None, since: Any = None, 
     elif handled:
         headline = f"Nothing needs you. SentrAI handled {len(handled)} thing{'s' if len(handled) != 1 else ''} by itself"
     else:
-        headline = "All quiet. Nothing needs you"
+        headline = coverage.quiet_headline("All quiet. Nothing needs you", "Nothing needs you right now.", cov).rstrip(".")
     return {
         "since": core.clock.iso(start), "now": core.clock.iso(now), "headline": headline + ".",
         "band": risk.get("band"), "protection": "off" if risk.get("monitor_only") else "on",
         "handled_count": len(handled), "needs_you_count": len(needs_you), "decided_by_people": by_person,
         "fixes_checked": {"worked": sum(1 for c in checks if c.get("worked") is True),
                           "did_not_work": sum(1 for c in checks if c.get("worked") is False)},
-        "handled": out_handled, "needs_you": out_needs,
+        "handled": out_handled, "needs_you": out_needs, "watching": cov,
     }
 
 

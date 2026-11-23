@@ -544,6 +544,19 @@ def login_required() -> bool:
     return os.environ.get(LOGIN_ENV, "").strip().lower() not in ("off", "0", "no", "false")
 
 
+MASK_SHOWN = 4  # the last characters of a secret people may see, to tell which key is in place
+MASK_MIN = 12   # shorter secrets show only that they are set
+
+
+def mask(secret: str) -> str:
+    """What a person may see of a secret: "…a1b2" (its last 4 characters), "set" for a short one, "" when empty.
+    Enough to tell two keys apart or spot the old one, never enough to use it."""
+    text = str(secret or "").strip()
+    if not text:
+        return ""
+    return "…" + text[-MASK_SHOWN:] if len(text) >= MASK_MIN else "set"
+
+
 def valid(field: Field, answer: str) -> bool:
     """True when the answer parses as the field's type and is one of its choices, if it has any."""
     if field.choices and answer not in field.choices:

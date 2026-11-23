@@ -11,7 +11,7 @@ from typing import Any
 
 from fastapi import Body, FastAPI, HTTPException, Query, Request
 
-from . import approval_risk
+from . import approval_risk, coverage
 from .config import sentrai_config as cfg
 from .saguaro import BadRequestError, ConflictError
 
@@ -256,6 +256,7 @@ def install(app: FastAPI, core: Any) -> None:
                        for n, m in sorted(buckets.items(), key=lambda kv: -len(kv[1]))]
         return {"headline": headline(waiting), "total": len(waiting), "rows": [tagged(i) for i in rest],
                 "rows_total": len(rest), "grouped": grouped, "low_risk": low,
+                "watching": coverage.safe(getattr(core, "watching", None)),
                 "groups": [{"name": n, "rows": [tagged(i) for i in m]} for n, m in made],
                 "protection_on": not core.protection().get("monitor_only", False)}
 

@@ -8,7 +8,7 @@ import { api, ApiError } from '../lib/api'
 import { onDemoChange } from '../lib/demo'
 import { btn } from '../lib/ui'
 import { transition, useGo, VLink } from '../lib/motion'
-import { LEVEL_TEXT, RiskBubble, RiskDetail, type Level, type Risks } from '../lib/Risks'
+import { allQuiet, LEVEL_TEXT, RiskBubble, RiskDetail, type Level, type Risks } from '../lib/Risks'
 
 const LEVELS: Level[] = ['critical', 'high', 'medium', 'low']
 const PAGE = 30
@@ -65,7 +65,9 @@ export default function RiskList() {
         <ul role="status" aria-label="Loading" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
           {[0, 1, 2].map((i) => <li key={i} className="skeleton h-40 rounded-[2rem]" />)}
         </ul>) : rows.length === 0 ? (
-        <p className="rounded-[2rem] border border-line bg-surface p-6 text-ok">Nothing {t.name.toLowerCase()} needs a person. All quiet at the gate.</p>
+        allQuiet(data.watching)
+          ? <p className="rounded-[2rem] border border-line bg-surface p-6 text-ok">Nothing {t.name.toLowerCase()} needs a person. All quiet at the gate.</p>
+          : <p className="rounded-[2rem] border border-warn bg-surface p-6 text-warn">Nothing {t.name.toLowerCase()} needs a person right now. {data.watching?.words}</p>
       ) : (
         <>
           <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">

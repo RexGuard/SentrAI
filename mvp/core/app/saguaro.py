@@ -1597,7 +1597,11 @@ class Saguaro(Agent):
             review = self.needle.review(inc, proposals, risk_idx, s.threshold, self._auto_last_hour(now))
             self.scribe.record(self.needle.name, "needle_review", {
                 "incident": inc["id"], "approved": review.approved, "reasoning": review.reasoning,
-                "proposals": [p.__dict__ for p in proposals], "denied": review.denied})
+                "proposals": [p.__dict__ for p in proposals], "denied": review.denied,
+                "questions": [{k: q[k] for k in ("key", "yes")} for q in review.questions]})
+            # What the owner sees: each question Countersign asked and its answer, and the ones it said no to.
+            inc["countersign"] = {"at": self.clock.iso(now), "acted": review.approved, "questions": review.questions,
+                                  "waited_because": [q["answer"] for q in review.questions if not q["yes"]]}
             if not review.approved:
                 inc["_autonomous_denied"] = True
                 self._timeline(inc, now, "needle_denied", review.reasoning)

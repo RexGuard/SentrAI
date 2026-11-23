@@ -131,6 +131,7 @@ class Review:
     reasoning: str
     approved_proposals: list[Proposal] = field(default_factory=list)
     denied: list[dict[str, str]] = field(default_factory=list)
+    questions: list[dict[str, Any]] = field(default_factory=list)  # Countersign's yes/no questions, answered
 
 
 class Agent:
@@ -331,37 +332,65 @@ class Needle(Agent):
 
     def review(self, incident: dict[str, Any], proposals: list[Proposal], risk_index: int, threshold: int,
                auto_last_hour: int = 0) -> Review:
+        """May SentrAI act on its own? A fixed list of yes/no questions, each answered by code (ARTEX idea 5): it
+        acts only when every answer is yes. All of them are answered every time, so the record and the owner see
+        every reason it waited, not only the first. Review.questions keeps them: key, question, yes, answer (plain
+        words for an owner; no percentages)."""
         conf = incident["ai_confidence"]
-        if incident.get("needs_review"):
-            return Review(False, f"DENY: {incident['id']} is flagged 'needs review' (uncertain classification, "
-                                 f"malicious p={incident.get('malicious_probability')}); a human must decide.")
-        if conf < self.min_confidence:
-            return Review(False, f"DENY: AI confidence {conf} < {self.min_confidence}; autonomous action not justified.")
-        if risk_index < threshold:
-            return Review(False, f"DENY: risk index {risk_index} is below threshold {threshold}.")
-        if not incident.get("strong_signal", True) and len(incident.get("signals") or []) < 2:
-            return Review(False, f"DENY: {incident['id']} rests on one weak signal ({incident['classified_by']}, "
-                                 f"no rule or tripwire); a second independent signal or a person must confirm it.")
-        if why := self.below_bar(incident):
-            return Review(False, f"DENY: {incident['id']} {why}; the overall index alone does not justify "
-                                 f"autonomous action.")
+        iid = incident["id"]
+        questions: list[dict[str, Any]] = []
+        deny: list[str] = []  # the technical reasons, first one first (Review.reasoning)
+
+        def ask(key: str, question: str, yes: bool, said_yes: str, said_no: str, technical: str) -> None:
+            questions.append({"key": key, "question": question, "yes": yes, "answer": said_yes if yes else said_no})
+            if not yes:
+                deny.append(technical)
+
+        ask("sure", "Was the check sure this is an attack?", not incident.get("needs_review"),
+            "Yes: it matched clearly.", "No: the check was unsure, so a person looks first.",
+            f"DENY: {iid} is flagged 'needs review' (uncertain classification, "
+            f"malicious p={incident.get('malicious_probability')}); a human must decide.")
+        ask("confident", "Was the AI sure enough?", conf >= self.min_confidence,
+            "Yes.", "No: the AI was not sure enough to act alone.",
+            f"DENY: AI confidence {conf} < {self.min_confidence}; autonomous action not justified.")
+        ask("risk", "Is the overall risk high enough to act alone?", risk_index >= threshold,
+            "Yes.", "No: the overall risk is below the level where SentrAI acts by itself.",
+            f"DENY: risk index {risk_index} is below threshold {threshold}.")
+        ask("evidence", "Is there more than one weak sign?",
+            bool(incident.get("strong_signal", True)) or len(incident.get("signals") or []) >= 2,
+            "Yes: a fixed rule, a decoy or two separate signs point to it.",
+            "No: it rests on one weak sign, so a second sign or a person must confirm it.",
+            f"DENY: {iid} rests on one weak signal ({incident.get('classified_by')}, "
+            f"no rule or tripwire); a second independent signal or a person must confirm it.")
+        why = self.below_bar(incident)
+        ask("serious", "Is this one serious enough on its own?", why is None,
+            "Yes.", "No: on its own it is not serious enough for SentrAI to act alone.",
+            f"DENY: {iid} {why}; the overall index alone does not justify autonomous action.")
+        stopped_before_screen = bool(deny)  # as before: the fixes held back are listed only when they were the reason
         ok, denied = self.screen(proposals, autonomous=True)
-        if not ok:
-            return Review(False, "DENY: no allowlisted action remains after review.", [], denied)
-        if self.max_auto_per_hour is not None:
+        held = sorted({d["why"] for d in denied})
+        ask("allowed", "Is there a fix SentrAI may make by itself?", bool(ok),
+            "Yes: " + "; ".join(p.describe() for p in ok) + "." if ok else "Yes.",
+            "No: every fix needs a person here" + (f" ({'; '.join(held)})." if held else "."),
+            "DENY: no allowlisted action remains after review.")
+        if self.max_auto_per_hour is not None and ok:
             room = max(0, self.max_auto_per_hour - auto_last_hour)
             denied += [{"type": p.type, "target": p.target, "why": "hourly limit on automatic actions reached"}
                        for p in ok[room:]]
             ok = ok[:room]
-            if not ok:
-                return Review(False, f"DENY: {auto_last_hour} automatic action(s) in the last hour already reach the "
-                                     f"business limit of {self.max_auto_per_hour}; a person must decide.", [], denied)
+            ask("limit", "Is there room under the hourly limit on automatic fixes?", bool(ok),
+                "Yes.", f"No: the business allows {self.max_auto_per_hour} automatic fix"
+                f"{'es' if self.max_auto_per_hour != 1 else ''} an hour and that is reached.",
+                f"DENY: {auto_last_hour} automatic action(s) in the last hour already reach the "
+                f"business limit of {self.max_auto_per_hour}; a person must decide.")
+        if deny:
+            return Review(False, deny[0], [], [] if stopped_before_screen else denied, questions)
         reasoning = (
             f"APPROVE: risk {risk_index} >= threshold {threshold}; confidence {conf} >= {self.min_confidence}; "
             f"classified by {incident['classified_by']}; operator has not acknowledged; "
             f"{len(ok)} allowlisted action(s) with TTL: " + "; ".join(p.describe() for p in ok) + "."
         )
-        return Review(True, reasoning, ok, denied)
+        return Review(True, reasoning, ok, denied, questions)
 
 
 class Watchdog(Agent):

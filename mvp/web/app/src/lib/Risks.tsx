@@ -20,13 +20,19 @@ export type Risk = {
   host: string; source: string; owner: string; open_for: string; hours: number; overdue: boolean; status: string
   written_down?: boolean  // its fix is only recorded: nothing on the machines carries it out yet
   needs: string[]; what_happened: string; meaning: string; fix: string; steps: string[]; unsure: boolean
+  waited_because?: string[]
   actions: RiskAction[]; inc: { id: string; status: string; category: string; acked: boolean; actions: { status?: string }[] }
 }
 // handled: what SentrAI already blocked on its own at that level (off the active list, still undoable).
 // groups: the same risks counted by type and by computer (the table under the cards); done = % SentrAI blocked.
 export type RiskGroup = { name: string; open: number; overdue: number; handled: number; done: number; worst: Level | '' }
+/** Whether SentrAI is really looking (coverage.py): "quiet" means safe only when state is "watching". */
+export type Watching = { state: 'watching' | 'partly' | 'not_watching'; total: number; reporting: number; quiet: string[]; words: string }
 export type Risks = { levels: LevelCount[]; headline: string; protection_on: boolean; rows?: Risk[]; handled?: Risk[]; handled_count?: number
-  groups?: { type: RiskGroup[]; machine: RiskGroup[] } }
+  groups?: { type: RiskGroup[]; machine: RiskGroup[] }; watching?: Watching | null }
+
+/** True when an empty list may be shown as "all quiet": every computer reports in (or an older panel says nothing). */
+export const allQuiet = (w?: Watching | null) => !w || w.state === 'watching'
 
 export const LEVEL_TEXT: Record<Level, { name: string; color: string; tint: string; blurb: string }> = {
   critical: { name: 'Critical', color: 'var(--critical)', tint: 'color-mix(in oklab, var(--critical) 12%, transparent)', blurb: 'act now' },
@@ -228,6 +234,11 @@ export function RiskDetail({ r, protectionOn, onClose, onDone }: { r: Risk; prot
           <h3 className="text-sm font-semibold uppercase tracking-wide text-muted">What it means</h3>
           <p className="text-soft">{r.meaning}</p>
         </section>
+        {!!r.waited_because?.length && r.status !== 'contained' && (
+          <section className="space-y-1">
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-muted">Why SentrAI waited for you</h3>
+            <ul className="list-disc space-y-0.5 pl-5 text-soft">{r.waited_because.map((w) => <li key={w}>{w}</li>)}</ul>
+          </section>)}
         <section className="space-y-3 rounded-2xl bg-surface-2 p-4">
           <h3 className="text-sm font-semibold uppercase tracking-wide text-muted">Suggested fix</h3>
           {fix && <p>{fix}</p>}

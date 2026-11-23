@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from fastapi import Body, FastAPI, HTTPException
+from fastapi import Body, FastAPI, HTTPException, Request
 
 from . import hosted
 from .config import sentrai_config as cfg
@@ -20,10 +20,29 @@ def field_row(f: Any, current: dict[str, str]) -> dict[str, Any]:
     return {"env": f.env, "prompt": f.prompt, "kind": f.kind.__name__, "secret": bool(f.secret),
             "generated": bool(f.generated), "choices": list(f.choices), "preset_field": f.env in cfg.PRESET_FIELDS,
             "advanced": bool(f.advanced),
-            "value": "" if hidden else value, "is_set": bool(value), "default": "" if hidden else f.default}
+            "value": "" if hidden else value, "is_set": bool(value), "default": "" if hidden else f.default,
+            "hint": cfg.mask(value) if hidden else ""}
 
 
-def install(app: FastAPI, reload_after_save: Callable[[], Any]) -> None:
+def changes(fields: dict[str, Any], before: dict[str, str], after: dict[str, str]) -> list[dict[str, str]]:
+    """What a save changed, for the audit record: a secret only as "…a1b2" (cfg.mask), never its value."""
+    out = []
+    for env in sorted(after):
+        old, new = str(before.get(env, "")), str(after.get(env, ""))
+        if old == new:
+            continue
+        f = fields.get(env)
+        what = "set" if not old else "cleared" if not new else "changed"
+        if f is not None and (f.secret or f.generated):
+            out.append({"env": env, "what": what, "now": cfg.mask(new)})
+        else:
+            out.append({"env": env, "what": what, "from": old, "to": new})
+    return out
+
+
+def install(app: FastAPI, reload_after_save: Callable[[], Any],
+            record: Callable[[str, dict[str, Any]], Any] | None = None) -> None:
+    """record(type, data): the audit trail (core.scribe), so a settings change says who changed what."""
     @app.get("/ui/settings")
     def get_settings() -> dict[str, Any]:
         current = {f.env: f.default for f in cfg.FIELDS.values()} | cfg.read()
@@ -44,7 +63,7 @@ def install(app: FastAPI, reload_after_save: Callable[[], Any]) -> None:
                 "advanced": cfg.ADVANCED, "advanced_about": cfg.ADVANCED_ABOUT}
 
     @app.post("/ui/settings")
-    def post_settings(body: dict = Body(...)) -> dict[str, Any]:
+    def post_settings(request: Request, body: dict = Body(...)) -> dict[str, Any]:
         """Save changed settings: {"values": {ENV: value}}. A blank secret keeps the saved one; generated fields
         cannot be changed here, and neither can an advanced setting: the panel shows those read-only and the SentrAI
         team changes them in the terminal (sudo sentrai settings set). Everything is checked before anything is
@@ -53,6 +72,7 @@ def install(app: FastAPI, reload_after_save: Callable[[], Any]) -> None:
         if not isinstance(sent, dict):
             raise HTTPException(400, "send {\"values\": {...}}")
         values = {f.env: f.default for f in cfg.FIELDS.values()} | cfg.read()
+        before = dict(values)
         bad: list[str] = []
         for env, raw in sent.items():
             f = cfg.FIELDS.get(str(env))
@@ -74,6 +94,14 @@ def install(app: FastAPI, reload_after_save: Callable[[], Any]) -> None:
             raise HTTPException(400, "Please check: " + "; ".join(bad))
         cfg.save(values)
         cfg.mark_setup_done("dashboard")
+        changed = changes(cfg.FIELDS, before, values)
+        if record is not None and changed:
+            account = getattr(request.state, "account", None)
+            try:
+                record("settings_changed", {"operator": (account or {}).get("email") or "team (API token)",
+                                            "changed": changed})
+            except Exception:  # noqa: BLE001  saved is saved; a full disk must not turn it into a failed save
+                pass
         try:
             reload_after_save()
             note = "Sentry and the integrations use the new settings now. Restart SentrAI (stop, then run) for the other settings."

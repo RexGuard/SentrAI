@@ -29,7 +29,7 @@ from . import outside_text
 from .config import Settings  # noqa: F401  (puts mvp/ on sys.path, for sentrai_llm)
 from .saguaro import AGENT_OWNER, Saguaro
 from .summary import PLAIN_ACTIONS, plain_names, plain_title
-from . import approval_risk
+from . import approval_risk, coverage
 from .ui_approvals import handled
 
 import sentrai_llm  # noqa: E402
@@ -266,6 +266,10 @@ blocklist means SentrAI already acted. "open" means nothing has been done yet: i
 a proposal waiting for their OK, so say "SentrAI suggests ...", never that it is already in place.
 - Say how sure SentrAI is, in words, when it matters: get_incident gives how_sure ("certain: a decoy was \
 touched", "sure: it matched a known attack pattern", "not sure: a person should look"). Never give a percentage.
+- Never say "all quiet", "safe" or "nothing happened" when get_overview's watching.state is not "watching": say \
+what its words say (no computer reports in, or which ones went quiet), because SentrAI cannot see there.
+- When they ask why SentrAI did not act by itself, use get_incident's countersign: waited_because lists, in \
+plain words, each question Countersign (SentrAI's safety check) answered no.
 - When they ask whether to approve, use get_incident's risk_to_approve: its word ("Low risk to approve", "Check \
 before approving", "Look closely first") and one or two of its reasons. It is about what a yes could break, not \
 how bad the attack is.
@@ -1106,7 +1110,7 @@ class OperatorChat:
                            "open_by_severity": tally(lambda i: i.get("severity"), still),
                            "open_by_category": tally(lambda i: i.get("category"), still),
                            "open_by_computer": tally(lambda i: names.get(str(i.get("host"))) or i.get("host"), still)},
-                "matching": len(match),
+                "matching": len(match), "watching": coverage.safe(getattr(self.core, "watching", None)),
                 "incidents": [{**{k: i.get(k) for k in ("id", "category", "severity", "status", "acked", "src_ip",
                                                          "user")},
                                "computer": names.get(str(i.get("host"))) or i.get("host"), "overdue": overdue(i)}

@@ -19,7 +19,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from . import anchor
+from . import anchor, coverage
 from .pdfdoc import ACCENT, BLACK, BOLD, EDGE, MUTED, PAGE_W, SOFT_ON_DARK, Column, PdfDoc, text_width
 
 if TYPE_CHECKING:
@@ -268,8 +268,10 @@ def build_summary(core: "Saguaro", period: str = "daily", until: float | None = 
         risk = core._last_risk
         label = "today" if period == "daily" else "this week"
         threats = f"{len(new)} threat{'' if len(new) == 1 else 's'} {label}"
+        cov = coverage.safe(getattr(core, "watching", None))
         if not new and not still_open:
-            headline = f"All quiet {label}: no threats were found."
+            headline = coverage.quiet_headline(f"All quiet {label}: no threats were found.",
+                                               f"No threats were found {label}.", cov)
         elif not attention:
             headline = f"{threats}, all handled. Nothing needs you."
         else:
@@ -291,6 +293,7 @@ def build_summary(core: "Saguaro", period: str = "daily", until: float | None = 
             "generated_at": core.clock.iso(now),
             "client": core.summary_schedule.to if hasattr(core, "summary_schedule") else "Client",
             "headline": headline,
+            "watching": cov,
             "numbers": {
                 "threats": len(new),
                 "stopped_automatically": len(auto),
@@ -394,7 +397,7 @@ def render_pdf(r: dict[str, Any]) -> bytes:
     doc.text(42, top - 87, f"{r['period_text']}  |  for {r['client']}", size=8.5, color=(0.647, 0.698, 0.776))
     doc.y = top - band - 3 - 14
 
-    ok = not r["attention"] and p["chain_valid"]
+    ok = not r["attention"] and p["chain_valid"] and (r.get("watching") or {}).get("state", "watching") == "watching"
     doc.rect(42, doc.y - 30, doc.width, 30, tuple(0.93 + 0.07 * c for c in (GREEN if ok else AMBER)))
     doc.rect(42, doc.y - 30, 3, 30, GREEN if ok else AMBER)
     doc.text(54, doc.y - 19, r["headline"][:110], BOLD, 11, GREEN if ok else AMBER)
