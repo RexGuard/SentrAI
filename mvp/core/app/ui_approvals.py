@@ -11,6 +11,7 @@ from typing import Any
 
 from fastapi import Body, FastAPI, HTTPException, Query, Request
 
+from . import approval_risk
 from .config import sentrai_config as cfg
 from .saguaro import BadRequestError, ConflictError
 
@@ -138,7 +139,7 @@ def needs(inc: dict) -> list[str]:
     return why
 
 
-def row(inc: dict) -> dict[str, Any]:
+def row(inc: dict, risk: dict | None = None) -> dict[str, Any]:
     opened = parse_ts(inc.get("opened_at"))
     age = (datetime.now(opened.tzinfo) - opened).total_seconds() if opened else 0.0
     acts = [a for a in inc.get("actions") or [] if isinstance(a, dict) and a.get("target")]
@@ -151,7 +152,26 @@ def row(inc: dict) -> dict[str, Any]:
         "target": str(live[-1]["target"]) if live else str(inc.get("src_ip") or ""),
         "points": contribution(inc), "can": can(inc), "attacker": attacker(inc),
         "summary": inc.get("summary") or inc.get("reason") or "",
+        **({"risk": risk} if risk is not None else {}),
     }
+
+
+RISK_ORDER = {"low": 0, "medium": 1, "high": 2}
+
+
+def risks(core: Any, waiting: list[dict], everything: list[dict]) -> dict[str, dict]:
+    """The risk tag of each waiting approval (approval_risk.py), by incident id."""
+    planned = core.planned_fixes([str(i.get("id")) for i in waiting]) if hasattr(core, "planned_fixes") else {}
+    seen = approval_risk.seen_on_map(everything)
+    return {str(i.get("id")): approval_risk.score(i, planned.get(str(i.get("id"))), seen.get(str(i.get("src_ip") or ""), ()))
+            for i in waiting}
+
+
+def low_risk_ids(waiting: list[dict], tags: dict[str, dict]) -> list[str]:
+    """What "Approve all low" approves: open ones still to decide whose tag is low. Never a root-access alert
+    ("was this you?" is a person's own answer) and never one the check was unsure about."""
+    return [str(i.get("id")) for i in waiting if can(i)["decide"] and not can(i)["mine"] and not i.get("needs_review")
+            and tags.get(str(i.get("id")), {}).get("level") == "low"]
 
 
 def headline(waiting: list[dict]) -> str:
@@ -211,24 +231,45 @@ def install(app: FastAPI, core: Any) -> None:
         return pending(core.list_incidents(host=None))
 
     @app.get("/ui/approvals")
-    def get_approvals(by: str | None = None, brief: int = Query(0, ge=0, le=500)) -> dict[str, Any]:
-        """The Approvals page. `brief=N` (the Command center) sends the first N waiting only, without the groups."""
-        waiting = waiting_now()
+    def get_approvals(by: str | None = None, brief: int = Query(0, ge=0, le=500),
+                      sort: str | None = None) -> dict[str, Any]:
+        """The Approvals page. `brief=N` (the Command center) sends the first N waiting only, without the groups.
+        Each row carries its risk tag; `sort=risk` puts the safest to approve first."""
+        everything = core.list_incidents(host=None)
+        waiting = pending(everything)
+        tags = risks(core, waiting, everything)
+        if sort == "risk":
+            waiting.sort(key=lambda i: (not can(i)["decide"], tags[str(i.get("id"))]["score"]))
         made, rest = saved_groups(waiting, cfg.approval_groups())
+        tagged = lambda i: row(i, tags.get(str(i.get("id"))))  # noqa: E731
+        low = low_risk_ids(waiting, tags)
         if brief:
-            return {"headline": headline(waiting), "total": len(waiting), "rows": [row(i) for i in rest[:brief]],
-                    "rows_total": len(rest), "grouped": [], "groups": [],
+            return {"headline": headline(waiting), "total": len(waiting), "rows": [tagged(i) for i in rest[:brief]],
+                    "rows_total": len(rest), "grouped": [], "groups": [], "low_risk": low,
                     "protection_on": not core.protection().get("monitor_only", False)}
         grouped: list[dict] = []
         if by in GROUP_BY:
             buckets: dict[str, list[dict]] = {}
             for inc in rest:
                 buckets.setdefault(group_name(inc, by), []).append(inc)
-            grouped = [{"name": n, "rows": [row(i) for i in m]}
+            grouped = [{"name": n, "rows": [tagged(i) for i in m]}
                        for n, m in sorted(buckets.items(), key=lambda kv: -len(kv[1]))]
-        return {"headline": headline(waiting), "total": len(waiting), "rows": [row(i) for i in rest], "rows_total": len(rest),
-                "grouped": grouped, "groups": [{"name": n, "rows": [row(i) for i in m]} for n, m in made],
+        return {"headline": headline(waiting), "total": len(waiting), "rows": [tagged(i) for i in rest],
+                "rows_total": len(rest), "grouped": grouped, "low_risk": low,
+                "groups": [{"name": n, "rows": [tagged(i) for i in m]} for n, m in made],
                 "protection_on": not core.protection().get("monitor_only", False)}
+
+    @app.post("/ui/approvals/approve-low")
+    def post_approve_low(request: Request, body: dict = Body(default={})) -> dict[str, Any]:
+        """Approve every waiting approval tagged low risk, worked out again now (not what the page showed earlier)."""
+        everything = core.list_incidents(host=None)
+        waiting = pending(everything)
+        ids = low_risk_ids(waiting, risks(core, waiting, everything))
+        if not ids:
+            return {"done": [], "failed": [], "message": "Nothing low risk is waiting."}
+        return post_bulk(request, {"verb": "approve", "ids": ids, "operator": body.get("operator"),
+                                   "justification": f"Approved with the other {len(ids) - 1} low-risk fixes from the dashboard"
+                                   if len(ids) > 1 else "Approved as a low-risk fix from the dashboard"})
 
     @app.post("/ui/approvals/bulk")
     def post_bulk(request: Request, body: dict = Body(...)) -> dict[str, Any]:

@@ -2183,6 +2183,23 @@ class Saguaro(Agent):
             self._compute(now)
             return [public(i) for i in self.incidents.values() if host is None or _host(i) == host]
 
+    def planned_fixes(self, iids: list[str] | None = None) -> dict[str, list[dict[str, Any]]]:
+        """What a yes would apply, per open incident: each fix with whether Countersign lets it through and
+        whether the target is an address an administrator signed in from (the approvals' risk tag uses it)."""
+        out: dict[str, list[dict[str, Any]]] = {}
+        with self.lock:
+            for iid, inc in self.incidents.items():
+                if iids is not None and iid not in iids:
+                    continue
+                proposals = self._proposals(inc, self._agent(inc.get("analyzed_by") or ""))
+                allowed, _ = self.needle.screen(proposals)
+                ok = {(p.type, p.target) for p in allowed}
+                admin = self.needle.admin_address
+                out[iid] = [{"type": p.type, "target": p.target, "allowed": (p.type, p.target) in ok,
+                             "admin_address": bool(p.type == "block_ip" and admin is not None and admin(p.target))}
+                            for p in proposals]
+        return out
+
     def get_incident(self, iid: str) -> dict[str, Any]:
         with self.lock:
             inc = self._get(iid)

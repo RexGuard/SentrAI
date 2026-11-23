@@ -33,6 +33,7 @@ On the panel (installed as /usr/local/bin/sentrai, runs as the service account):
                        [--report-how H] [--allowed A,B] [--blocked A,B] | system NAME [--what W] [--looks-after P]
                        [--importance critical|important|normal] | system NAME --remove
     sudo sentrai websites list | add DOMAIN | verify DOMAIN | check DOMAIN | show DOMAIN | remove DOMAIN
+                          | recheck DOMAIN PROBLEM | proof DOMAIN PROBLEM
     sudo sentrai protection on|off [--reason R]
     sudo sentrai team list | invite EMAIL [--role admin] | role EMAIL ROLE | remove EMAIL | reset EMAIL | withdraw EMAIL
     sudo sentrai api GET|POST PATH [JSON]                 any other core endpoint (docs/api/)
@@ -530,19 +531,57 @@ def cmd_websites(call: Call, a: argparse.Namespace) -> Any:
     if a.action == "remove":
         out = call("DELETE", f"/ui/websites/{d}")
         return out if a.json else f"Removed {out['removed']}; Sentry will not check it any more."
+    if a.action in ("recheck", "proof") and not a.problem:
+        raise CliError(f"which problem? sentrai websites {a.action} {a.domain} w1 (the Id column of `show`)")
+    if a.action == "recheck":
+        out = call("POST", f"/ui/websites/{d}/recheck", {"finding": a.problem, "operator": op})
+        return out if a.json else (f"{out['domain']}: {out['problem']}: {out['outcome_words']}. {out['note']}"
+                                   + (f" (now {out['now_id']})" if out.get("now_id") else ""))
+    if a.action == "proof":
+        last = call("GET", f"/ui/websites/{d}")
+        f = next((x for x in last.get("findings", []) if a.problem in (x.get("id"), x.get("key"))), None)
+        if f is None:
+            raise CliError(f"no problem {a.problem} in the last check of {a.domain}")
+        if a.json:
+            return f.get("proof") or {}
+        return proof_lines(f)
     out = call("POST", f"/ui/websites/{d}/check", {"operator": op}) if a.action == "check" \
         else call("GET", f"/ui/websites/{d}")
     if a.json:
         return out
-    rows = [[f["id"], f["severity_word"], f["title"], f.get("detail", "")[:70]] for f in out.get("findings", [])]
+    rows = [[f["id"], f["severity_word"], f.get("how_sure") or "-", f["title"], f.get("detail", "")[:60]]
+            for f in out.get("findings", [])]
     lines = [f"{out['domain']}  grade {out['grade']} ({out['score']}/100)  {out['checked_at']}  "
              f"{out['requests']} requests", out["headline"]]
     if rows:
-        lines += ["", table(rows, ["Id", "How serious", "Finding", "Evidence"])]
+        lines += ["", table(rows, ["Id", "How serious", "How sure", "Finding", "Evidence"]),
+                  f"(sentrai websites proof {out['domain']} ID shows what the site sent; recheck checks one again)"]
     if out.get("not_checked"):
         lines += ["", "Not checked: " + ", ".join(out["not_checked"])]
     if out.get("fixed_since"):
         lines += ["Fixed since last time: " + "; ".join(out["fixed_since"])]
+    if out.get("cant_tell_since"):
+        lines += ["Gone from the list but not checked again, so not counted as fixed: "
+                  + "; ".join(out["cant_tell_since"])]
+    return "\n".join(lines)
+
+
+def proof_lines(f: dict) -> str:
+    """One website problem's proof: what the site sent, as the check saved it."""
+    p = f.get("proof") or {}
+    lines = [f"{f['id']}  {f['title']}  ({f.get('how_sure') or 'likely'})"]
+    if p.get("from"):
+        lines.append(f"From:    {p['from']}  at {p.get('at')}" + (f"  (answer {p['status']})" if p.get("status") else ""))
+    how = {"quote": f"Quote found by code in the answer: {p.get('quote')!r}",
+           "missing": "Checked by code: the setting is not in the answer" if p.get("proven") else
+                      "The setting was there when checked again by code",
+           "none": "No word-for-word quote found in the saved answer: treat this as likely, not confirmed",
+           "not_kept": "The answer this is based on was not kept"}.get(p.get("how") or "not_kept", "")
+    lines.append(how)
+    for k, v in (p.get("headers") or {}).items():
+        lines.append(f"  {k}: {v}")
+    if p.get("excerpt"):
+        lines += ["Slice of the answer:", "  " + p["excerpt"]]
     return "\n".join(lines)
 
 
@@ -607,6 +646,26 @@ def cmd_incidents(call: Call, a: argparse.Namespace) -> Any:
         return rows if a.json else table([[r.get("id"), r.get("severity"), r.get("category"), r.get("host"),
                                            r.get("src_ip") or "", r.get("status"), r.get("opened_at")] for r in rows],
                                          ["Id", "Severity", "Type", "Host", "Address", "Status", "Opened"])
+    if a.action == "waiting":
+        out = call("GET", "/ui/approvals?sort=risk")
+        if a.json:
+            return out
+        rows = [*out.get("rows", []), *(r for g in out.get("groups", []) for r in g.get("rows", []))]
+        if not rows:
+            return "Nothing is waiting on you."
+        lines = [table([[r.get("id"), (r.get("risk") or {}).get("level", "-"), (r.get("risk") or {}).get("score", ""),
+                         r.get("what"), r.get("host"), r.get("target"), ", ".join(r.get("needs") or [])] for r in rows],
+                       ["Id", "Risk", "Score", "What", "Host", "Target", "Needs"])]
+        for r in rows:
+            reasons = (r.get("risk") or {}).get("reasons") or []
+            if a.why_risk and reasons:
+                lines.append(f"\n{r.get('id')}: " + "; ".join(reasons))
+        low = out.get("low_risk") or []
+        lines.append(f"\n{len(low)} low risk to approve" + (": sentrai incidents approve-low" if low else "."))
+        return "\n".join(lines)
+    if a.action == "approve-low":
+        out = call("POST", "/ui/approvals/approve-low", {"operator": op})
+        return out if a.json else out.get("message", out)
     if not a.ids:
         raise CliError("which incident? (sentrai incidents list)")
     if a.action == "show":
@@ -964,12 +1023,14 @@ def parser() -> argparse.ArgumentParser:
     bk.add_argument("action", choices=["list", "now", "copies", "key", "unlock"])
     bk.add_argument("host", nargs="?", help="unlock: the machine whose copy to unlock")
     bk.add_argument("ref", nargs="?", help="unlock: the backup id (b-...)")
-    n = add("incidents", cmd_incidents, "list, approve, reject, roll back, keep or resolve")
-    n.add_argument("action", choices=["list", "show", "approve", "reject", "rollback", "keep", "resolve"])
+    n = add("incidents", cmd_incidents, "list, approve, reject, roll back, keep or resolve; waiting: the approvals with their risk")
+    n.add_argument("action", choices=["list", "show", "waiting", "approve", "approve-low", "reject", "rollback", "keep",
+                                      "resolve"])
     n.add_argument("ids", nargs="*")
     n.add_argument("--all", action="store_true", help="list: closed ones too")
     n.add_argument("--why", help="reject: the reason (also saved for the others)")
     n.add_argument("--note", help="resolve: what was done")
+    n.add_argument("--why-risk", action="store_true", help="waiting: the reasons behind each risk tag")
     fb = add("feedback", cmd_feedback, "messages sent with the panel's Contact Us form")
     fb.add_argument("action", choices=["list", "done", "open"])
     fb.add_argument("ids", nargs="*")
@@ -1011,8 +1072,9 @@ def parser() -> argparse.ArgumentParser:
     ru.add_argument("--importance", choices=["critical", "important", "normal"])
     ru.add_argument("--remove", action="store_true", help="system: forget this system")
     we = add("websites", cmd_websites, "the company's own websites: prove ownership, check them from outside")
-    we.add_argument("action", choices=["list", "add", "verify", "check", "show", "remove"])
+    we.add_argument("action", choices=["list", "add", "verify", "check", "show", "remove", "recheck", "proof"])
     we.add_argument("domain", nargs="?")
+    we.add_argument("problem", nargs="?", help="recheck / proof: the problem's Id from `show` (w1, w2 ...)")
     for name, path, what in (("protection", "/protection", "protection on, or watch only"),):
         sw = add(name, cmd_switch(path), what)
         sw.add_argument("state", choices=["on", "off"])

@@ -266,3 +266,96 @@ def test_api_chat_and_cli(client):
     kinds = [r["type"] for r in client.get("/audit?limit=50").json().get("records", [])] if \
         client.get("/audit?limit=50").status_code == 200 else []
     assert not kinds or "website_check" in kinds
+
+
+# -- proof kept with each problem, checked by code (ARTEX idea 3), and checking one problem again (idea 4)
+
+def test_each_problem_carries_proof_checked_by_code(sites):
+    prove(sites, *bad_site())
+    r = sites.check("shop.test", "erick")
+    by = {f["key"]: f for f in r["findings"]}
+    banner = by["version_banner"]["proof"]
+    assert banner["proven"] and banner["how"] == "quote" and banner["status"] == 200
+    assert "apache/2.4.41" in banner["quote"].lower() and banner["headers"]["server"].startswith("Apache")
+    hsts = by["hsts"]["proof"]
+    assert hsts["how"] == "missing" and hsts["proven"] and "strict-transport-security" not in hsts["headers"]
+    assert by["git_folder"]["proof"]["quote"].startswith("ref: refs/heads/main")
+    env = by["env_file"]["proof"]
+    assert env["proven"] and "excerpt" not in env  # a slice of a settings file would hold its values: never kept
+    secret = by["secrets"]["proof"]
+    assert secret["proven"] and secret["quote"].startswith("sk_liv…") and STRIPE not in json.dumps(r)
+    assert by["dmarc"]["proof"]["source"] == "dns" and by["dmarc"]["proof"]["quote"] == "v=DMARC1; p=none"
+    assert by["spf"]["proof"]["how"] == "missing" and by["spf"]["proof"]["proven"]
+    assert all(f["how_sure"] == ("confirmed" if f["proof"]["proven"] else "likely") for f in r["findings"])
+    saved = sites.path.read_text()
+    assert "hunter2" not in saved and STRIPE not in saved
+
+
+def test_a_claim_with_no_quote_in_the_answer_is_only_likely():
+    c = ws.Check("shop.test", FakeNet(), NOW)
+    c._keep("https://shop.test/", "http", url="https://shop.test/", status=200, headers={}, text="hello world")
+    c.find("errors", "Error details", "medium", "t", "s", "Found: Traceback (most recent call last)", "r", "f")
+    assert c.findings[0]["proof"]["proven"] is False and c.result()["findings"][0]["how_sure"] == "likely"
+    assert ws.find_quote("Found: Traceback (most recent call last)", "x Traceback (most recent call last) y")
+
+
+def test_recheck_one_problem_still_there_fixed_or_cant_tell(sites):
+    token = prove(sites, *bad_site())
+    first = sites.check("shop.test", "erick")
+    env_id = next(f["id"] for f in first["findings"] if f["key"] == "env_file")
+    again = sites.recheck("shop.test", env_id, "erick")
+    assert again["outcome"] == "still_there" and again["proof"]["proven"]
+    # The site blocks .env now, but the home page is busy: the files are looked at, the rest cannot be.
+    pages, txt = bad_site()
+    del pages["https://shop.test/.env"]
+    txt = {**txt, "shop.test": [ws.VERIFY_TXT + token]}
+    sites.net = FakeNet(pages, txt)
+    env_id = next(f["id"] for f in sites.latest("shop.test")[0]["findings"] if f["key"] == "env_file")
+    assert sites.recheck("shop.test", env_id, "erick")["outcome"] == "fixed"
+    assert "The site's secret settings file can be downloaded" in sites.overview()["sites"][0]["fixed_this_week"]
+    # The site stops answering: a problem that was not looked at again is never counted as fixed.
+    pages = {k: v for k, v in pages.items() if "shop.test/" not in k or k.endswith(ws.VERIFY_FILE)}
+    pages["https://shop.test/"] = ws.Resp(503, "https://shop.test/", {})
+    pages["http://shop.test/"] = ws.Resp(503, "http://shop.test/", {})
+    sites.net = FakeNet(pages, txt)
+    git_id = next(f["id"] for f in sites.latest("shop.test")[0]["findings"] if f["key"] == "git_folder")
+    out = sites.recheck("shop.test", git_id, "erick")
+    assert out["outcome"] == "cant_tell" and "not counted" in out["note"]
+    last = sites.latest("shop.test")[0]
+    assert "The site's code history can be downloaded" in last["cant_tell_since"]
+    assert "The site's code history can be downloaded" not in last.get("fixed_since", [])
+    with pytest.raises(ws.WebsiteError, match="no problem"):
+        sites.recheck("shop.test", "w99", "erick")
+    assert sites.records[-1][0] == "website_recheck"
+
+
+def test_weekly_recheck_is_due_after_seven_days(sites, monkeypatch):
+    prove(sites, *good_site())
+    assert sites.due() == ["shop.test"]  # proven, never checked
+    sites.check("shop.test", "erick")
+    assert sites.due() == []
+    sites.clock = lambda: NOW + 8 * 86400
+    assert sites.due() == ["shop.test"]
+    monkeypatch.setenv("SENTRAI_WEBSITE_RECHECK_DAYS", "0")
+    assert sites.due() == []
+
+
+def test_cli_recheck_and_proof(sites):
+    token = prove(sites, *bad_site())
+    sites.check("shop.test", "erick")
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from app import ui_websites
+    app = FastAPI()
+    ui_websites.install(app, sites)
+    tc = TestClient(app)
+
+    def run(*args):
+        out = io.StringIO()
+        assert cli.main(list(args), call=through(tc), out=out) == 0
+        return out.getvalue()
+
+    out = run("websites", "proof", "shop.test", "version_banner")
+    assert "Quote found by code" in out and "Apache/2.4.41" in out
+    assert "Still there" in run("websites", "recheck", "shop.test", "env_file")
+    assert "How sure" in run("websites", "show", "shop.test")
