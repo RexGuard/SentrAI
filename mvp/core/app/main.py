@@ -29,7 +29,7 @@ from . import websites as websites_mod
 from . import mobile as mobile_mod
 from . import coach as coach_mod
 from . import knowledge as knowledge_mod
-from . import ai, anchor, apidocs, backup_copies, chat_memory, depscan, feature_ideas, fleet, hardware, integrations, jobs, procscan, signatures, webhook
+from . import agent_routes, ai, hosted, anchor, apidocs, backup_copies, chat_memory, depscan, feature_ideas, fleet, hardware, integrations, jobs, procscan, signatures, webhook
 from .extensions import ExtensionError
 from . import chat as chat_mod
 from .chat import OperatorChat, default_chat_provider
@@ -363,18 +363,8 @@ class OfflineReportIn(BaseModel):
     actions: list[OfflineActionIn] = Field(default_factory=list, max_length=500)
 
 
-# What a machine's own agent key may do (fleet.py): send its events and heartbeat, read its block list.
-# It reports what runs there and how its hardware is doing, picks up the jobs the panel queued for its own machine and reports how they went (jobs.py).
-AGENT_ROUTES = frozenset({("POST", "/events"), ("POST", "/heartbeat"), ("GET", "/blocklist"), ("GET", "/fleet/me"),
-                           ("POST", "/fleet/services"), ("POST", "/fleet/hardware"), ("GET", "/fleet/jobs/next"), ("POST", "/fleet/jobs/result"),
-                           ("POST", "/fleet/offline-report"),
-                           # the file watch (lab/agent/watch.py): send what it found, fetch the shared fingerprint list
-                           ("POST", "/fleet/threats"), ("GET", "/fleet/signatures"),
-                           # backup copies kept on other machines (backup_copies.py): send its key and its own sealed
-                           # copies, fetch the copies it was picked to keep, say what it holds
-                           ("POST", "/fleet/backup-key"), ("POST", "/fleet/backup-copies"),
-                           ("GET", "/fleet/backup-copies/wanted"), ("GET", "/fleet/backup-copies/file"),
-                           ("POST", "/fleet/backup-copies/held")})
+# What a machine's own agent key may do: see agent_routes.py (the hosted gateway reads the same list).
+AGENT_ROUTES = agent_routes.AGENT_ROUTES
 
 
 # Open without a token: the launchers' readiness check, the list the fake portal enforces (it holds no
@@ -450,6 +440,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     threats = ThreatWatch(core)
     backups = BackupWatch(core)
     discovery = Discovery(core, threats)
+    if hosted.on():  # one company on SentrAI's shared server: nothing runs on that server itself (hosted.py)
+        hosted.lock_local_work(threats, backups, discovery)
     chat = OperatorChat(core, default_chat_provider() if isinstance(core, Cyanide) else None, discovery, threats,
                         backups)
     chat.off_reason = core.ai_off_reason = ai.why_off()
@@ -540,10 +532,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="SentrAI core", version="0.1.0", lifespan=lifespan, dependencies=[Depends(require_token)],
                   docs_url=None, redoc_url=None, openapi_url=None)
     apidocs.install(app, OPEN_ROUTES, AGENT_ROUTES)
+    app.add_middleware(auth_cookie.OperatorFromSession)  # a signed-in person is the operator (auth.py)
+    if hosted.on():  # refuses the panel-machine endpoints before anything else looks at the request
+        hosted.install(app)
+
     # The signed report link opens in a browser: no framing, no type sniffing, and the ?sig= stays
     # out of the Referer of anything the page links to.
-    app.add_middleware(auth_cookie.OperatorFromSession)  # a signed-in person is the operator (auth.py)
-
     @app.middleware("http")
     async def security_headers(request: Request, call_next):
         response = await call_next(request)

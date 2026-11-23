@@ -28,7 +28,7 @@ import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 HOP = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailers",
        "transfer-encoding", "upgrade", "host", "content-length", "x-forwarded-for", "x-forwarded-proto"}
@@ -81,8 +81,16 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 OPENER = urllib.request.build_opener(NoRedirect)
 
 
-def make_handler(dist: Path, core: str, https: bool):
+NO_COMPANY = (b"<!doctype html><meta charset=utf-8><title>SentrAI</title><body style='font-family:sans-serif;"
+              b"max-width:32rem;margin:4rem auto;padding:0 1rem'><h1>No SentrAI panel here</h1><p>Check the address "
+              b"your SentrAI team gave you. It looks like <b>your-company</b>.sentrai.pro.</p>")
+
+
+def make_handler(dist: Path, core: str | Callable[[str], str | None], https: bool):
+    """core is the core's address, or (the hosted gateway, gateway.py) a function from the Host header to the
+    address of that company's core, None when no company has that address."""
     root = dist.resolve()
+    core_for: Callable[[str], str | None] = core if callable(core) else (lambda _host: core)
     HEADERS = security_headers(root)
     packed: dict[Path, tuple[float, bytes]] = {}  # build files, compressed once (they only change on a rebuild)
 
@@ -138,8 +146,8 @@ def make_handler(dist: Path, core: str, https: bool):
                 extra["Content-Encoding"] = "gzip"
             self._send(200, body, ctype, extra, head)
 
-        def _proxy(self) -> None:
-            url = core.rstrip("/") + self.path[len("/api"):]
+        def _proxy(self, base: str) -> None:
+            url = base.rstrip("/") + self.path[len("/api"):]
             n = int(self.headers.get("Content-Length") or 0)
             if n > MAX_BODY:
                 return self._send(413, b"too large", "text/plain")
@@ -211,8 +219,12 @@ def make_handler(dist: Path, core: str, https: bool):
                 resp.close()
 
         def _route(self, head: bool = False) -> None:
+            base = core_for(self.headers.get("Host") or "")
+            if base is None:
+                self.close_connection = True  # a body we did not read must not be taken for the next request
+                return self._send(404, NO_COMPANY, "text/html; charset=utf-8", {"Cache-Control": "no-store"}, head)
             if self.path == "/api" or self.path.startswith("/api/") or self.path.startswith("/api?"):
-                return self._proxy()
+                return self._proxy(base)
             if self.command in ("GET", "HEAD"):
                 return self._static(head)
             self._send(405, b"method not allowed", "text/plain")

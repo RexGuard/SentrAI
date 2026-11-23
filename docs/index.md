@@ -19,6 +19,7 @@ a server that keeps watch around the clock.
 | Keep SentrAI running on a Linux server (the panel) | [Install the panel](server.html) | about 10 minutes |
 | Add a Linux or Windows machine to the panel (the agent) | [Install the agent](agent.html) | about 5 minutes per machine |
 | Watch several machines from one dashboard | [One panel, many machines](panel.html) | |
+| Run SentrAI for many companies on one server | [Hosted service](hosted.html) | |
 | See which logs SentrAI reads (Windows, Suricata, databases) | [Log sources](log-sources.html) | |
 | Sign in, invite your team, or reset a sign-in | [Signing in](sign-in.html) | |
 | Change thresholds, alerts or protected IPs, or tell SentrAI who your administrators are | [Settings](settings.html) | |
