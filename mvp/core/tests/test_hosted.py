@@ -34,10 +34,15 @@ import gateway  # noqa: E402
 def hosted_client(tmp_path, monkeypatch):
     monkeypatch.setenv("SENTRAI_HOSTED", "1")
     monkeypatch.setenv("SENTRAI_CONFIG", str(tmp_path / "config.json"))
+    saved = dict(os.environ)  # a settings save copies values into os.environ: keep them out of later tests
     app = create_app(Settings(db_path=tmp_path / "sentrai.db", background=False))
-    with TestClient(app, headers=AUTH) as c:
-        c.app_state = app.state
-        yield c
+    try:
+        with TestClient(app, headers=AUTH) as c:
+            c.app_state = app.state
+            yield c
+    finally:
+        os.environ.clear()
+        os.environ.update(saved)
 
 
 @pytest.mark.parametrize("method,path", [
