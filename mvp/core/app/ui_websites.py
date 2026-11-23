@@ -65,6 +65,15 @@ def install(app: FastAPI, sites: ws.Websites) -> None:
         except ws.WebsiteError as e:
             raise HTTPException(400, str(e)) from e
 
+    @app.post("/ui/websites/{domain}/recheck")
+    def recheck(domain: str, request: Request, body: dict = Body(...)) -> dict[str, Any]:
+        """Check one problem again: {"finding": "w3"} (its id in the last check, or its key). Still there, fixed or
+        can't tell, decided by code."""
+        try:
+            return sites.recheck(domain, body.get("finding"), _who(request, body))
+        except ws.WebsiteError as e:
+            raise HTTPException(400, str(e)) from e
+
     @app.delete("/ui/websites/{domain}")
     def remove(domain: str, request: Request) -> dict[str, Any]:
         _need(request, "remove a website")

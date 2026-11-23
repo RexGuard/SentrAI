@@ -9,16 +9,32 @@ import { ask } from '../lib/notice'
 type Row = {
   id: string; what: string; host: string; severity: string; status: string; owner: string; open_for: string; opened?: string
   needs: string[]; target: string; points: number; attacker: string; summary: string
+  risk?: Risk
   can: { decide: boolean; ack: boolean; contain_controls: boolean; mine: boolean }
 }
+type Risk = { level: 'low' | 'medium' | 'high'; word: string; score: number; reasons: string[] }
 type Page = {
   headline: string; total: number; rows: Row[]; groups: { name: string; rows: Row[] }[]
-  grouped: { name: string; rows: Row[] }[]; protection_on: boolean
+  grouped: { name: string; rows: Row[] }[]; protection_on: boolean; low_risk?: string[]
 }
 type Verb = 'approve' | 'reject' | 'rollback' | 'keep' | 'mine'
 
 const READ_ONLY = 'Your role can read everything but change nothing.'
 const sevColor: Record<string, string> = { critical: 'text-crit', high: 'text-bad', medium: 'text-warn', low: 'text-ok' }
+const riskStyle: Record<Risk['level'], string> = {
+  low: 'border-ok/40 text-ok', medium: 'border-warn/40 text-warn', high: 'border-bad/40 text-bad',
+}
+const riskLabel: Record<Risk['level'], string> = { low: 'Low', medium: 'Medium', high: 'High' }
+
+/** How much could go wrong if you say yes (worked out by fixed rules, not the AI). */
+function RiskTag({ risk }: { risk?: Risk }) {
+  if (!risk) return <span className="text-muted">-</span>
+  return (
+    <span title={risk.word} className={'inline-block whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-medium ' + riskStyle[risk.level]}>
+      {riskLabel[risk.level]}
+    </span>
+  )
+}
 
 function Actions({ rows, page, onRun, onGroup, extra }: {
   rows: Row[]; page: Page; extra?: React.ReactNode
@@ -80,7 +96,7 @@ function Table({ rows, picking, picked, toggle, page, run, empty }: {
           <tr>
             {picking && <th className="w-8 p-2"><span className="sr-only">Pick</span></th>}
             <th className="w-8 p-2"><span className="sr-only">Details</span></th>
-            {['Incident', 'What', 'Host', 'Severity', 'Status', 'Owner', 'Open for', 'Needs'].map((h) => <th key={h} className="p-2 font-medium">{h}</th>)}
+            {['Incident', 'What', 'Host', 'Severity', 'Risk to approve', 'Status', 'Owner', 'Open for', 'Needs'].map((h) => <th key={h} className="p-2 font-medium">{h}</th>)}
           </tr>
         </thead>
         <tbody>
@@ -97,6 +113,7 @@ function Table({ rows, picking, picked, toggle, page, run, empty }: {
                 <td className="p-2">{r.what}</td>
                 <td className="p-2">{r.host}</td>
                 <td className={'p-2 font-medium capitalize ' + (sevColor[r.severity] ?? '')}>{r.severity}</td>
+                <td className="p-2"><RiskTag risk={r.risk} /></td>
                 <td className="p-2">{r.status}</td>
                 <td className="p-2">{r.owner}</td>
                 <td className="p-2 whitespace-nowrap">{r.open_for}</td>
@@ -104,8 +121,14 @@ function Table({ rows, picking, picked, toggle, page, run, empty }: {
               </tr>
               {open === r.id && (
                 <tr className="border-b border-line-soft bg-surface-2">
-                  <td colSpan={picking ? 10 : 9} className="space-y-3 p-4">
+                  <td colSpan={picking ? 11 : 10} className="space-y-3 p-4">
                     <p className="text-soft">{r.summary || `${r.what} on ${r.host}${r.target ? ` · ${r.target}` : ''}.`}</p>
+                    {r.risk && (
+                      <div className="text-sm">
+                        <p className="font-medium">{r.risk.word} <span className="text-muted">({r.risk.score} of 100)</span></p>
+                        <ul className="mt-1 list-disc pl-5 text-soft">{r.risk.reasons.map((why) => <li key={why}>{why}</li>)}</ul>
+                      </div>
+                    )}
                     <p className="text-xs text-muted">Source: {r.attacker} · Points: {r.points}</p>
                     <Actions rows={[r]} page={page} onRun={run} />
                   </td>
@@ -121,7 +144,8 @@ function Table({ rows, picking, picked, toggle, page, run, empty }: {
 }
 
 const FILTERS: Filter<Row>[] = [
-  { key: 'severity', label: 'Severity', get: (r) => r.severity }, { key: 'status', label: 'Status', get: (r) => r.status },
+  { key: 'severity', label: 'Severity', get: (r) => r.severity },
+  { key: 'risk', label: 'Risk to approve', get: (r) => (r.risk ? riskLabel[r.risk.level] : undefined) }, { key: 'status', label: 'Status', get: (r) => r.status },
   { key: 'host', label: 'Machine', get: (r) => r.host }, { key: 'what', label: 'Type', get: (r) => r.what },
   { key: 'owner', label: 'Owner', get: (r) => r.owner }, { key: 'needs', label: 'Needs', get: (r) => r.needs },
   { key: 'attacker', label: 'Source', get: (r) => r.attacker }, { key: 'opened', label: 'Opened', get: (r) => r.opened, kind: 'date' },
@@ -135,17 +159,29 @@ export default function Approvals({ embedded = false }: { embedded?: boolean }) 
   const [note, setNote] = useState('')
   const [tab, setTab] = useState<'waiting' | 'groups'>('waiting')
   const [by, setBy] = useState('')
+  const [sort, setSort] = useState('')
   const [picked, setPicked] = useState<Set<string>>(new Set())
 
   const load = useCallback(async () => {
-    try { setPage(await api<Page>('/ui/approvals' + (by ? `?by=${by}` : ''))); setError('') }
+    const q = new URLSearchParams({ ...(by ? { by } : {}), ...(sort ? { sort } : {}) }).toString()
+    try { setPage(await api<Page>('/ui/approvals' + (q ? `?${q}` : ''))); setError('') }
     catch (e) { setError(e instanceof ApiError ? e.message : 'Could not load approvals.') }
-  }, [by])
+  }, [by, sort])
   useEffect(() => { void load(); const t = setInterval(() => void load(), 10000); return () => clearInterval(t) }, [load])
 
   const run = async (verb: Verb, ids: string[], justification: string) => {
     try {
       const r = await api<{ message: string }>('/ui/approvals/bulk', { body: { verb, ids, justification } })
+      setNote(r.message); setPicked(new Set()); await load()
+    } catch (e) { setNote(e instanceof ApiError ? e.message : 'That did not go through.') }
+  }
+  const approveLow = async () => {
+    const n = page?.low_risk?.length ?? 0
+    const sure = await ask({ title: `Approve ${n} low-risk fix${n === 1 ? '' : 'es'}?`, confirm: 'Approve them',
+      body: 'Each one is checked again now, approved on its own and written to the audit log. You can still roll any of them back.' })
+    if (sure === null) return
+    try {
+      const r = await api<{ message: string }>('/ui/approvals/approve-low', { body: {} })
       setNote(r.message); setPicked(new Set()); await load()
     } catch (e) { setNote(e instanceof ApiError ? e.message : 'That did not go through.') }
   }
@@ -209,12 +245,25 @@ export default function Approvals({ embedded = false }: { embedded?: boolean }) 
                 </div>
               )}
               {f.bar}
+              <div className="flex flex-wrap items-center gap-3">
+              {(page.low_risk?.length ?? 0) > 0 && (
+                <button className={btnPrimary} disabled={!can('act') || !page.protection_on}
+                  title={!can('act') ? READ_ONLY : !page.protection_on ? 'Protection is off (monitor only): turn it on in Configuration to apply a hotpatch.' : 'Fixes where little can go wrong if you say yes'}
+                  onClick={() => void approveLow()}><Check size={14} aria-hidden /> Approve all low risk ({page.low_risk?.length})</button>
+              )}
+              <label className="inline-flex items-center gap-2 text-sm text-soft">
+                Order
+                <select value={sort} onChange={(e) => setSort(e.target.value)} className="rounded-md border border-line bg-surface-2 px-2 py-1 text-ink">
+                  <option value="">Biggest first</option><option value="risk">Safest to approve first</option>
+                </select>
+              </label>
               <label className="inline-flex items-center gap-2 text-sm text-soft">
                 Group by
                 <select value={by} onChange={(e) => setBy(e.target.value)} className="rounded-md border border-line bg-surface-2 px-2 py-1 text-ink">
                   <option value="">Nothing</option><option value="attacker">Attacker</option><option value="machine">Machine</option><option value="type">Type</option>
                 </select>
               </label>
+              </div>
               {by && grouped.length ? grouped.map((g) => (
                 <div key={g.name} className="space-y-2">
                   <h2 className="text-sm font-semibold text-soft">{g.name} · {g.rows.length}</h2>

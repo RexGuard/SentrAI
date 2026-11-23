@@ -416,15 +416,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             except Exception:
                 log.exception("scheduled backup failed")
 
+    async def website_rechecker() -> None:
+        """Check each proven website again once its last check is a week old (SENTRAI_WEBSITE_RECHECK_DAYS)."""
+        while True:
+            await asyncio.sleep(3600)
+            for domain in company_sites.due():
+                try:
+                    await asyncio.to_thread(company_sites.check, domain, "weekly re-check")
+                except websites_mod.WebsiteError as e:
+                    log.info("weekly website re-check of %s skipped: %s", domain, e)
+                except Exception:
+                    log.exception("weekly website re-check of %s failed", domain)
+
     @contextlib.asynccontextmanager
     async def lifespan(_: FastAPI):
         task = asyncio.create_task(ticker()) if core.settings.background else None
         scanner = asyncio.create_task(threat_scanner()) if core.settings.background else None
         backer = asyncio.create_task(backup_scheduler()) if core.settings.background else None
+        sites = asyncio.create_task(website_rechecker()) if core.settings.background else None
         if core.remote is not None and core.settings.background:
             core.remote.start()
         yield
-        for t in (task, scanner, backer):
+        for t in (task, scanner, backer, sites):
             if t:
                 t.cancel()
                 with contextlib.suppress(asyncio.CancelledError):

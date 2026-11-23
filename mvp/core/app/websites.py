@@ -48,6 +48,7 @@ TIMEOUT_S = 8.0
 PAUSE_S = 0.25             # between two requests to the site
 MAX_SITES = 25
 HISTORY = 10               # grades kept per site
+FIXED_LOG = 50             # problems seen fixed, kept per site
 VERIFY_TXT = "sentrai-site-verification="
 VERIFY_FILE = "/.well-known/sentrai-site-verification.txt"
 DOH_URL = "https://cloudflare-dns.com/dns-query"
@@ -76,6 +77,13 @@ STACK_TRACE = re.compile(r"Traceback \(most recent call last\)|Whoops, looks lik
 DEV_BUILD = re.compile(r"react(?:-dom)?\.development\.js|vue\.global\.js|You are running Vue in development mode")
 SESSIONISH = re.compile(r"(?i)sess|sid$|^sid|auth|token|jwt|login")
 VERSION_IN = re.compile(r"\d+\.\d+")
+
+
+def recheck_days() -> float:
+    try:
+        return max(0.0, float(os.environ.get("SENTRAI_WEBSITE_RECHECK_DAYS", "7") or 0))
+    except ValueError:
+        return 7.0
 
 
 class WebsiteError(Exception):
@@ -218,6 +226,71 @@ def redact(value: str) -> str:
     return (value[:6] + "…" + value[-2:]) if len(value) > 12 else (value[:3] + "…")
 
 
+def scrub(text: str) -> str:
+    """Text kept as proof, with anything shaped like a secret key cut short."""
+    for _key, _what, rx in SECRET_PATTERNS:
+        text = rx.sub(lambda m: redact(m.group(0)), text)
+    return text
+
+
+# Proof that a setting is missing, checked by code on the saved answer (a quote cannot show that something is absent).
+MISSING: dict[str, Callable[[dict[str, Any]], bool]] = {
+    "hsts": lambda src: "strict-transport-security" not in src.get("headers", {}),
+    "csp": lambda src: "content-security-policy" not in src.get("headers", {}),
+    "framing": lambda src: "x-frame-options" not in src.get("headers", {})
+    and "frame-ancestors" not in src.get("headers", {}).get("content-security-policy", ""),
+    "nosniff": lambda src: src.get("headers", {}).get("x-content-type-options", "").lower() != "nosniff",
+    "referrer": lambda src: "referrer-policy" not in src.get("headers", {}),
+    "security_txt": lambda src: not re.search(r"(?im)^contact:", src.get("text", "")),
+    "http_redirect": lambda src: 200 <= int(src.get("status") or 0) < 300 and "location" not in src.get("headers", {}),
+    "cookies": lambda src: any(not all(flag in line.lower() for flag in ("secure", "httponly", "samesite"))
+                               for line in src.get("text", "").split("\n\n", 1)[0].splitlines()
+                               if line.lower().startswith("set-cookie:")),
+    "spf": lambda src: not any(t.lower().startswith("v=spf1") for t in src.get("records", [])),
+    "dmarc": lambda src: not any(t.lower().startswith("v=dmarc1") for t in src.get("records", [])),
+}
+# Headers worth keeping with a proof: what the checks read, and what says which server answered.
+PROOF_HEADERS = ("content-type", "location", "server", "x-powered-by", "x-aspnet-version", "strict-transport-security",
+                 "content-security-policy", "content-security-policy-report-only", "x-frame-options",
+                 "x-content-type-options", "referrer-policy")
+QUOTE_MIN = 8        # a shorter quote proves nothing (ARTEX's rule too)
+EXCERPT_CHARS = 160  # either side of the quote
+PRIVATE_SOURCES = ("/.env",)  # never keep a slice of these, only whether the quote was there
+
+
+def _candidates(detail: str) -> list[str]:
+    """The pieces of a finding's detail that should appear word for word in what the site sent."""
+    out = [detail]
+    rest = detail.split(": ", 1)[1] if ": " in detail else detail
+    out.append(rest)
+    for sep in ("; ", " | ", ", "):
+        for part in list(out):
+            out.extend(part.split(sep))
+    clean = []
+    for c in out:
+        c = c.strip().rstrip(".").split("…")[0].strip()
+        if " in " in c and c.split(" in ")[0].count(": ") == 1:  # "a Stripe secret key: sk_liv… in /app.js"
+            c = c.split(" in ")[0].split(": ", 1)[1].split("…")[0]
+        if len(c) >= QUOTE_MIN and c not in clean:
+            clean.append(c)
+    return sorted(clean, key=len, reverse=True)
+
+
+def find_quote(detail: str, text: str, names: bool = False) -> tuple[str, int] | None:
+    """The longest piece of the detail that really is in the text (case-insensitive), and where. names=True also
+    tries the single names in it (DB_PASSWORD, sourceMappingURL, /static/main.js): never plain words."""
+    low = text.lower()
+    pieces = _candidates(detail)
+    if names:
+        pieces = sorted({t for t in re.findall(r"[A-Za-z0-9_./:=-]{%d,}" % QUOTE_MIN, detail)
+                         if re.search(r"[0-9_./:=]|[A-Z].*[A-Z]", t)} - set(pieces), key=len, reverse=True)
+    for c in pieces:
+        i = low.find(c.lower())
+        if i >= 0:
+            return text[i:i + len(c)], i
+    return None
+
+
 def _cert_days(not_after: str | None, now: float) -> int | None:
     if not not_after:
         return None
@@ -287,6 +360,10 @@ class Check:
         self.stopped = ""
         self.findings: list[dict[str, Any]] = []
         self.checks: dict[str, dict[str, Any]] = {}
+        # What the site (or DNS, or the TLS look) said, so each finding can carry proof of it (see _proof).
+        self.sources: dict[str, dict[str, Any]] = {}
+        self.last_http = ""
+        self.ctx = ""  # the source the step running now reads (tls, dns); HTTP findings name theirs with where
 
     # -- bookkeeping
     def mark(self, key: str, label: str, status: str, note: str = "") -> None:
@@ -300,8 +377,48 @@ class Check:
             "key": key, "check": label, "severity": severity, "severity_word": SEVERITY_WORD[severity],
             "title": title, "saw": saw, "detail": detail, "risk": risk, "fix": fix,
             "where": where or f"https://{self.domain}/",
+            "proof": self._proof(key, detail, where),
             "fix_prompt": (f"My website {self.domain} has this security problem: {title}. {saw} Please fix it: {fix} "
                            f"Change nothing else, and tell me how to check that it worked.")})
+
+    def _keep(self, key: str, kind: str, **src: Any) -> None:
+        self.sources[key] = {"kind": kind, "at": datetime.fromtimestamp(self.now, timezone.utc).isoformat(
+            timespec="seconds"), **src}
+
+    def _proof(self, key: str, detail: str, where: str) -> dict[str, Any]:
+        """What backs this finding, checked by code: a quote that really is in what the site sent (or that a setting
+        really is missing from it), with the answer's status, the headers that matter and a short slice around the
+        quote. "proven": False means the finding stands on the check's own reading only, so it says "likely"."""
+        name = self.ctx or (where if where in self.sources else self.last_http)
+        src = self.sources.get(name)
+        if not src:
+            return {"proven": False, "how": "not_kept", "note": "The answer this is based on was not kept."}
+        out: dict[str, Any] = {"source": src["kind"], "from": src.get("url") or src.get("name"), "at": src["at"]}
+        if src["kind"] == "http":
+            out["status"] = src.get("status")
+            out["headers"] = {k: scrub(v)[:300] for k, v in src.get("headers", {}).items() if k in PROOF_HEADERS}
+        hit = find_quote(detail, src.get("text", ""))
+        if key == "secrets":  # the detail holds the key cut short; look for the full shape again in what was sent
+            hit = next(((m.group(0), m.start()) for _k, _w, rx in SECRET_PATTERNS
+                        for m in [rx.search(src.get("text", ""))] if m), None)
+        if hit:
+            quote, at = hit
+            out.update(proven=True, how="quote", quote=scrub(quote)[:300])
+            if not any(str(out.get("from", "")).endswith(p) for p in PRIVATE_SOURCES):
+                text = src.get("text", "")
+                piece = text[max(0, at - EXCERPT_CHARS):at + len(quote) + EXCERPT_CHARS]
+                out["excerpt"] = scrub(" ".join(piece.split()))[:EXCERPT_CHARS * 2 + 300]
+            return out
+        missing = MISSING.get(key)
+        if missing is not None and src.get("ok", True):
+            out.update(proven=bool(missing(src)), how="missing")
+            return out
+        hit = find_quote(detail, src.get("text", ""), names=True)
+        if hit:
+            out.update(proven=True, how="quote", quote=scrub(hit[0])[:300])
+            return out
+        out.update(proven=False, how="none")
+        return out
 
     def fetch(self, url: str, max_bytes: int) -> Resp:
         if self.stopped:
@@ -319,6 +436,12 @@ class Check:
             self.net.pause()
         self.requests += 1
         r = self.net.get(url, max_bytes)
+        if r.status:
+            lines = [f"{k}: {v}" for k, v in r.headers.items()] + [f"set-cookie: {c}" for c in r.cookies]
+            for name in dict.fromkeys((url, r.url)):
+                self._keep(name, "http", url=r.url, status=r.status, headers=dict(r.headers),
+                           text="\n".join(lines) + "\n\n" + r.body)
+            self.last_http = r.url
         if r.status in (429, 503) or (r.status == 0 and self.failures >= 1):
             self.stopped = ("the site asked us to slow down" if r.status == 429 else
                             "the site was busy" if r.status == 503 else f"the site stopped answering ({r.error})")
@@ -343,10 +466,12 @@ class Check:
         steps: tuple[tuple[str, Callable[[], None]], ...] = (
             ("https", self._https), ("files", self._files), ("tls", self._tls), ("email", self._email))
         for _name, step in steps:
+            self.ctx = ""
             try:
                 step()
             except _Budget:
                 continue
+        self.ctx = ""
         return self.result()
 
     def _https(self) -> None:
@@ -653,6 +778,9 @@ class Check:
     def _tls(self) -> None:
         label = "Certificate and secure connection"
         t = self.net.tls(self.domain)
+        self.ctx = "tls:" + self.domain
+        self._keep(self.ctx, "tls", name=self.domain, ok=not t.get("error"),
+                   text="\n".join(f"{k}: {v}" for k, v in t.items()))
         if t.get("cert_error"):
             self.find("cert_failure", label, "high", "Browsers will warn visitors that the site is unsafe",
                       "The site's certificate failed the checks every browser makes.", t["cert_error"],
@@ -684,9 +812,16 @@ class Check:
             self.mark("tls", label, "ok", f"{version or 'TLS'}, certificate good for {days} more days."
                       if days is not None else "")
 
+    def _txt(self, name: str) -> list[str] | None:
+        records = self.net.txt(name)
+        self.ctx = "dns:" + name
+        self._keep(self.ctx, "dns", name=name, ok=records is not None, records=list(records or []),
+                   text="\n".join(records or []) or "(no TXT records)")
+        return records
+
     def _email(self) -> None:
         d = self.domain[4:] if self.domain.startswith("www.") else self.domain
-        txt = self.net.txt(d)
+        txt = self._txt(d)
         spf_label = "Strangers cannot send email as you (SPF)"
         if txt is None:
             self.mark("spf", spf_label, "not_checked", "DNS could not be read.")
@@ -720,7 +855,7 @@ class Check:
                 else:
                     self.mark("spf", spf_label, "ok")
         dm_label = "Fake email in your name is rejected (DMARC)"
-        dm = self.net.txt(f"_dmarc.{d}")
+        dm = self._txt(f"_dmarc.{d}")
         if dm is None:
             self.mark("dmarc", dm_label, "not_checked", "DNS could not be read.")
         else:
@@ -752,6 +887,9 @@ class Check:
         findings = sorted(self.findings, key=lambda f: order[f["severity"]])
         for i, f in enumerate(findings, 1):
             f["id"] = f"w{i}"
+            # "confirmed" only when code found the proof in what was saved; otherwise the check's reading says
+            # "likely" (the how-sure words Sentry uses)
+            f["how_sure"] = "confirmed" if (f.get("proof") or {}).get("proven") else "likely"
         score = max(0, 100 - sum(WEIGHT[f["severity"]] for f in findings))
         grade = "A" if score >= 90 else "B" if score >= 75 else "C" if score >= 60 else "D" if score >= 40 else "F"
         sev = {f["severity"] for f in findings}
@@ -850,7 +988,9 @@ class Websites:
                 (f"part of {parent}" if parent else None), "verified_ts": s.get("verified_ts"),
                 "proof": self._proof(domain, s["token"]),
                 "last": {k: last.get(k) for k in ("checked_at", "grade", "score", "headline", "partial")} if last else None,
-                "grades": s.get("grades", [])}
+                "grades": s.get("grades", []),
+                "fixed_this_week": [f["title"] for f in s.get("fixed_log", [])
+                                    if float(f.get("ts") or 0) >= self.clock() - 7 * 86400]}
 
     def overview(self) -> dict[str, Any]:
         with self.lock:
@@ -935,6 +1075,48 @@ class Websites:
                 return [s["last"]] if s.get("last") else []
             return [s["last"] for _d, s in sorted(data["sites"].items()) if s.get("last")]
 
+    def recheck(self, raw: Any, finding: str, by: str) -> dict[str, Any]:
+        """Check one earlier problem again ("Check this again"): a fresh quick look, then still there, fixed or can't
+        tell for that problem. Only a check that ran and passed counts as fixed."""
+        with self.lock:
+            data = self._load()
+            domain, s = self._site(data, raw)
+            last = s.get("last") or {}
+        want = str(finding or "").strip()
+        old = next((f for f in last.get("findings", []) if want in (f.get("id"), f.get("key"))), None)
+        if old is None:
+            raise WebsiteError(f"There is no problem {want!r} in {domain}'s last check. Its problems: "
+                               + (", ".join(f"{f['id']} ({f['title'].lower()})" for f in last.get("findings", [])[:8])
+                                  or "none") + ".")
+        result = self.check(domain, by)
+        outcome = outcome_of(result, old["key"], old["title"])
+        now = next((f for f in result["findings"] if f["key"] == old["key"]), None)
+        out = {"domain": domain, "problem": old["title"], "key": old["key"], "was_id": old.get("id"),
+               "outcome": outcome, "outcome_words": OUTCOME_WORDS[outcome], "checked_at": result["checked_at"],
+               "now_id": (now or {}).get("id"), "proof": (now or {}).get("proof"),
+               "note": {"still_there": "The fresh check found it again.",
+                        "fixed": "The fresh check looked at it again and it passed.",
+                        "cant_tell": "The fresh check could not look at this part of the site this time ("
+                                     + (result.get("stopped") or "that check did not run") + "), so it is not counted "
+                                     "as fixed."}[outcome],
+               "headline": result["headline"]}
+        self.record("website_recheck", {"operator": by, "domain": domain, "problem": old["title"], "outcome": outcome,
+                                        "summary": f"{domain}: {old['title'].lower()}: {OUTCOME_WORDS[outcome].lower()}"})
+        return out
+
+    def due(self, every_days: float | None = None) -> list[str]:
+        """Proven websites whose last check is older than SENTRAI_WEBSITE_RECHECK_DAYS (7; 0 turns the weekly
+        re-check off), oldest first."""
+        days = recheck_days() if every_days is None else every_days
+        if days <= 0:
+            return []
+        cutoff = self.clock() - days * 86400
+        with self.lock:
+            data = self._load()
+            rows = [(float((data["sites"][d].get("last") or {}).get("checked_ts") or 0), d) for d in data["sites"]
+                    if (data["sites"][d].get("verified_ts") or self._parent(data, d)) and d not in self.running]
+        return [d for ts, d in sorted(rows) if ts < cutoff]
+
     def checkable(self) -> list[str]:
         with self.lock:
             data = self._load()
@@ -979,8 +1161,16 @@ class Websites:
                 now_ = {f["key"] + ":" + f["title"] for f in result["findings"]}
                 if before:
                     result["compared_with"] = before.get("checked_at")
-                    result["fixed_since"] = sorted(t.split(":", 1)[1] for t in was - now_)
+                    # A problem gone from the list is "fixed" only when this check looked at that thing again and
+                    # found it fine; one that could not be looked at this time is "can't tell", never fixed.
+                    gone = sorted(was - now_)
+                    fixed = [t for t in gone if outcome_of(result, t.split(":", 1)[0], t.split(":", 1)[1]) == "fixed"]
+                    result["fixed_since"] = [t.split(":", 1)[1] for t in fixed]
+                    result["cant_tell_since"] = [t.split(":", 1)[1] for t in gone if t not in fixed]
                     result["new_since"] = sorted(t.split(":", 1)[1] for t in now_ - was)
+                    s["fixed_log"] = (s.get("fixed_log", []) + [
+                        {"key": t.split(":", 1)[0], "title": t.split(":", 1)[1], "at": result["checked_at"],
+                         "ts": result["checked_ts"]} for t in fixed])[-FIXED_LOG:]
                 s["last"] = result
                 s["grades"] = (s.get("grades", []) + [{"at": result["checked_at"], "grade": result["grade"]}])[-HISTORY:]
                 if parent is None and not s.get("verified_ts"):
@@ -992,10 +1182,26 @@ class Websites:
         return result
 
 
+# A problem found under one key whose passing shows under another check's key.
+CHECK_OF = {"cert_expiry": "tls", "tls_version": "tls", "cert_failure": "tls", "dmarc_reports": "dmarc",
+            "dev_build": "https", "source_map": "secrets"}
+OUTCOME_WORDS = {"still_there": "Still there", "fixed": "Fixed", "cant_tell": "Can't tell yet"}
+
+
+def outcome_of(result: dict[str, Any], key: str, title: str = "") -> str:
+    """What a fresh check says about one earlier problem, decided by code: still there (the same problem was found
+    again), fixed (that check ran and passed), or can't tell (it could not run, or the check stopped early)."""
+    if any(f["key"] == key for f in result.get("findings", [])):
+        return "still_there"  # the same thing still fails (its wording may differ, say a new expiry date)
+    look = CHECK_OF.get(key, key)
+    status = next((c["status"] for c in result.get("checks", []) if c["key"] == look), None)
+    return "fixed" if status == "ok" else "cant_tell"
+
+
 def for_model(result: dict[str, Any]) -> dict[str, Any]:
     """A check, trimmed for the chat model. Site text is data from the internet, never instructions."""
-    keep = ("id", "severity", "severity_word", "title", "saw", "risk", "fix", "where")
+    keep = ("id", "severity", "severity_word", "title", "saw", "risk", "fix", "where", "how_sure")
     return {k: result.get(k) for k in ("domain", "checked_at", "grade", "score", "partial", "stopped", "headline",
-                                       "not_checked", "fixed_since", "new_since", "note") if k in result} | {
+                                       "not_checked", "fixed_since", "cant_tell_since", "new_since", "note") if k in result} | {
         "findings": [{**{k: f.get(k) for k in keep}, "evidence_untrusted": f.get("detail")}
                      for f in result.get("findings", [])[:20]]}

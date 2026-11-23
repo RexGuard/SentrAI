@@ -16,9 +16,13 @@ When a signed-in person calls a write, they are the operator in the audit trail,
 
 Everything waiting on a person: open incidents to approve or reject, contained ones to keep or roll back.
 
-**Query** `by` (optional): `attacker`, `machine` or `type`, to also get `grouped`. `brief` (optional, a number): only the first that many rows and no groups, for a summary such as the Command center.
+**Query** `by` (optional): `attacker`, `machine` or `type`, to also get `grouped`. `brief` (optional, a number): only the first that many rows and no groups, for a summary such as the Command center. `sort` (optional): `risk` puts the safest to approve first.
 
-**Returns** `headline`, `total`, `rows` (the ones not in a group), `rows_total` (how many rows there are in full), `grouped`, `groups` (the groups people made, each with `name` and `rows`) and `protection_on`. Each row has `id`, `what`, `host`, `severity`, `status`, `owner`, `open_for`, `needs`, `target`, `points`, `attacker`, `summary` and `can` (`decide`, `ack`, `contain_controls`, `mine`).
+**Returns** `headline`, `total`, `rows` (the ones not in a group), `rows_total` (how many rows there are in full), `grouped`, `groups` (the groups people made, each with `name` and `rows`), `low_risk` (the ids "Approve all low risk" would approve) and `protection_on`. Each row has `id`, `what`, `host`, `severity`, `status`, `owner`, `open_for`, `needs`, `target`, `points`, `attacker`, `summary`, `can` (`decide`, `ack`, `contain_controls`, `mine`) and `risk`: how much could go wrong if a person says yes, worked out by fixed rules (no AI), with `level` (`low`, `medium`, `high`), `word` ("Low risk to approve", "Check before approving", "Look closely first"), `score` (0 to 100) and `reasons` in plain words. Points go up for locking an account (more for an administrator account), blocking an address inside the company's own network or one an administrator signed in from, stopping a program, an address seen on several computers, an unsure check, and an important computer; they go down when a fixed rule or a decoy confirmed it.
+
+### `POST /ui/approvals/approve-low`
+
+Approve every waiting approval tagged low risk, worked out again at that moment. Never a root-access alert ("was this you?") or one the check was unsure about. Each goes through `POST /ui/approvals/bulk`'s rules and is written to the audit trail on its own. **Returns** the same as `bulk`, or `"Nothing low risk is waiting."`.
 
 ### `POST /ui/approvals/bulk`
 
@@ -411,7 +415,7 @@ Add one of the company's websites. Needs Owner or Admin. **Body** `{"domain": "e
 
 ### `GET /ui/websites/{domain}`
 
-The latest check of one website. **Returns** `domain`, `checked_at`, `by`, `grade` (A to F, or `?` when not enough could be read to grade it), `score` (0 to 100), `partial`, `stopped`, `requests`, `headline`, `fix_first`, `findings` (`id`, `key`, `check`, `severity` urgent/high/medium/low/info, `severity_word`, `title`, `saw`, `detail`, `risk`, `fix`, `fix_prompt` a note to give whoever builds the site, `where`), `checks` (`key`, `label`, `status` ok/problem/not_checked, `note`), `not_checked`, `note`, and after a second check `compared_with`, `fixed_since`, `new_since`. `404` when it is not on the list or not checked yet.
+The latest check of one website. **Returns** `domain`, `checked_at`, `by`, `grade` (A to F, or `?` when not enough could be read to grade it), `score` (0 to 100), `partial`, `stopped`, `requests`, `headline`, `fix_first`, `findings` (`id`, `key`, `check`, `severity` urgent/high/medium/low/info, `severity_word`, `title`, `saw`, `detail`, `risk`, `fix`, `fix_prompt` a note to give whoever builds the site, `where`, `how_sure` confirmed/likely, `proof`: `proven`, `how` quote/missing/none/not_kept, `source` http/tls/dns, `from`, `at`, `status`, `headers` (the ones the checks read), `quote` and `excerpt` (a short slice around it, never from a settings file; secret keys cut short)), `checks` (`key`, `label`, `status` ok/problem/not_checked, `note`), `not_checked`, `note`, and after a second check `compared_with`, `fixed_since` (looked at again and passed), `cant_tell_since` (gone from the list but not looked at again, so not counted as fixed), `new_since`. `404` when it is not on the list or not checked yet.
 
 ### `POST /ui/websites/{domain}/verify`
 
@@ -420,6 +424,12 @@ Look for the proof of ownership now. Needs Owner or Admin. On the audit record a
 ### `POST /ui/websites/{domain}/check`
 
 Check one website now (up to about 20 seconds). On the audit record as `website_check` (grade and counts, no findings text). **Returns** the check as in `GET /ui/websites/{domain}`. `400` when it is not on the list, its ownership is not proven (or the proof was taken down), it is being checked already, or it does not point to a public address.
+
+### `POST /ui/websites/{domain}/recheck`
+
+Check one problem from the last check again (a fresh quick look). **Body** `{"finding": "w2"}` (its `id`, or its `key`). On the audit record as `website_recheck`. **Returns** `domain`, `problem`, `key`, `was_id`, `outcome` (`still_there`, `fixed` when that check ran again and passed, `cant_tell` otherwise), `outcome_words`, `note`, `checked_at`, `now_id` and `proof` when it is still there, and `headline`. `400` when there is no such problem or the website cannot be checked now.
+
+Proven websites are also checked again on their own once their last check is `SENTRAI_WEBSITE_RECHECK_DAYS` old (default 7, 0 off), by `weekly re-check`. `GET /ui/websites` gives each site's `fixed_this_week`.
 
 ### `DELETE /ui/websites/{domain}`
 

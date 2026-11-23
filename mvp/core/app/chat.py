@@ -29,6 +29,7 @@ from . import outside_text
 from .config import Settings  # noqa: F401  (puts mvp/ on sys.path, for sentrai_llm)
 from .saguaro import AGENT_OWNER, Saguaro
 from .summary import PLAIN_ACTIONS, plain_names, plain_title
+from . import approval_risk
 from .ui_approvals import handled
 
 import sentrai_llm  # noqa: E402
@@ -265,6 +266,9 @@ blocklist means SentrAI already acted. "open" means nothing has been done yet: i
 a proposal waiting for their OK, so say "SentrAI suggests ...", never that it is already in place.
 - Say how sure SentrAI is, in words, when it matters: get_incident gives how_sure ("certain: a decoy was \
 touched", "sure: it matched a known attack pattern", "not sure: a person should look"). Never give a percentage.
+- When they ask whether to approve, use get_incident's risk_to_approve: its word ("Low risk to approve", "Check \
+before approving", "Look closely first") and one or two of its reasons. It is about what a yes could break, not \
+how bad the attack is.
 - After SentrAI blocked something it checks later whether the block worked (an action's "check": worked, \
 disruption). Say "SentrAI checked afterwards and the block worked", or plainly that it did not and what is next.
 - Do not blame a person. An account name shows which login was used, not who typed; say so when they ask who \
@@ -311,7 +315,10 @@ whoever built the site can fix it, and that each finding has a ready-made note t
 in the result, which you may quote for the one to fix first). Anything "not checked" was not looked at: never call \
 it passed. A clean grade means the quick look saw nothing wrong, not that the site cannot be broken into. When \
 they name a website that is not on the company's list, do not check it: say SentrAI only checks websites the \
-company owns, and SentrAI's team can add theirs once they prove they own it. Never check anyone else's site.
+company owns, and SentrAI's team can add theirs once they prove they own it. Never check anyone else's site. \
+Each finding has "how_sure": say "we saw" for confirmed ones (code found the proof in what the site sent) and \
+"it looks like" for likely ones. "Did they fix it?", "check that again": call recheck_website_problem with the \
+problem's id; say its outcome as it is (still there, fixed, or can't tell yet). "Can't tell" is never fixed.
 - "What did I miss?", "catch me up", "anything overnight?": call get_briefing. Lead with what needs them, \
 then what SentrAI handled by itself, in one or two sentences each.
 - Questions about a time ("what happened last night", "Tuesday at 3pm", "between 9 and 11"): call get_timeline \
@@ -419,6 +426,13 @@ TOOLS: list[dict[str, Any]] = [
      "input_schema": {"type": "object", "properties": {
          "domain": {"type": "string", "description": "The website, e.g. example.com. Empty: the only one there is."}},
          "required": ["domain"], "additionalProperties": False}},
+    {"name": "recheck_website_problem", "description": "Check one problem from a website's last check again (a fresh "
+         "quick look, about 20 seconds) and say whether it is still there, fixed, or can't tell yet. Only a check that "
+         "ran again and passed counts as fixed.",
+     "input_schema": {"type": "object", "properties": {
+         "domain": {"type": "string", "description": "The website, e.g. example.com. Empty: the only one there is."},
+         "problem": {"type": "string", "description": "The problem's id in the last check (w1, w2 ...)."}},
+         "required": ["problem"], "additionalProperties": False}},
     {"name": "get_briefing", "description": "What SentrAI handled by itself and what still needs a person, since a "
          "time (default the last 24 hours). Open incidents that need a decision are always listed. Each handled item "
          "says what SentrAI did and whether its after-action check found the fix worked.",
@@ -529,7 +543,7 @@ TOOLS: list[dict[str, Any]] = [
 POINTER = re.compile(r"(?i)\b(button|chip|question)s? (below|under)|\bbelow\b")
 LOOKUP_TOOLS = {"get_overview", "get_incident", "get_machine", "explain", "get_audit", "get_blocklist", "get_profile", "scan_system",
                 "scan_threats", "get_backups", "get_briefing", "get_timeline", "run_drill", "search_company_rules",
-                "get_website_check", "check_website"}
+                "get_website_check", "check_website", "recheck_website_problem"}
 
 
 def default_chat_provider() -> sentrai_llm.Provider | None:
@@ -797,7 +811,8 @@ class OperatorChat:
         try:
             out = self._dispatch(call.name, call.input, looked_at, suggestions, rich)
             out = out[:MAX_TOOL_CHARS * (2 if call.name in ("scan_system", "scan_threats", "check_website",
-                                                                   "get_website_check") else 1)]
+                                                                   "get_website_check", "recheck_website_problem")
+                                     else 1)]
             # What a lookup found (incidents, log lines, files, guides, websites) is outside text: seal it, after the
             # cut so the closing line is never cut off. Plain sentences written by SentrAI stay as they are.
             if code and call.name in LOOKUP_TOOLS and out.lstrip()[:1] in ("{", "["):
@@ -864,6 +879,9 @@ class OperatorChat:
             timeline = inc.get("timeline") or []
             out = {**inc, "how_sure": brief.how_sure(inc), "latest_events": events,
                    "timeline": timeline[-TIMELINE_IN_LOOKUP:]}
+            if inc.get("status") in ("open", "acknowledged", "contained") and hasattr(c, "planned_fixes"):
+                seen = approval_risk.seen_on_map(c.list_incidents(host=None)).get(str(inc.get("src_ip") or ""), ())
+                out["risk_to_approve"] = approval_risk.score(inc, c.planned_fixes([iid]).get(iid), seen)
             if len(timeline) > TIMELINE_IN_LOOKUP:
                 out["older_timeline_entries"] = len(timeline) - TIMELINE_IN_LOOKUP
             return lean_json(out)
@@ -904,6 +922,17 @@ class OperatorChat:
             return "Button shown to the operator. The collector watches it only if they press it."
         if name in ("get_website_check", "check_website"):
             return self._website_tool(name, str(a.get("domain") or "").strip(), looked_at, rich)
+        if name == "recheck_website_problem":
+            from . import websites as ws
+            if self.websites is None:
+                raise ValueError("the website check is not available on this server")
+            try:
+                site = self._pick_site(str(a.get("domain") or "").strip(), fresh=True)
+                looked_at.append(f"website check of {site}")
+                return json.dumps(self.websites.recheck(site, str(a.get("problem") or ""), f"{c.name} (chat)"),
+                                  default=str)
+            except ws.WebsiteError as e:
+                return f"Not checked: {e}"
         if name == "scan_threats":
             if self.threats is None:
                 raise ValueError("threat scanning is not available")
@@ -1478,6 +1507,9 @@ class OperatorChat:
                          f"them:\n\n> {first['fix_prompt']}")
         if result.get("fixed_since"):
             lines.append("\nFixed since the last check: " + "; ".join(result["fixed_since"][:5]) + ".")
+        if result.get("cant_tell_since"):
+            lines.append("\nNot found this time, but not looked at again either, so not counted as fixed: "
+                         + "; ".join(result["cant_tell_since"][:5]) + ".")
         if result["findings"]:
             rich["blocks"].append(table(f"What the check of {result['domain']} found",
                                         ["How serious", "What we saw", "What to do"],

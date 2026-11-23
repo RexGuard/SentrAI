@@ -128,9 +128,19 @@ sudo sentrai websites add shop.example.com     # prints the TXT record (or file)
 sudo sentrai websites verify shop.example.com  # after the record is published (DNS can take a few minutes)
 sudo sentrai websites check shop.example.com   # at most 12 requests to the site, about 20 seconds
 sudo sentrai websites show shop.example.com    # the latest result, with what was fixed since the last one
+sudo sentrai websites proof shop.example.com w2    # what the site sent that proves problem w2, as it was saved
+sudo sentrai websites recheck shop.example.com w2  # check that one again: still there, fixed, or can't tell yet
 sudo sentrai websites list
 sudo sentrai websites remove shop.example.com
 ```
+
+Each problem keeps its proof: the address, the answer's status, the headers that matter, and a short slice of what
+the site sent around the quote (never a slice of a settings file, and secret keys cut short). Code, not the AI, checks
+that the quote really is in the saved answer (or that a missing setting really is missing): such problems are
+**confirmed**, the rest only **likely**. A problem that is gone from the list counts as fixed only when the new check
+looked at that thing again and it passed; when the site was busy or the check stopped early it is "can't tell yet".
+Every proven website is checked again on its own once its last check is a week old (`SENTRAI_WEBSITE_RECHECK_DAYS`,
+0 turns it off).
 
 A sub-domain of a proven domain (blog.example.com under example.com) counts as proven. The owner can then just
 ask Sentry "is my website safe?".
@@ -153,6 +163,8 @@ on any machine and run, in `mvp/core`: `python -m app.sealed open COPY.sbk backu
 ```bash
 sudo sentrai incidents list            # open ones; --all for every one
 sudo sentrai incidents show RSK-2026-081
+sudo sentrai incidents waiting --why-risk   # what waits on a person, safest to approve first, and why
+sudo sentrai incidents approve-low          # approve every one tagged low risk (never "was this you?")
 sudo sentrai incidents approve RSK-2026-081 RSK-2026-082
 sudo sentrai incidents reject RSK-2026-083 --why "our own load test"
 sudo sentrai incidents rollback RSK-2026-081
