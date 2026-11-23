@@ -40,7 +40,8 @@ LEVELS = ("tip", "fix_soon", "urgent")
 LEVEL_WORDS = {"tip": "Tip", "fix_soon": "Fix soon", "urgent": "Urgent"}
 
 # --------------------------------------------------------------------------- the apps SentrAI can connect to
-# status: "sample" = only sample data until its connector ships; "planned" = in a later wave.
+# status: "sample" = only sample data until its connector ships; "planned" = in a later wave. Google and Microsoft
+# become "live" on the Coach page once SentrAI's team connects them (coach_connectors.py, ui_coach.py).
 APPS: list[dict[str, Any]] = [
     {"key": "google", "name": "Google Workspace", "covers": "Gmail, Drive, Meet, Google sign-in", "wave": 1,
      "sees": "Sign-ins, file sharing, mail forwarding rules, apps given access to the account, blocked phishing.",

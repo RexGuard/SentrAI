@@ -9,7 +9,7 @@ import { btn } from '../lib/ui'
 import { useSession } from '../lib/session'
 import Stat from '../lib/Stat'
 
-type App = { key: string; name: string; covers: string; wave: number; sees: string; needs: string; status: 'sample' | 'planned' }
+type App = { key: string; name: string; covers: string; wave: number; sees: string; needs: string; status: 'live' | 'ready' | 'sample' | 'planned'; connection?: string }
 type Region = { key: string; name: string; law: string; consent: boolean; checks: string[] }
 type Moment = { id: string; app: string; kind: string; group: string; level: 'tip' | 'fix_soon' | 'urgent'; level_word: string; at: string; lesson: string; times: number; status: string; title: string; fix: string | null; who: string; sample: boolean; company_rule: string | null }
 type Settings = { apps_on: string[]; kinds_on: string[]; regions: string[]; region_checks: Record<string, number[]>; show_names: boolean; file_names: boolean; notice_shared: boolean; notice_shared_at?: string }
@@ -174,7 +174,8 @@ export default function Coach() {
                 <b>{a.name}</b> <span className="text-xs text-muted">{a.covers}</span>
                 <span className="block text-soft">{a.sees}</span>
                 <span className="block text-xs text-muted">{a.needs}</span>
-                <span className="mt-1 inline-block rounded-full border border-line px-2 py-0.5 text-xs text-muted">{a.status === 'sample' ? 'Live connection coming next' : `Planned, wave ${a.wave}`}</span>
+                <span className={`mt-1 inline-block rounded-full border px-2 py-0.5 text-xs ${a.status === 'live' ? 'border-ok text-ok' : 'border-line text-muted'}`}>{a.status === 'live' ? 'Live' : a.status === 'ready' ? 'Ready to connect' : a.status === 'sample' ? 'Live connection coming next' : `Planned, wave ${a.wave}`}</span>
+                {a.connection && <span className={`mt-1 block text-xs ${a.connection.startsWith('Last read failed') ? 'text-bad' : 'text-muted'}`}>{a.connection}</span>}
               </span>
             </label>))}
         </div>

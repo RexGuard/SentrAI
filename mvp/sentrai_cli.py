@@ -27,7 +27,7 @@ On the panel (installed as /usr/local/bin/sentrai, runs as the service account):
     sudo sentrai coach status | setup --regions sg,my [--checks-done] [--notice-shared] [--names on|off]
                        | apps on|off APP... | person EMAIL [--name N] [--group G] [--region R] [--reach R]
                        | data EMAIL | erase EMAIL | sample [--clear] | notice > notice.md
-                       | app-invite EMAIL | phones | phone-signout ID
+                       | app-invite EMAIL | phones | phone-signout ID | connectors | read [google|microsoft]
     sudo sentrai rules list | add FILE [--title T] [--not-for-staff] | text TITLE --about TEXT | link URL [--title T]
                        [--about TEXT] | show ID | remove ID | ask QUESTION... | facts [--it-contact C]
                        [--report-how H] [--allowed A,B] [--blocked A,B] | system NAME [--what W] [--looks-after P]
@@ -891,6 +891,27 @@ def cmd_coach(call: Call, a: argparse.Namespace) -> Any:
                 f"Added 3 sample people and {out['added']['moments']} risky moments. Remove: sentrai coach sample --clear")
     if a.action == "notice":
         return call("GET", "/ui/coach/notice.md")
+    if a.action in ("connectors", "read"):
+        if a.action == "read":
+            if a.state not in (None, "google", "microsoft"):
+                raise CliError("sentrai coach read [google|microsoft]  (leave it out for both)")
+            out = call("POST", "/ui/coach/connectors/read", {"app": a.state, "operator": operator_name()})
+        else:
+            out = call("GET", "/ui/coach/connectors")
+        if a.json:
+            return out
+        lines = []
+        for app, r in (out.get("results") or {}).items():
+            lines.append(f"{app}: " + (r.get("skipped") or ("failed: " + r["error"] if r.get("error") else
+                                       f"read {r['records']} risky action(s), {r['moments']} new moment(s), "
+                                       f"{r['dropped']} left out")))
+        for c in out["connectors"]:
+            state = ("not connected. Set: " + c["setup"]) if not c["configured"] else (
+                "connected" + ("" if c["switched_on"] else ", but switched off (sentrai coach apps on " + c["app"] + ")"))
+            last = f"  last read {c['last_ok']}" if c["last_ok"] else ""
+            err = f"  last error: {c['last_error']}" if c["last_error"] else ""
+            lines.append(f"{c['name']}: {state}{last}{err}")
+        return "\n".join(lines)
     if a.action == "phones":
         out = call("GET", "/ui/mobile")
         if a.json:
@@ -1081,9 +1102,9 @@ def parser() -> argparse.ArgumentParser:
     ide.add_argument("--note", help="planned/done/dismiss: a short note kept with the idea")
     co = add("coach", cmd_coach, "Security Coach: work apps it reads, regions' checklists, people it coaches")
     co.add_argument("action", choices=["status", "setup", "apps", "person", "data", "erase", "sample", "notice",
-                                       "app-invite", "phones", "phone-signout"])
+                                       "app-invite", "phones", "phone-signout", "connectors", "read"])
     co.add_argument("state", nargs="?", help="apps: on or off · person, data, erase, app-invite: the work email · "
-                                             "phone-signout: the phone's id")
+                                             "phone-signout: the phone's id · read: google or microsoft")
     co.add_argument("items", nargs="*", help="apps: google, microsoft, okta, slack, zoom, dropbox, box, github, ...")
     co.add_argument("--regions", help="setup: where staff work, e.g. sg,my,eu (sentrai coach status lists them)")
     co.add_argument("--checks-done", action="store_true", help="setup: every region's checklist is done")

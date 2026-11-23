@@ -345,7 +345,7 @@ The coach teaches each member of staff right after a risky action in a work app 
 
 ### `GET /ui/coach`
 
-The Coach page. **Returns** `settings` (`apps_on`, `kinds_on`, `groups_off`, `regions`, `region_checks`, `show_names`, `file_names`, `notice_shared`, ...), `ready` and `why_not_ready`, `apps` (the catalogue: `key`, `name`, `covers`, `wave`, `sees`, `needs`, `status` = `live`, `sample` or `planned`), `kinds`, `regions` (`key`, `name`, `law`, `consent`, `checks`), `team` (totals for the last 30 days, `by_group`, `top` lessons), `moments` (open ones, urgent first; `who` is "A team member" unless the moment is urgent or names are turned on), `people` (only when names are on), `kept` and `has_sample`. Records past their retention period are deleted first.
+The Coach page. **Returns** `settings` (`apps_on`, `kinds_on`, `groups_off`, `regions`, `region_checks`, `show_names`, `file_names`, `notice_shared`, ...), `ready` and `why_not_ready`, `apps` (the catalogue: `key`, `name`, `covers`, `wave`, `sees`, `needs`, `status` = `live`, `ready` (a connection exists but SentrAI's team has not set it up), `sample` or `planned`, and for Google and Microsoft `connection`: the last read in plain words), `kinds`, `regions` (`key`, `name`, `law`, `consent`, `checks`), `team` (totals for the last 30 days, `by_group`, `top` lessons), `moments` (open ones, urgent first; `who` is "A team member" unless the moment is urgent or names are turned on), `people` (only when names are on), `kept` and `has_sample`. Records past their retention period are deleted first.
 
 ### `POST /ui/coach/settings`
 
@@ -382,6 +382,19 @@ Mark a lesson's two-question check. **Body** `{"person": "a@acme.com", "answers"
 ### `POST /ui/coach/sample`
 
 Add three made-up people and a day of made-up activity (Google and Microsoft) to try the coach, or `{"clear": true}` to remove them. Needs the coach switched on. **Returns** `added` or `cleared`, and the page.
+
+### `GET /ui/coach/connectors`
+
+The Google Workspace and Microsoft 365 connections ([Security Coach connections](../coach-connectors.html)).
+**Returns** `connectors`: per app `app`, `name`, `configured`, `switched_on`, `last_poll`, `last_ok`, `last_error`,
+`last_records`, `last_result` and `setup` (the settings it needs).
+
+### `POST /ui/coach/connectors/read`
+
+Read the connected apps' activity logs now instead of at the next 15-minute read. Needs `configure`. **Body**
+`{"app": "google"}`, `{"app": "microsoft"}` or `{}` for both. **Returns** `results` per app (`records`, `recorded`,
+`moments`, `dropped`, `urgent`; or `skipped` or `error` in plain words) and `connectors`. On the audit record as
+`coach_connector_poll`; urgent moments as `coach_urgent`.
 
 ### `GET /ui/coach/notice.md`
 

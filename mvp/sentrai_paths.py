@@ -27,6 +27,7 @@ file at the root); else ``~/.sentrai``. deploy/install-panel.sh uses /var/lib/se
         people/staff_reports.json   what staff reported                              SENTRAI_STAFF_REPORTS
         people/admins.json          the administrators: accounts, addresses, keys     SENTRAI_ADMINS
         people/coach.json           the Security Coach: people, risky actions, notes
+        people/coach-connectors.json  the coach's Google and Microsoft connectors: last poll, hashed countries
         company/knowledge.json      Company Rules: the company's own guides and quick facts
         people/mobile.json          the phone app: sign-ins, invites, phone checks
         machines/fleet.json         machines that joined the panel (hashed keys)
@@ -157,6 +158,9 @@ ENTRIES: dict[str, Entry] = {e.key: e for e in (
           optional=True),
     Entry("core.feedback", "core", "people/feedback.json", "messages sent with the panel's Contact Us form, for the "
           "SentrAI team (sentrai feedback)", "HelpDesk", optional=True),
+    Entry("core.coach_connectors", "core", "people/coach-connectors.json", "the Security Coach's Google Workspace "
+          "and Microsoft 365 connectors: when each last read its activity log, the result, and per person (by a "
+          "hash of the email) the last few sign-in countries", "Coach", optional=True),
     Entry("core.knowledge", "core", "company/knowledge.json", "what the company taught SentrAI about itself: its "
           "guides and policies (their text), and quick facts like the IT contact, approved apps and important "
           "systems (Company Rules page)", "Coach", optional=True),

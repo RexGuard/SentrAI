@@ -30,6 +30,7 @@ from . import ui_analytics, ui_approvals, ui_tuning, ui_audit, ui_incidents, ui_
 from . import websites as websites_mod
 from . import mobile as mobile_mod
 from . import coach as coach_mod
+from . import coach_connectors
 from . import knowledge as knowledge_mod
 from . import agent_routes, ai, hosted, anchor, apidocs, backup_copies, chat_memory, depscan, feature_ideas, fleet, hardware, integrations, jobs, procscan, signatures, webhook
 from .extensions import ExtensionError
@@ -431,16 +432,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 except Exception:
                     log.exception("weekly website re-check of %s failed", domain)
 
+    async def coach_reader() -> None:
+        """Read the connected work apps' activity logs for the Security Coach every POLL_MINUTES."""
+        while True:
+            await asyncio.sleep(coach_connectors.POLL_MINUTES * 60)
+            if not connectors.live():
+                continue
+            try:
+                await asyncio.to_thread(connectors.poll)
+            except Exception:
+                log.exception("coach connector poll failed")
+
     @contextlib.asynccontextmanager
     async def lifespan(_: FastAPI):
         task = asyncio.create_task(ticker()) if core.settings.background else None
         scanner = asyncio.create_task(threat_scanner()) if core.settings.background else None
         backer = asyncio.create_task(backup_scheduler()) if core.settings.background else None
         sites = asyncio.create_task(website_rechecker()) if core.settings.background else None
+        reader = asyncio.create_task(coach_reader()) if core.settings.background else None
         if core.remote is not None and core.settings.background:
             core.remote.start()
         yield
-        for t in (task, scanner, backer, sites):
+        for t in (task, scanner, backer, sites, reader):
             if t:
                 t.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
@@ -591,7 +604,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     lessons_mod.install(app, core, core.lessons)
     core.account_emails = lambda: [p["email"] for p in acc.people()
                                    if p.get("role") in ("owner", "admin") and p.get("email")]
-    ui_coach.install(app, core, coach, coach_org, after_erase=phones.forget)
+    connectors = coach_connectors.Connectors(
+        coach, sentrai_paths.path("core.coach_connectors", core.settings.db_path.parent, migrate=False),
+        env=lambda: dict(os.environ), clock=core.clock.now,
+        record=lambda rtype, data: core.scribe.record(core.name, rtype, data))
+    ui_coach.install(app, core, coach, coach_org, after_erase=phones.forget, connectors=connectors)
     ui_mobile.install(app, core, coach, phones, staff, coach_org,
                       lambda: coach_mod.notice(coach.overview(), *coach_org()))
     ui_feedback.install(app, core, ui_feedback.Inbox(

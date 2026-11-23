@@ -27,8 +27,32 @@ def _need(request: Request, what: str) -> None:
         raise HTTPException(403, f"Only an Owner or Admin can {what}.")
 
 
+def apps_with_connections(apps: list[dict[str, Any]], connectors: Any) -> list[dict[str, Any]]:
+    """The coach's app list, with Google and Microsoft marked live once SentrAI's team connected them, and each
+    connection's last read in plain words."""
+    if connectors is None:
+        return apps
+    state = {s["app"]: s for s in connectors.status()}
+    out = []
+    for a in apps:
+        s = state.get(a["key"])
+        if s is None:
+            out.append(a)
+            continue
+        if not s["configured"]:
+            out.append({**a, "status": "ready", "connection": "Ask your SentrAI team to connect it."})
+        elif s["last_error"]:
+            out.append({**a, "status": "live", "connection": "Last read failed: " + s["last_error"]})
+        elif s["last_ok"]:
+            out.append({**a, "status": "live", "connection": f"Connected. Last read {s['last_ok'][:16].replace('T', ' ')} UTC."})
+        else:
+            out.append({**a, "status": "live", "connection": "Connected. It reads the activity log every "
+                        "15 minutes once you switch it on here."})
+    return out
+
+
 def install(app: FastAPI, core: Any, coach: cm.Coach, org: Callable[[], tuple[str, str]],
-            after_erase: Callable[[str], dict[str, int]] | None = None) -> None:
+            after_erase: Callable[[str], dict[str, int]] | None = None, connectors: Any = None) -> None:
     def fail(e: Exception) -> HTTPException:
         return HTTPException(400, str(e))
 
@@ -41,9 +65,29 @@ def install(app: FastAPI, core: Any, coach: cm.Coach, org: Callable[[], tuple[st
             core.scribe.record(core.name, "coach_urgent", {"moment": u["id"], "kind": u["kind"], "by": who})
         return out
 
+    def overview() -> dict[str, Any]:
+        out = coach.overview()
+        return {**out, "apps": apps_with_connections(out["apps"], connectors)}
+
     @app.get("/ui/coach")
     def get_coach() -> dict[str, Any]:
-        return coach.overview()
+        return overview()
+
+    @app.get("/ui/coach/connectors")
+    def get_connectors() -> dict[str, Any]:
+        """Google Workspace and Microsoft 365: connected or not, switched on, the last read."""
+        return {"connectors": connectors.status() if connectors is not None else []}
+
+    @app.post("/ui/coach/connectors/read")
+    def read_now(request: Request, body: dict = Body(default={})) -> dict[str, Any]:
+        """Read the connected apps' activity logs now instead of waiting for the next 15-minute read."""
+        _need(request, "read the work apps' activity now")
+        if connectors is None:
+            raise HTTPException(404, "No connectors on this panel.")
+        only = body.get("app") or None
+        if only is not None and only not in ("google", "microsoft"):
+            raise HTTPException(400, "Pick google or microsoft, or leave it out for both.")
+        return {"results": connectors.poll(only=only, by=_who(request, body)), "connectors": connectors.status()}
 
     @app.post("/ui/coach/settings")
     def post_settings(request: Request, body: dict = Body(...)) -> dict[str, Any]:
@@ -56,7 +100,7 @@ def install(app: FastAPI, core: Any, coach: cm.Coach, org: Callable[[], tuple[st
         core.scribe.record(core.name, "coach_settings_changed", {
             "operator": who, "apps_on": s["apps_on"], "kinds_on": len(s["kinds_on"]), "regions": s["regions"],
             "show_names": s["show_names"], "file_names": s["file_names"], "notice_shared": s["notice_shared"]})
-        return coach.overview()
+        return overview()
 
     @app.get("/ui/coach/lessons")
     def get_lessons() -> dict[str, Any]:
