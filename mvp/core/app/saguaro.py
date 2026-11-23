@@ -37,7 +37,7 @@ from .agents import (
     Watchdog,
     next_steps,
 )
-from . import firewall
+from . import firewall, fix_length
 from . import anchor, protect, remote_copy, routing
 from . import summary as client_summary
 from .audit import AuditLog
@@ -1091,6 +1091,9 @@ class Saguaro(Agent):
             "recipients": recipients,
             # Each recipient's email / Telegram from the routing contacts, so the notifier can reach them.
             "deliver_to": self._addresses(recipients),
+            # The panel's Owner and Admin accounts: who the notifier emails when nobody above has an email
+            # and ALERT_EMAIL_TO is blank, so a new company is told with no setup (notifier/emailer.py).
+            "owners": self._owner_emails(),
             "owner": self.incidents[incident_id].get("owner") if incident_id in self.incidents else None,
             "risk_index": r["risk_index"],
             "band": r["band"],
@@ -1583,7 +1586,9 @@ class Saguaro(Agent):
         return {**bl, "active_actions": sorted(a["action_id"] for a in self.actions if self._is_active(a, now))}
 
     def _contain(self, inc: dict[str, Any], mode: str, approver: str, now: float, risk_idx: int,
-                 justification: str | None = None) -> bool:
+                 justification: str | None = None, hours: float | None = None) -> bool:
+        """hours: how long the person who approved wants the fixes to last (checked by fix_length.check), else
+        each type's own length."""
         s = self.settings
         analyst = self._agent(inc["analyzed_by"])
         proposals = self._proposals(inc, analyst)
@@ -1626,7 +1631,8 @@ class Saguaro(Agent):
         for p in approved:
             aid = f"act-{self._next_action:04d}"
             self._next_action += 1
-            a = executor.apply(p, inc["id"], aid, mode, approver, now, self.clock, s.ttl_for(p.type), snap,
+            a = executor.apply(p, inc["id"], aid, mode, approver, now, self.clock,
+                               s.ttl_for(p.type) if hours is None else hours, snap,
                                s.check_after_min / 60.0)
             a["host"] = inc.get("host")  # the machine whose agent puts this block in place
             self.actions.append(a)
@@ -2077,7 +2083,26 @@ class Saguaro(Agent):
         self.extensions.each("addresses", out)
         return out
 
-    def decision(self, iid: str, operator: str, decision: str, justification: str | None) -> dict[str, Any]:
+    account_emails: Callable[[], list[str]] | None = None  # set by main.py: the Owner and Admin accounts
+
+    def _owner_emails(self) -> list[str]:
+        if self.account_emails is None:
+            return []
+        try:
+            return list(self.account_emails())[:10]
+        except Exception:  # noqa: BLE001  an unreadable accounts file must not stop an alert
+            return []
+
+    def decision(self, iid: str, operator: str, decision: str, justification: str | None,
+                 hours: float | None = None) -> dict[str, Any]:
+        """hours (approve only): how long the fix lasts, the person's own choice within MAX_TTL_HOURS."""
+        if hours is not None:
+            if decision != "approve":
+                raise BadRequestError("a length only goes with approve")
+            why = fix_length.check(hours, self.settings.max_ttl_hours)
+            if why:
+                raise BadRequestError(why)
+            hours = float(hours)
         with self.lock:
             inc = self._get(iid)
             now = self.clock.now()
@@ -2105,14 +2130,15 @@ class Saguaro(Agent):
                 if inc["category"] == ADMIN_CATEGORY:
                     self._not_me(inc, operator, now)
                 inc["decisions"].append({"operator": operator, "decision": "approve", "justification": justification,
-                                         "at": self.clock.iso(now)})
+                                         "at": self.clock.iso(now), **({"hours": hours} if hours is not None else {})})
                 self.scribe.record(self.name, "decision", {"incident": iid, "operator": operator, "decision": "approve",
-                                                           "justification": justification})
+                                                           "justification": justification,
+                                                           **({"hours": hours} if hours is not None else {})})
                 self._timeline(inc, now, "decision", f"Approve & Patch pressed by {operator}")
                 if self._active_actions(inc, now):
                     self._timeline(inc, now, "decision", "Containment already active; operator endorsed it")
                 else:
-                    self._contain(inc, "operator", operator, now, self._risk_of(inc), justification)
+                    self._contain(inc, "operator", operator, now, self._risk_of(inc), justification, hours)
             else:
                 raise BadRequestError("decision must be 'approve' or 'reject'")
             self._evaluate(now)

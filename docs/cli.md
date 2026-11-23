@@ -165,7 +165,10 @@ sudo sentrai incidents list            # open ones; --all for every one
 sudo sentrai incidents show RSK-2026-081
 sudo sentrai incidents waiting --why-risk   # what waits on a person, safest to approve first, and why
 sudo sentrai incidents approve-low          # approve every one tagged low risk (never "was this you?")
+sudo sentrai lessons list                   # what SentrAI learned from how staff closed alerts, with the incidents
+sudo sentrai lessons yes 'xss|198.51.100.0/24'   # normal for us (alerts still come, marked seen before); no: keep alerting
 sudo sentrai incidents approve RSK-2026-081 RSK-2026-082
+sudo sentrai incidents approve RSK-2026-084 --hours 4   # the fix lasts 4 hours (within MAX_TTL_HOURS)
 sudo sentrai incidents reject RSK-2026-083 --why "our own load test"
 sudo sentrai incidents rollback RSK-2026-081
 sudo sentrai incidents keep RSK-2026-081

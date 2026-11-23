@@ -278,7 +278,7 @@ What makes each one `configured`, and what its `detail` says once it is:
 | `cloudflare` | Blocking | `CLOUDFLARE_API_TOKEN` is set, with `CLOUDFLARE_ZONE_ID` (one site) or `CLOUDFLARE_ACCOUNT_ID` (every site). With `CLOUDFLARE_METHOD=list`, `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_LIST_ID` instead | `IP Access rules, block on zone 023e105f4ecef8ad9ca31a8372d0c353 · 1 address blocked now`, or `IP list on account · 0 addresses blocked now` |
 | `abuseipdb` | Lookups | `ABUSEIPDB_API_KEY` is set | `12 lookups since start, answers kept 24 h` |
 | `webhook` | Blocking | `SENTRAI_RESPONDER_WEBHOOK_URL` is set | `Sends block_ip, lock_user to hooks.example.com`: the action types it hands over (`SENTRAI_RESPONDER_WEBHOOK_ACTIONS`) and the host it sends them to |
-| `email` | Alerts | `SMTP_HOST` and `ALERT_EMAIL_TO` are both set | `Handled by the notifier.` |
+| `email` | Alerts | `SMTP_HOST` (or the SentrAI mail relay, `SENTRAI_RELAY_SMTP_HOST`) is set; with no `ALERT_EMAIL_TO` alerts go to the people routed to them, else the Owner and Admin accounts | `Handled by the notifier: ...` |
 
 - `CLOUDFLARE_METHOD` is `access_rule` (the default) or `list`. `CLOUDFLARE_MODE` is `block` (the
   default), `managed_challenge`, `challenge` or `js_challenge`. Any other value keeps Cloudflare off,

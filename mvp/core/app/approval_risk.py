@@ -54,7 +54,8 @@ def _fixes(inc: dict, planned: list[dict] | None) -> list[dict[str, Any]]:
             for p in planned or [] if p.get("allowed", True)]
 
 
-def score(inc: dict, planned: list[dict] | None = None, seen_on: Iterable[str] = ()) -> dict[str, Any]:
+def score(inc: dict, planned: list[dict] | None = None, seen_on: Iterable[str] = (),
+          lesson: dict | None = None) -> dict[str, Any]:
     """{"level", "word", "score", "reasons"} for one approval. planned: Saguaro.planned_fixes()[id];
     seen_on: the machines the same attacking address shows up on."""
     points = 0
@@ -89,6 +90,10 @@ def score(inc: dict, planned: list[dict] | None = None, seen_on: Iterable[str] =
         add(10, "it is on an important computer, where a wrong block hurts more")
     if str(inc.get("category") or "") in ("benign", "misconfiguration"):
         add(10, "it may not be an attack at all")
+    if lesson:
+        n = len(lesson.get("evidence") or [])
+        add(15, f"your team closed this kind of alert from {lesson.get('network')} as not a threat {n} times before, "
+                "so a block may hit someone legitimate")
     # What makes a yes safer.
     if inc.get("classified_by") == "rules" and not inc.get("needs_review"):
         points -= 15

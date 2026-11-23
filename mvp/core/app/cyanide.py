@@ -294,7 +294,24 @@ class Cyanide(Saguaro):
             "default_playbook": [{"type": p.type, "target": p.target} for p in playbook],
             "risk": {"risk_index": self._last_risk["risk_index"], "threshold": self.settings.threshold},
             "action_ttl_hours": self.settings.ttl_hours,
+            **self._lesson_context(inc),
         }
+
+    def _lesson_context(self, inc: dict[str, Any]) -> dict[str, Any]:
+        """A lesson a person confirmed for this kind of alert from this network (lessons.py), in SentrAI's own
+        words (no outside text): the planner weighs that a block may hit someone legitimate."""
+        store = getattr(self, "lessons", None)
+        if store is None:
+            return {}
+        try:
+            lesson = store.match(inc, list(self.incidents.values()))
+        except Exception:  # noqa: BLE001  a broken lessons file must not stop planning
+            return {}
+        if not lesson:
+            return {}
+        return {"company_lesson": {"words": lesson["words"] + " A person at the company confirmed this is normal for "
+                                   "them. Prefer the gentlest fix, and do not act on your own unless the evidence is "
+                                   "much stronger than before.", "evidence": lesson["evidence"]}}
 
     def _validate(self, inc: dict[str, Any], raw: dict[str, Any]) -> Plan:
         """Keep only actions this system can run on targets the incident actually involves."""
@@ -482,7 +499,7 @@ class Cyanide(Saguaro):
 
     # --------------------------------------------------------- containment
     def _contain(self, inc: dict[str, Any], mode: str, approver: str, now: float, risk_idx: int,
-                 justification: str | None = None) -> bool:
+                 justification: str | None = None, hours: float | None = None) -> bool:
         plan: Plan | None = inc.get("_plan")
         if mode == "autonomous" and plan and not plan.allow_autonomous:
             s = self.settings
@@ -496,7 +513,7 @@ class Cyanide(Saguaro):
                          f"autonomous action: {plan.hold_reason}\nRecommended: {inc['recommended_action']}.",
                          BUTTONS_DECIDE)
             return False
-        return super()._contain(inc, mode, approver, now, risk_idx, justification)
+        return super()._contain(inc, mode, approver, now, risk_idx, justification, hours)
 
     # ------------------------------------------------------------- queries
     def agents_status(self) -> list[dict[str, Any]]:

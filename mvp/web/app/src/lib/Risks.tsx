@@ -20,7 +20,7 @@ export type Risk = {
   host: string; source: string; owner: string; open_for: string; hours: number; overdue: boolean; status: string
   written_down?: boolean  // its fix is only recorded: nothing on the machines carries it out yet
   needs: string[]; what_happened: string; meaning: string; fix: string; steps: string[]; unsure: boolean
-  waited_because?: string[]
+  waited_because?: string[]; seen_before?: string
   actions: RiskAction[]; inc: { id: string; status: string; category: string; acked: boolean; actions: { status?: string }[] }
 }
 // handled: what SentrAI already blocked on its own at that level (off the active list, still undoable).
@@ -234,6 +234,11 @@ export function RiskDetail({ r, protectionOn, onClose, onDone }: { r: Risk; prot
           <h3 className="text-sm font-semibold uppercase tracking-wide text-muted">What it means</h3>
           <p className="text-soft">{r.meaning}</p>
         </section>
+        {r.seen_before && (
+          <section className="space-y-1">
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-muted">Seen before</h3>
+            <p className="text-soft">{r.seen_before} You told SentrAI this is normal for you, so check it is the same before blocking anyone.</p>
+          </section>)}
         {!!r.waited_because?.length && r.status !== 'contained' && (
           <section className="space-y-1">
             <h3 className="text-sm font-semibold uppercase tracking-wide text-muted">Why SentrAI waited for you</h3>

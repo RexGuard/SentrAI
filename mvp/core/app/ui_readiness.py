@@ -25,11 +25,17 @@ def _setting(values: dict[str, str], env: str) -> str:
     return str(values.get(env) or os.environ.get(env) or "").strip()
 
 
-def alert_channels(values: dict[str, str], added: Callable[[str], bool]) -> list[str]:
-    """The ways an alert reaches a person outside the panel: email, Telegram or Slack, set up and switched on."""
+def alert_channels(values: dict[str, str], added: Callable[[str], bool], owner_emails: int = 0) -> list[str]:
+    """The ways an alert reaches a person outside the panel: email, Telegram or Slack, set up and switched on.
+    Email needs a mail server (the company's own, or the SentrAI mail relay) and someone to send to: ALERT_EMAIL_TO,
+    or the Owner and Admin accounts (notifier/emailer.py), unless SENTRAI_ALERT_OWNERS is off."""
     out = []
-    if _setting(values, "SMTP_HOST") and _setting(values, "ALERT_EMAIL_TO"):
-        out.append("email")
+    to_owners = _setting(values, "SENTRAI_ALERT_OWNERS").lower() not in ("0", "off", "no", "false")
+    if _setting(values, "SMTP_HOST") or _setting(values, "SENTRAI_RELAY_SMTP_HOST"):
+        if _setting(values, "ALERT_EMAIL_TO"):
+            out.append("email")
+        elif to_owners and owner_emails:
+            out.append("email to the Owner and Admin accounts")
     if added("telegram") and _setting(values, "TELEGRAM_BOT_TOKEN"):
         out.append("Telegram")
     if added("slack") and _setting(values, "SLACK_WEBHOOK_URL"):
@@ -107,7 +113,8 @@ def summary(lines: list[dict[str, Any]]) -> dict[str, Any]:
             "headline": headline}
 
 
-def install(app: FastAPI, core: Any, machines_page: Callable[[], dict[str, Any]], backups: Any) -> None:
+def install(app: FastAPI, core: Any, machines_page: Callable[[], dict[str, Any]], backups: Any,
+            owner_emails: Callable[[], list[str]] = lambda: []) -> None:
     @app.get("/ui/readiness")
     def get_readiness() -> dict[str, Any]:
         try:
@@ -118,7 +125,11 @@ def install(app: FastAPI, core: Any, machines_page: Callable[[], dict[str, Any]]
             values = cfg.read()
         except Exception:  # noqa: BLE001
             values = {}
-        channels = alert_channels(values, core.extensions.added)
+        try:
+            owners = len(owner_emails())
+        except Exception:  # noqa: BLE001
+            owners = 0
+        channels = alert_channels(values, core.extensions.added, owners)
         lines = checks(str(core.protection().get("protection") or ""), machines_page(), channels, st,
                        core.clock.now())
         out = summary(lines)

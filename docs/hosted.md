@@ -37,8 +37,8 @@ a web address, install the agent on their computers, and that is all.
   chat and the schedules cannot either. All of that happens on the company's own computers, through their agents.
 - **No private addresses.** A company cannot point SentrAI at a private or local address (the AI service, the
   health page, the email server, Slack), so no company can use our server to reach another company's core.
-- **Nothing shared by accident.** A company's core gets only a short list of this server's variables (the AI key
-  and the monthly AI budget by default, `SENTRAI_HOSTED_SHARE`), never our Telegram bot, tokens or paths.
+- **Nothing shared by accident.** A company's core gets only a short list of this server's variables (the AI key,
+  the monthly AI budget and the mail relay by default, `SENTRAI_HOSTED_SHARE`), never our Telegram bot, tokens or paths.
 
 Still to come: each company under its own system user (today all cores run as one service account), a disk
 quota per company, and a public sign-up page.
@@ -92,6 +92,11 @@ WantedBy=multi-user.target
 `/etc/sentrai-hosted/shared.env` holds what every company shares, for example `ANTHROPIC_API_KEY=...` and
 `SENTRAI_AI_MONTHLY_BUDGET_USD=10` (each company's own cap on AI spend).
 
+Alerts by email with no setup: put SentrAI's own mail relay there too (`SENTRAI_RELAY_SMTP_HOST`, `_PORT`,
+`_SECURITY`, `_USER`, `_PASSWORD` and `SENTRAI_RELAY_FROM`, such as `alerts@sentrai.pro`). Each company's alerts
+then go by email to the people routed to them, or to its Owner and Admin accounts, from the first day. The relay's
+login has its own names, so a company that sets its own `SMTP_HOST` never has it sent to that server.
+
 ## Add a company
 
 ```bash
@@ -135,6 +140,6 @@ waiting longer after each crash (up to five minutes).
 | `SENTRAI_HOSTED_BEHIND_TLS` | off | set when a proxy in front does TLS, so sign-in cookies are secure |
 | `SENTRAI_HOSTED_PUBLIC_WEB_PORT` / `SENTRAI_HOSTED_PUBLIC_AGENT_PORT` | 443 / the agent port | the ports in the addresses companies are given |
 | `SENTRAI_HOSTED_FIRST_PORT` | 9100 | the first local port for the cores |
-| `SENTRAI_HOSTED_SHARE` | `ANTHROPIC_API_KEY,SENTRAI_AI_MONTHLY_BUDGET_USD` | variables every company's core gets |
+| `SENTRAI_HOSTED_SHARE` | `ANTHROPIC_API_KEY`, `SENTRAI_AI_MONTHLY_BUDGET_USD` and the mail relay's `SENTRAI_RELAY_*` | variables every company's core gets |
 | `SENTRAI_HOSTED_NOTIFIER` | on when `notifier/.venv` exists | one notifier per company, for its alerts |
 | `SENTRAI_HOSTED_AGENT_MAX_MB` | 2048 | the largest request an agent may send (a sealed backup copy) |

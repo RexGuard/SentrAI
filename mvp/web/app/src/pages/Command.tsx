@@ -3,7 +3,9 @@
 // full list under the cards, so old links and bookmarks keep working.
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { CheckCircle2, CircleAlert, CircleHelp, X } from 'lucide-react'
+import { CheckCircle2, CircleAlert, CircleHelp, Lightbulb, X } from 'lucide-react'
+import { btn } from '../lib/ui'
+import { useSession } from '../lib/session'
 import { api, ApiError } from '../lib/api'
 import { onDemoChange } from '../lib/demo'
 import { allQuiet, RiskTable, SeverityBubbles, type Risks } from '../lib/Risks'
@@ -47,6 +49,41 @@ function ReadinessCard() {
   )
 }
 
+type Lesson = { key: string; state: string; words: string; kind_words: string; network: string; evidence: string[] }
+
+/** What SentrAI noticed from how your team closed alerts (lessons.py), waiting for a yes or no. Hidden when none
+ *  waits, and on a panel too old to answer. A yes silences nothing: those alerts still come, labelled. */
+function LessonsCard() {
+  const { can } = useSession()
+  const [rows, setRows] = useState<Lesson[]>([])
+  const [note, setNote] = useState('')
+  const load = useCallback(() => api<{ lessons: Lesson[] }>('/ui/lessons')
+    .then((x) => setRows(x.lessons.filter((l) => l.state === 'suggested'))).catch(() => setRows([])), [])
+  useEffect(() => { void load(); const t = setInterval(() => void load(), 60000); return () => clearInterval(t) }, [load])
+  const answer = async (key: string, yes: boolean) => {
+    try { setNote((await api<{ message: string }>('/ui/lessons/decide', { body: { key, yes } })).message); await load() }
+    catch (e) { setNote(e instanceof ApiError ? e.message : 'That did not go through.') }
+  }
+  if (!rows.length && !note) return null
+  return (
+    <section aria-label="SentrAI noticed" className="space-y-3 rounded-2xl border border-line bg-surface p-4">
+      <h2 className="flex items-center gap-2 font-semibold"><Lightbulb size={18} className="text-accent" aria-hidden /> SentrAI noticed</h2>
+      {note && <p role="status" className="text-sm text-soft">{note}</p>}
+      <ul className="space-y-3">
+        {rows.map((l) => (
+          <li key={l.key} className="space-y-2 text-sm">
+            <p>{l.words} Is this normal for you?</p>
+            <div className="flex flex-wrap gap-2">
+              <button className={btn} disabled={!can('act')} onClick={() => void answer(l.key, true)}>Yes, this is normal for us</button>
+              <button className={btn} disabled={!can('act')} onClick={() => void answer(l.key, false)}>No, keep treating it as an attack</button>
+            </div>
+          </li>))}
+      </ul>
+      <p className="text-xs text-muted">A yes turns nothing off: these alerts still come, marked as seen before.</p>
+    </section>
+  )
+}
+
 export default function Command() {
   const [risks, setRisks] = useState<Risks | null>(null)
   const [error, setError] = useState('')
@@ -63,6 +100,7 @@ export default function Command() {
       <h1>Command Center</h1>
       {error && <p role="alert" className="rounded-md border border-line bg-surface p-3 text-bad">{error}</p>}
       <ReadinessCard />
+      <LessonsCard />
       <SeverityBubbles data={risks} />
       {risks && !allQuiet(risks.watching) && (
         <p role="status" className="flex items-start gap-2 rounded-md border border-warn bg-surface p-3 text-sm">

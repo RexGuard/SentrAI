@@ -160,6 +160,9 @@ ENTRIES: dict[str, Entry] = {e.key: e for e in (
     Entry("core.knowledge", "core", "company/knowledge.json", "what the company taught SentrAI about itself: its "
           "guides and policies (their text), and quick facts like the IT contact, approved apps and important "
           "systems (Company Rules page)", "Coach", optional=True),
+    Entry("core.lessons", "core", "company/lessons.json", "lessons SentrAI learned about the company and a person "
+          "confirmed or turned down (only the yes or no, who and when; the evidence is the incidents)", "Sentry",
+          optional=True),
     Entry("core.websites", "core", "company/websites.json", "the company's own websites: their proof of ownership "
           "and each one's latest outside check (Sentry's website check)", "Sentry", optional=True),
     Entry("core.ai_usage", "core", "ai-usage.json", "what the AI helper cost this month (a total and a count, "

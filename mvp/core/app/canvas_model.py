@@ -400,7 +400,7 @@ def flow_map_data(risk: dict | None, incidents: Iterable[dict] | None, agents: I
     hours = settings.get("HOTPATCH_TTL_HOURS") or "2"
     no_owner = sum(1 for i in open_ if not i.get("owner"))
     edge = _ext(extensions, "cloudflare")
-    email_on = bool(settings.get("SMTP_HOST") and settings.get("ALERT_EMAIL_TO"))
+    email_on = bool(settings.get("SMTP_HOST") or settings.get("SENTRAI_RELAY_SMTP_HOST"))  # to the owners by default
     channels = (["email"] if email_on else []) + [n.capitalize() for n in ALERT_EXTENSIONS if _ext_on(_ext(extensions, n))]
     broken = [str(r.get("title") or r.get("name")) for r in extensions or []
               if r.get("added") and (r.get("error") or r.get("last_error"))]

@@ -25,7 +25,8 @@ Settings (environment):
     SENTRAI_HOSTED_DOMAIN   the domain under which each company gets its own name (default sentrai.pro)
     SENTRAI_HOSTED_FIRST_PORT  the first local port for the companies' cores (default 9100; 127.0.0.1 only)
     SENTRAI_HOSTED_SHARE    variables every company's core gets from this server's environment (default
-                            ANTHROPIC_API_KEY,SENTRAI_AI_MONTHLY_BUDGET_USD), comma-separated
+                            ANTHROPIC_API_KEY, SENTRAI_AI_MONTHLY_BUDGET_USD and the SentrAI mail relay's
+                            SENTRAI_RELAY_SMTP_* / SENTRAI_RELAY_FROM), comma-separated
     SENTRAI_HOSTED_PYTHON   the Python that runs the cores (default core/.venv's, else this one)
     SENTRAI_HOSTED_NOTIFIER on (default when notifier/.venv exists) | off: one notifier per company for its alerts
     and for `run`, the gateway's: SENTRAI_HOSTED_WEB_PORT (8080), SENTRAI_HOSTED_AGENT_PORT (8443),
@@ -62,7 +63,8 @@ RESERVED = frozenset({"www", "api", "app", "apps", "panel", "admin", "administra
                       "docs", "help", "support", "security", "sentrai", "sentry", "hosted", "static", "assets",
                       "cdn", "dashboard", "console", "agents", "agent", "test", "demo", "staging", "dev"})
 STATUSES = ("active", "paused", "removed")
-DEFAULT_SHARE = "ANTHROPIC_API_KEY,SENTRAI_AI_MONTHLY_BUDGET_USD"
+DEFAULT_SHARE = ("ANTHROPIC_API_KEY,SENTRAI_AI_MONTHLY_BUDGET_USD,SENTRAI_RELAY_SMTP_HOST,SENTRAI_RELAY_SMTP_PORT,"
+                 "SENTRAI_RELAY_SMTP_SECURITY,SENTRAI_RELAY_SMTP_USER,SENTRAI_RELAY_SMTP_PASSWORD,SENTRAI_RELAY_FROM")
 # The only variables a company's processes get from this server, besides SENTRAI_HOSTED_SHARE.
 BASE_KEEP = ("PATH", "LANG", "LANGUAGE", "LC_ALL", "LC_CTYPE", "TZ", "PYTHONUTF8", "SYSTEMROOT", "SystemRoot",
              "WINDIR", "COMSPEC", "PATHEXT", "TEMP", "TMP", "SSL_CERT_FILE", "REQUESTS_CA_BUNDLE",

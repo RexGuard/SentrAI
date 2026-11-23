@@ -130,7 +130,10 @@ A person's answer to an incident, as the Approve and Reject buttons on the dashb
 send it. Written to the audit trail as `decision`.
 
 - `approve` puts the recommended steps in force now, as actions with `mode` `operator` and the
-  operator as `approved_by`, for the usual [time limit](../settings.html#limits-on-automatic-actions).
+  operator as `approved_by`, for the usual [time limit](../settings.html#limits-on-automatic-actions),
+  or for `hours` when the body gives it (at least 0.25 and at most `MAX_TTL_HOURS`; anything else is `400`
+  with the reason in plain words). The length is kept on the decision, and the Approvals page suggests it
+  next time when the last two approvals of the same kind picked the same length.
   The safety check (Countersign) still drops any step outside the allowlist or aimed at a protected
   address or account (`needle_review` in the audit trail); each step applied is `action_applied`.
   The incident becomes `contained` and an `operator_action` alert is queued. When containment is
