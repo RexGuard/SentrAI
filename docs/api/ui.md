@@ -459,7 +459,19 @@ Signed-in phones: `phones` (`id`, `email`, `kind` = `staff` or `panel`, `device`
 
 ### `POST /ui/mobile/invites`
 
-A one-time app invite for a person already on the Security Coach's list. Valid 72 hours; a new one replaces the old. Needs `configure`; on the audit record as `phone_invite_created`. **Body** `{"email": "a@acme.com"}`. **Returns** `code` (shown once), `email`, `expires_at`, `organisation` and `steps` to pass on. `404` when the person is not on the coach's list.
+A one-time app invite. Using it puts the person on the Security Coach's list (or lets in someone who signed up in the app themselves). Valid 72 hours; a new one replaces the old. Emailed to the person when the panel can send mail. Needs `configure`; on the audit record as `phone_invite_created`. **Body** `{"email": "a@acme.com", "name": "Ann"}` (`name` optional). **Returns** `code` (shown once), `email`, `name`, `expires_at`, `organisation`, `steps` to pass on, `emailed` and, if sending failed, `email_error`. `409` for someone with a website account or already in the app.
+
+### `GET /ui/mobile/signups`
+
+Whether anyone may sign up in the app, and who is waiting to be let in: as [`GET /mobile/team`](mobile.html#get-mobileteam).
+
+### `POST /ui/mobile/signups`
+
+Turn open sign-up on or off. Needs `configure`. **Body** `{"on": true}`.
+
+### `POST /ui/mobile/signups/turn-away`
+
+Remove a waiting sign-up. Needs `configure`. **Body** `{"email": "..."}`.
 
 ### `POST /ui/mobile/{sid}/sign-out`
 

@@ -13,7 +13,10 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 
-enum class Screen { ADDRESS, SIGN_IN, HOME, PHONE, LINKS, ALERTS, MORE, LESSON, NOTICE, REPORT, MY_DATA }
+enum class Screen { ADDRESS, SIGN_IN, HOME, PHONE, LINKS, ALERTS, MORE, LESSON, NOTICE, REPORT, MY_DATA, TEAM }
+
+/** How the sign-in screen is showing: sign in, first time with an invite, or a new account of one's own. */
+enum class SignInMode { SIGN_IN, INVITE, SIGN_UP }
 
 /** The app's state and everything it asks the panel. One per activity; work runs off the main thread. */
 class AppModel(private val context: Context, private val scope: CoroutineScope) {
@@ -28,7 +31,8 @@ class AppModel(private val context: Context, private val scope: CoroutineScope) 
     var address by mutableStateOf(store.apiRoot?.removePrefix("https://")?.removeSuffix("/api") ?: "")
     var untrusted by mutableStateOf<String?>(null) // a fingerprint waiting for the person's yes
     var needCode by mutableStateOf(false)
-    var inviteMode by mutableStateOf(false)
+    var mode by mutableStateOf(SignInMode.SIGN_IN)
+    var openSignup by mutableStateOf(true) // the panel lets anyone make an account (they wait to be let in)
 
     // signed in
     var me by mutableStateOf<JSONObject?>(null)
@@ -42,6 +46,10 @@ class AppModel(private val context: Context, private val scope: CoroutineScope) 
     var linkText by mutableStateOf("")
     var linkResult by mutableStateOf<LinkCheck.Result?>(null)
     var myData by mutableStateOf("")
+    var team by mutableStateOf<JSONObject?>(null)      // owners and admins: who is waiting, open invites
+    var lastInvite by mutableStateOf<JSONObject?>(null) // the code just made, shown once
+
+    val waiting: Boolean get() = me?.optBoolean("waiting") == true
 
     private val deviceName: String = "${Build.MANUFACTURER.replaceFirstChar { it.uppercase() }} ${Build.MODEL}".take(60)
 
@@ -73,6 +81,7 @@ class AppModel(private val context: Context, private val scope: CoroutineScope) 
         val root = PanelClient.apiRootOf(address)
         val hello = io { PanelClient(root, store.pin.takeIf { store.apiRoot == root }, null).get("/mobile/hello") }
         if (hello.str("app") != "sentrai") throw IllegalArgumentException("That address isn't a SentrAI panel.")
+        openSignup = hello.optBoolean("open_signup", false)
         if (store.apiRoot != root) store.pin = null
         store.apiRoot = root
         screen = Screen.SIGN_IN
@@ -88,7 +97,17 @@ class AppModel(private val context: Context, private val scope: CoroutineScope) 
     }
 
     fun changePanel() {
-        store.forgetPanel(); me = null; screen = Screen.ADDRESS; needCode = false; inviteMode = false
+        store.forgetPanel(); me = null; screen = Screen.ADDRESS; needCode = false; mode = SignInMode.SIGN_IN
+    }
+
+    /** Whether this panel still lets people sign up (asked again when the sign-in screen opens). */
+    fun checkSignup() {
+        val root = store.apiRoot ?: return
+        scope.launch {
+            try {
+                openSignup = io { PanelClient(root, store.pin, null).get("/mobile/hello") }.optBoolean("open_signup", false)
+            } catch (e: IOException) { /* keep what we knew */ }
+        }
     }
 
     fun signIn(email: String, password: String, code: String) = act {
@@ -108,11 +127,25 @@ class AppModel(private val context: Context, private val scope: CoroutineScope) 
         signedIn(io { store.client().post("/mobile/invite/accept", body) })
     }
 
+    fun register(name: String, email: String, password: String, again: String) = act {
+        if (password != again) throw IllegalArgumentException("The two passwords don't match.")
+        val body = JSONObject().put("name", name.trim()).put("email", email.trim()).put("password", password)
+            .put("device", deviceName)
+        signedIn(io { store.client().post("/mobile/register", body) })
+    }
+
+    /** A waiting person types the invite code their admin sent to their email. */
+    fun join(code: String) = act {
+        me = io { store.client().post("/mobile/join", JSONObject().put("code", code.trim())) }
+        info = "You're in. Welcome to ${me?.str("organisation")?.ifBlank { null } ?: "your company"}'s SentrAI."
+        lessons = io { store.client().get("/mobile/lessons") }.getJSONArray("lessons").objects()
+    }
+
     private fun signedIn(out: JSONObject) {
         store.key = out.str("key")
         val m = out.getJSONObject("me")
         store.email = m.str("email")
-        me = m; needCode = false; inviteMode = false
+        me = m; needCode = false; mode = SignInMode.SIGN_IN
         SyncWorker.schedule(context)
         screen = Screen.HOME
         refresh()
@@ -121,7 +154,7 @@ class AppModel(private val context: Context, private val scope: CoroutineScope) 
     fun signOut() = act {
         try { io { store.client().post("/mobile/logout") } } catch (e: IOException) { /* signed out here anyway */ }
         SyncWorker.cancel(context)
-        store.signOut(); me = null; alerts = null; screen = Screen.SIGN_IN
+        store.signOut(); me = null; alerts = null; team = null; lastInvite = null; screen = Screen.SIGN_IN
     }
 
     // ---------------------------------------------------------------- signed in
@@ -176,6 +209,7 @@ class AppModel(private val context: Context, private val scope: CoroutineScope) 
         val facts = io { PhoneCheck.run(context) }
         findings = CheckRules.findings(facts)
         checkedAt = java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date())
+        if (waiting) return@act // not let in yet: the result stays on this phone
         val out = io { store.client().post("/mobile/check", JSONObject(CheckRules.report(facts))) }
         if (out.optInt("coached") > 0) me = io { store.client().get("/mobile/me") }
     }
@@ -199,11 +233,34 @@ class AppModel(private val context: Context, private val scope: CoroutineScope) 
 
     fun loadAlerts() = act { alerts = io { store.client().get("/mobile/alerts") } }
 
+    // ---------------------------------------------------------------- owners and admins: who is in the app
+    fun loadTeam() = act { team = io { store.client().get("/mobile/team") } }
+
+    fun sendInvite(email: String, name: String = "") = act {
+        val body = JSONObject().put("email", email.trim())
+        if (name.isNotBlank()) body.put("name", name.trim())
+        lastInvite = io { store.client().post("/mobile/team/invite", body) }
+        info = if (lastInvite?.optBoolean("emailed") == true) "Invite emailed to ${lastInvite?.str("email")}."
+        else "Invite made. Give the code to the person yourself."
+        team = io { store.client().get("/mobile/team") }
+    }
+
+    fun turnAway(email: String) = act {
+        io { store.client().post("/mobile/team/turn-away", JSONObject().put("email", email)) }
+        info = "Turned away $email."
+        team = io { store.client().get("/mobile/team") }
+    }
+
+    fun setSignup(on: Boolean) = act {
+        team = io { store.client().post("/mobile/team/signup", JSONObject().put("on", on)) }
+    }
+
     fun go(s: Screen) {
         error = ""; info = ""; screen = s
         when (s) {
             Screen.PHONE -> if (findings.isEmpty()) checkPhone()
             Screen.ALERTS -> loadAlerts()
+            Screen.TEAM -> { lastInvite = null; loadTeam() }
             Screen.HOME -> refresh()
             else -> {}
         }

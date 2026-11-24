@@ -51,7 +51,8 @@ def test_check_is_minimal_and_problems_are_mapped():
 
 def test_staff_invite_sign_in_and_own_data_only(web):
     coach_on(web)
-    assert web.post("/ui/mobile/invites", headers=TOKEN, json={"email": "who@acme.test"}).status_code == 404
+    # an invite for someone not on the list yet: using it adds them (test_signup covers it)
+    assert web.post("/ui/mobile/invites", headers=TOKEN, json={"email": "who@acme.test"}).status_code == 200
     assert web.get("/mobile/hello").json()["app"] == "sentrai"
     h, out = staff_key(web)
     assert out["me"]["role"] == "Staff" and out["me"]["device"] == "Pixel 8" and not out["me"]["sees_alerts"]
@@ -167,6 +168,11 @@ def test_cli(client):
     code, text = run("coach", "app-invite", "ann@acme.test")
     assert code == 0 and "App invite for ann@acme.test:" in text and "Install the SentrAI app" in text
     assert "0 phone sign-in(s)" in run("coach", "phones")[1]
+    client.post("/mobile/register", json={"email": "sam@acme.test", "password": "a long password", "name": "Sam"})
+    code, text = run("coach", "signups")
+    assert code == 0 and "Anyone may sign up" in text and "sam@acme.test  Sam" in text
+    assert "invites only" in run("coach", "signups", "off")[1]
+    assert "Turned away sam@acme.test" in run("coach", "turn-away", "sam@acme.test")[1]
 
 
 def test_new_phone_kinds_switch_on_for_saved_settings(tmp_path):
@@ -179,3 +185,101 @@ def test_new_phone_kinds_switch_on_for_saved_settings(tmp_path):
     assert "phone_no_lock" in on and "meeting_open" not in on
     c.save_settings({"kinds_on": [k for k in on if k != "phone_rooted"]}, "x")
     assert "phone_rooted" not in cm.Coach(tmp_path / "coach.json").settings()["kinds_on"]
+
+
+def owner_phone(web, email="owner@acme.test"):
+    secret = sign_in(web, email)
+    web.cookies.clear()
+    body = {"email": email, "password": PASSWORD, "device": "Owner phone",
+            "code": acc.totp_code(secret, time.time() + 30)}
+    r = web.post("/mobile/login", json=body)
+    assert r.status_code == 200, r.text
+    return {"Authorization": f"Bearer {r.json()['key']}"}
+
+
+def test_signup_waits_and_sees_nothing_until_the_owner_invites_from_the_app(web, monkeypatch):
+    coach_on(web)
+    sent = []
+    from app import ui_feedback
+    monkeypatch.setenv("SMTP_HOST", "mail.example.test")
+    monkeypatch.setattr(ui_feedback, "send_mail", lambda msg, e: sent.append(msg))
+    assert web.get("/mobile/hello").json()["open_signup"] is True
+    body = {"email": "Zoe@acme.test", "password": "a long password", "name": "Zoe <b>Lim</b>\n", "device": "Pixel"}
+    assert web.post("/mobile/register", json={**body, "name": " "}).status_code == 400
+    assert web.post("/mobile/register", json={**body, "password": "short"}).status_code == 400
+    r = web.post("/mobile/register", json=body)
+    assert r.status_code == 200, r.text
+    h = {"Authorization": f"Bearer {r.json()['key']}"}
+    me = r.json()["me"]
+    assert me["waiting"] and me["organisation"] == "" and me["role"] == "Waiting" and me["name"] == "Zoe b Lim /b"
+    assert web.post("/mobile/register", json=body).status_code == 409  # one account per email
+    # waiting: nothing of the company, nothing sent to it
+    assert web.get("/mobile/notice", headers=h).status_code == 403
+    assert web.post("/mobile/check", headers=h, json={"screen_lock": False}).status_code == 403
+    assert web.post("/mobile/report", headers=h, json={"text": "A long enough report text here."}).status_code == 403
+    assert web.get("/mobile/alerts", headers=h).status_code == 403
+    assert web.get("/mobile/team", headers=h).status_code == 403
+    assert web.get("/mobile/my-data", headers=h).json()["coach"] == {}
+    # signing up as someone already on the coach's list shows none of their coaching
+    web.post("/ui/coach/settings", headers=TOKEN, json={"apps_on": ["phone", "google"]})
+    web.post("/ui/coach/events", headers=TOKEN, json={"events": [
+        {"person": "ravi@acme.test", "app": "google", "kind": "two_step_off"}]})
+    fake = web.post("/mobile/register", json={**body, "email": "ravi@acme.test", "name": "Not Ravi"})
+    fh = {"Authorization": f"Bearer {fake.json()['key']}"}
+    assert fake.json()["me"]["waiting"] and fake.json()["me"]["coach"] == {"in_coach": False}
+    assert web.get("/mobile/my-data", headers=fh).json()["coach"] == {}
+    # the owner sees who is waiting and lets Zoe in from the app; the code goes to Zoe's email
+    oh = owner_phone(web)
+    me_owner = web.get("/mobile/me", headers=oh).json()
+    assert me_owner["manages_team"] and web.get("/mobile/alerts", headers=oh).json()["signups_waiting"] == 2
+    t = web.get("/mobile/team", headers=oh).json()
+    assert {w["email"] for w in t["waiting"]} == {"ravi@acme.test", "zoe@acme.test"}
+    inv = web.post("/mobile/team/invite", headers=oh, json={"email": "zoe@acme.test"}).json()
+    assert inv["emailed"] and inv["name"] == "Zoe b Lim /b" and sent[0]["To"] == "zoe@acme.test"
+    assert inv["code"] in sent[0].get_content() and "http" not in sent[0].get_content()
+    # someone else's code doesn't let the fake Ravi in
+    assert web.post("/mobile/join", headers=fh, json={"code": inv["code"]}).status_code == 403
+    me = web.post("/mobile/join", headers=h, json={"code": inv["code"]}).json()
+    assert not me["waiting"] and me["coach"]["in_coach"] and me["role"] == "Staff"
+    assert web.get("/mobile/notice", headers=h).status_code == 200
+    assert web.get("/ui/coach/people/zoe@acme.test/data", headers=TOKEN).json()["person"]["name"] == "Zoe b Lim /b"
+    # turn the fake one away: their sign-in ends
+    assert web.post("/mobile/team/turn-away", headers=oh, json={"email": "zoe@acme.test"}).status_code == 404
+    assert web.post("/mobile/team/turn-away", headers=oh, json={"email": "ravi@acme.test"}).status_code == 200
+    assert web.get("/mobile/me", headers=fh).status_code == 401
+    # invite someone who isn't signed up at all: they use "I have an invite" and are added to the coach
+    new = web.post("/mobile/team/invite", headers=oh, json={"email": "kai@acme.test", "name": "Kai"}).json()
+    r = web.post("/mobile/invite/accept", json={"code": new["code"], "password": "another long one", "device": "X"})
+    assert r.status_code == 200 and not r.json()["me"]["waiting"] and r.json()["me"]["name"] == "Kai"
+    # staff can't invite; owner accounts aren't invited
+    assert web.post("/mobile/team/invite", headers=h, json={"email": "x@acme.test"}).status_code == 403
+    assert web.post("/mobile/team/invite", headers=oh, json={"email": "owner@acme.test"}).status_code == 409
+    types = {rec["type"] for rec in web.get("/audit", headers=TOKEN).json()["records"]}
+    assert {"phone_signup", "phone_invite_created", "phone_invite_used", "phone_signup_turned_away"} <= types
+
+
+def test_signup_can_be_turned_off_and_is_limited(web):
+    oh = owner_phone(web)
+    assert web.post("/mobile/team/signup", headers=oh, json={"on": "no"}).status_code == 400
+    assert web.post("/mobile/team/signup", headers=oh, json={"on": False}).json()["open_signup"] is False
+    assert web.get("/mobile/hello").json()["open_signup"] is False
+    body = {"email": "a@acme.test", "password": "a long password", "name": "A"}
+    assert web.post("/mobile/register", json=body).status_code == 403
+    assert web.post("/ui/mobile/signups", headers=TOKEN, json={"on": True}).json()["open_signup"] is True
+    for i in range(mb.REGISTER_LIMIT):
+        assert web.post("/mobile/register", json={**body, "email": f"p{i}@acme.test"}).status_code == 200
+    assert web.post("/mobile/register", json={**body, "email": "late@acme.test"}).status_code == 429
+
+
+def test_waiting_accounts_expire(tmp_path):
+    now = [1_000_000.0]
+    m = mb.Mobile(tmp_path / "mobile.json", clock=lambda: now[0])
+    m.register("w@acme.test", "a long password", "W", "1.2.3.4")
+    key = m.start("w@acme.test", "staff", "Pixel")["key"]
+    assert m.is_waiting("w@acme.test") and len(m.waiting()) == 1
+    now[0] += mb.WAITING_DAYS * 86400 + 1
+    assert m.waiting() == [] and not m.has_password("w@acme.test")
+    assert m.session(key, lambda e: None) is None
+    # and it survives a restart with its settings
+    m.set_signup(False, "x")
+    assert mb.Mobile(tmp_path / "mobile.json").signup_open is False

@@ -36,6 +36,10 @@ INVITE_HOURS = 72
 SESSION_DAYS = 30
 MIN_PASSWORD = 10
 MAX_DEVICE = 60
+MAX_NAME = 80
+REGISTER_LIMIT, REGISTER_WINDOW_S = 3, 3600  # new accounts per address
+MAX_WAITING = 200
+WAITING_DAYS = 14
 FAIL_LIMIT, FAIL_WINDOW_S = 5, 300
 OUT_OF_DATE_DAYS = 120  # a security patch older than this counts as "months behind"
 _CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -73,6 +77,10 @@ def _email(v: Any) -> str:
     if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", e) or len(e) > 254:
         raise MobileError("Please type a work email address.")
     return e
+
+
+def person_name(v: Any) -> str:
+    return " ".join(re.sub(r"[\x00-\x1f\x7f<>]", " ", str(v or "")).split())[:MAX_NAME]
 
 
 def normalise_code(code: str) -> str:
@@ -115,12 +123,13 @@ class Mobile:
         self.clock = clock
         self.lock = threading.RLock()
         self._fails: dict[str, list[float]] = {}
+        self._signups: dict[str, list[float]] = {}
         try:
             loaded = json.loads(self.path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             loaded = {}
         self._data: dict[str, Any] = {k: dict(loaded.get(k) or {}) for k in ("staff", "invites", "sessions",
-                                                                              "checks")}
+                                                                              "checks", "settings")}
 
     def _save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -149,19 +158,30 @@ class Mobile:
             self._fails.pop(who, None)
 
     # ------------------------------------------------------------- staff invites and passwords
-    def invite(self, email: str, by: str) -> dict[str, Any]:
-        """A one-time code for one coached person (a new one replaces the old). Shown once."""
+    def invite(self, email: str, by: str, name: str = "") -> dict[str, Any]:
+        """A one-time code for one person (a new one replaces the old). Shown once. Using it adds the person to the
+        company (ui_mobile.py puts them on the coach's list)."""
         email = _email(email)
+        name = person_name(name) or self.name_of(email)
         raw = "".join(secrets.choice(_CODE_ALPHABET) for _ in range(12))
         now = self.clock()
         with self.lock:
             self._data["invites"] = {h: i for h, i in self._data["invites"].items()
                                      if i["expires_ts"] > now and i["email"] != email}
-            self._data["invites"][_hash(raw)] = {"email": email, "by": by, "at": _iso(now),
+            self._data["invites"][_hash(raw)] = {"email": email, "by": by, "at": _iso(now), "name": name,
                                                  "expires_ts": now + INVITE_HOURS * 3600}
             self._save()
         return {"code": f"{raw[:4]}-{raw[4:8]}-{raw[8:]}", "email": email,
                 "expires_at": _iso(now + INVITE_HOURS * 3600)}
+
+    def _take_invite(self, code: str, email: str | None = None) -> dict[str, Any]:
+        now = self.clock()
+        key = _hash(normalise_code(code))
+        inv = self._data["invites"].get(key)
+        if not inv or inv["expires_ts"] <= now or (email is not None and inv["email"] != email):
+            raise MobileError("This invite code is wrong or has expired. Ask for a new one.", 403)
+        del self._data["invites"][key]
+        return inv
 
     def accept(self, code: str, password: str) -> str:
         """Use an invite: set the person's app password. Returns their email."""
@@ -169,19 +189,110 @@ class Mobile:
             raise MobileError(f"Use at least {MIN_PASSWORD} characters for the password.")
         now = self.clock()
         with self.lock:
-            key = _hash(normalise_code(code))
-            inv = self._data["invites"].get(key)
-            if not inv or inv["expires_ts"] <= now:
-                raise MobileError("This invite code is wrong or has expired. Ask for a new one.", 403)
-            del self._data["invites"][key]
+            inv = self._take_invite(code)
             salt = secrets.token_hex(16)
+            old = self._data["staff"].get(inv["email"]) or {}
             self._data["staff"][inv["email"]] = {"salt": salt, "hash": self._pw(password, salt),
-                                                 "set_at": _iso(now)}
+                                                 "set_at": _iso(now),
+                                                 "name": inv.get("name") or old.get("name") or ""}
             # a new password ends the person's earlier phone sign-ins
             self._data["sessions"] = {k: s for k, s in self._data["sessions"].items()
                                       if not (s["kind"] == "staff" and s["email"] == inv["email"])}
             self._save()
             return inv["email"]
+
+    def join(self, email: str, code: str) -> dict[str, Any]:
+        """A signed-in waiting person types the invite code sent to them: they are let in. The code must be the one
+        made for their own email, so nobody can join with someone else's invite."""
+        with self.lock:
+            inv = self._take_invite(code, email)
+            rec = self._data["staff"].get(email)
+            if rec is not None:
+                rec.pop("waiting", None)
+                rec["joined_at"] = _iso(self.clock())
+                if inv.get("name") and not rec.get("name"):
+                    rec["name"] = inv["name"]
+            self._save()
+            return inv
+
+    # ------------------------------------------------------------- open sign-up
+    @property
+    def signup_open(self) -> bool:
+        with self.lock:
+            return bool(self._data["settings"].get("open_signup", True))
+
+    def set_signup(self, on: bool, by: str) -> dict[str, Any]:
+        with self.lock:
+            self._data["settings"].update({"open_signup": bool(on), "signup_changed_by": by,
+                                           "signup_changed_at": _iso(self.clock())})
+            self._save()
+            return dict(self._data["settings"])
+
+    def _prune_waiting(self, now: float) -> None:
+        old = {e for e, r in self._data["staff"].items()
+               if r.get("waiting") and now - float(r.get("registered_ts") or 0) > WAITING_DAYS * 86400}
+        if old:
+            for e in old:
+                del self._data["staff"][e]
+            self._data["sessions"] = {h: s for h, s in self._data["sessions"].items() if s["email"] not in old}
+            self._save()
+
+    def register(self, email: str, password: str, name: str, address: str) -> str:
+        """Anyone's own app account, waiting until the company lets them in. Returns the email."""
+        if not self.signup_open:
+            raise MobileError("This company's SentrAI takes invites only. Ask your admin for an invite.", 403)
+        email = _email(email)
+        name = person_name(name)
+        if not name:
+            raise MobileError("Please type your name, so your admin knows who you are.")
+        if len(password or "") < MIN_PASSWORD:
+            raise MobileError(f"Use at least {MIN_PASSWORD} characters for the password.")
+        now = self.clock()
+        with self.lock:
+            tries = [t for t in self._signups.get(address, []) if now - t < REGISTER_WINDOW_S]
+            if len(tries) >= REGISTER_LIMIT:
+                raise MobileError("Too many new accounts from this network. Try again in an hour.", 429)
+            self._prune_waiting(now)
+            if email in self._data["staff"]:
+                raise MobileError("This email already has an app account. Sign in instead.", 409)
+            if sum(1 for r in self._data["staff"].values() if r.get("waiting")) >= MAX_WAITING:
+                raise MobileError("Sign-ups are full right now. Ask your company's admin for an invite.", 429)
+            self._signups[address] = tries + [now]
+            salt = secrets.token_hex(16)
+            self._data["staff"][email] = {"salt": salt, "hash": self._pw(password, salt), "set_at": _iso(now),
+                                          "name": name, "waiting": True, "registered_ts": now,
+                                          "registered_at": _iso(now)}
+            self._save()
+            return email
+
+    def is_waiting(self, email: str) -> bool:
+        with self.lock:
+            return bool((self._data["staff"].get(email) or {}).get("waiting"))
+
+    def name_of(self, email: str) -> str:
+        with self.lock:
+            return str((self._data["staff"].get(email) or {}).get("name") or "")
+
+    def waiting(self) -> list[dict[str, Any]]:
+        """People who signed up themselves and are not let in yet, newest first."""
+        now = self.clock()
+        with self.lock:
+            self._prune_waiting(now)
+            invited = {i["email"]: i for i in self._data["invites"].values() if i["expires_ts"] > now}
+            rows = [{"email": e, "name": r.get("name", ""), "registered_at": r.get("registered_at"),
+                     "invited": e in invited,
+                     "invite_expires_at": _iso(invited[e]["expires_ts"]) if e in invited else None}
+                    for e, r in self._data["staff"].items() if r.get("waiting")]
+        return sorted(rows, key=lambda r: r["registered_at"] or "", reverse=True)
+
+    def invites(self) -> list[dict[str, Any]]:
+        """Open invites (never the codes)."""
+        now = self.clock()
+        with self.lock:
+            return sorted(({"email": i["email"], "name": i.get("name", ""), "by": i["by"], "at": i["at"],
+                            "expires_at": _iso(i["expires_ts"])}
+                           for i in self._data["invites"].values() if i["expires_ts"] > now),
+                          key=lambda r: r["at"], reverse=True)
 
     @staticmethod
     def _pw(password: str, salt: str) -> str:
