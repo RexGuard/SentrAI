@@ -27,7 +27,8 @@ On the panel (installed as /usr/local/bin/sentrai, runs as the service account):
     sudo sentrai coach status | setup --regions sg,my [--checks-done] [--notice-shared] [--names on|off]
                        | apps on|off APP... | person EMAIL [--name N] [--group G] [--region R] [--reach R]
                        | data EMAIL | erase EMAIL | sample [--clear] | notice > notice.md
-                       | app-invite EMAIL | phones | phone-signout ID
+                       | app-invite EMAIL [--name N] | phones | phone-signout ID
+                       | signups [on|off] | turn-away EMAIL     who signed up in the app themselves
     sudo sentrai rules list | add FILE [--title T] [--not-for-staff] | text TITLE --about TEXT | link URL [--title T]
                        [--about TEXT] | show ID | remove ID | ask QUESTION... | facts [--it-contact C]
                        [--report-how H] [--allowed A,B] [--blocked A,B] | system NAME [--what W] [--looks-after P]
@@ -902,6 +903,20 @@ def cmd_coach(call: Call, a: argparse.Namespace) -> Any:
         lines += [f"  {p['id']}  {p['email']}  {p['device']}  ({p['kind']}, last used {p['last_at']})"
                   for p in out["phones"]]
         return "\n".join(lines)
+    if a.action == "signups":
+        if a.state not in (None, "on", "off"):
+            raise CliError("sentrai coach signups [on|off]")
+        out = (call("POST", "/ui/mobile/signups", {"on": a.state == "on"}) if a.state
+               else call("GET", "/ui/mobile/signups"))
+        if a.json:
+            return out
+        lines = ["Anyone may sign up in the app (they wait until you invite them)." if out["open_signup"] else
+                 "The app takes invites only. Turn sign-up on: sentrai coach signups on",
+                 f"{len(out['waiting'])} waiting (kept {out['waiting_days']} days):"]
+        lines += [f"  {w['email']}  {w['name']}  signed up {(w['registered_at'] or '')[:16]}"
+                  + ("  (invite sent)" if w["invited"] else "") for w in out["waiting"]]
+        lines += ["Let someone in: sentrai coach app-invite EMAIL · turn away: sentrai coach turn-away EMAIL"]
+        return "\n".join(lines)
     if a.action == "phone-signout":
         if not a.state:
             raise CliError("which phone? sentrai coach phone-signout ID  (sentrai coach phones lists them)")
@@ -919,10 +934,14 @@ def cmd_coach(call: Call, a: argparse.Namespace) -> Any:
     if a.action == "data":
         return call("GET", f"/ui/coach/people/{a.state}/data")
     if a.action == "app-invite":
-        out = call("POST", "/ui/mobile/invites", {"email": a.state})
+        out = call("POST", "/ui/mobile/invites", {"email": a.state, **({"name": a.name} if a.name else {})})
         return out if a.json else (f"App invite for {out['email']}: {out['code']} (works once, until "
-                                   f"{out['expires_at']}).\n" + "\n".join(f"  {n}. {s}" for n, s in
-                                                                      enumerate(out["steps"], 1)))
+                                   f"{out['expires_at']}" + ("; emailed to them" if out.get("emailed") else
+                                                            "; not emailed, give it to them yourself")
+                                   + ").\n" + "\n".join(f"  {n}. {s}" for n, s in enumerate(out["steps"], 1)))
+    if a.action == "turn-away":
+        out = call("POST", "/ui/mobile/signups/turn-away", {"email": a.state})
+        return out if a.json else f"Turned away {out['email']}: their app account and sign-ins are gone."
     out = call("POST", f"/ui/coach/people/{a.state}/erase", {})
     return out if a.json else "Erased: " + ", ".join(f"{v} {k}" for k, v in out["erased"].items())
 
@@ -1081,8 +1100,9 @@ def parser() -> argparse.ArgumentParser:
     ide.add_argument("--note", help="planned/done/dismiss: a short note kept with the idea")
     co = add("coach", cmd_coach, "Security Coach: work apps it reads, regions' checklists, people it coaches")
     co.add_argument("action", choices=["status", "setup", "apps", "person", "data", "erase", "sample", "notice",
-                                       "app-invite", "phones", "phone-signout"])
-    co.add_argument("state", nargs="?", help="apps: on or off · person, data, erase, app-invite: the work email · "
+                                       "app-invite", "phones", "phone-signout", "signups", "turn-away"])
+    co.add_argument("state", nargs="?", help="apps, signups: on or off · person, data, erase, app-invite, "
+                                             "turn-away: the work email · "
                                              "phone-signout: the phone's id")
     co.add_argument("items", nargs="*", help="apps: google, microsoft, okta, slack, zoom, dropbox, box, github, ...")
     co.add_argument("--regions", help="setup: where staff work, e.g. sg,my,eu (sentrai coach status lists them)")

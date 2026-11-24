@@ -61,7 +61,7 @@ or part the file belongs to. **Set with** is the variable that puts it somewhere
 | `core/people/web-sessions.json` | Dashboard | who is signed in to the web dashboard: a SHA-256 of each sign-in cookie, the email, the expiry and a password/authenticator fingerprint, so an update or restart keeps people signed in (12 hours at most) | |
 | `core/people/telegram_links.json` | Notifier | contacts linked to their Telegram chats | `SENTRAI_TELEGRAM_LINKS` |
 | `core/people/staff_reports.json` | HelpDesk | what staff reported (`/report`, the report page) | `SENTRAI_STAFF_REPORTS` |
-| `core/people/mobile.json` | Coach | the phone app: staff app passwords (PBKDF2 hashes), app invites and phone sign-ins (SHA-256 hashes only), and each phone's latest check (yes/no answers and counts) | |
+| `core/people/mobile.json` | Coach | the phone app: staff app passwords (PBKDF2 hashes), with the name and sign-up time of people who made their own account and are waiting to be let in, app invites and phone sign-ins (SHA-256 hashes only), and each phone's latest check (yes/no answers and counts) | |
 | `core/machines/fleet.json` | Fleet | machines that joined the panel: hashed keys and join codes | |
 | `core/machines/jobs.json` | Fleet | scans and backups queued for those machines | |
 | `core/threats/threat_seen.json` | ThreatWatch | findings already raised, so each one alerts once | `SENTRAI_THREAT_STATE` |

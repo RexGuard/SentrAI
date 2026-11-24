@@ -23,7 +23,8 @@ const pill: Record<Moment['level'], string> = { urgent: 'border-bad text-bad', f
 const appName = (apps: App[], key: string) => apps.find((a) => a.key === key)?.name ?? key
 
 type Phones = { phones: { id: string; email: string; kind: string; device: string; last_at: string }[]; team: { phones_checked: number; all_good: number; by_problem: Record<string, number> } }
-type Invite = { code: string; email: string; expires_at: string; steps: string[] }
+type Invite = { code: string; email: string; expires_at: string; steps: string[]; emailed?: boolean; email_error?: string }
+type Signups = { open_signup: boolean; waiting: { email: string; name: string; registered_at: string; invited: boolean }[]; waiting_days: number }
 
 export default function Coach() {
   const { can } = useSession()
@@ -35,10 +36,11 @@ export default function Coach() {
   const [phones, setPhones] = useState<Phones | null>(null)
   const [inviteFor, setInviteFor] = useState('')
   const [invite, setInvite] = useState<Invite | null>(null)
+  const [signups, setSignups] = useState<Signups | null>(null)
   const load = useCallback(async () => {
     try {
-      const [p, l, ph] = await Promise.all([api<Page>('/ui/coach'), api<{ lessons: Lesson[] }>('/ui/coach/lessons'), api<Phones>('/ui/mobile')])
-      setPage(p); setLessons(l.lessons); setPhones(ph); setError('')
+      const [p, l, ph, su] = await Promise.all([api<Page>('/ui/coach'), api<{ lessons: Lesson[] }>('/ui/coach/lessons'), api<Phones>('/ui/mobile'), api<Signups>('/ui/mobile/signups')])
+      setPage(p); setLessons(l.lessons); setPhones(ph); setSignups(su); setError('')
     } catch (e) { setError(e instanceof ApiError ? e.message : 'Could not reach SentrAI.') }
   }, [])
   useEffect(() => { void load() }, [load])
@@ -55,10 +57,20 @@ export default function Coach() {
       setNote(clear ? 'Sample people and activity removed.' : 'Added three made-up people and a day of made-up activity. Remove them any time.')
     } catch (e) { setError(e instanceof ApiError ? e.message : 'Could not add sample data.') }
   }
-  const makeInvite = async () => {
+  const makeInvite = async (email = inviteFor.trim()) => {
     setError(''); setNote(''); setInvite(null)
-    try { setInvite(await api<Invite>('/ui/mobile/invites', { body: { email: inviteFor.trim() } })) }
+    try { setInvite(await api<Invite>('/ui/mobile/invites', { body: { email } })); setSignups(await api<Signups>('/ui/mobile/signups')) }
     catch (e) { setError(e instanceof ApiError ? e.message : 'Could not make the invite.') }
+  }
+  const signupSwitch = async (on: boolean) => {
+    setError('')
+    try { setSignups(await api<Signups>('/ui/mobile/signups', { body: { on } })) }
+    catch (e) { setError(e instanceof ApiError ? e.message : 'Could not save.') }
+  }
+  const turnAway = async (email: string) => {
+    setError('')
+    try { await api('/ui/mobile/signups/turn-away', { body: { email } }); setSignups(await api<Signups>('/ui/mobile/signups')) }
+    catch (e) { setError(e instanceof ApiError ? e.message : 'Could not turn them away.') }
   }
   const answer = async (m: Moment, a: string) => {
     try { await api(`/ui/coach/moments/${m.id}`, { body: { answer: a } }); await load() }
@@ -211,12 +223,30 @@ export default function Coach() {
         <p className="mb-2 text-sm text-muted">Staff get their notes and lessons on their Android phone, and the app checks the phone itself (screen lock, updates, risky apps). Only yes or no answers leave the phone. Tick “SentrAI phone app” under Work apps to turn its findings into notes.</p>
         {phones && <p className="mb-2 text-sm text-soft">{phones.phones.length} {phones.phones.length === 1 ? 'phone is' : 'phones are'} signed in · {phones.team.phones_checked} checked, {phones.team.all_good} with nothing to fix.</p>}
         <div className="flex flex-wrap items-end gap-2">
-          <label className="text-sm">Work email of someone on the list<input type="email" value={inviteFor} disabled={off} onChange={(e) => setInviteFor(e.target.value)} className="mt-1 block w-72 max-w-full rounded-md border border-line bg-transparent px-2 py-1" placeholder="name@yourcompany.com" /></label>
+          <label className="text-sm">Work email<input type="email" value={inviteFor} disabled={off} onChange={(e) => setInviteFor(e.target.value)} className="mt-1 block w-72 max-w-full rounded-md border border-line bg-transparent px-2 py-1" placeholder="name@yourcompany.com" /></label>
           <button className={btn} disabled={off || !inviteFor.includes('@')} onClick={() => void makeInvite()}>Make an app invite</button>
         </div>
+        {signups && (
+          <div className="mt-3 text-sm">
+            <label className="flex items-center gap-2"><input type="checkbox" checked={signups.open_signup} disabled={off} onChange={(e) => void signupSwitch(e.target.checked)} /> Anyone may create an app account (they see nothing of the company until you invite them)</label>
+            {signups.waiting.length > 0 && (
+              <ul className="mt-2 space-y-1" aria-label="Waiting to be let in">
+                {signups.waiting.map((w) => (
+                  <li key={w.email} className="flex flex-wrap items-center gap-2 rounded-md border border-line-soft p-2">
+                    <span className="font-medium">{w.name}</span><span className="text-soft">{w.email}</span>
+                    <span className="text-xs text-muted">signed up {new Date(w.registered_at).toLocaleDateString()}{w.invited ? ' · invite sent' : ''}</span>
+                    <span className="ml-auto flex gap-2">
+                      <button className={btn} disabled={off} onClick={() => void makeInvite(w.email)}>{w.invited ? 'Send a new invite' : 'Send invite'}</button>
+                      <button className={btn} disabled={off} onClick={() => void turnAway(w.email)}>Turn away</button>
+                    </span>
+                  </li>))}
+              </ul>)}
+            <p className="mt-1 text-xs text-muted">The email they typed isn't checked: the invite code goes to that email, so only its real owner can use it. Waiting accounts are dropped after {signups.waiting_days} days.</p>
+          </div>)}
         {invite && (
           <div className="mt-3 rounded-md border border-line-soft p-3 text-sm" role="status">
             <p>Invite for {invite.email}: <code className="text-base font-semibold">{invite.code}</code> <span className="text-xs text-muted">(works once, until {new Date(invite.expires_at).toLocaleString()}; shown only now)</span></p>
+            <p className="mt-1 text-soft">{invite.emailed ? `Emailed to ${invite.email}.` : (invite.email_error ?? 'Not emailed (no mail server set up): give the code to the person yourself, in person or by their real email.')}</p>
             <ol className="mt-2 list-decimal pl-5 text-soft">{invite.steps.map((x) => <li key={x}>{x}</li>)}</ol>
             <p className="mt-1 text-xs text-muted">The panel address is the one you use for this website. Owners and admins sign in to the app with their usual email, password and authenticator code, no invite needed.</p>
           </div>)}

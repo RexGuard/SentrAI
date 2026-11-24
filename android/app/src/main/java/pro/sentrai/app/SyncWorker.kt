@@ -59,6 +59,8 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         /** One round: check the phone, fetch notes and alerts, notify about what's new. Returns the latest /mobile/me. */
         fun sync(context: Context, store: Store): JSONObject {
             val client = store.client()
+            val before = client.get("/mobile/me")
+            if (before.optBoolean("waiting")) return before // not let in yet: nothing goes to the company
             client.post("/mobile/check", JSONObject(CheckRules.report(PhoneCheck.run(context))))
             val me = client.get("/mobile/me")
             val seen = store.notified.toMutableSet()
@@ -69,11 +71,19 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                 seen += id
             }
             if (me.optBoolean("sees_alerts")) {
-                client.get("/mobile/alerts").optJSONArray("alerts")?.objects()?.forEach { a ->
+                val alerts = client.get("/mobile/alerts")
+                alerts.optJSONArray("alerts")?.objects()?.forEach { a ->
                     val id = "alert:" + a.str("id")
                     if (id !in seen) fresh += id to (a.str("title") + ": " + a.str("what"))
                     seen += id
                 }
+                val signups = alerts.optInt("signups_waiting")
+                val id = "alert:signups:$signups"
+                if (signups > 0 && me.optBoolean("manages_team") && id !in seen) {
+                    fresh += id to ((if (signups == 1) "1 person is" else "$signups people are") +
+                        " waiting to be let in to the SentrAI app.")
+                }
+                seen += id
             }
             store.notified = seen
             fresh.take(5).forEach { (id, text) -> notify(context, id, text) }

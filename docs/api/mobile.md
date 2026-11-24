@@ -11,9 +11,20 @@ dashboard (`https://panel.example.com/api/mobile/...`). Two kinds of people sign
 
 - **Owners, Admins and Auditors** with the same email, password and authenticator code as the web
   dashboard. They see alerts as well as their own coaching.
-- **Staff** on the Security Coach's list. An Owner or Admin makes an app invite for them on the Coach
-  page ([`POST /ui/mobile/invites`](ui.html#post-uimobileinvites)). The first time, the person types
-  the invite code and chooses a password; after that they sign in with email and password.
+- **Staff**. An Owner or Admin sends them an app invite, from the app itself
+  ([`POST /mobile/team/invite`](#post-mobileteaminvite)), the Coach page
+  ([`POST /ui/mobile/invites`](ui.html#post-uimobileinvites)) or `sentrai coach app-invite EMAIL`. The
+  code is emailed to them when the panel can send mail (its own mail server, or the SentrAI mail relay)
+  and shown to the inviter once either way. The first time, the person types the code and chooses a
+  password; after that they sign in with email and password. Using the code puts them on the Security
+  Coach's list.
+- **Anyone** can also create their own account in the app ([`POST /mobile/register`](#post-mobileregister)),
+  unless the company turns that off. The account **waits**: it can sign in, check the phone and links on
+  the phone, and type an invite code, but it sees nothing of the company (not even its name), and can't
+  send a phone check or a staff report, until an Owner or Admin lets the person in with an invite. The
+  email a person types isn't proven, which is why the invite code goes to that email: only its real
+  owner can use it. Three new accounts an hour per address, at most 200 waiting, and a waiting account
+  not let in within 14 days is removed.
 
 Signing in gives the phone a **phone key** (`sm_...`), shown once, which the app sends as
 `Authorization: Bearer sm_...`. It reaches `/mobile/*` only, and only that person's own things. It
@@ -29,7 +40,7 @@ minutes (`429`).
 ### `GET /mobile/hello`
 
 Open. Lets the app check the address is a SentrAI panel before anyone signs in: `{"app": "sentrai",
-"min_password": 10}`. It says nothing about the business.
+"min_password": 10, "open_signup": true}`. It says nothing about the business.
 
 ### `POST /mobile/login`
 
@@ -45,6 +56,20 @@ Open. Staff, the first time. **Body** `{"code": "ABCD-EFGH-JKLM", "password": "a
 "device": "Galaxy A55"}`. **Returns** as `POST /mobile/login`. `403` for a wrong or expired code.
 Setting a new password this way ends the person's other phone sign-ins.
 
+### `POST /mobile/register`
+
+Open, unless sign-up is turned off (`403`). **Body** `{"name": "Zoe Lim", "email": "zoe@acme.com",
+"password": "at least 10 characters", "device": "Pixel 8"}`. **Returns** as `POST /mobile/login`, with
+`me.waiting` `true`. `409` when the email already has an app or website account; `429` after three new
+accounts from one address in an hour, or when 200 are already waiting. On the audit trail as
+`phone_signup`.
+
+### `POST /mobile/join`
+
+A waiting person types the invite code sent to their email. **Body** `{"code": "ABCD-EFGH-JKLM"}`. The
+code must be the one made for this account's email. **Returns** `me`, now let in. `403` for a wrong or
+expired code (counts as a wrong try). On the audit trail as `phone_invite_used`.
+
 ### `POST /mobile/logout`
 
 Ends this phone's sign-in and deletes its phone check. **Returns** `{"signed_out": true}`.
@@ -54,7 +79,8 @@ Ends this phone's sign-in and deletes its phone check. **Returns** `{"signed_out
 ### `GET /mobile/me`
 
 **Returns** `email`, `name`, `kind` (`staff` or `panel`), `role` (`Owner`, `Admin`, `Auditor` or
-`Staff`), `device`, `organisation`, `sees_alerts`, and `coach`: `in_coach`, `coaching_on`,
+`Staff`, or `Waiting`), `device`, `organisation` (blank while waiting), `sees_alerts`, `manages_team`
+(Owners and Admins), `waiting`, and `coach`: `in_coach`, `coaching_on`,
 `notice_confirmed`, `level`, `points`, `lessons_done`, `open` and `notes` (newest first, up to 30:
 `id`, `moment`, `at`, `text`, `buttons`, `lesson`, `lesson_done`, `level`, `level_word`, `status`,
 `fix`, `kind`). Notes stay hidden until the person has confirmed the staff notice; once shown here
@@ -142,3 +168,31 @@ Owners, Admins and Auditors only (`403` for staff). **Returns** `risk_index`, `b
 `alerts` (up to 20 open ones, worst first: `id`, `title`, `what`, `fix`, `severity`, `status`,
 `needs_review`, `opened_at`), `staff_reports_new`, `coach` (`urgent_open`, `moments_30d`) and
 `phones` (team totals: `phones_checked`, `all_good`, `by_problem`, no names).
+
+## Owners and Admins: who is in the app
+
+A phone signed in with an Owner or Admin account (`403` for anyone else).
+
+### `GET /mobile/team`
+
+**Returns** `open_signup`, `waiting` (`email`, `name`, `registered_at`, `invited`, `invite_expires_at`),
+`invites` not used yet (`email`, `name`, `by`, `at`, `expires_at`; never the codes), `max_waiting` and
+`waiting_days`.
+
+### `POST /mobile/team/invite`
+
+Invite someone, or let in someone who is waiting. **Body** `{"email": "zoe@acme.com", "name": "Zoe"}`
+(`name` optional). **Returns** `code` (shown once), `email`, `name`, `expires_at`, `steps`,
+`organisation`, `emailed`, and `email_error` when mail is set up but the email didn't go out. The email
+holds the code and steps only, no links. `409` for someone with a website account (they sign in with it)
+or someone already in the app. On the audit trail as `phone_invite_created`.
+
+### `POST /mobile/team/turn-away`
+
+**Body** `{"email": "..."}`. Removes a waiting account and its sign-ins. `404` when nobody with that
+email is waiting. On the audit trail as `phone_signup_turned_away`.
+
+### `POST /mobile/team/signup`
+
+**Body** `{"on": false}` for invites only, `{"on": true}` to let anyone sign up again. **Returns** as
+`GET /mobile/team`. On the audit trail as `phone_signup_switched`.

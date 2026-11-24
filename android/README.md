@@ -7,12 +7,13 @@ The phone app for staff and owners. It talks to the panel's `/mobile/*` endpoint
 
 | | Staff | Owners, Admins, Auditors |
 | --- | --- | --- |
-| Sign in | work email and a password, set once from an app invite (Coach page, or `sentrai coach app-invite EMAIL`) | the web dashboard's email, password and authenticator code |
+| Sign in | work email and a password: their own account made in the app (it waits until an admin lets them in), or set once from an app invite (from the app, the Coach page, or `sentrai coach app-invite EMAIL`) | the web dashboard's email, password and authenticator code |
 | Home | their own coaching notes, with one-tap answers and one-minute lessons | the same, if they are on the coach's list |
 | Phone check | screen lock, updates, apps from outside the Play Store, apps that can read the screen, USB debugging, rooting | the same |
 | Link checker | paste a link or share it to SentrAI; checked on the phone, never sent | the same |
 | Something looks wrong | a staff report | the same |
 | Alerts | | open alerts in plain words, staff reports, team totals |
+| People in the app | | Owners and Admins: who signed up and is waiting, let them in (the invite code is emailed, or shared from the phone), turn people away, switch open sign-up off |
 
 Every 6 hours, when online, the app runs the phone check and shows a notification for each new note
 (and new alerts for owners). It needs no Google push account.

@@ -40,12 +40,14 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -172,9 +174,25 @@ private fun SignInScreen(model: AppModel) {
     var password by rememberSaveable { mutableStateOf("") }
     var code by rememberSaveable { mutableStateOf("") }
     var again by rememberSaveable { mutableStateOf("") }
-    Page(if (model.inviteMode) "Set up with your invite" else "Sign in", model) {
+    var name by rememberSaveable { mutableStateOf("") }
+    LaunchedEffect(Unit) { model.checkSignup() }
+    val title = when (model.mode) {
+        SignInMode.INVITE -> "Set up with your invite"
+        SignInMode.SIGN_UP -> "Create your account"
+        SignInMode.SIGN_IN -> "Sign in"
+    }
+    Page(title, model) {
         Muted("Panel: " + (model.store.apiRoot ?: "").removePrefix("https://"))
-        if (model.inviteMode) {
+        if (model.mode == SignInMode.SIGN_UP) {
+            Text("Make your own SentrAI account. Your company's admin then sends you an invite code to let you in.")
+            Field(name, { name = it }, "Your name")
+            Field(email, { email = it }, "Work email", keyboard = KeyboardType.Email)
+            Field(password, { password = it }, "New password (at least 10 characters)", password = true)
+            Field(again, { again = it }, "Type it again", password = true)
+            Button(onClick = { model.register(name, email, password, again) }, enabled = !model.busy && name.isNotBlank(),
+                modifier = Modifier.fillMaxWidth()) { Text("Create account") }
+            TextButton(onClick = { model.mode = SignInMode.SIGN_IN }) { Text("I already have an account") }
+        } else if (model.mode == SignInMode.INVITE) {
             Text("Type the invite code your admin gave you and choose a password for this app.")
             Field(code, { code = it }, "Invite code")
             Field(password, { password = it }, "New password (at least 10 characters)", password = true)
@@ -182,7 +200,7 @@ private fun SignInScreen(model: AppModel) {
             Button(onClick = { model.acceptInvite(code, password, again) }, enabled = !model.busy, modifier = Modifier.fillMaxWidth()) {
                 Text("Set up")
             }
-            TextButton(onClick = { model.inviteMode = false }) { Text("I already have a password") }
+            TextButton(onClick = { model.mode = SignInMode.SIGN_IN }) { Text("I already have a password") }
         } else {
             Field(email, { email = it }, "Work email", keyboard = KeyboardType.Email)
             Field(password, { password = it }, "Password", password = true)
@@ -191,7 +209,10 @@ private fun SignInScreen(model: AppModel) {
                 Text("Sign in")
             }
             Muted("Owners and admins: use your SentrAI website email, password and authenticator code.")
-            TextButton(onClick = { model.inviteMode = true; model.needCode = false }) { Text("I have an invite") }
+            TextButton(onClick = { model.mode = SignInMode.INVITE; model.needCode = false }) { Text("I have an invite") }
+            if (model.openSignup) TextButton(onClick = { model.mode = SignInMode.SIGN_UP; model.needCode = false }) {
+                Text("Create an account")
+            }
         }
         TextButton(onClick = { model.changePanel() }) { Text("Use a different address") }
     }
@@ -224,6 +245,7 @@ private fun SignedIn(model: AppModel) {
         Screen.NOTICE -> NoticeScreen(model)
         Screen.REPORT -> ReportScreen(model)
         Screen.MY_DATA -> MyDataScreen(model)
+        Screen.TEAM -> TeamScreen(model)
         else -> {}
     }
 }
@@ -238,6 +260,10 @@ private fun HomeScreen(model: AppModel, bar: @Composable () -> Unit) {
         }
         val coach = me.optJSONObject("coach") ?: JSONObject()
         Text("Hi ${me.str("name").split(" ").first()}", style = MaterialTheme.typography.headlineSmall)
+        if (model.waiting) {
+            WaitingCard(model)
+            return@Page
+        }
         Muted(listOf(me.str("organisation"), me.str("role")).filter { it.isNotBlank() }.joinToString(" · "))
         if (!coach.optBoolean("in_coach")) {
             Section { Text("Your company hasn't added you to SentrAI's coaching yet. You can still check this phone and any link.") }
@@ -261,6 +287,21 @@ private fun HomeScreen(model: AppModel, bar: @Composable () -> Unit) {
         val notes = coach.optJSONArray("notes")?.objects().orEmpty()
         if (notes.isEmpty()) Section { Text("Nothing for you right now. Nice work.") }
         notes.forEach { NoteCard(model, it) }
+    }
+}
+
+@Composable
+private fun WaitingCard(model: AppModel) {
+    var code by rememberSaveable { mutableStateOf("") }
+    Section {
+        Heading("Waiting to be let in")
+        Text("Your account is ready. Ask your company's SentrAI admin to let you in: they'll send an invite code to " +
+            "${model.me?.str("email")}. Type it here.")
+        Field(code, { code = it }, "Invite code")
+        Button(onClick = { model.join(code) }, enabled = !model.busy && code.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
+            Text("Join my company")
+        }
+        Muted("Until then you can check this phone and any link. Nothing is sent to your company.")
     }
 }
 
@@ -399,6 +440,11 @@ private fun AlertsScreen(model: AppModel, bar: @Composable () -> Unit) = Page("A
         val ph = a.optJSONObject("phones")
         if (ph != null) Muted("Phones: ${ph.optInt("phones_checked")} checked, ${ph.optInt("all_good")} with nothing to fix")
     }
+    val signups = a.optInt("signups_waiting")
+    if (signups > 0 && model.me?.optBoolean("manages_team") == true) Section {
+        Text((if (signups == 1) "1 person is" else "$signups people are") + " waiting to be let in to the app.")
+        OutlinedButton(onClick = { model.go(Screen.TEAM) }) { Text("See who") }
+    }
     val list = a.optJSONArray("alerts")?.objects().orEmpty()
     if (list.isEmpty()) Section { Text("No open alerts. All quiet.") }
     list.forEach { al ->
@@ -417,8 +463,13 @@ private fun AlertsScreen(model: AppModel, bar: @Composable () -> Unit) = Page("A
 private fun MoreScreen(model: AppModel, bar: @Composable () -> Unit) = Page("More", model, bar) {
     val me = model.me
     if (me != null) Muted("Signed in as ${me.str("email")} on ${me.str("device")}")
-    OutlinedButton(onClick = { model.go(Screen.REPORT) }, modifier = Modifier.fillMaxWidth()) { Text("Something looks wrong") }
-    OutlinedButton(onClick = { model.readNotice() }, modifier = Modifier.fillMaxWidth()) { Text("How SentrAI works (the notice)") }
+    if (me?.optBoolean("manages_team") == true) {
+        OutlinedButton(onClick = { model.go(Screen.TEAM) }, modifier = Modifier.fillMaxWidth()) { Text("People in the app and invites") }
+    }
+    if (!model.waiting) {
+        OutlinedButton(onClick = { model.go(Screen.REPORT) }, modifier = Modifier.fillMaxWidth()) { Text("Something looks wrong") }
+        OutlinedButton(onClick = { model.readNotice() }, modifier = Modifier.fillMaxWidth()) { Text("How SentrAI works (the notice)") }
+    }
     OutlinedButton(onClick = { model.loadMyData() }, modifier = Modifier.fillMaxWidth()) { Text("What SentrAI holds about me") }
     Spacer(Modifier.height(8.dp))
     Button(onClick = { model.signOut() }, enabled = !model.busy, modifier = Modifier.fillMaxWidth()) { Text("Sign out") }
@@ -444,4 +495,69 @@ private fun MyDataScreen(model: AppModel) = Page("What SentrAI holds about me", 
     Muted("This is everything your company's SentrAI keeps about you, exactly as stored.")
     if (model.busy) CircularProgressIndicator()
     Text(model.myData, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
+}
+
+@Composable
+private fun TeamScreen(model: AppModel) {
+    val context = LocalContext.current
+    var email by rememberSaveable { mutableStateOf("") }
+    var name by rememberSaveable { mutableStateOf("") }
+    Page("People in the app", model, back = { model.go(Screen.MORE) }) {
+        val t = model.team
+        model.lastInvite?.let { inv ->
+            Section {
+                Heading("Invite for ${inv.str("email")}")
+                Text(inv.str("code"), fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.headlineSmall)
+                Muted("Works once, until ${inv.str("expires_at").replace('T', ' ').take(16)} UTC. Shown only now.")
+                Text(if (inv.optBoolean("emailed")) "Emailed to them." else
+                    inv.str("email_error", "Not emailed (no mail server set up). Give the code only to this person, " +
+                        "in person or by their real email."))
+                OutlinedButton(onClick = {
+                    val send = android.content.Intent(android.content.Intent.ACTION_SEND).setType("text/plain")
+                        .putExtra(android.content.Intent.EXTRA_TEXT, "Your SentrAI app invite code: ${inv.str("code")}\n" +
+                            inv.optJSONArray("steps")?.strings().orEmpty().mapIndexed { i, s -> "${i + 1}. $s" }.joinToString("\n"))
+                    context.startActivity(android.content.Intent.createChooser(send, "Send the invite"))
+                }) { Text("Share the code") }
+            }
+        }
+        Section {
+            Heading("Invite someone")
+            Field(name, { name = it }, "Their name (optional)")
+            Field(email, { email = it }, "Their work email", keyboard = KeyboardType.Email)
+            Button(onClick = { model.sendInvite(email, name); email = ""; name = "" },
+                enabled = !model.busy && email.contains("@"), modifier = Modifier.fillMaxWidth()) { Text("Send invite") }
+            Muted("The code goes to their email when your SentrAI can send mail. Using it adds them to your team.")
+        }
+        if (t == null) return@Page
+        val waiting = t.optJSONArray("waiting")?.objects().orEmpty()
+        Heading(if (waiting.isEmpty()) "Nobody is waiting" else "Waiting to be let in (${waiting.size})")
+        if (waiting.isNotEmpty()) Muted("They signed up themselves. The email they typed isn't checked yet: the invite " +
+            "code goes to it, so only its real owner can use it.")
+        waiting.forEach { w ->
+            Section {
+                Text(w.str("name"), fontWeight = FontWeight.SemiBold)
+                Muted(w.str("email") + " · signed up " + w.str("registered_at").take(10) +
+                    if (w.optBoolean("invited")) " · invite sent" else "")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { model.sendInvite(w.str("email")) }, enabled = !model.busy) {
+                        Text(if (w.optBoolean("invited")) "Send again" else "Let in")
+                    }
+                    OutlinedButton(onClick = { model.turnAway(w.str("email")) }, enabled = !model.busy) { Text("Turn away") }
+                }
+            }
+        }
+        val open = t.optJSONArray("invites")?.objects().orEmpty()
+        if (open.isNotEmpty()) {
+            Heading("Invites not used yet")
+            open.forEach { Muted("${it.str("email")} · until ${it.str("expires_at").take(10)}") }
+        }
+        HorizontalDivider()
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Anyone can create an account")
+                Muted("They see nothing of your company until you let them in. Off: invites only.")
+            }
+            Switch(checked = t.optBoolean("open_signup"), onCheckedChange = { model.setSignup(it) }, enabled = !model.busy)
+        }
+    }
 }
