@@ -63,10 +63,16 @@ jobs:
           sudo sentrai-gate allow add 192.0.2.10 test
           sudo sentrai-gate ban 198.51.100.7 10m
           sudo sentrai-gate block add 203.0.113.0/24
-          sleep 2
+          sleep 7   # the ban lists are counted every 5 seconds
           sentrai-gate status --json | python3 -c "import json,sys; d=json.load(sys.stdin); assert d['observe'] and d['allow_count']>=1 and d['ban_count']==1 and d['network_count']==1, d; print('running in', d['mode'], 'mode, pipeline level', d['pipeline_level'], 'tracking', d['tracking'])"
           sudo sentrai-gate bans
+          seen() { sentrai-gate status --json | python3 -c "import json,sys; print(json.load(sys.stdin)['totals'][0]['Pkts'])"; }
+          before=$(seen)
           curl -fsS -o /dev/null https://github.com && echo "network still fine"
+          sleep 2
+          after=$(seen)
+          echo "packets seen: $before -> $after"
+          test "$after" -gt "$before"   # the filter really sits in the traffic path
           sudo sentrai-gate observe off
           sleep 2
           curl -fsS -o /dev/null https://github.com && echo "network still fine while guarding"
