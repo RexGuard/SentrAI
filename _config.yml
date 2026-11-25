@@ -15,6 +15,7 @@ exclude:
   - "**/__pycache__"
   - .pytest_cache
   - android
+  - gate
 defaults:
   - scope:
       path: ""
