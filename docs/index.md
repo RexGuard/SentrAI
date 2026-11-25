@@ -18,6 +18,7 @@ a server that keeps watch around the clock.
 | Run SentrAI on your own computer | [Run on a laptop](laptop.html) | about 5 minutes |
 | Keep SentrAI running on a Linux server (the panel) | [Install the panel](server.html) | about 10 minutes |
 | Add a Linux or Windows machine to the panel (the agent) | [Install the agent](agent.html) | about 5 minutes per machine |
+| Guard one Linux machine against floods, with no account and no panel | [SentrAI Gate](gate.html) | about 2 minutes |
 | Watch several machines from one dashboard | [One panel, many machines](panel.html) | |
 | Run SentrAI for many companies on one server | [Hosted service](hosted.html) | |
 | See which logs SentrAI reads (Windows, Suricata, databases) | [Log sources](log-sources.html) | |

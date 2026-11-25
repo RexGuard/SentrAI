@@ -14,3 +14,5 @@ mvp/lab/*.db
 _site/
 mvp/.run_logs/
 mvp/notifier/data/
+gate/sentrai-gate
+gate/dist/

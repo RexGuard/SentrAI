@@ -1,0 +1,115 @@
+name: Gate
+
+on:
+  pull_request:
+    paths: ["gate/**", ".github/workflows/gate.yml"]
+  push:
+    branches: [main]
+    paths: ["gate/**", ".github/workflows/gate.yml"]
+    tags: ["gate-v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: gate-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Build and test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-22.04]
+    defaults:
+      run:
+        working-directory: gate
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache-dependency-path: gate/go.sum
+
+      - name: Format and vet
+        run: |
+          test -z "$(gofmt -l .)" || { gofmt -l .; echo "run gofmt"; exit 1; }
+          go vet ./...
+
+      - name: Kernel program still builds from source
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q clang llvm
+          cp internal/kern/gate_bpfel.o /tmp/committed.o
+          make bpf
+          go build ./...
+          cp /tmp/committed.o internal/kern/gate_bpfel.o   # test what is committed
+          git checkout internal/kern/gate_bpfel.go
+
+      # Root, so the kernel tests really load the filter and feed it packets.
+      - name: Tests
+        run: sudo env "PATH=$PATH" GOFLAGS=-buildvcs=false go test -count=1 -v ./...
+
+      - name: Installer, watch-only, on this machine
+        run: |
+          uname -r
+          sudo env "PATH=$PATH" bash install.sh --observe
+          sleep 4
+          sentrai-gate status
+          sudo sentrai-gate doctor
+          sudo sentrai-gate allow add 192.0.2.10 test
+          sudo sentrai-gate ban 198.51.100.7 10m
+          sudo sentrai-gate block add 203.0.113.0/24
+          sleep 2
+          sentrai-gate status --json | python3 -c "import json,sys; d=json.load(sys.stdin); assert d['observe'] and d['allow_count']>=1 and d['ban_count']==1 and d['network_count']==1, d; print('running in', d['mode'], 'mode, pipeline level', d['pipeline_level'], 'tracking', d['tracking'])"
+          sudo sentrai-gate bans
+          curl -fsS -o /dev/null https://github.com && echo "network still fine"
+          sudo sentrai-gate observe off
+          sleep 2
+          curl -fsS -o /dev/null https://github.com && echo "network still fine while guarding"
+          sudo bash uninstall.sh --purge
+          test ! -e /sys/fs/bpf/sentrai-gate
+          curl -fsS -o /dev/null https://github.com && echo "network fine after removal"
+
+      - name: Service log
+        if: failure()
+        run: sudo journalctl -u sentrai-gate -n 80 --no-pager || true
+
+  # Ready-made programs for the installer. Only when a gate-v* tag is pushed
+  # or the workflow is started by hand, never on an ordinary merge.
+  release:
+    name: Publish ready-made programs
+    if: startsWith(github.ref, 'refs/tags/gate-v') || github.event_name == 'workflow_dispatch'
+    needs: test
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: gate
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache-dependency-path: gate/go.sum
+      - name: Build
+        run: |
+          version="${GITHUB_REF_NAME#gate-}"
+          for arch in amd64 arm64; do
+            CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath \
+              -ldflags "-s -w -X github.com/RexGuard/SentrAI/gate/internal/engine.Version=${version}" \
+              -o "dist/sentrai-gate-linux-$arch" ./cmd/sentrai-gate
+            (cd dist && sha256sum "sentrai-gate-linux-$arch" > "sentrai-gate-linux-$arch.sha256")
+          done
+      - name: Publish as gate-latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete gate-latest --yes --cleanup-tag 2>/dev/null || true
+          gh release create gate-latest dist/* --target "$GITHUB_SHA" \
+            --title "SentrAI Gate (latest)" \
+            --notes "Ready-made SentrAI Gate programs for the one-line installer. Built from $GITHUB_SHA."

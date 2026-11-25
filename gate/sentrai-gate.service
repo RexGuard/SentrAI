@@ -1,0 +1,18 @@
+[Unit]
+Description=SentrAI Gate (firewall at the network card)
+Documentation=https://github.com/RexGuard/SentrAI/blob/main/docs/gate.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/sentrai-gate run
+ExecReload=/bin/kill -HUP $MAINPID
+# If the gate ever stops, the kernel removes the filter and traffic flows
+# untouched. systemd then brings the gate back.
+Restart=always
+RestartSec=3
+LimitMEMLOCK=infinity
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

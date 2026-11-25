@@ -150,6 +150,7 @@ On Linux and macOS each part logs to `mvp/.run_logs/<part>.log`. Port taken or a
 | --- | --- | --- |
 | Install the panel on a Linux server | `sudo ./deploy/install-panel.sh --protect YOUR-IP --admin-email you@example.com` | [Install the panel](https://rexguard.github.io/SentrAI/docs/server.html) |
 | Add a machine to the panel (the agent, "wings") | make a join code on **Machines**, then on that machine `sudo ./mvp/deploy/install-agent.sh --panel URL --code CODE --pin PIN` (Windows: `install-agent.ps1`) | [Install the agent](https://rexguard.github.io/SentrAI/docs/agent.html) |
+| Guard one Linux machine against floods, no account or panel | `curl -fsSL https://raw.githubusercontent.com/RexGuard/SentrAI/main/gate/install.sh \| sudo bash` | [SentrAI Gate](https://rexguard.github.io/SentrAI/docs/gate.html) |
 | Watch several machines from one panel | the Machines page on the panel | [One panel, many machines](https://rexguard.github.io/SentrAI/docs/panel.html) |
 | Update | `sudo sentrai-update` (keeps every setting and record, goes back by itself if a check fails) | [Update](https://rexguard.github.io/SentrAI/docs/server.html#update) |
 | Remove | `sudo ./deploy/uninstall-panel.sh` (`--purge` also deletes settings and records) | [Uninstall](https://rexguard.github.io/SentrAI/docs/server.html#uninstall) |
@@ -236,6 +237,7 @@ mvp/                    the product
   sentrai_cli.py        the team's `sentrai` command
   extensions/           optional add-ons: Cloudflare, AbuseIPDB, Slack, Telegram, TypeSafe
   eval/                 detection accuracy and Sentry answer checks
+gate/                   SentrAI Gate: the standalone, no-sign-in firewall for one Linux machine (Go + eBPF/XDP)
 docs/                   the install guide and API reference (the website)
 demo-copy/              the browser-only copy of the panel used by the live demo
 Cybersecurity + AI.md   the full project plan
